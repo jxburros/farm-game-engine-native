@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Core</RootNamespace>
+    <Description>Headless deterministic simulation core — port of packages/engine-core.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+  <!-- Determinism fence (mirrors the ESLint fences in the web repo): no wall
+       clock, no unseeded randomness, no UI in the simulation core. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

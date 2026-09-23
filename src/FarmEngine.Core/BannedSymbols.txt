@@ -1,0 +1,13 @@
+T:System.Random;Deterministic core: use the seeded Rng (Rng.cs).
+P:System.DateTime.Now;Deterministic core: use the game clock (state.Clock).
+P:System.DateTime.UtcNow;Deterministic core: use the game clock (state.Clock).
+P:System.DateTimeOffset.Now;Deterministic core: use the game clock (state.Clock).
+P:System.DateTimeOffset.UtcNow;Deterministic core: use the game clock (state.Clock).
+P:System.Environment.TickCount;Deterministic core: use the game clock (state.Clock).
+P:System.Environment.TickCount64;Deterministic core: use the game clock (state.Clock).
+T:System.Diagnostics.Stopwatch;Deterministic core: use the game clock (state.Clock).
+M:System.Guid.NewGuid;Deterministic core: derive ids from the seeded Rng.
+M:System.Collections.Generic.List`1.Sort;Unstable sort: use Js.StableSort or OrderBy (JS sort is stable).
+M:System.Collections.Generic.List`1.Sort(System.Comparison{`0});Unstable sort: use Js.StableSort or OrderBy (JS sort is stable).
+M:System.Collections.Generic.List`1.Sort(System.Collections.Generic.IComparer{`0});Unstable sort: use Js.StableSort or OrderBy (JS sort is stable).
+M:System.Math.Round(System.Double);C# rounds half-to-even: use Js.Round (JS Math.round).

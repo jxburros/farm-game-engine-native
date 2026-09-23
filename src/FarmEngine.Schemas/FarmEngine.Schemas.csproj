@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Schemas</RootNamespace>
+    <Description>Persisted data shapes (project, content, save) and migrations — port of packages/engine-schemas.</Description>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,156 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:FarmingRpgMaker.App.ViewModels"
+        xmlns:controls="using:FarmingRpgMaker.App.Controls"
+        mc:Ignorable="d" d:DesignWidth="680" d:DesignHeight="760"
+        x:Class="FarmingRpgMaker.App.Views.UpdateCenterWindow"
+        x:DataType="vm:UpdateCenterViewModel"
+        Title="Update Center — Farming RPG Maker"
+        Icon="avares://FarmingRpgMaker/Assets/app.ico"
+        Width="680" Height="760" MinWidth="520" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <Grid RowDefinitions="Auto,*,Auto">
+    <!-- Title band -->
+    <Border Grid.Row="0" Classes="header" Padding="24,18">
+      <Grid ColumnDefinitions="Auto,*">
+        <Image Source="avares://FarmingRpgMaker/Assets/app-icon-256.png" Width="48" Height="48"
+               Margin="0,0,14,0" RenderOptions.BitmapInterpolationMode="HighQuality" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+          <TextBlock Classes="h1" Text="Update Center" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Name="CurrentVersionText" Classes="muted" Text="{Binding CurrentVersionText}" />
+            <TextBlock Classes="muted" Text="·" />
+            <TextBlock Name="ChannelText" Classes="muted" Text="{Binding ChannelText}" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="24,20" Spacing="16">
+
+        <!-- Status card: one layout for every state. -->
+        <Border Name="StatusCard" Classes="status"
+                Classes.success="{Binding IsToneSuccess}"
+                Classes.update="{Binding IsToneUpdate}"
+                Classes.warning="{Binding IsToneWarning}"
+                Classes.error="{Binding IsToneError}">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+            <Panel Grid.RowSpan="3" Margin="0,0,14,0" VerticalAlignment="Top">
+              <PathIcon Classes="status-icon" Data="{StaticResource IconCheckCircle}" IsVisible="{Binding IsToneSuccess}" />
+              <PathIcon Classes="status-icon" Data="{StaticResource IconGift}" IsVisible="{Binding IsToneUpdate}" />
+              <PathIcon Classes="status-icon" Data="{StaticResource IconInfo}" IsVisible="{Binding IsToneWarning}" />
+              <PathIcon Classes="status-icon" Data="{StaticResource IconAlertCircle}" IsVisible="{Binding IsToneError}" />
+              <PathIcon Classes="status-icon" Data="{StaticResource IconRefresh}" IsVisible="{Binding IsToneNeutral}" />
+            </Panel>
+
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Name="StatusTitle" Classes="h2" Text="{Binding StatusTitle}" TextWrapping="Wrap" />
+              <TextBlock Name="StatusDetail" Text="{Binding StatusDetail}" TextWrapping="Wrap" LineHeight="20" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding IsDownloading}">
+              <ProgressBar Name="DownloadProgressBar" Minimum="0" Maximum="100" Value="{Binding DownloadProgress}" />
+              <TextBlock Name="ProgressText" Classes="muted small" Text="{Binding ProgressText}" />
+            </StackPanel>
+
+            <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,14,0,0" Orientation="Horizontal">
+              <Button Name="InstallerButton" Classes="accent" Margin="0,0,8,8"
+                      Command="{Binding OpenReleasesCommand}" IsVisible="{Binding IsNotInstalled}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <PathIcon Classes="button-icon" Data="{StaticResource IconDownload}" />
+                  <TextBlock Text="Get the installer" />
+                </StackPanel>
+              </Button>
+              <Button Name="CheckButton" Margin="0,0,8,8"
+                      Classes.accent="{Binding !IsDownloadVisible}"
+                      Classes.subtle="{Binding IsDownloadVisible}"
+                      Command="{Binding CheckCommand}" IsVisible="{Binding IsCheckVisible}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <PathIcon Classes="button-icon" Data="{StaticResource IconRefresh}" />
+                  <TextBlock Text="Check for updates" />
+                </StackPanel>
+              </Button>
+              <Button Name="DownloadButton" Classes="accent" Margin="0,0,8,8"
+                      Command="{Binding DownloadCommand}" IsVisible="{Binding IsDownloadVisible}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <PathIcon Classes="button-icon" Data="{StaticResource IconDownload}" />
+                  <TextBlock Text="{Binding AvailableVersion, StringFormat='Download {0}'}" />
+                </StackPanel>
+              </Button>
+              <Button Name="RestartButton" Classes="accent large" Margin="0,0,8,8"
+                      Command="{Binding RestartCommand}" IsVisible="{Binding IsRestartVisible}"
+                      Content="Restart &amp; install" />
+              <Button Name="SkipButton" Classes="subtle" Margin="0,0,8,8"
+                      Command="{Binding SkipCommand}" IsVisible="{Binding IsSkipVisible}"
+                      Content="Skip this version" />
+              <Button Name="CancelButton" Classes="subtle" Margin="0,0,8,8"
+                      Command="{Binding CancelCommand}" IsVisible="{Binding IsCancelVisible}"
+                      Content="Cancel" />
+            </WrapPanel>
+          </Grid>
+        </Border>
+
+        <TextBlock Name="LastCheckedText" Classes="muted small" Margin="4,-8,0,0" Text="{Binding LastCheckedText}"
+                   IsVisible="{Binding !IsNotInstalled}" />
+
+        <!-- Release notes -->
+        <Border Name="ReleaseNotesCard" Classes="card" IsVisible="{Binding HasUpdate}">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Name="ReleaseNotesTitle" Classes="h2" Text="{Binding ReleaseNotesTitle}" />
+                <TextBlock Classes="muted small" Text="{Binding ReleaseMetaText}" />
+              </StackPanel>
+              <HyperlinkButton Grid.Column="1" VerticalAlignment="Top" Content="Open on GitHub"
+                               Command="{Binding OpenReleasePageCommand}" />
+            </Grid>
+            <Separator Margin="0,2" />
+            <controls:MarkdownView Name="ReleaseNotesView" Markdown="{Binding ReleaseNotesMarkdown}"
+                                   IsVisible="{Binding HasReleaseNotes}" />
+            <TextBlock Classes="muted" IsVisible="{Binding HasNoReleaseNotes}"
+                       Text="No release notes were published for this version." />
+          </StackPanel>
+        </Border>
+
+        <!-- Preferences -->
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="h2" Text="Preferences" />
+            <StackPanel Spacing="6">
+              <TextBlock Classes="h3" Text="Update channel" />
+              <RadioButton Name="StableChannelOption" GroupName="channel" IsChecked="{Binding IsStableChannel}">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="Stable" FontWeight="SemiBold" />
+                  <TextBlock Classes="muted small" Text="Tested releases. Recommended for most people." />
+                </StackPanel>
+              </RadioButton>
+              <RadioButton Name="PrereleaseChannelOption" GroupName="channel" IsChecked="{Binding IsPrereleaseChannel}">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="Pre-release" FontWeight="SemiBold" />
+                  <TextBlock Classes="muted small" Text="Early builds with the newest features. May be unstable." />
+                </StackPanel>
+              </RadioButton>
+            </StackPanel>
+            <Separator />
+            <CheckBox Name="CheckOnStartupOption" IsChecked="{Binding CheckOnStartup}" Content="Check for updates on startup" />
+            <CheckBox Name="AutoDownloadOption" IsChecked="{Binding AutoDownload}" Content="Download updates automatically" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Classes="statusbar" Padding="24,10">
+      <Grid ColumnDefinitions="*,Auto">
+        <HyperlinkButton Name="AllReleasesLink" VerticalAlignment="Center" Padding="0"
+                         Content="View all releases on GitHub" Command="{Binding OpenReleasesCommand}" />
+        <Button Name="CloseButton" Grid.Column="1" Classes="subtle" MinWidth="88" HorizontalContentAlignment="Center"
+                Content="Close" Click="OnCloseClicked" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,817 @@
+{
+ "schemaVersion": 8,
+ "id": "packs-proj",
+ "name": "Current V7 Farm",
+ "version": "2.0",
+ "scenes": [
+  {
+   "id": "scene-farm",
+   "name": "Farm",
+   "width": 2,
+   "height": 1,
+   "tiles": [
+    [
+     {
+      "x": 0,
+      "y": 0,
+      "type": "grass",
+      "background": "grass",
+      "overlay": null,
+      "object": null,
+      "collision": false,
+      "soilMoisture": 0,
+      "soilFertility": 0
+     },
+     {
+      "x": 1,
+      "y": 0,
+      "type": "soil",
+      "background": "soil",
+      "overlay": null,
+      "object": null,
+      "collision": false,
+      "soilMoisture": 50,
+      "soilFertility": 100,
+      "soilState": "fertilized"
+     }
+    ]
+   ],
+   "transitions": [],
+   "npcs": [],
+   "events": []
+  }
+ ],
+ "npcs": [
+  {
+   "id": "npc-base",
+   "name": "Base NPC",
+   "x": 1,
+   "y": 0,
+   "sceneId": "scene-farm",
+   "dialogue": [
+    {
+     "id": "dlg-base",
+     "npcId": "npc-base",
+     "text": "Hi",
+     "options": []
+    }
+   ],
+   "canMove": false,
+   "appearance": "farmer"
+  }
+ ],
+ "items": [
+  {
+   "id": "wheat",
+   "name": "Wheat",
+   "type": "crop",
+   "description": "Golden grain",
+   "value": 25,
+   "stackable": true,
+   "maxStack": 99,
+   "icon": "wheat"
+  },
+  {
+   "id": "flour",
+   "name": "Flour",
+   "type": "material",
+   "description": "Milled wheat",
+   "value": 60,
+   "stackable": true,
+   "maxStack": 99,
+   "icon": "flour"
+  }
+ ],
+ "events": [],
+ "dialogues": [],
+ "quests": [
+  {
+   "id": "q-base",
+   "name": "Base Quest",
+   "description": "Do it",
+   "status": "active",
+   "objectives": [
+    {
+     "id": "o1",
+     "type": "collect",
+     "description": "x",
+     "targetItemId": "wheat",
+     "targetItemQuantity": 2,
+     "completed": false,
+     "progress": 1
+    }
+   ],
+   "rewards": {
+    "money": 5
+   }
+  }
+ ],
+ "player": {
+  "x": 2,
+  "y": 0.25,
+  "direction": "down",
+  "sceneId": "scene-farm",
+  "inventory": [
+   {
+    "item": {
+     "id": "wheat",
+     "name": "Wheat",
+     "type": "crop",
+     "description": "Golden grain",
+     "value": 25,
+     "stackable": true,
+     "maxStack": 99
+    },
+    "quantity": 3
+   },
+   {
+    "item": {
+     "id": "pack-c:gem",
+     "name": "Gem",
+     "type": "material",
+     "description": "Shiny",
+     "value": 5,
+     "stackable": true,
+     "maxStack": 9
+    },
+    "quantity": 1
+   }
+  ],
+  "maxInventorySize": 20,
+  "money": 500,
+  "activeQuests": [],
+  "completedQuests": [],
+  "pixelX": 0,
+  "pixelY": 0,
+  "targetX": 0,
+  "targetY": 0,
+  "energy": 80,
+  "maxEnergy": 100,
+  "skills": {
+   "farming": {
+    "level": 2,
+    "xp": 40
+   }
+  }
+ },
+ "eventFlags": {
+  "met-mayor": true,
+  "door": false
+ },
+ "startSceneId": "scene-farm",
+ "mode": "play",
+ "selectedTileType": "grass",
+ "selectedNPCId": null,
+ "selectedItemId": null,
+ "currentTime": 0,
+ "customAssets": [],
+ "currentSeason": "spring",
+ "currentDay": 1,
+ "gameStartTime": 123456.5,
+ "currentTimeMinutes": 360,
+ "currentYear": 1,
+ "shops": [],
+ "nodeTypes": [],
+ "settings": {
+  "energyEnabled": true,
+  "maxEnergy": 100,
+  "collapseEnergyFraction": 0.5,
+  "collapseMoneyPenalty": 50,
+  "skillsEnabled": true,
+  "time": {
+   "dayStartMinute": 360,
+   "dayEndMinute": 1560,
+   "minutesPerRealSecond": 1
+  },
+  "locale": "fr"
+ },
+ "recipes": [
+  {
+   "id": "recipe-flour",
+   "name": "Flour",
+   "inputs": [
+    {
+     "itemId": "wheat",
+     "quantity": 1
+    }
+   ],
+   "outputs": [
+    {
+     "itemId": "flour",
+     "quantity": 1
+    }
+   ],
+   "machineTypeId": "machine-mill",
+   "processingMinutes": 120
+  }
+ ],
+ "machineTypes": [
+  {
+   "id": "machine-mill",
+   "name": "Mill",
+   "description": "Grinds grain",
+   "color": "#9a7b4f",
+   "blocksMovement": true
+  }
+ ],
+ "weather": {
+  "types": [
+   {
+    "id": "sun",
+    "name": "Sunny",
+    "watersOutdoorSoil": false,
+    "cropDamageChance": 0,
+    "npcsStayInside": false,
+    "overlay": null
+   }
+  ],
+  "table": {
+   "spring": [
+    {
+     "weatherId": "sun",
+     "weight": 1
+    }
+   ],
+   "summer": [
+    {
+     "weatherId": "sun",
+     "weight": 1
+    }
+   ],
+   "fall": [
+    {
+     "weatherId": "sun",
+     "weight": 1
+    }
+   ],
+   "winter": [
+    {
+     "weatherId": "sun",
+     "weight": 1
+    }
+   ]
+  }
+ },
+ "animalSpecies": [
+  {
+   "id": "species-chicken",
+   "name": "Chicken",
+   "purchaseCost": 400,
+   "feedItemId": "wheat",
+   "productItemId": "wheat",
+   "productIntervalDays": 1,
+   "daysToAdult": 3,
+   "color": "#f4e4c1"
+  }
+ ],
+ "animals": [
+  {
+   "id": "animal-1",
+   "speciesId": "species-chicken",
+   "name": "Clucky",
+   "sceneId": "scene-farm",
+   "x": 0,
+   "y": 0,
+   "mood": 70,
+   "fedToday": false,
+   "pettedToday": false,
+   "ageDays": 5,
+   "daysSinceProduct": 0,
+   "productReady": false
+  }
+ ],
+ "fishTables": [
+  {
+   "id": "fish-table-1",
+   "name": "Farm Pond",
+   "entries": [
+    {
+     "itemId": "wheat",
+     "weight": 1,
+     "difficulty": 0.2
+    }
+   ],
+   "junkChance": 0.1
+  }
+ ],
+ "mine": {
+  "enabled": false
+ },
+ "contentPacks": [
+  {
+   "enabled": true,
+   "pack": {
+    "manifest": {
+     "id": "pack-b",
+     "name": "PACK-B",
+     "version": "1.2.3",
+     "engineCompatibility": "^9.0.0",
+     "base": false,
+     "dependencies": [
+      {
+       "packId": "pack-a"
+      }
+     ],
+     "overrides": [
+      "pack-a:jam",
+      "wheat",
+      "pack-a:berry-crop"
+     ],
+     "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+     }
+    },
+    "content": {
+     "items": [
+      {
+       "id": "pack-a:jam",
+       "name": "Better Jam",
+       "type": "crop",
+       "description": "Best",
+       "value": 99,
+       "stackable": true,
+       "maxStack": 99
+      },
+      {
+       "id": "wheat",
+       "name": "Pack Wheat",
+       "type": "crop",
+       "description": "Override",
+       "value": 1,
+       "stackable": true,
+       "maxStack": 99
+      },
+      {
+       "id": "flour",
+       "name": "Pack Flour",
+       "type": "crop",
+       "description": "Conflict",
+       "value": 1,
+       "stackable": true,
+       "maxStack": 99
+      },
+      {
+       "id": "pack-a:berry",
+       "name": "Dup Berry",
+       "type": "crop",
+       "description": "Dup",
+       "value": 1,
+       "stackable": true,
+       "maxStack": 99
+      }
+     ],
+     "machineTypes": [
+      {
+       "id": "machine-mill",
+       "name": "Mill 2",
+       "description": "dup",
+       "color": "#000000",
+       "blocksMovement": true,
+       "stationCategories": []
+      }
+     ],
+     "strings": {
+      "fr": {
+       "item:pack-a:jam:name": "Super Confiture",
+       "item:berry:name": "Baie B"
+      }
+     },
+     "crops": [
+      {
+       "id": "pack-a:berry-crop",
+       "name": "Berry Bush 2",
+       "seedCost": 6,
+       "baseHarvestValue": 8,
+       "growthTime": 1,
+       "growthDays": 2,
+       "stages": 3,
+       "seasons": [
+        "summer",
+        "fall"
+       ],
+       "canRegrow": false,
+       "yieldMin": 1,
+       "yieldMax": 2
+      },
+      {
+       "id": "wheat",
+       "name": "Pack Wheat Crop",
+       "seedCost": 1,
+       "baseHarvestValue": 1,
+       "growthTime": 1,
+       "growthDays": 1,
+       "stages": 2,
+       "seasons": [
+        "spring"
+       ],
+       "canRegrow": false,
+       "yieldMin": 1,
+       "yieldMax": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "enabled": true,
+   "pack": {
+    "manifest": {
+     "id": "pack-a",
+     "name": "PACK-A",
+     "version": "1.2.3",
+     "engineCompatibility": "*",
+     "base": false,
+     "dependencies": [],
+     "overrides": [],
+     "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+     }
+    },
+    "content": {
+     "items": [
+      {
+       "id": "berry",
+       "name": "Berry",
+       "type": "crop",
+       "description": "Sweet",
+       "value": 7,
+       "stackable": true,
+       "maxStack": 99,
+       "cropType": "berry-crop"
+      },
+      {
+       "id": "jam",
+       "name": "Jam",
+       "type": "crop",
+       "description": "Jammy",
+       "value": 30,
+       "stackable": true,
+       "maxStack": 99,
+       "useActionId": "eat-jam"
+      }
+     ],
+     "crops": [
+      {
+       "id": "berry-crop",
+       "name": "Berry Bush",
+       "seedCost": 5,
+       "baseHarvestValue": 7,
+       "growthTime": 1,
+       "growthDays": 3,
+       "stages": 3,
+       "seasons": [
+        "summer"
+       ],
+       "canRegrow": true,
+       "yieldMin": 1,
+       "yieldMax": 3
+      }
+     ],
+     "recipes": [
+      {
+       "id": "make-jam",
+       "name": "Make Jam",
+       "inputs": [
+        {
+         "itemId": "berry",
+         "quantity": 2
+        },
+        {
+         "itemId": "wheat",
+         "quantity": 1
+        }
+       ],
+       "outputs": [
+        {
+         "itemId": "jam",
+         "quantity": 1
+        }
+       ],
+       "processingMinutes": 0,
+       "category": "cooking"
+      }
+     ],
+     "npcs": [
+      {
+       "id": "baker",
+       "name": "Baker",
+       "x": 1,
+       "y": 0,
+       "sceneId": "scene-farm",
+       "dialogue": [
+        {
+         "id": "hello",
+         "npcId": "baker",
+         "text": "Hello there",
+         "options": [
+          {
+           "text": "Shop?",
+           "openShopId": "bakery",
+           "nextDialogueId": "bye"
+          }
+         ]
+        },
+        {
+         "id": "bye",
+         "npcId": "baker",
+         "text": "Bye",
+         "options": []
+        }
+       ],
+       "canMove": false,
+       "appearance": "farmer",
+       "giftTastes": {
+        "loved": [
+         "jam"
+        ],
+        "liked": [],
+        "disliked": [],
+        "hated": []
+       }
+      }
+     ],
+     "shops": [
+      {
+       "id": "bakery",
+       "name": "Bakery",
+       "stock": [
+        {
+         "itemId": "jam"
+        },
+        {
+         "itemId": "wheat",
+         "price": 3
+        }
+       ]
+      }
+     ],
+     "quests": [
+      {
+       "id": "jam-quest",
+       "name": "Jam time",
+       "description": "Make jam",
+       "status": "not-started",
+       "giver": "baker",
+       "prerequisites": [
+        "intro",
+        "q-base"
+       ],
+       "objectives": [
+        {
+         "id": "o",
+         "type": "collect",
+         "description": "jam",
+         "targetItemId": "jam",
+         "targetItemQuantity": 1,
+         "completed": false,
+         "progress": 0
+        }
+       ],
+       "rewards": {
+        "items": [
+         {
+          "itemId": "berry",
+          "quantity": 3
+         }
+        ]
+       }
+      },
+      {
+       "id": "intro",
+       "name": "Intro",
+       "description": "Say hi",
+       "status": "active",
+       "objectives": [
+        {
+         "id": "o",
+         "type": "talk",
+         "description": "talk",
+         "targetNPCId": "baker",
+         "completed": false,
+         "progress": 0
+        }
+       ],
+       "rewards": {}
+      }
+     ],
+     "events": [
+      {
+       "id": "berry-event",
+       "name": "Berry",
+       "sceneId": "",
+       "trigger": "tick",
+       "conditions": [
+        {
+         "type": "hasItem",
+         "itemId": "berry",
+         "quantity": 1
+        },
+        {
+         "type": "questStatus",
+         "questId": "intro",
+         "status": "active"
+        }
+       ],
+       "outcomes": [
+        {
+         "type": "giveItem",
+         "itemId": "jam",
+         "itemQuantity": 1
+        },
+        {
+         "type": "startDialogue",
+         "npcId": "baker",
+         "dialogueId": "hello"
+        }
+       ],
+       "active": true,
+       "repeatable": false
+      }
+     ],
+     "actions": [
+      {
+       "id": "eat-jam",
+       "name": "Eat jam",
+       "description": "yum",
+       "conditions": [],
+       "failMessage": "no",
+       "outcomes": [
+        {
+         "type": "message",
+         "message": "Yum"
+        }
+       ],
+       "energyCost": 0
+      }
+     ],
+     "weatherTypes": [
+      {
+       "id": "fog",
+       "name": "Fog"
+      }
+     ],
+     "playerStart": {
+      "sceneId": "scene-farm",
+      "x": 1,
+      "money": 42,
+      "inventory": [
+       {
+        "itemId": "berry",
+        "quantity": 2
+       },
+       {
+        "itemId": "ghost",
+        "quantity": 1
+       }
+      ]
+     },
+     "strings": {
+      "fr": {
+       "item:berry:name": "Baie",
+       "item:jam:description": "Confiture",
+       "dialogue:hello:text": "Bonjour",
+       "npc:baker:name": "Boulanger",
+       "quest:intro:name": "Intro FR",
+       "item:wheat:name": "Bl\u00e9",
+       "weird:key": "x",
+       "a:b:c:d": "deep"
+      },
+      "de": {
+       "item:berry:name": "Beere"
+      }
+     }
+    }
+   }
+  },
+  {
+   "enabled": false,
+   "pack": {
+    "manifest": {
+     "id": "pack-c",
+     "name": "PACK-C",
+     "version": "1.2.3",
+     "engineCompatibility": "*",
+     "base": false,
+     "dependencies": [],
+     "overrides": [],
+     "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+     }
+    },
+    "content": {
+     "items": [
+      {
+       "id": "gem",
+       "name": "Gem",
+       "type": "material",
+       "description": "Shiny",
+       "value": 5,
+       "stackable": true,
+       "maxStack": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "enabled": true,
+   "pack": {
+    "manifest": {
+     "id": "pack-d",
+     "name": "PACK-D",
+     "version": "1.2.3",
+     "engineCompatibility": "*",
+     "base": false,
+     "dependencies": [
+      {
+       "packId": "missing-pack"
+      },
+      {
+       "packId": "pack-e"
+      }
+     ],
+     "overrides": [],
+     "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+     }
+    },
+    "content": {}
+   }
+  },
+  {
+   "enabled": true,
+   "pack": {
+    "manifest": {
+     "id": "pack-e",
+     "name": "PACK-E",
+     "version": "1.2.3",
+     "engineCompatibility": "*",
+     "base": false,
+     "dependencies": [
+      {
+       "packId": "pack-d"
+      }
+     ],
+     "overrides": [],
+     "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+     }
+    },
+    "content": {}
+   }
+  }
+ ],
+ "graphics": {
+  "pixelArt": true
+ },
+ "gamePanels": [],
+ "customCrops": [
+  {
+   "id": "glowcorn",
+   "name": "Glowcorn",
+   "seedCost": 5,
+   "baseHarvestValue": 9,
+   "growthTime": 1000,
+   "growthDays": 2,
+   "stages": 3,
+   "seasons": [
+    "spring"
+   ],
+   "canRegrow": false,
+   "yieldMin": 1,
+   "yieldMax": 1,
+   "customAsset": "asset-1"
+  }
+ ],
+ "quarantinedItems": [
+  {
+   "item": {
+    "id": "pack-a:berry",
+    "name": "Berry",
+    "type": "crop",
+    "description": "Sweet",
+    "value": 7,
+    "stackable": true,
+    "maxStack": 99
+   },
+   "quantity": 2
+  }
+ ],
+ "socialState": {
+  "npc-base": {
+   "friendship": 250,
+   "giftsToday": 1
+  }
+ },
+ "mineDeepestFloor": 4
+}

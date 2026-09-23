@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Rendering</RootNamespace>
+    <Description>2D world renderer on SkiaSharp — port of packages/renderer-canvas2d.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+    <PackageReference Include="Avalonia.Skia" />
+  </ItemGroup>
+</Project>

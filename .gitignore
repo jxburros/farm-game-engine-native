@@ -1,0 +1,16 @@
+bin/
+obj/
+artifacts/
+publish/
+Releases/
+TestResults/
+*.user
+*.suo
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.DotSettings.user
+node_modules/
+.DS_Store
+tools/golden/.work/

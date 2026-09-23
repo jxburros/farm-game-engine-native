@@ -1,0 +1,48 @@
+{
+  "id": "project-1",
+  "name": "Legacy V1 Farm",
+  "version": "1.0",
+  "scenes": [
+    {
+      "id": "scene-farm",
+      "name": "Farm",
+      "width": 3,
+      "height": 2,
+      "tiles": [
+        [
+          { "x": 0, "y": 0, "type": "wall", "collision": true },
+          { "x": 1, "y": 0, "type": "grass", "collision": false },
+          { "x": 2, "y": 0, "type": "path", "collision": false }
+        ],
+        [
+          { "x": 0, "y": 1, "type": "soil", "collision": false, "crop": { "type": "wheat", "plantedAt": 1000, "stage": 1, "watered": true, "quality": "normal", "mutation": null, "harvestCount": 0, "daysWithoutWater": 0 } },
+          { "x": 1, "y": 1, "type": "door", "collision": false },
+          { "x": 2, "y": 1, "type": "water", "collision": true }
+        ]
+      ],
+      "transitions": [],
+      "npcs": [],
+      "events": []
+    }
+  ],
+  "npcs": [],
+  "items": [],
+  "events": [],
+  "dialogues": [],
+  "player": {
+    "x": 1,
+    "y": 0,
+    "direction": "down",
+    "sceneId": "scene-farm",
+    "inventory": [],
+    "maxInventorySize": 20,
+    "money": 100
+  },
+  "eventFlags": {},
+  "startSceneId": "scene-farm",
+  "mode": "play",
+  "selectedTileType": "grass",
+  "selectedNPCId": null,
+  "selectedItemId": null,
+  "currentTime": 5000
+}

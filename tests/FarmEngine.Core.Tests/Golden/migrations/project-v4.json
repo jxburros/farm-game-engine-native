@@ -1,0 +1,710 @@
+{
+  "input": {
+    "schemaVersion": 4,
+    "id": "project-1",
+    "name": "Current V3 Farm",
+    "version": "2.0",
+    "scenes": [
+      {
+        "id": "scene-farm",
+        "name": "Farm",
+        "width": 2,
+        "height": 1,
+        "tiles": [
+          [
+            {
+              "x": 0,
+              "y": 0,
+              "type": "grass",
+              "background": "grass",
+              "overlay": null,
+              "object": null,
+              "collision": false,
+              "soilMoisture": 0,
+              "soilFertility": 0
+            },
+            {
+              "x": 1,
+              "y": 0,
+              "type": "soil",
+              "background": "soil",
+              "overlay": null,
+              "object": null,
+              "collision": false,
+              "soilMoisture": 50,
+              "soilFertility": 100,
+              "soilState": "fertilized"
+            }
+          ]
+        ],
+        "transitions": [],
+        "npcs": [],
+        "events": []
+      }
+    ],
+    "npcs": [],
+    "items": [],
+    "events": [
+      {
+        "id": "evt-legacy",
+        "name": "Old Event",
+        "sceneId": "scene-farm",
+        "triggerType": "location",
+        "triggerX": 1,
+        "triggerY": 0,
+        "outcomes": [
+          {
+            "type": "message",
+            "message": "Old!"
+          }
+        ],
+        "active": true,
+        "repeatable": false
+      }
+    ],
+    "dialogues": [],
+    "quests": [],
+    "player": {
+      "x": 0,
+      "y": 0,
+      "direction": "down",
+      "sceneId": "scene-farm",
+      "inventory": [],
+      "maxInventorySize": 20,
+      "money": 500,
+      "activeQuests": [],
+      "completedQuests": [],
+      "pixelX": 0,
+      "pixelY": 0,
+      "targetX": 0,
+      "targetY": 0,
+      "energy": 80,
+      "maxEnergy": 100
+    },
+    "eventFlags": {},
+    "startSceneId": "scene-farm",
+    "mode": "play",
+    "selectedTileType": "grass",
+    "selectedNPCId": null,
+    "selectedItemId": null,
+    "currentTime": 0,
+    "customAssets": [],
+    "currentSeason": "spring",
+    "currentDay": 1,
+    "gameStartTime": 0,
+    "currentTimeMinutes": 360,
+    "currentYear": 1,
+    "shops": [
+      {
+        "id": "shop-x",
+        "name": "Shop X",
+        "stock": [
+          {
+            "itemId": "seed-wheat"
+          }
+        ],
+        "sellPriceMultiplier": 1,
+        "buysItems": true,
+        "repairsTools": false,
+        "repairCostPerPoint": 0.5
+      }
+    ],
+    "nodeTypes": [],
+    "settings": {
+      "energyEnabled": true,
+      "maxEnergy": 100,
+      "collapseEnergyFraction": 0.5,
+      "collapseMoneyPenalty": 50,
+      "time": {
+        "dayStartMinute": 360,
+        "dayEndMinute": 1560,
+        "minutesPerRealSecond": 1
+      }
+    }
+  },
+  "result": {
+    "ok": true,
+    "data": {
+      "schemaVersion": 8,
+      "id": "project-1",
+      "name": "Current V3 Farm",
+      "version": "2.0",
+      "scenes": [
+        {
+          "id": "scene-farm",
+          "name": "Farm",
+          "width": 2,
+          "height": 1,
+          "tiles": [
+            [
+              {
+                "x": 0,
+                "y": 0,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilState": "fertilized",
+                "soilMoisture": 50,
+                "soilFertility": 100
+              }
+            ]
+          ],
+          "transitions": [],
+          "npcs": [],
+          "events": []
+        }
+      ],
+      "npcs": [],
+      "items": [],
+      "events": [
+        {
+          "id": "evt-legacy",
+          "name": "Old Event",
+          "sceneId": "scene-farm",
+          "trigger": "enter",
+          "conditions": [
+            {
+              "type": "enterTile",
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "outcomes": [
+            {
+              "type": "message",
+              "message": "Old!"
+            }
+          ],
+          "active": true,
+          "repeatable": false,
+          "triggerType": "location",
+          "triggerX": 1,
+          "triggerY": 0
+        }
+      ],
+      "dialogues": [],
+      "quests": [],
+      "player": {
+        "x": 0,
+        "y": 0,
+        "direction": "down",
+        "sceneId": "scene-farm",
+        "inventory": [],
+        "maxInventorySize": 20,
+        "money": 500,
+        "energy": 80,
+        "maxEnergy": 100,
+        "activeQuests": [],
+        "completedQuests": [],
+        "pixelX": 0,
+        "pixelY": 0,
+        "targetX": 0,
+        "targetY": 0
+      },
+      "eventFlags": {},
+      "startSceneId": "scene-farm",
+      "mode": "play",
+      "selectedTileType": "grass",
+      "selectedNPCId": null,
+      "selectedItemId": null,
+      "currentTime": 0,
+      "customAssets": [],
+      "graphics": {
+        "pixelArt": true
+      },
+      "currentSeason": "spring",
+      "currentDay": 1,
+      "currentTimeMinutes": 360,
+      "currentYear": 1,
+      "gameStartTime": 0,
+      "shops": [
+        {
+          "id": "shop-x",
+          "name": "Shop X",
+          "stock": [
+            {
+              "itemId": "seed-wheat"
+            }
+          ],
+          "sellPriceMultiplier": 1,
+          "buysItems": true,
+          "repairsTools": false,
+          "repairCostPerPoint": 0.5
+        }
+      ],
+      "nodeTypes": [],
+      "settings": {
+        "movement": {
+          "playerSpeed": 4.5
+        },
+        "energyEnabled": true,
+        "maxEnergy": 100,
+        "collapseEnergyFraction": 0.5,
+        "collapseMoneyPenalty": 50,
+        "time": {
+          "dayStartMinute": 360,
+          "dayEndMinute": 1560,
+          "minutesPerRealSecond": 1
+        },
+        "calendar": {
+          "seasons": [
+            {
+              "id": "spring",
+              "name": "Spring",
+              "days": 28
+            },
+            {
+              "id": "summer",
+              "name": "Summer",
+              "days": 28
+            },
+            {
+              "id": "fall",
+              "name": "Fall",
+              "days": 28
+            },
+            {
+              "id": "winter",
+              "name": "Winter",
+              "days": 28
+            }
+          ],
+          "festivals": []
+        },
+        "skillsEnabled": true,
+        "skillLevelCurve": [
+          0,
+          50,
+          150,
+          300,
+          500,
+          750,
+          1050,
+          1400,
+          1800,
+          2250
+        ],
+        "locale": "en",
+        "showMadeWithCredit": false
+      },
+      "recipes": [],
+      "machineTypes": [],
+      "weather": {
+        "types": [
+          {
+            "id": "sun",
+            "name": "Sunny",
+            "watersOutdoorSoil": false,
+            "cropDamageChance": 0,
+            "npcsStayInside": false,
+            "overlay": null
+          },
+          {
+            "id": "rain",
+            "name": "Rain",
+            "watersOutdoorSoil": true,
+            "cropDamageChance": 0,
+            "npcsStayInside": false,
+            "overlay": "rain"
+          },
+          {
+            "id": "storm",
+            "name": "Storm",
+            "watersOutdoorSoil": true,
+            "cropDamageChance": 0.03,
+            "npcsStayInside": true,
+            "overlay": "rain"
+          },
+          {
+            "id": "snow",
+            "name": "Snow",
+            "watersOutdoorSoil": false,
+            "cropDamageChance": 0,
+            "npcsStayInside": false,
+            "overlay": "snow"
+          }
+        ],
+        "table": {
+          "spring": [
+            {
+              "weatherId": "sun",
+              "weight": 6
+            },
+            {
+              "weatherId": "rain",
+              "weight": 3
+            },
+            {
+              "weatherId": "storm",
+              "weight": 1
+            }
+          ],
+          "summer": [
+            {
+              "weatherId": "sun",
+              "weight": 7
+            },
+            {
+              "weatherId": "rain",
+              "weight": 1
+            },
+            {
+              "weatherId": "storm",
+              "weight": 2
+            }
+          ],
+          "fall": [
+            {
+              "weatherId": "sun",
+              "weight": 6
+            },
+            {
+              "weatherId": "rain",
+              "weight": 3
+            },
+            {
+              "weatherId": "storm",
+              "weight": 1
+            }
+          ],
+          "winter": [
+            {
+              "weatherId": "sun",
+              "weight": 5
+            },
+            {
+              "weatherId": "snow",
+              "weight": 5
+            }
+          ]
+        }
+      },
+      "animalSpecies": [],
+      "animals": [],
+      "fishTables": [],
+      "mine": {
+        "enabled": false,
+        "floors": 20,
+        "floorWidth": 14,
+        "floorHeight": 12,
+        "bands": [],
+        "ladderChance": 0.18,
+        "elevatorEvery": 5
+      },
+      "actions": [],
+      "minigames": [],
+      "contentPacks": []
+    },
+    "fromVersion": 4,
+    "migrated": true,
+    "errors": []
+  },
+  "stable": "{\"actions\":[],\"animalSpecies\":[],\"animals\":[],\"contentPacks\":[],\"currentDay\":1,\"currentSeason\":\"spring\",\"currentTime\":0,\"currentTimeMinutes\":360,\"currentYear\":1,\"customAssets\":[],\"dialogues\":[],\"eventFlags\":{},\"events\":[{\"active\":true,\"conditions\":[{\"type\":\"enterTile\",\"x\":1,\"y\":0}],\"id\":\"evt-legacy\",\"name\":\"Old Event\",\"outcomes\":[{\"message\":\"Old!\",\"type\":\"message\"}],\"repeatable\":false,\"sceneId\":\"scene-farm\",\"trigger\":\"enter\",\"triggerType\":\"location\",\"triggerX\":1,\"triggerY\":0}],\"fishTables\":[],\"gameStartTime\":0,\"graphics\":{\"pixelArt\":true},\"id\":\"project-1\",\"items\":[],\"machineTypes\":[],\"mine\":{\"bands\":[],\"elevatorEvery\":5,\"enabled\":false,\"floorHeight\":12,\"floorWidth\":14,\"floors\":20,\"ladderChance\":0.18},\"minigames\":[],\"mode\":\"play\",\"name\":\"Current V3 Farm\",\"nodeTypes\":[],\"npcs\":[],\"player\":{\"activeQuests\":[],\"completedQuests\":[],\"direction\":\"down\",\"energy\":80,\"inventory\":[],\"maxEnergy\":100,\"maxInventorySize\":20,\"money\":500,\"pixelX\":0,\"pixelY\":0,\"sceneId\":\"scene-farm\",\"targetX\":0,\"targetY\":0,\"x\":0,\"y\":0},\"quests\":[],\"recipes\":[],\"scenes\":[{\"events\":[],\"height\":1,\"id\":\"scene-farm\",\"name\":\"Farm\",\"npcs\":[],\"tiles\":[[{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":0,\"y\":0},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":100,\"soilMoisture\":50,\"soilState\":\"fertilized\",\"type\":\"soil\",\"x\":1,\"y\":0}]],\"transitions\":[],\"width\":2}],\"schemaVersion\":8,\"selectedItemId\":null,\"selectedNPCId\":null,\"selectedTileType\":\"grass\",\"settings\":{\"calendar\":{\"festivals\":[],\"seasons\":[{\"days\":28,\"id\":\"spring\",\"name\":\"Spring\"},{\"days\":28,\"id\":\"summer\",\"name\":\"Summer\"},{\"days\":28,\"id\":\"fall\",\"name\":\"Fall\"},{\"days\":28,\"id\":\"winter\",\"name\":\"Winter\"}]},\"collapseEnergyFraction\":0.5,\"collapseMoneyPenalty\":50,\"energyEnabled\":true,\"locale\":\"en\",\"maxEnergy\":100,\"movement\":{\"playerSpeed\":4.5},\"showMadeWithCredit\":false,\"skillLevelCurve\":[0,50,150,300,500,750,1050,1400,1800,2250],\"skillsEnabled\":true,\"time\":{\"dayEndMinute\":1560,\"dayStartMinute\":360,\"minutesPerRealSecond\":1}},\"shops\":[{\"buysItems\":true,\"id\":\"shop-x\",\"name\":\"Shop X\",\"repairCostPerPoint\":0.5,\"repairsTools\":false,\"sellPriceMultiplier\":1,\"stock\":[{\"itemId\":\"seed-wheat\"}]}],\"startSceneId\":\"scene-farm\",\"version\":\"2.0\",\"weather\":{\"table\":{\"fall\":[{\"weatherId\":\"sun\",\"weight\":6},{\"weatherId\":\"rain\",\"weight\":3},{\"weatherId\":\"storm\",\"weight\":1}],\"spring\":[{\"weatherId\":\"sun\",\"weight\":6},{\"weatherId\":\"rain\",\"weight\":3},{\"weatherId\":\"storm\",\"weight\":1}],\"summer\":[{\"weatherId\":\"sun\",\"weight\":7},{\"weatherId\":\"rain\",\"weight\":1},{\"weatherId\":\"storm\",\"weight\":2}],\"winter\":[{\"weatherId\":\"sun\",\"weight\":5},{\"weatherId\":\"snow\",\"weight\":5}]},\"types\":[{\"cropDamageChance\":0,\"id\":\"sun\",\"name\":\"Sunny\",\"npcsStayInside\":false,\"overlay\":null,\"watersOutdoorSoil\":false},{\"cropDamageChance\":0,\"id\":\"rain\",\"name\":\"Rain\",\"npcsStayInside\":false,\"overlay\":\"rain\",\"watersOutdoorSoil\":true},{\"cropDamageChance\":0.03,\"id\":\"storm\",\"name\":\"Storm\",\"npcsStayInside\":true,\"overlay\":\"rain\",\"watersOutdoorSoil\":true},{\"cropDamageChance\":0,\"id\":\"snow\",\"name\":\"Snow\",\"npcsStayInside\":false,\"overlay\":\"snow\",\"watersOutdoorSoil\":false}]}}",
+  "hash": "1e1c3ee95e58a27a",
+  "exported": {
+    "result": {
+      "ok": true,
+      "data": {
+        "schemaVersion": 8,
+        "version": "2.0",
+        "name": "Current V3 Farm",
+        "scenes": [
+          {
+            "id": "scene-farm",
+            "name": "Farm",
+            "width": 2,
+            "height": 1,
+            "tiles": [
+              [
+                {
+                  "x": 0,
+                  "y": 0,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilState": "fertilized",
+                  "soilMoisture": 50,
+                  "soilFertility": 100
+                }
+              ]
+            ],
+            "transitions": [],
+            "npcs": [],
+            "events": []
+          }
+        ],
+        "npcs": [],
+        "items": [],
+        "events": [
+          {
+            "id": "evt-legacy",
+            "name": "Old Event",
+            "sceneId": "scene-farm",
+            "trigger": "enter",
+            "conditions": [
+              {
+                "type": "enterTile",
+                "x": 1,
+                "y": 0
+              }
+            ],
+            "outcomes": [
+              {
+                "type": "message",
+                "message": "Old!"
+              }
+            ],
+            "active": true,
+            "repeatable": false,
+            "triggerType": "location",
+            "triggerX": 1,
+            "triggerY": 0
+          }
+        ],
+        "dialogues": [],
+        "quests": [],
+        "startSceneId": "scene-farm",
+        "customAssets": [],
+        "graphics": {
+          "pixelArt": true
+        },
+        "currentSeason": "spring",
+        "currentDay": 1,
+        "currentTimeMinutes": 360,
+        "currentYear": 1,
+        "gameStartTime": 0,
+        "shops": [
+          {
+            "id": "shop-x",
+            "name": "Shop X",
+            "stock": [
+              {
+                "itemId": "seed-wheat"
+              }
+            ],
+            "sellPriceMultiplier": 1,
+            "buysItems": true,
+            "repairsTools": false,
+            "repairCostPerPoint": 0.5
+          }
+        ],
+        "nodeTypes": [],
+        "settings": {
+          "movement": {
+            "playerSpeed": 4.5
+          },
+          "energyEnabled": true,
+          "maxEnergy": 100,
+          "collapseEnergyFraction": 0.5,
+          "collapseMoneyPenalty": 50,
+          "time": {
+            "dayStartMinute": 360,
+            "dayEndMinute": 1560,
+            "minutesPerRealSecond": 1
+          },
+          "calendar": {
+            "seasons": [
+              {
+                "id": "spring",
+                "name": "Spring",
+                "days": 28
+              },
+              {
+                "id": "summer",
+                "name": "Summer",
+                "days": 28
+              },
+              {
+                "id": "fall",
+                "name": "Fall",
+                "days": 28
+              },
+              {
+                "id": "winter",
+                "name": "Winter",
+                "days": 28
+              }
+            ],
+            "festivals": []
+          },
+          "skillsEnabled": true,
+          "skillLevelCurve": [
+            0,
+            50,
+            150,
+            300,
+            500,
+            750,
+            1050,
+            1400,
+            1800,
+            2250
+          ],
+          "locale": "en",
+          "showMadeWithCredit": false
+        },
+        "recipes": [],
+        "machineTypes": [],
+        "weather": {
+          "types": [
+            {
+              "id": "sun",
+              "name": "Sunny",
+              "watersOutdoorSoil": false,
+              "cropDamageChance": 0,
+              "npcsStayInside": false,
+              "overlay": null
+            },
+            {
+              "id": "rain",
+              "name": "Rain",
+              "watersOutdoorSoil": true,
+              "cropDamageChance": 0,
+              "npcsStayInside": false,
+              "overlay": "rain"
+            },
+            {
+              "id": "storm",
+              "name": "Storm",
+              "watersOutdoorSoil": true,
+              "cropDamageChance": 0.03,
+              "npcsStayInside": true,
+              "overlay": "rain"
+            },
+            {
+              "id": "snow",
+              "name": "Snow",
+              "watersOutdoorSoil": false,
+              "cropDamageChance": 0,
+              "npcsStayInside": false,
+              "overlay": "snow"
+            }
+          ],
+          "table": {
+            "spring": [
+              {
+                "weatherId": "sun",
+                "weight": 6
+              },
+              {
+                "weatherId": "rain",
+                "weight": 3
+              },
+              {
+                "weatherId": "storm",
+                "weight": 1
+              }
+            ],
+            "summer": [
+              {
+                "weatherId": "sun",
+                "weight": 7
+              },
+              {
+                "weatherId": "rain",
+                "weight": 1
+              },
+              {
+                "weatherId": "storm",
+                "weight": 2
+              }
+            ],
+            "fall": [
+              {
+                "weatherId": "sun",
+                "weight": 6
+              },
+              {
+                "weatherId": "rain",
+                "weight": 3
+              },
+              {
+                "weatherId": "storm",
+                "weight": 1
+              }
+            ],
+            "winter": [
+              {
+                "weatherId": "sun",
+                "weight": 5
+              },
+              {
+                "weatherId": "snow",
+                "weight": 5
+              }
+            ]
+          }
+        },
+        "animalSpecies": [],
+        "animals": [],
+        "fishTables": [],
+        "mine": {
+          "enabled": false,
+          "floors": 20,
+          "floorWidth": 14,
+          "floorHeight": 12,
+          "bands": [],
+          "ladderChance": 0.18,
+          "elevatorEvery": 5
+        },
+        "actions": [],
+        "minigames": [],
+        "contentPacks": [],
+        "player": {
+          "x": 0,
+          "y": 0,
+          "direction": "down",
+          "sceneId": "scene-farm",
+          "inventory": [],
+          "maxInventorySize": 20,
+          "money": 500,
+          "energy": 80,
+          "maxEnergy": 100,
+          "activeQuests": [],
+          "completedQuests": [],
+          "pixelX": 0,
+          "pixelY": 0,
+          "targetX": 0,
+          "targetY": 0
+        },
+        "id": "project-1",
+        "eventFlags": {},
+        "mode": "play",
+        "selectedTileType": "grass",
+        "selectedNPCId": null,
+        "selectedItemId": null,
+        "currentTime": 0
+      },
+      "fromVersion": 4,
+      "migrated": true,
+      "errors": []
+    },
+    "stable": "{\"actions\":[],\"animalSpecies\":[],\"animals\":[],\"contentPacks\":[],\"currentDay\":1,\"currentSeason\":\"spring\",\"currentTime\":0,\"currentTimeMinutes\":360,\"currentYear\":1,\"customAssets\":[],\"dialogues\":[],\"eventFlags\":{},\"events\":[{\"active\":true,\"conditions\":[{\"type\":\"enterTile\",\"x\":1,\"y\":0}],\"id\":\"evt-legacy\",\"name\":\"Old Event\",\"outcomes\":[{\"message\":\"Old!\",\"type\":\"message\"}],\"repeatable\":false,\"sceneId\":\"scene-farm\",\"trigger\":\"enter\",\"triggerType\":\"location\",\"triggerX\":1,\"triggerY\":0}],\"fishTables\":[],\"gameStartTime\":0,\"graphics\":{\"pixelArt\":true},\"id\":\"project-1\",\"items\":[],\"machineTypes\":[],\"mine\":{\"bands\":[],\"elevatorEvery\":5,\"enabled\":false,\"floorHeight\":12,\"floorWidth\":14,\"floors\":20,\"ladderChance\":0.18},\"minigames\":[],\"mode\":\"play\",\"name\":\"Current V3 Farm\",\"nodeTypes\":[],\"npcs\":[],\"player\":{\"activeQuests\":[],\"completedQuests\":[],\"direction\":\"down\",\"energy\":80,\"inventory\":[],\"maxEnergy\":100,\"maxInventorySize\":20,\"money\":500,\"pixelX\":0,\"pixelY\":0,\"sceneId\":\"scene-farm\",\"targetX\":0,\"targetY\":0,\"x\":0,\"y\":0},\"quests\":[],\"recipes\":[],\"scenes\":[{\"events\":[],\"height\":1,\"id\":\"scene-farm\",\"name\":\"Farm\",\"npcs\":[],\"tiles\":[[{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":0,\"y\":0},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":100,\"soilMoisture\":50,\"soilState\":\"fertilized\",\"type\":\"soil\",\"x\":1,\"y\":0}]],\"transitions\":[],\"width\":2}],\"schemaVersion\":8,\"selectedItemId\":null,\"selectedNPCId\":null,\"selectedTileType\":\"grass\",\"settings\":{\"calendar\":{\"festivals\":[],\"seasons\":[{\"days\":28,\"id\":\"spring\",\"name\":\"Spring\"},{\"days\":28,\"id\":\"summer\",\"name\":\"Summer\"},{\"days\":28,\"id\":\"fall\",\"name\":\"Fall\"},{\"days\":28,\"id\":\"winter\",\"name\":\"Winter\"}]},\"collapseEnergyFraction\":0.5,\"collapseMoneyPenalty\":50,\"energyEnabled\":true,\"locale\":\"en\",\"maxEnergy\":100,\"movement\":{\"playerSpeed\":4.5},\"showMadeWithCredit\":false,\"skillLevelCurve\":[0,50,150,300,500,750,1050,1400,1800,2250],\"skillsEnabled\":true,\"time\":{\"dayEndMinute\":1560,\"dayStartMinute\":360,\"minutesPerRealSecond\":1}},\"shops\":[{\"buysItems\":true,\"id\":\"shop-x\",\"name\":\"Shop X\",\"repairCostPerPoint\":0.5,\"repairsTools\":false,\"sellPriceMultiplier\":1,\"stock\":[{\"itemId\":\"seed-wheat\"}]}],\"startSceneId\":\"scene-farm\",\"version\":\"2.0\",\"weather\":{\"table\":{\"fall\":[{\"weatherId\":\"sun\",\"weight\":6},{\"weatherId\":\"rain\",\"weight\":3},{\"weatherId\":\"storm\",\"weight\":1}],\"spring\":[{\"weatherId\":\"sun\",\"weight\":6},{\"weatherId\":\"rain\",\"weight\":3},{\"weatherId\":\"storm\",\"weight\":1}],\"summer\":[{\"weatherId\":\"sun\",\"weight\":7},{\"weatherId\":\"rain\",\"weight\":1},{\"weatherId\":\"storm\",\"weight\":2}],\"winter\":[{\"weatherId\":\"sun\",\"weight\":5},{\"weatherId\":\"snow\",\"weight\":5}]},\"types\":[{\"cropDamageChance\":0,\"id\":\"sun\",\"name\":\"Sunny\",\"npcsStayInside\":false,\"overlay\":null,\"watersOutdoorSoil\":false},{\"cropDamageChance\":0,\"id\":\"rain\",\"name\":\"Rain\",\"npcsStayInside\":false,\"overlay\":\"rain\",\"watersOutdoorSoil\":true},{\"cropDamageChance\":0.03,\"id\":\"storm\",\"name\":\"Storm\",\"npcsStayInside\":true,\"overlay\":\"rain\",\"watersOutdoorSoil\":true},{\"cropDamageChance\":0,\"id\":\"snow\",\"name\":\"Snow\",\"npcsStayInside\":false,\"overlay\":\"snow\",\"watersOutdoorSoil\":false}]}}"
+  }
+}

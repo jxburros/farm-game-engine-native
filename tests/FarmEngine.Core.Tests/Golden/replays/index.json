@@ -1,0 +1,140 @@
+[
+  {
+    "name": "replay-three-days",
+    "description": "replay.test.ts THREE_DAYS on makeFarmProject (seed \"golden\"); final hash must equal the committed TS golden 6f884fd1bf6e2b5e.",
+    "seed": "golden",
+    "autoStartQuests": false
+  },
+  {
+    "name": "fuzz-thousand-commands",
+    "description": "replay.test.ts 1,000 LCG-generated discrete commands (move/interact/tools/sleep/closeDialogue + small tick runs) on makeFarmProject.",
+    "seed": "thousand",
+    "autoStartQuests": false
+  },
+  {
+    "name": "starter-farm-first-week",
+    "description": "Starter Farm sample game (content-default): plant/water wheat, trail-mix useItem, harvest → First Harvest quest, merchant dialogue → shop (sell/buy/daily limit/season lock), buy axe, chop tree, farmer dialogue branch, 24000-tick run to 26:00 collapse.",
+    "seed": "starter-golden",
+    "autoStartQuests": true
+  },
+  {
+    "name": "cozy-garden-slow-day",
+    "description": "Cozy Garden sample game: energy disabled (tool spam costs nothing), 0.5 min/s clock, collapse penalty 0 after a 48000-tick day.",
+    "seed": "cozy",
+    "autoStartQuests": true
+  },
+  {
+    "name": "quest-rpg-rebuild-square",
+    "description": "Quest RPG sample game: elder dialogue offers a quest, sell starting kit, buy axe+pickaxe, chop trees and break rocks (collect objectives, rock respawn over days) until \"Rebuild the Square\" completes.",
+    "seed": "quest-rpg",
+    "autoStartQuests": true
+  },
+  {
+    "name": "blank-idle-collapse",
+    "description": "Blank sample project with seed=null (engineSeed = \"<id>:<gameStartTime>\"), free-walk, missing-tool message, 24000+ idle ticks → collapse at 26:00 with $50 penalty.",
+    "seed": null,
+    "autoStartQuests": false
+  },
+  {
+    "name": "free-movement",
+    "description": "Free movement: intent clamping/truncation, integration at 4.5 tiles/s, ground pickups (and full-inventory abort for discrete moves vs. free movement), scene transitions both ways, wall sliding on diagonals, NPC and bounds collision, enter-region and tick events, 1300-tick held-intent runs.",
+    "seed": "free-move",
+    "autoStartQuests": false
+  },
+  {
+    "name": "farming-lifecycle",
+    "description": "Hoe tilling, multi-tile cauliflower, fertilizer quality, tier-2 AoE watering, day-based growth over sleeps, interact + scythe harvests, spring→summer wither and scythe clearing, season-locked planting, regrowing tomatoes harvested twice, an unwatered crop, 1300-tick runs.",
+    "seed": "farming",
+    "autoStartQuests": false
+  },
+  {
+    "name": "gathering-and-tools",
+    "description": "Gathering nodes: wrong-tool and too-weak-tier messages, project node-type override + custom multi-drop node, tool durability to breakage, shop repair, tier-2 pickaxe power, respawning stump/rock/crystal/weeds across days, walkable weeds, foraging/mining XP, low-energy warning and exhaustion collapse from tool spam.",
+    "seed": "gathering",
+    "autoStartQuests": false
+  },
+  {
+    "name": "shop-economy",
+    "description": "Shops: no-shop and unknown-shop errors, price overrides, daily limits (partial/sold out, reset after sleep), season-gated stock, unknown/not-stocked items, zero quantities, sell multipliers with flooring, non-buying and non-repairing shops, full inventory, insufficient money, dialogue openShopId (valid and missing shop).",
+    "seed": "shop",
+    "autoStartQuests": false
+  },
+  {
+    "name": "dialogue-and-social",
+    "description": "Dialogue trees (giveMoney, giveItem xN, nextDialogueId, global dialogue lookup, missing next, out-of-range index, closeDialogue), visibility gates (friendship/item/flag), option-bound action + offerQuestId, daily gifting with all five taste reactions, birthday doubling, gift quest completion with item rewards, friendship-gated tick event, plugin modifyFriendship, wandering NPC talk quest.",
+    "seed": "social",
+    "autoStartQuests": false
+  },
+  {
+    "name": "events-showcase",
+    "description": "Event runtime: enter/interact/tick triggers, region + flag + inventorySpace + hasItem + dayRange + season + yearRange + weather + questStatus + timeOfDay conditions, fire-once vs repeatable, inactive events, outcomes message/giveMoney/setFlag/playSound/giveItem/takeItem/unlockTransition/lockTransition/removeNPC/spawnNPC/changeTile/startDialogue/waterArea/startQuest/performAction(modifyEnergy)/warpPlayer/completeQuest/modifyFriendship/clearFlag/takeMoney/unlockScene/startMinigame.",
+    "seed": "events",
+    "autoStartQuests": false
+  },
+  {
+    "name": "crafting-and-machines",
+    "description": "Crafting on the Starter Farm catalog: unknown/machine-only/locked/station-gated recipe errors, hand crafts (hay, furnace, kitchen, jar, soup, charm), craft quest objective, skill unlock via plugin grantXp, place/load/settle/collect machines across ticks (furnace, 2400 ticks) and overnight (preserves), wrong-recipe/idle/busy messages, machine collision, magic altar + useItem charm.",
+    "seed": "crafting",
+    "autoStartQuests": false
+  },
+  {
+    "name": "weather-seasons-long-run",
+    "description": "Starter Farm with the default 4-type weather table over 120 days: rain auto-watering, storm crop damage + NPCs staying inside, snow, all four season rollovers and a year rollover, daily water/harvest/replant with a tier-2 can and scythe, a scheduled NPC (walks on clear days, stays in during storms), 1400+1300-tick runs every 7th day.",
+    "seed": "weather-long",
+    "autoStartQuests": false
+  },
+  {
+    "name": "animals-ranch",
+    "description": "Ranching: feed → collect → pet priority, \"content\" once done, eggs (interval 1) and milk (interval 2, cow grows to adult), a neglected day (mood −15, no product), a low-mood chicken that never produces, an unknown-species animal that is ignored.",
+    "seed": "ranch",
+    "autoStartQuests": false
+  },
+  {
+    "name": "fishing-instant",
+    "description": "Fishing without a fishing minigame: scene/season-filtered tables (empty table skipped), junk rolls, weighted fish, escape rolls, fishing XP, collect-quest completion, 3 energy per cast until exhaustion collapse, and a scene with no table (\"The water is quiet\").",
+    "seed": "fishing",
+    "autoStartQuests": false
+  },
+  {
+    "name": "fishing-minigame",
+    "description": "Fishing with a declared \"fishing\" minigame and a tier-3 rod: cast opens a session (movement frozen while open), scores 1/0/0.5/out-of-range resolve the pending catch + score tiers, cancel, casting again while a session is open (instant path), resolve with no session.",
+    "seed": "fishing-mg",
+    "autoStartQuests": false
+  },
+  {
+    "name": "mines-descent",
+    "description": "Mining: entrance interact, procedurally generated floors (seeded per engineSeed+floor), pickaxe strikes on band rocks with drops, iron needing tier 2, ladder reveals and stepping onto ladders to descend, elevator checkpoints, descendMine clamping, exit by interacting with the entry tile and via exitMine (generated floors dropped).",
+    "seed": "mines",
+    "autoStartQuests": false
+  },
+  {
+    "name": "calendar-festivals",
+    "description": "Custom calendar (Thaw 5 / Bloom 4 / Frost 3 days) over 2+ years: season/year rollovers, festival announcements and a festivalId-gated event, custom-season crop withering, season-gated quest availability, weather-table fallback for seasons without a table, custom time (300→1200 at 30 min/s, 2-minute boundary jumps) with day-end collapses (25$ penalty, 25% energy), settings.maxEnergy.",
+    "seed": "calendar",
+    "autoStartQuests": false
+  },
+  {
+    "name": "actions-items-minigames",
+    "description": "Creator actions (unknown, outcomes, gated with failMessage, energy cost, recursion depth cap, exhaustion collapse aborting outcomes), dialogue-option actionId, useItem (consume on success only, non-consumable, not usable, not held), minigames (start, frozen movement, tiered resolve incl. clamping, no-tier resolve, unknown, cancel, resolve without session, start while open).",
+    "seed": "extensibility",
+    "autoStartQuests": false
+  },
+  {
+    "name": "content-packs-and-plugins",
+    "description": "Starter Farm + 5 installed packs (dependency hoisting, namespacing, cross-pack refs, declared override vs. undeclared conflict, disabled pack quarantine + quarantined item restore, fr locale string tables), namespaced glowshroom grown in fall, namespaced vat machine without an item, pack recipe craft, and every pluginMutation type (valid and failing).",
+    "seed": "packs",
+    "autoStartQuests": true
+  },
+  {
+    "name": "npc-schedules-and-movement",
+    "description": "NPC runtime on minute boundaries: A* schedule walking around walls (sorted schedule, latest entry wins), cross-scene teleport, unreachable goal, patrol loop through a rock/weeds field, seeded wander within radius, player-adjacency pause, player blocking paths, storms keeping scheduled NPCs home, several full days of ticks.",
+    "seed": "npcs",
+    "autoStartQuests": false
+  },
+  {
+    "name": "legacy-v1-fixture-play",
+    "description": "tests/fixtures/project-v1.json migrated v1→v8 (layered tiles, backfills, default weather/settings) and played: legacy crop without daysGrown grows over sleeps (watered flag from v1), door tile walking, blocked moves, default weather rolls.",
+    "seed": "legacy-v1",
+    "autoStartQuests": false
+  }
+]
