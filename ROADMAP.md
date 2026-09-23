@@ -23,6 +23,10 @@ Each phase ships as a normal release through the Update Center.
 
 ## Next — editor port
 
+Port each part following the checklist in
+[docs/LANGUAGES.md](docs/LANGUAGES.md#checklist-porting-a-new-part-of-the-web-editor):
+project logic in F#, views in C#, anything that runs in play in Rust.
+
 The web editor lives in `src/components/*` of the web repo (~13k lines of React).
 Ported in rough order of how often creators use each part:
 
@@ -49,6 +53,19 @@ Ported in rough order of how often creators use each part:
    (`ModsEditor.tsx`, `ActionsEditor.tsx`, `src/lib/mod-registry.ts`,
    `src/lib/validate-extensibility.ts`).
 7. **Problems panel and debug drawer** (`ProblemsPanel.tsx`, `DebugDrawer.tsx`).
+
+## Language migration (Rust, F#, C#)
+
+Proposed in [docs/LANGUAGES.md](docs/LANGUAGES.md), which has the details and
+exit criteria for each phase.
+
+1. [ ] Scaffolding: Cargo workspace, FlatBuffers schemas, FFI, F# projects, CI
+2. [ ] Rust core in compatibility mode (all goldens pass in Rust)
+3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
+4. [ ] Switch the app to F# + Rust; delete the C# engine projects
+5. [ ] Editor port on the new stack (the list above)
+6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game
+7. [ ] Native numerics (v9): one engine for web and native
 
 ## Later
 

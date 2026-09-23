@@ -93,6 +93,8 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `FarmingRpgMaker.App` | Avalonia desktop app | `src/` (React app) |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
+[docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust
+and the project logic to F#, with C# keeping the desktop app.
 
 ## Releasing
 

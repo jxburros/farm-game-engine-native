@@ -10,6 +10,11 @@ engine (`tools/golden/`) enforce that in `tests/FarmEngine.Core.Tests`.
 Every rule below exists to keep that guarantee. When in doubt, port the TS
 literally and let the golden tests tell you.
 
+> **Where new code goes:** [LANGUAGES.md](LANGUAGES.md) plans a move of the
+> engine to Rust and of project logic to F#. The C# rules below apply to the
+> code as it is today. They also carry over to the Rust port's compatibility
+> phase, where the same JavaScript semantics apply.
+
 ## Project map
 
 | TypeScript package / folder             | C# project                  | Namespace              |
