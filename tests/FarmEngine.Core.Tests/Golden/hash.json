@@ -1,0 +1,235 @@
+[
+  {
+    "name": "empty-object",
+    "input": {},
+    "stable": "{}",
+    "hash": "5465b8257807bf56"
+  },
+  {
+    "name": "empty-array",
+    "input": [],
+    "stable": "[]",
+    "hash": "741638a538a6be56"
+  },
+  {
+    "name": "null",
+    "input": null,
+    "stable": "null",
+    "hash": "77074ba4d9fff516"
+  },
+  {
+    "name": "true",
+    "input": true,
+    "stable": "true",
+    "hash": "4db211e5d19a8624"
+  },
+  {
+    "name": "zero",
+    "input": 0,
+    "stable": "0",
+    "hash": "350ca8af93ec655f"
+  },
+  {
+    "name": "empty-string",
+    "input": "",
+    "stable": "\"\"",
+    "hash": "ffcaaa8527689802"
+  },
+  {
+    "name": "floats",
+    "input": [
+      0.30000000000000004,
+      1e+21,
+      1e-7,
+      0.000001,
+      123456789012345680000,
+      5e-324,
+      1.7976931348623157e+308,
+      -1.5,
+      100,
+      0.3333333333333333,
+      9007199254740992,
+      9007199254740994,
+      0.000001234,
+      100000000000000000000,
+      1.23e-18,
+      4.35,
+      0.5,
+      {
+        "$js": "-0"
+      },
+      1700000000000,
+      360.05,
+      1439.9999999999998
+    ],
+    "stable": "[0.30000000000000004,1e+21,1e-7,0.000001,123456789012345680000,5e-324,1.7976931348623157e+308,-1.5,100,0.3333333333333333,9007199254740992,9007199254740994,0.000001234,100000000000000000000,1.23e-18,4.35,0.5,0,1700000000000,360.05,1439.9999999999998]",
+    "hash": "0fb3dcaa0550ed78"
+  },
+  {
+    "name": "non-finite",
+    "input": {
+      "nan": {
+        "$js": "NaN"
+      },
+      "inf": {
+        "$js": "Infinity"
+      },
+      "ninf": {
+        "$js": "-Infinity"
+      },
+      "arr": [
+        {
+          "$js": "NaN"
+        },
+        {
+          "$js": "Infinity"
+        },
+        {
+          "$js": "-0"
+        }
+      ]
+    },
+    "stable": "{\"arr\":[null,null,0],\"inf\":null,\"nan\":null,\"ninf\":null}",
+    "hash": "dbdd2d50bc8f9697"
+  },
+  {
+    "name": "undefined-fields",
+    "input": {
+      "a": 1,
+      "b": {
+        "$js": "undefined"
+      },
+      "c": {
+        "d": {
+          "$js": "undefined"
+        },
+        "e": null
+      },
+      "list": [
+        1,
+        {
+          "$js": "undefined"
+        },
+        3
+      ]
+    },
+    "stable": "{\"a\":1,\"c\":{\"e\":null},\"list\":[1,null,3]}",
+    "hash": "29cc8a03739dc620"
+  },
+  {
+    "name": "key-order",
+    "input": {
+      "1": 5,
+      "2": 7,
+      "10": 6,
+      "b": 1,
+      "a": 2,
+      "B": 3,
+      "_": 4,
+      "é": 8,
+      "aa": 9,
+      "a b": 10,
+      "": 11,
+      "￿": 12,
+      "😀": 13,
+      "Z": 14
+    },
+    "stable": "{\"1\":5,\"2\":7,\"10\":6,\"\":11,\"B\":3,\"Z\":14,\"_\":4,\"a\":2,\"a b\":10,\"aa\":9,\"b\":1,\"é\":8,\"😀\":13,\"￿\":12}",
+    "hash": "faa2de55bc35ab7e"
+  },
+  {
+    "name": "nested-key-order",
+    "input": {
+      "z": {
+        "y": [
+          {
+            "b": 1,
+            "a": [
+              {
+                "d": 1,
+                "c": 2
+              }
+            ]
+          }
+        ],
+        "x": {
+          "k": {
+            "j": {
+              "i": "deep"
+            }
+          }
+        }
+      },
+      "a": []
+    },
+    "stable": "{\"a\":[],\"z\":{\"x\":{\"k\":{\"j\":{\"i\":\"deep\"}}},\"y\":[{\"a\":[{\"c\":2,\"d\":1}],\"b\":1}]}}",
+    "hash": "2603683b942ccb77"
+  },
+  {
+    "name": "unicode",
+    "input": {
+      "emoji": "🌾🐔",
+      "accents": "Blé crème brûlée",
+      "cjk": "農場",
+      "rtl": "مزرعة",
+      "lone": "\ud83c",
+      "loneLow": "\udc00x",
+      "bom": "﻿"
+    },
+    "stable": "{\"accents\":\"Blé crème brûlée\",\"bom\":\"﻿\",\"cjk\":\"農場\",\"emoji\":\"🌾🐔\",\"lone\":\"\\ud83c\",\"loneLow\":\"\\udc00x\",\"rtl\":\"مزرعة\"}",
+    "hash": "311e0da68234801a"
+  },
+  {
+    "name": "control-chars",
+    "input": {
+      "all": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f",
+      "del": "",
+      "seps": "  ",
+      "quote": "\"'\\/",
+      "html": "</script><!--"
+    },
+    "stable": "{\"all\":\"\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f\",\"del\":\"\",\"html\":\"</script><!--\",\"quote\":\"\\\"'\\\\/\",\"seps\":\"  \"}",
+    "hash": "c705ddb0ef74eb8a"
+  },
+  {
+    "name": "numbers-as-keys",
+    "input": {
+      "0": "zero",
+      "1": "one",
+      "-1": "neg",
+      "01": "lead",
+      "1.5": "frac"
+    },
+    "stable": "{\"0\":\"zero\",\"1\":\"one\",\"-1\":\"neg\",\"01\":\"lead\",\"1.5\":\"frac\"}",
+    "hash": "b1de0265b3897e86"
+  },
+  {
+    "name": "mixed-array",
+    "input": [
+      1,
+      "two",
+      null,
+      true,
+      {
+        "three": 3
+      },
+      [
+        4,
+        [
+          5
+        ]
+      ],
+      false,
+      0,
+      ""
+    ],
+    "stable": "[1,\"two\",null,true,{\"three\":3},[4,[5]],false,0,\"\"]",
+    "hash": "cdca30080e7f57f0"
+  },
+  {
+    "name": "long-string",
+    "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nyyyyyyyyyy",
+    "stable": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\nyyyyyyyyyy\"",
+    "hash": "eac4f3e1ebb4acc6"
+  }
+]

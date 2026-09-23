@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 4,
+  "id": "project-1",
+  "name": "Current V3 Farm",
+  "version": "2.0",
+  "scenes": [
+    {
+      "id": "scene-farm",
+      "name": "Farm",
+      "width": 2,
+      "height": 1,
+      "tiles": [
+        [
+          {
+            "x": 0,
+            "y": 0,
+            "type": "grass",
+            "background": "grass",
+            "overlay": null,
+            "object": null,
+            "collision": false,
+            "soilMoisture": 0,
+            "soilFertility": 0
+          },
+          {
+            "x": 1,
+            "y": 0,
+            "type": "soil",
+            "background": "soil",
+            "overlay": null,
+            "object": null,
+            "collision": false,
+            "soilMoisture": 50,
+            "soilFertility": 100,
+            "soilState": "fertilized"
+          }
+        ]
+      ],
+      "transitions": [],
+      "npcs": [],
+      "events": []
+    }
+  ],
+  "npcs": [],
+  "items": [],
+  "events": [
+    {
+      "id": "evt-legacy",
+      "name": "Old Event",
+      "sceneId": "scene-farm",
+      "triggerType": "location",
+      "triggerX": 1,
+      "triggerY": 0,
+      "outcomes": [
+        {
+          "type": "message",
+          "message": "Old!"
+        }
+      ],
+      "active": true,
+      "repeatable": false
+    }
+  ],
+  "dialogues": [],
+  "quests": [],
+  "player": {
+    "x": 0,
+    "y": 0,
+    "direction": "down",
+    "sceneId": "scene-farm",
+    "inventory": [],
+    "maxInventorySize": 20,
+    "money": 500,
+    "activeQuests": [],
+    "completedQuests": [],
+    "pixelX": 0,
+    "pixelY": 0,
+    "targetX": 0,
+    "targetY": 0,
+    "energy": 80,
+    "maxEnergy": 100
+  },
+  "eventFlags": {},
+  "startSceneId": "scene-farm",
+  "mode": "play",
+  "selectedTileType": "grass",
+  "selectedNPCId": null,
+  "selectedItemId": null,
+  "currentTime": 0,
+  "customAssets": [],
+  "currentSeason": "spring",
+  "currentDay": 1,
+  "gameStartTime": 0,
+  "currentTimeMinutes": 360,
+  "currentYear": 1,
+  "shops": [
+    {
+      "id": "shop-x",
+      "name": "Shop X",
+      "stock": [
+        {
+          "itemId": "seed-wheat"
+        }
+      ],
+      "sellPriceMultiplier": 1,
+      "buysItems": true,
+      "repairsTools": false,
+      "repairCostPerPoint": 0.5
+    }
+  ],
+  "nodeTypes": [],
+  "settings": {
+    "energyEnabled": true,
+    "maxEnergy": 100,
+    "collapseEnergyFraction": 0.5,
+    "collapseMoneyPenalty": 50,
+    "time": {
+      "dayStartMinute": 360,
+      "dayEndMinute": 1560,
+      "minutesPerRealSecond": 1
+    }
+  }
+}

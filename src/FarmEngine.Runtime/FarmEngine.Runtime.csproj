@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Runtime</RootNamespace>
+    <Description>Host-side runtime: fixed timestep, input mapping, minigames, sandboxed plugins — port of packages/engine-runtime.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+    <PackageReference Include="Jint" />
+  </ItemGroup>
+</Project>

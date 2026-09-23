@@ -1,0 +1,317 @@
+{
+  "id": "edge",
+  "name": null,
+  "version": "0.9",
+  "scenes": [
+    {
+      "id": "scene-a",
+      "name": "A",
+      "width": 4,
+      "height": 2,
+      "tiles": [
+        [
+          {
+            "x": 0,
+            "y": 0,
+            "type": "wall"
+          },
+          {
+            "x": 1,
+            "y": 0,
+            "type": "soil",
+            "collision": null,
+            "crop": {
+              "type": "glowberry",
+              "plantedAt": 0,
+              "stage": 0,
+              "watered": false,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0
+            }
+          },
+          {
+            "x": 2,
+            "y": 0,
+            "type": "soil",
+            "collision": false,
+            "crop": {
+              "type": "slowroot",
+              "plantedAt": 1000,
+              "stage": 0,
+              "watered": true,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0
+            }
+          },
+          {
+            "x": 3,
+            "y": 0,
+            "type": "soil",
+            "collision": false,
+            "crop": {
+              "type": "mystery",
+              "plantedAt": 29000,
+              "stage": 0,
+              "watered": false,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0
+            }
+          }
+        ],
+        [
+          {
+            "x": 0,
+            "y": 1,
+            "type": "soil",
+            "collision": false,
+            "soilMoisture": 0.5,
+            "crop": {
+              "type": "half",
+              "plantedAt": 0,
+              "stage": 0,
+              "watered": true,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0
+            }
+          },
+          {
+            "x": 1,
+            "y": 1,
+            "type": "soil",
+            "collision": false,
+            "crop": {
+              "type": "quick",
+              "plantedAt": 0,
+              "stage": 0,
+              "watered": false,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0,
+              "plantedOnDay": 4,
+              "daysGrown": 2
+            }
+          },
+          {
+            "x": 2,
+            "y": 1,
+            "type": "grass",
+            "collision": false,
+            "note": "keep-me"
+          },
+          {
+            "x": 3,
+            "y": 1,
+            "type": "door",
+            "collision": false,
+            "crop": {
+              "type": "glowberry",
+              "stage": 0,
+              "watered": true,
+              "quality": "normal",
+              "mutation": null,
+              "harvestCount": 0,
+              "daysWithoutWater": 0,
+              "plantedAt": 12000
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "scene-b",
+      "name": "B",
+      "width": 1,
+      "height": 1,
+      "tiles": [
+        [
+          {
+            "x": 0,
+            "y": 0,
+            "type": "path",
+            "collision": false
+          }
+        ]
+      ],
+      "transitions": null,
+      "custom": {
+        "a": 1
+      }
+    }
+  ],
+  "customCrops": [
+    {
+      "id": "glowberry",
+      "name": "Glowberry",
+      "seedCost": 10,
+      "baseHarvestValue": 20,
+      "growthTime": 22000,
+      "stages": 5,
+      "seasons": [
+        "spring"
+      ],
+      "canRegrow": true,
+      "yieldMin": 1,
+      "yieldMax": 2,
+      "regrowthTime": 9000,
+      "lore": "shiny"
+    },
+    {
+      "id": "slowroot",
+      "name": "Slowroot",
+      "seedCost": 10,
+      "baseHarvestValue": 20,
+      "growthTime": 200000,
+      "stages": 3,
+      "seasons": [
+        "spring"
+      ],
+      "canRegrow": false,
+      "yieldMin": 1,
+      "yieldMax": 2,
+      "growthDays": 7,
+      "regrowthTime": 5000
+    },
+    {
+      "id": "quick",
+      "name": "Quick",
+      "seedCost": 10,
+      "baseHarvestValue": 20,
+      "growthTime": 2000,
+      "stages": 2,
+      "seasons": [
+        "spring"
+      ],
+      "canRegrow": true,
+      "yieldMin": 1,
+      "yieldMax": 2,
+      "regrowthTime": 0,
+      "regrowthDays": null
+    },
+    {
+      "id": "half",
+      "name": "Half",
+      "seedCost": 10,
+      "baseHarvestValue": 20,
+      "growthTime": 12500,
+      "stages": 4,
+      "seasons": [
+        "spring"
+      ],
+      "canRegrow": false,
+      "yieldMin": 1,
+      "yieldMax": 2
+    }
+  ],
+  "npcs": [],
+  "items": [],
+  "events": [
+    {
+      "id": "e-loc",
+      "name": "Loc",
+      "sceneId": "scene-a",
+      "triggerType": "location",
+      "triggerX": 2,
+      "triggerY": 1,
+      "outcomes": [
+        {
+          "type": "message",
+          "message": "hi"
+        }
+      ]
+    },
+    {
+      "id": "e-item",
+      "name": "Item",
+      "sceneId": "",
+      "triggerType": "item",
+      "requiredItem": "wheat",
+      "active": false
+    },
+    {
+      "id": "e-flag",
+      "name": "Flag",
+      "sceneId": "",
+      "triggerType": "flag",
+      "requiredFlag": "met",
+      "repeatable": true
+    },
+    {
+      "id": "e-time",
+      "name": "Time",
+      "sceneId": "",
+      "triggerType": "time",
+      "triggerTime": 480
+    },
+    {
+      "id": "e-time2",
+      "name": "Time2",
+      "sceneId": "",
+      "triggerType": "time"
+    },
+    {
+      "id": "e-loc2",
+      "name": "Loc2",
+      "sceneId": "",
+      "triggerType": "location",
+      "triggerX": 2
+    },
+    {
+      "id": "e-other",
+      "name": "Other",
+      "sceneId": "",
+      "triggerType": "npc",
+      "extraField": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "e-new",
+      "name": "New",
+      "sceneId": "",
+      "trigger": "interact",
+      "conditions": [],
+      "outcomes": [],
+      "active": true,
+      "repeatable": false
+    },
+    {
+      "id": "e-half",
+      "name": "Half",
+      "sceneId": "",
+      "trigger": "tick",
+      "outcomes": []
+    }
+  ],
+  "dialogues": [],
+  "player": {
+    "x": 1,
+    "y": 0,
+    "sceneId": "scene-a",
+    "inventory": [],
+    "money": 5,
+    "pixelX": null,
+    "favoriteColor": "green"
+  },
+  "mode": "tiles",
+  "selectedTileType": "soil",
+  "currentTime": 30000,
+  "currentSeason": "summer",
+  "mystery": {
+    "nested": [
+      1,
+      {
+        "b": null
+      }
+    ]
+  }
+}

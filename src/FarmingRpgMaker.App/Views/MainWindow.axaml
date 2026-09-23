@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:FarmingRpgMaker.App.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="760"
+        x:Class="FarmingRpgMaker.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Icon="avares://FarmingRpgMaker/Assets/app.ico"
+        Width="1280" Height="800" MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding PlayModeCommand}" />
+    <KeyBinding Gesture="F6" Command="{Binding EditModeCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel>
+    <Menu DockPanel.Dock="Top" Name="MainMenu">
+      <MenuItem Header="_File">
+        <MenuItem Header="_New Project" InputGesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
+        <MenuItem Header="_Open Project…" InputGesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
+        <Separator />
+        <MenuItem Header="_Import Project JSON…" Command="{Binding ImportProjectJsonCommand}" />
+        <MenuItem Header="_Export Project JSON…" Command="{Binding ExportProjectJsonCommand}" />
+        <Separator />
+        <MenuItem Header="E_xit" InputGesture="Alt+F4" Command="{Binding ExitCommand}" />
+      </MenuItem>
+      <MenuItem Header="_Game">
+        <MenuItem Header="_Play Mode" InputGesture="F5" ToggleType="Radio" GroupName="mode"
+                  IsChecked="{Binding IsPlayMode, Mode=OneWay}" Command="{Binding PlayModeCommand}" />
+        <MenuItem Header="_Edit Mode" InputGesture="F6" ToggleType="Radio" GroupName="mode"
+                  IsChecked="{Binding IsEditMode, Mode=OneWay}" Command="{Binding EditModeCommand}" />
+      </MenuItem>
+      <MenuItem Header="_Help">
+        <MenuItem Header="_Update Center…" Command="{Binding OpenUpdateCenterCommand}" />
+        <Separator />
+        <MenuItem Header="_About Farming RPG Maker" Command="{Binding AboutCommand}" />
+      </MenuItem>
+    </Menu>
+
+    <!-- Header, mirrors the web app: icon + title + "Playing/Editing: name", actions on the right. -->
+    <Border DockPanel.Dock="Top" Classes="header" Padding="20,12">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Image Grid.Column="0" Source="avares://FarmingRpgMaker/Assets/app-icon-256.png"
+               Width="40" Height="40" Margin="0,0,12,0" VerticalAlignment="Center"
+               RenderOptions.BitmapInterpolationMode="HighQuality" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+          <TextBlock Name="HeaderTitle" Classes="h1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Name="HeaderSubtitle" Classes="muted" FontSize="13" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Button Name="UpdateBadge" Classes="badge"
+                  IsVisible="{Binding IsUpdateBadgeVisible}"
+                  Command="{Binding OpenUpdateCenterCommand}"
+                  ToolTip.Tip="Open the Update Center">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Data="{StaticResource IconDownload}" Width="13" Height="13" />
+              <TextBlock Text="{Binding UpdateBadgeText}" />
+            </StackPanel>
+          </Button>
+          <Button Name="ModeToggle" Classes="large"
+                  Classes.accent="{Binding IsPlayMode}"
+                  Classes.secondary="{Binding IsEditMode}"
+                  Command="{Binding ToggleModeCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <PathIcon Classes="button-icon" Data="{StaticResource IconPencil}" IsVisible="{Binding IsPlayMode}" />
+              <PathIcon Classes="button-icon" Data="{StaticResource IconPlay}" IsVisible="{Binding IsEditMode}" />
+              <TextBlock Text="{Binding ModeToggleText}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom" Classes="statusbar">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Name="StatusText" Classes="muted small" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Classes="muted small" Text="{Binding VersionText}" />
+      </Grid>
+    </Border>
+
+    <!-- Game host: IGameSurfaceFactory output (MainWindowViewModel.GameContent). -->
+    <ContentControl Name="GameHostPresenter"
+                    Margin="16"
+                    Content="{Binding GameContent}"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
+  </DockPanel>
+</Window>

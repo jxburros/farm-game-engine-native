@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmingRpgMaker.Updates</RootNamespace>
+    <Description>Update Center backend: Velopack + GitHub Releases.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" />
+  </ItemGroup>
+</Project>

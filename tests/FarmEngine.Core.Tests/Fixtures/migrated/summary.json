@@ -1,0 +1,132 @@
+{
+  "project-v1": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v2": {
+    "ok": true,
+    "fromVersion": 2,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v3": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v4": {
+    "ok": true,
+    "fromVersion": 4,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v5": {
+    "ok": true,
+    "fromVersion": 5,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v6": {
+    "ok": true,
+    "fromVersion": 6,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v7": {
+    "ok": true,
+    "fromVersion": 7,
+    "migrated": true,
+    "errors": []
+  },
+  "project-v8": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": false,
+    "errors": []
+  },
+  "exported-legacy": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  },
+  "exported-from-project-v3": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": []
+  },
+  "exported-from-project-v5": {
+    "ok": true,
+    "fromVersion": 5,
+    "migrated": true,
+    "errors": []
+  },
+  "exported-from-project-v7": {
+    "ok": true,
+    "fromVersion": 7,
+    "migrated": true,
+    "errors": []
+  },
+  "exported-from-project-v8": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": false,
+    "errors": []
+  },
+  "save-v1": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  },
+  "save-v3": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": []
+  },
+  "save-v3-frac": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": []
+  },
+  "save-current": {
+    "ok": true,
+    "fromVersion": 4,
+    "migrated": false,
+    "errors": []
+  },
+  "broken-money": {
+    "ok": false,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": [
+      "player.money: Expected number, received string"
+    ]
+  },
+  "exported-name-42": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "name: Expected string, received number"
+    ]
+  },
+  "project-edge-v1": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  },
+  "exported-edge-v1": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 6,
+  "id": "project-1",
+  "name": "Current V6 Farm",
+  "version": "2.0",
+  "scenes": [
+    {
+      "id": "scene-farm",
+      "name": "Farm",
+      "width": 2,
+      "height": 1,
+      "tiles": [
+        [
+          {
+            "x": 0,
+            "y": 0,
+            "type": "grass",
+            "background": "grass",
+            "overlay": null,
+            "object": null,
+            "collision": false,
+            "soilMoisture": 0,
+            "soilFertility": 0
+          },
+          {
+            "x": 1,
+            "y": 0,
+            "type": "soil",
+            "background": "soil",
+            "overlay": null,
+            "object": null,
+            "collision": false,
+            "soilMoisture": 50,
+            "soilFertility": 100,
+            "soilState": "fertilized"
+          }
+        ]
+      ],
+      "transitions": [],
+      "npcs": [],
+      "events": []
+    }
+  ],
+  "npcs": [],
+  "items": [
+    {
+      "id": "wheat",
+      "name": "Wheat",
+      "type": "crop",
+      "description": "Golden grain",
+      "value": 25,
+      "stackable": true,
+      "maxStack": 99,
+      "icon": "wheat"
+    },
+    {
+      "id": "flour",
+      "name": "Flour",
+      "type": "material",
+      "description": "Milled wheat",
+      "value": 60,
+      "stackable": true,
+      "maxStack": 99,
+      "icon": "flour"
+    }
+  ],
+  "events": [],
+  "dialogues": [],
+  "quests": [],
+  "player": {
+    "x": 0,
+    "y": 0,
+    "direction": "down",
+    "sceneId": "scene-farm",
+    "inventory": [],
+    "maxInventorySize": 20,
+    "money": 500,
+    "activeQuests": [],
+    "completedQuests": [],
+    "pixelX": 0,
+    "pixelY": 0,
+    "targetX": 0,
+    "targetY": 0,
+    "energy": 80,
+    "maxEnergy": 100,
+    "skills": {
+      "farming": { "level": 2, "xp": 40 }
+    }
+  },
+  "eventFlags": {},
+  "startSceneId": "scene-farm",
+  "mode": "play",
+  "selectedTileType": "grass",
+  "selectedNPCId": null,
+  "selectedItemId": null,
+  "currentTime": 0,
+  "customAssets": [],
+  "currentSeason": "spring",
+  "currentDay": 1,
+  "gameStartTime": 0,
+  "currentTimeMinutes": 360,
+  "currentYear": 1,
+  "shops": [],
+  "nodeTypes": [],
+  "settings": {
+    "energyEnabled": true,
+    "maxEnergy": 100,
+    "collapseEnergyFraction": 0.5,
+    "collapseMoneyPenalty": 50,
+    "skillsEnabled": true,
+    "time": {
+      "dayStartMinute": 360,
+      "dayEndMinute": 1560,
+      "minutesPerRealSecond": 1
+    }
+  },
+  "recipes": [
+    {
+      "id": "recipe-flour",
+      "name": "Flour",
+      "inputs": [{ "itemId": "wheat", "quantity": 1 }],
+      "outputs": [{ "itemId": "flour", "quantity": 1 }],
+      "machineTypeId": "machine-mill",
+      "processingMinutes": 120
+    }
+  ],
+  "machineTypes": [
+    {
+      "id": "machine-mill",
+      "name": "Mill",
+      "description": "Grinds grain",
+      "color": "#9a7b4f",
+      "blocksMovement": true
+    }
+  ],
+  "weather": {
+    "types": [
+      { "id": "sun", "name": "Sunny", "watersOutdoorSoil": false, "cropDamageChance": 0, "npcsStayInside": false, "overlay": null }
+    ],
+    "table": {
+      "spring": [{ "weatherId": "sun", "weight": 1 }],
+      "summer": [{ "weatherId": "sun", "weight": 1 }],
+      "fall": [{ "weatherId": "sun", "weight": 1 }],
+      "winter": [{ "weatherId": "sun", "weight": 1 }]
+    }
+  },
+  "animalSpecies": [
+    {
+      "id": "species-chicken",
+      "name": "Chicken",
+      "purchaseCost": 400,
+      "feedItemId": "wheat",
+      "productItemId": "wheat",
+      "productIntervalDays": 1,
+      "daysToAdult": 3,
+      "color": "#f4e4c1"
+    }
+  ],
+  "animals": [
+    {
+      "id": "animal-1",
+      "speciesId": "species-chicken",
+      "name": "Clucky",
+      "sceneId": "scene-farm",
+      "x": 0,
+      "y": 0,
+      "mood": 70,
+      "fedToday": false,
+      "pettedToday": false,
+      "ageDays": 5,
+      "daysSinceProduct": 0,
+      "productReady": false
+    }
+  ],
+  "fishTables": [
+    {
+      "id": "fish-table-1",
+      "name": "Farm Pond",
+      "entries": [{ "itemId": "wheat", "weight": 1, "difficulty": 0.2 }],
+      "junkChance": 0.1
+    }
+  ],
+  "mine": {
+    "enabled": false
+  }
+}

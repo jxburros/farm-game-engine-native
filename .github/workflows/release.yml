@@ -1,0 +1,194 @@
+name: Release
+
+# Builds FarmingRpgMaker.exe, packs it with Velopack (Setup.exe, portable zip,
+# full + delta nupkg, releases.win.json) and publishes a GitHub Release that the
+# in-app Update Center reads. See docs/RELEASING.md.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without the leading "v" (e.g. 0.2.0 or 0.3.0-beta.1). The tag v<version> is created on the selected commit.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Keep in lock-step with the Velopack package version in Directory.Packages.props.
+  VPK_VERSION: 1.2.158
+  PACK_ID: FarmingRpgMaker
+
+jobs:
+  release:
+    name: Build, pack & publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags: release notes from tag annotations / git log
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $raw = if ($env:EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_VERSION } else { $env:REF_NAME }
+          $version = $raw.Trim() -replace '^[vV]', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            throw "'$raw' is not a SemVer version (expected X.Y.Z or X.Y.Z-label.N)"
+          }
+          $prerelease = if ($version.Contains('-')) { 'true' } else { 'false' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+          Write-Host "Releasing $version (prerelease: $prerelease)"
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet publish src/FarmingRpgMaker.App -c Release -r win-x64 --self-contained "-p:Version=$env:VERSION" -o publish
+
+      - name: Write release notes
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $notes = ''
+
+          # 1) A "## [X.Y.Z]" / "## X.Y.Z" / "## vX.Y.Z" section of CHANGELOG.md.
+          if (Test-Path CHANGELOG.md) {
+            $escaped = [regex]::Escape($env:VERSION)
+            $lines = @(Get-Content CHANGELOG.md)
+            $start = -1
+            $end = $null
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              if ($start -lt 0 -and $lines[$i] -match "^##\s+\[?v?$escaped\]?(\s|$)") { $start = $i + 1; continue }
+              if ($start -ge 0 -and $lines[$i] -match '^##\s') { $end = $i - 1; break }
+            }
+            if ($start -ge 0) {
+              if ($null -eq $end) { $end = $lines.Count - 1 }
+              if ($end -ge $start) { $notes = ($lines[$start..$end] -join "`n").Trim() }
+            }
+          }
+
+          # 2) The annotated tag's message (git tag -a vX.Y.Z -m "...").
+          if (-not $notes) {
+            git fetch --force origin "refs/tags/$($env:TAG):refs/tags/$($env:TAG)" 2>$null
+            if ((git for-each-ref "refs/tags/$env:TAG" --format='%(objecttype)') -eq 'tag') {
+              $notes = ((git for-each-ref "refs/tags/$env:TAG" --format='%(contents)') -join "`n").Trim()
+              $notes = ($notes -replace '(?s)-----BEGIN (PGP|SSH) SIGNATURE-----.*$', '').Trim()
+            }
+          }
+
+          # 3) Commit subjects since the previous tag.
+          if (-not $notes) {
+            $previous = git describe --tags --abbrev=0 --match 'v*.*.*' "HEAD^" 2>$null
+            $range = if ($LASTEXITCODE -eq 0 -and $previous) { "$previous..HEAD" } else { 'HEAD' }
+            $commits = git log $range --no-merges --pretty='format:- %s' -n 50
+            $notes = "## Changes`n`n" + ($commits -join "`n")
+          }
+
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+          Write-Host '--- release-notes.md ---'
+          Get-Content release-notes.md
+          $global:LASTEXITCODE = 0
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version $env:VPK_VERSION
+
+      - name: Download previous release (for delta updates)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $vpkArgs = @('download', 'github', '--repoUrl', "https://github.com/${{ github.repository }}", '--token', $env:GITHUB_TOKEN, '--outputDir', 'Releases')
+          if ($env:PRERELEASE -eq 'true') { $vpkArgs += '--pre' }
+          vpk @vpkArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::notice::No previous release found - this release will only contain full packages.'
+          }
+          exit 0
+
+      - name: Pack with Velopack
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          WINDOWS_SIGN_PARAMS: ${{ secrets.WINDOWS_SIGN_PARAMS }}
+        run: |
+          $vpkArgs = @(
+            'pack',
+            '--packId', $env:PACK_ID,
+            '--packVersion', $env:VERSION,
+            '--packDir', 'publish',
+            '--runtime', 'win-x64',
+            '--mainExe', 'FarmingRpgMaker.exe',
+            '--packTitle', 'Farming RPG Maker',
+            '--packAuthors', 'Farming RPG Maker contributors',
+            '--icon', 'src/FarmingRpgMaker.App/Assets/app.ico',
+            '--releaseNotes', 'release-notes.md',
+            '--outputDir', 'Releases'
+          )
+          if ($env:WINDOWS_SIGN_PARAMS) {
+            Write-Host 'Code signing enabled (WINDOWS_SIGN_PARAMS is set).'
+            $vpkArgs += @('--signParams', $env:WINDOWS_SIGN_PARAMS)
+          } else {
+            Write-Host '::warning::WINDOWS_SIGN_PARAMS is not set - the installer is unsigned and SmartScreen will warn users.'
+          }
+          vpk @vpkArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem Releases | Format-Table Name, Length
+
+      - name: Upload to GitHub Releases
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $vpkArgs = @(
+            'upload', 'github',
+            '--repoUrl', "https://github.com/${{ github.repository }}",
+            '--token', $env:GITHUB_TOKEN,
+            '--outputDir', 'Releases',
+            '--publish',
+            '--merge',
+            '--releaseName', "Farming RPG Maker $env:VERSION",
+            '--tag', $env:TAG,
+            '--targetCommitish', '${{ github.sha }}'
+          )
+          if ($env:PRERELEASE -eq 'true') { $vpkArgs += '--pre' }
+          vpk @vpkArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Keep build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-releases-${{ steps.version.outputs.version }}
+          path: |
+            Releases
+            release-notes.md
+          retention-days: 30

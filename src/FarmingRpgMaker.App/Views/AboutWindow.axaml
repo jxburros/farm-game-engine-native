@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:FarmingRpgMaker.App.ViewModels"
+        x:Class="FarmingRpgMaker.App.Views.AboutWindow"
+        x:DataType="vm:AboutViewModel"
+        Title="About Farming RPG Maker"
+        Icon="avares://FarmingRpgMaker/Assets/app.ico"
+        Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <StackPanel>
+    <StackPanel Margin="28,28,28,20" Spacing="14" HorizontalAlignment="Stretch">
+      <Image Source="avares://FarmingRpgMaker/Assets/app-icon-256.png" Width="88" Height="88"
+             HorizontalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality" />
+      <StackPanel Spacing="2" HorizontalAlignment="Center">
+        <TextBlock Classes="h1" Text="{Binding Title}" HorizontalAlignment="Center" />
+        <TextBlock Name="AboutVersionText" Classes="muted" Text="{Binding VersionText}" HorizontalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" TextAlignment="Center" LineHeight="20" />
+      <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+        <HyperlinkButton Content="Source on GitHub" Command="{Binding OpenRepositoryCommand}" />
+        <HyperlinkButton Content="Release notes" Command="{Binding OpenReleasesCommand}" />
+      </StackPanel>
+      <TextBlock Classes="muted small" Text="{Binding RuntimeText}" TextWrapping="Wrap" TextAlignment="Center" />
+    </StackPanel>
+    <Border Classes="statusbar" Padding="16,10">
+      <Button Classes="accent" Content="Close" HorizontalAlignment="Right" MinWidth="88"
+              HorizontalContentAlignment="Center" Click="OnCloseClicked" IsDefault="True" IsCancel="True" />
+    </Border>
+  </StackPanel>
+</Window>

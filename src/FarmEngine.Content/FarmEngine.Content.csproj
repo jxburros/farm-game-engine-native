@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Content</RootNamespace>
+    <Description>Default content pack and sample games — port of packages/content-default.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+  </ItemGroup>
+</Project>

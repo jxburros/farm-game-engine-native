@@ -1,0 +1,53 @@
+[
+  {
+    "url": "https://api.github.com/repos/jxburros/farm-game-engine-native/releases/3",
+    "html_url": "https://github.com/jxburros/farm-game-engine-native/releases/tag/v0.3.0-beta.1",
+    "id": 3,
+    "tag_name": "v0.3.0-beta.1",
+    "target_commitish": "main",
+    "name": "Farming RPG Maker 0.3.0-beta.1",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-09-21T10:00:00Z",
+    "published_at": "2026-09-21T10:05:00Z",
+    "assets": [
+      { "name": "FarmingRpgMaker-win-Setup.exe", "size": 51234567, "browser_download_url": "https://github.com/jxburros/farm-game-engine-native/releases/download/v0.3.0-beta.1/FarmingRpgMaker-win-Setup.exe" }
+    ],
+    "body": "## Beta\r\n\r\n- Try the new **mines** editor"
+  },
+  {
+    "html_url": "https://github.com/jxburros/farm-game-engine-native/releases/tag/v0.2.0",
+    "id": 2,
+    "tag_name": "v0.2.0",
+    "name": "Farming RPG Maker 0.2.0",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-09-20T16:00:00Z",
+    "published_at": "2026-09-20T16:30:00Z",
+    "author": { "login": "github-actions[bot]" },
+    "assets": [],
+    "body": "## What's new\n\n- Fishing mini-game\n- Faster loading"
+  },
+  {
+    "html_url": "https://github.com/jxburros/farm-game-engine-native/releases/tag/untagged-1",
+    "id": 99,
+    "tag_name": "v0.4.0",
+    "name": "Draft",
+    "draft": true,
+    "prerelease": false,
+    "created_at": "2026-09-22T16:00:00Z",
+    "published_at": null,
+    "body": "not yet"
+  },
+  {
+    "html_url": "https://github.com/jxburros/farm-game-engine-native/releases/tag/v0.1.0",
+    "id": 1,
+    "tag_name": "v0.1.0",
+    "name": null,
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-09-01T09:00:00Z",
+    "published_at": "2026-09-01T09:10:00Z",
+    "body": null
+  }
+]

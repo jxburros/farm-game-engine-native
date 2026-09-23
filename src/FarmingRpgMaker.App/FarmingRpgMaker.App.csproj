@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>FarmingRpgMaker.App</RootNamespace>
+    <!-- The executable is FarmingRpgMaker.exe (the Velopack mainExe). -->
+    <AssemblyName>FarmingRpgMaker</AssemblyName>
+    <Description>Farming RPG Maker desktop app (Avalonia).</Description>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <!-- Self-contained publishes should still contain the full framework
+         (Velopack diffs releases; trimming would make reflection-heavy engine code fragile). -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Skia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Velopack" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmingRpgMaker.Updates/FarmingRpgMaker.Updates.csproj" />
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+    <ProjectReference Include="../FarmEngine.Content/FarmEngine.Content.csproj" />
+    <ProjectReference Include="../FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
+    <ProjectReference Include="../FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FarmingRpgMaker.App.Tests" />
+  </ItemGroup>
+</Project>

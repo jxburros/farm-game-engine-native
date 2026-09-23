@@ -1,0 +1,44 @@
+{
+  "id": "project-1",
+  "name": "Legacy V2 Farm",
+  "version": "2.0",
+  "scenes": [
+    {
+      "id": "scene-farm",
+      "name": "Farm",
+      "width": 2,
+      "height": 1,
+      "tiles": [
+        [
+          { "x": 0, "y": 0, "type": "grass", "background": "grass", "overlay": null, "object": null, "collision": false, "soilMoisture": 0, "soilFertility": 0 },
+          { "x": 1, "y": 0, "type": "wall", "background": "grass", "overlay": null, "object": "wall", "collision": true, "soilMoisture": 0, "soilFertility": 0 }
+        ]
+      ],
+      "transitions": [],
+      "npcs": [],
+      "events": []
+    }
+  ],
+  "npcs": [],
+  "items": [],
+  "events": [],
+  "dialogues": [],
+  "player": {
+    "x": 0,
+    "y": 0,
+    "direction": "down",
+    "sceneId": "scene-farm",
+    "inventory": [],
+    "maxInventorySize": 20,
+    "money": 250,
+    "activeQuests": [],
+    "completedQuests": []
+  },
+  "eventFlags": { "met-farmer": true },
+  "startSceneId": "scene-farm",
+  "mode": "tiles",
+  "selectedTileType": "soil",
+  "selectedNPCId": null,
+  "selectedItemId": null,
+  "currentTime": 123456
+}

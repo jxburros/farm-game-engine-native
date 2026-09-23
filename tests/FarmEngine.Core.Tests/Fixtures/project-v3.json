@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 3,
+  "id": "project-1",
+  "name": "Current V3 Farm",
+  "version": "2.0",
+  "scenes": [
+    {
+      "id": "scene-farm",
+      "name": "Farm",
+      "width": 2,
+      "height": 1,
+      "tiles": [
+        [
+          { "x": 0, "y": 0, "type": "grass", "background": "grass", "overlay": null, "object": null, "collision": false, "soilMoisture": 0, "soilFertility": 0 },
+          { "x": 1, "y": 0, "type": "soil", "background": "soil", "overlay": null, "object": null, "collision": false, "soilMoisture": 50, "soilFertility": 100, "soilState": "fertilized" }
+        ]
+      ],
+      "transitions": [],
+      "npcs": [],
+      "events": []
+    }
+  ],
+  "npcs": [],
+  "items": [],
+  "events": [],
+  "dialogues": [],
+  "quests": [],
+  "player": {
+    "x": 0,
+    "y": 0,
+    "direction": "down",
+    "sceneId": "scene-farm",
+    "inventory": [],
+    "maxInventorySize": 20,
+    "money": 500,
+    "activeQuests": [],
+    "completedQuests": [],
+    "pixelX": 0,
+    "pixelY": 0,
+    "targetX": 0,
+    "targetY": 0
+  },
+  "eventFlags": {},
+  "startSceneId": "scene-farm",
+  "mode": "play",
+  "selectedTileType": "grass",
+  "selectedNPCId": null,
+  "selectedItemId": null,
+  "currentTime": 0,
+  "customAssets": [],
+  "currentSeason": "spring",
+  "currentDay": 1,
+  "gameStartTime": 0
+}

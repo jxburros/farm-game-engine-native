@@ -1,0 +1,94 @@
+{
+  "manifest": {
+    "id": "demo-glow-farm",
+    "name": "Glow Farm Demo Mod",
+    "version": "1.0.0",
+    "description": "The M5 acceptance demo: a new crop, a new machine + recipe, and a plugin that reacts to onDayStart.",
+    "author": "farm-game-engine",
+    "engineCompatibility": ">=0.5.0",
+    "base": false,
+    "dependencies": [],
+    "overrides": [],
+    "permissions": {
+      "hooks": ["onDayStart"],
+      "contentInject": true,
+      "uiPanels": false
+    }
+  },
+  "content": {
+    "crops": [
+      {
+        "id": "glowshroom",
+        "name": "Glowshroom",
+        "seedCost": 45,
+        "baseHarvestValue": 110,
+        "growthTime": 30000,
+        "growthDays": 6,
+        "stages": 5,
+        "seasons": ["fall", "winter"],
+        "canRegrow": false,
+        "yieldMin": 1,
+        "yieldMax": 2,
+        "mutationChance": 0.03
+      }
+    ],
+    "items": [
+      {
+        "id": "seed-glowshroom",
+        "name": "Glowshroom Spores",
+        "description": "Plant these to grow glowshrooms",
+        "type": "seed",
+        "stackable": true,
+        "maxStack": 99,
+        "value": 45,
+        "cropType": "glowshroom"
+      },
+      {
+        "id": "crop-glowshroom",
+        "name": "Glowshroom",
+        "description": "Fresh glowshroom",
+        "type": "crop",
+        "stackable": true,
+        "maxStack": 99,
+        "value": 110,
+        "cropType": "glowshroom"
+      },
+      {
+        "id": "glow-jelly",
+        "name": "Glow Jelly",
+        "description": "Luminous preserves that light up the pantry.",
+        "type": "material",
+        "stackable": true,
+        "maxStack": 99,
+        "value": 320
+      }
+    ],
+    "machineTypes": [
+      {
+        "id": "machine-glow-vat",
+        "name": "Glow Vat",
+        "description": "Renders glowshrooms into luminous jelly.",
+        "color": "#7de8a8",
+        "blocksMovement": true
+      }
+    ],
+    "recipes": [
+      {
+        "id": "recipe-glow-jelly",
+        "name": "Glow Jelly",
+        "inputs": [{ "itemId": "crop-glowshroom", "quantity": 2 }],
+        "outputs": [{ "itemId": "glow-jelly", "quantity": 1 }],
+        "machineTypeId": "machine-glow-vat",
+        "processingMinutes": 180
+      }
+    ]
+  },
+  "plugins": [
+    {
+      "id": "morning-hum",
+      "name": "Morning Hum",
+      "hooks": ["onDayStart"],
+      "source": "api.on('onDayStart', function (payload) { var out = [{ type: 'message', text: 'The glowshrooms hum softly on day ' + payload.day + '...' }]; if (payload.day % 7 === 0) { out.push({ type: 'giveItem', itemId: 'demo-glow-farm:seed-glowshroom', quantity: 1 }); } return out; })"
+    }
+  ]
+}
