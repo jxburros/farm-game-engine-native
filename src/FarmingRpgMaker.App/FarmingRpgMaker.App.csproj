@@ -20,12 +20,17 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Skia" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FarmingRpgMaker.Updates/FarmingRpgMaker.Updates.csproj" />
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+    <ProjectReference Include="../FarmEngine.Content/FarmEngine.Content.csproj" />
+    <ProjectReference Include="../FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
+    <ProjectReference Include="../FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="FarmingRpgMaker.App.Tests" />

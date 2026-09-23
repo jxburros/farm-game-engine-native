@@ -51,6 +51,19 @@ internal static class UiTestHelpers
         where T : Control =>
         window.FindControl<T>(name) ?? throw new InvalidOperationException($"No {typeof(T).Name} named {name}.");
 
+    /// <summary>
+    /// Finds a named control anywhere under <paramref name="root"/> (code-built views don't
+    /// register names in the window's name scope).
+    /// </summary>
+    public static T FindByName<T>(Visual root, string name)
+        where T : Control =>
+        TryFindByName<T>(root, name) ?? throw new InvalidOperationException($"No {typeof(T).Name} named {name}.");
+
+    public static T? TryFindByName<T>(Visual root, string name)
+        where T : Control =>
+        root.GetVisualDescendants().OfType<T>().FirstOrDefault(c => c.Name == name)
+        ?? Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants((Avalonia.LogicalTree.ILogical)root).OfType<T>().FirstOrDefault(c => c.Name == name);
+
     /// <summary>Text of every visible TextBlock/SelectableTextBlock under <paramref name="root"/>.</summary>
     public static List<string> VisibleTexts(Visual root) =>
         root.GetVisualDescendants()

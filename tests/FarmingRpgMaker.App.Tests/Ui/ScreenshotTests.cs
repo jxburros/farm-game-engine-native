@@ -22,7 +22,7 @@ public sealed class ScreenshotTests
     {
         var fake = new FakeUpdateService { NextResult = FakeUpdateService.SampleUpdate("0.2.0") };
         var coordinator = new UpdateCoordinator(fake, new InMemorySettingsStore());
-        var viewModel = new MainWindowViewModel(coordinator, ShellComposition.CreateDefault()) { ProjectName = "Sunny Acres" };
+        var viewModel = new MainWindowViewModel(coordinator, ShellComposition.CreateDefault());
         var window = new MainWindow(new RecordingUrlLauncher()) { DataContext = viewModel, Width = 1200, Height = 720 };
         window.Show();
         _ = coordinator.CheckAsync();

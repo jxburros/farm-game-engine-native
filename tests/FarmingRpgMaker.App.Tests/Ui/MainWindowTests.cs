@@ -26,7 +26,7 @@ public sealed class MainWindowTests
     [AvaloniaFact]
     public void Header_ShowsTitleSubtitleAndModeToggle()
     {
-        var (window, viewModel) = Open();
+        var (window, viewModel) = Open(new ShellComposition(new PlaceholderGameSurfaceFactory(), new PlaceholderProjectCommandHandler()));
 
         Assert.Equal("Farming RPG Maker", window.Title);
         Assert.Equal("Farming RPG Maker", Find<TextBlock>(window, "HeaderTitle").Text);
@@ -60,9 +60,23 @@ public sealed class MainWindowTests
     }
 
     [AvaloniaFact]
-    public void GameHost_ShowsPlaceholderByDefault()
+    public void GameHost_ShowsGameWorkspaceByDefault()
     {
-        var (window, _) = Open();
+        var (window, viewModel) = Open();
+
+        var host = Find<ContentControl>(window, "GameHostPresenter");
+        var surface = Assert.IsType<FarmingRpgMaker.App.Game.GameWorkspaceView>(host.Content);
+        Assert.Same(surface.EditView, surface.Content);
+        Assert.Contains("The full editor is being ported", AllVisibleText(host), StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(viewModel.ProjectName));
+        Assert.StartsWith("Editing: ", Find<TextBlock>(window, "HeaderSubtitle").Text, StringComparison.Ordinal);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void PlaceholderSurface_StillAvailableForEmbedders()
+    {
+        var (window, _) = Open(new ShellComposition(new PlaceholderGameSurfaceFactory(), new PlaceholderProjectCommandHandler()));
 
         var host = Find<ContentControl>(window, "GameHostPresenter");
         var placeholder = Assert.IsType<Border>(host.Content);
@@ -127,7 +141,7 @@ public sealed class MainWindowTests
     [AvaloniaFact]
     public void PlaceholderProjectCommands_ReportInStatusBar()
     {
-        var (window, viewModel) = Open();
+        var (window, viewModel) = Open(new ShellComposition(new PlaceholderGameSurfaceFactory(), new PlaceholderProjectCommandHandler()));
         viewModel.Mode = EditorMode.Play;
 
         viewModel.NewProjectCommand.Execute(null);

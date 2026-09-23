@@ -18,8 +18,14 @@
   <ItemGroup>
     <ProjectReference Include="../../src/FarmingRpgMaker.Updates/FarmingRpgMaker.Updates.csproj" />
     <ProjectReference Include="../../src/FarmingRpgMaker.App/FarmingRpgMaker.App.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Core/FarmEngine.Core.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Content/FarmEngine.Content.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../FarmEngine.Core.Tests/Fixtures/project-v1.json" Link="Fixtures/project-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../FarmEngine.Core.Tests/Fixtures/demo-mod.json" Link="Fixtures/demo-mod.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
