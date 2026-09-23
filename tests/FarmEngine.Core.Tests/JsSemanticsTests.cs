@@ -39,4 +39,20 @@ public class JsSemanticsTests
         var sorted = Js.StableSort(new[] { ("a", 1), ("b", 0), ("c", 1), ("d", 0) }, (x, y) => x.Item2.CompareTo(y.Item2));
         Assert.Equal(new[] { "b", "d", "a", "c" }, sorted.Select(x => x.Item1));
     }
+
+    [Fact]
+    public void QuoteStringEscapesLikeJsonStringify()
+    {
+        Assert.Equal("\"\\ud800x\"", Js.QuoteString("\ud800x"));
+        Assert.Equal("\"\\udc00\"", Js.QuoteString("\udc00"));
+        Assert.Equal("\"😀\"", Js.QuoteString("😀"));
+        Assert.Equal("\"a\\u0000b\\u001f\\n\"", Js.QuoteString("a\u0000b\u001f\n"));
+    }
+
+    [Fact]
+    public void ArrayIndexKeysSortFirstNumerically()
+    {
+        var element = System.Text.Json.JsonDocument.Parse("""{"b":1,"10":2,"2":3,"01":4,"4294967295":5,"":6}""").RootElement;
+        Assert.Equal("{\"2\":3,\"10\":2,\"\":6,\"01\":4,\"4294967295\":5,\"b\":1}", StableJson.Stringify(element));
+    }
 }
