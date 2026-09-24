@@ -95,6 +95,8 @@ Everything builds and tests on Windows, macOS and Linux. The
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
 [docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust
 and the project logic to F#, with C# keeping the desktop app.
+[docs/EXPORT.md](docs/EXPORT.md) covers Export Game: standalone Windows and
+Linux games built on the native player.
 
 ## Releasing
 

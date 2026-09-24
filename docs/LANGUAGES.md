@@ -76,13 +76,14 @@ led here):
                        │  farm-plugins (wasmtime + QuickJS sandbox)                                   │
                        │  farm-render (draw lists; wgpu backend) · farm-ui (HUD, dialogue, shop…)     │
                        │  farm-player (standalone game exe; also embedded in the editor's Play Mode)  │
-                       │  farm-wasm (same core + player for the web version and HTML exports)          │
+                       │  farm-wasm (same core + player for the web version and web demo exports)     │
                        └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-One player, three places: the editor's **Play Mode**, an **exported native
-game**, and an **exported HTML game** all run `farm-player`. What a creator
-tests is exactly what ships.
+One player, three places: the editor's **Play Mode**, **exported Windows and
+Linux games**, and the optional **web demo export** all run `farm-player`.
+What a creator tests is exactly what ships. [EXPORT.md](EXPORT.md) covers
+what an exported game contains.
 
 ## Contracts between languages
 
@@ -92,6 +93,9 @@ tests is exactly what ships.
   It reads without copying (fast loads), generates code for Rust, C# (usable from
   F#) and TypeScript, and has clear rules for evolving a schema: fields are
   only added, never renumbered.
+- **Game info:** a `GameInfo` table (title, version, `gameId`, author,
+  window defaults, pixel scale) from the export settings, so the standalone
+  player never reads project JSON. See [EXPORT.md](EXPORT.md).
 - **Contents:** content tables with string ids interned to dense integer
   indices (`u16`/`u32`), a string table (ids, names, dialogue text, per
   locale), compiled condition bytecode, compiled dialogue graphs, scene tile
@@ -110,7 +114,13 @@ tests is exactly what ships.
   save migrations** (from `Save.cs` and `SaveMigrations.cs`). **F# owns
   project migrations** (from `Migrations.cs`). The creator persists projects.
 - The format is FlatBuffers too (`schemas/save.fbs`) with a version header,
-  compressed with zstd. Rust can also export a save as stable JSON for
+  compressed with zstd.
+- **Saves outlive the cartridge that wrote them.** A player's save from
+  version 1.0 of a game has to load in 1.1. So saves refer to content by its
+  stable string id, never by the cartridge's interned indices, and the header
+  carries `gameId`, the game version and the cartridge hash. Ids that no
+  longer exist go to quarantine instead of failing the load. See
+  [EXPORT.md](EXPORT.md#what-earlier-phases-must-get-right). Rust can also export a save as stable JSON for
   debugging and for the web version.
 - Autosave serializes on the simulation thread in microseconds, then
   compresses and writes on a worker thread.
@@ -149,7 +159,7 @@ tests is exactly what ships.
 ### WebAssembly (`farm-wasm`)
 
 - `wasm-bindgen` API that mirrors `farm-ffi` (same buffers). It's used by the
-  web version's playtest and by HTML exports. On the web, plugins keep
+  web version's playtest and by the optional web demo export. On the web, plugins keep
   running in Web Workers: the Rust core defines a `PluginHost` trait, and each
   host implements it.
 
@@ -199,7 +209,7 @@ crates/
   farm-plugins/    # PluginHost trait; wasmtime + QuickJS host (native)  ← Runtime/Plugins.cs
   farm-render/     # draw-list builder; wgpu backend (feature)           ← src/FarmEngine.Rendering
   farm-ui/         # in-game UI (HUD, dialogue, shop, inventory, crafting, quests, panels)
-  farm-player/     # standalone player (winit + wgpu + kira); embeddable
+  farm-player/     # standalone player (winit + wgpu + kira + gilrs) and game shell; embeddable
   farm-ffi/        # C ABI for .NET
   farm-wasm/       # wasm-bindgen API for the web
   farm-bench/      # criterion benchmarks
@@ -389,7 +399,7 @@ Other web parts:
 |---|---|
 | `ProjectManager.tsx`, `WelcomeDialog.tsx`, `projects.ts`, `asset-storage.ts`, `useLocalKV.ts` | C# (mostly done: `Projects/*`) |
 | `GameView.tsx`, `DialogueBox`, `ShopDialog`, `CraftingDialog`, `PlayerInventory`, `QuestTracker`, `MinigameOverlay`, `GamePanels`, `TouchControls`, `useGameLoop.ts`, `packages/game-shell` | Rust `farm-ui` + `farm-player` (C# `PlayOverlays` in the meantime) |
-| `export-html.ts`, `export-game.ts`, `export-assets.ts`, `zip.ts` | F# export orchestration (compile cartridge, write ZIP) + Rust player bundle |
+| `export-html.ts`, `export-game.ts`, `export-assets.ts`, `zip.ts` | F# export orchestration (compile the cartridge, assemble the export folder, write the archive) + Rust player templates. The single-file HTML export is not ported. See [EXPORT.md](EXPORT.md). |
 | `i18n.ts` | Editor UI strings: C# `.resx`. Game text: F# compiler string tables per locale, looked up in Rust. |
 | `templates.ts`, `game-helpers.ts`, `crops.ts`, `quests.ts`, `tools.ts`, `creator-patterns.ts`, `event-vocabulary.ts`, `reserved-keys.ts` | F# |
 
@@ -397,8 +407,8 @@ Later items (native and web roadmaps):
 
 | Item | Where |
 |---|---|
-| Export Game: HTML and hosting ZIP | `farm-wasm` player + cartridge in one HTML file; no longer needs the web repo's `shell.iife.js` |
-| Export Game: native | Copy `farm-player.exe` and append the cartridge (a single self-contained exe, like a fused LÖVE game) or ship it next to the exe |
+| Export Game: Windows and Linux | Copy the prebuilt `farm-player` template for the target, rename it, set its icon and version info, and put `game.cart` next to it. The cartridge is never appended to the exe: that gets in the way of code signing and makes every Steam patch re-ship the runtime. See [EXPORT.md](EXPORT.md). |
+| Export Game: web demo (optional) | The `farm-wasm` player template + `game.cart` + `index.html`, for itch.io pages. Comes after Windows and Linux. |
 | Seed selection, fertilizer choice, richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
 | Audio-file import | C# import; F# embeds in the cartridge; Rust plays with kira (seasonal music crossfades, weather ambience layers) |
 | Zip/folder content packs with binary assets | F# pack loader + compiler |
@@ -413,7 +423,8 @@ Each phase ends with CI green and a normal release through the Update Center.
 The C# engine keeps working until its replacement passes the same tests.
 
 1. **Scaffolding.** Cargo workspace, `rust-toolchain.toml`, FlatBuffers
-   schemas (compatibility shape), `farm-ffi` stub, `FarmEngine.Interop` with the
+   schemas (compatibility shape, plus the `GameInfo` table from
+   [EXPORT.md](EXPORT.md)), `farm-ffi` stub, `FarmEngine.Interop` with the
    MSBuild cargo target, empty F# projects in the solution. CI adds
    `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` and a
    `wasm32-unknown-unknown` build check on Linux and Windows. Move goldens to
@@ -422,12 +433,16 @@ The C# engine keeps working until its replacement passes the same tests.
 2. **Rust core, compatibility mode.** Port `FarmEngine.Core` module by module
    into `farm-sim` with JavaScript semantics. Port the Runtime logic files
    (`FixedTimestep`, `Input`, `Minigames`, `GamePanels`, `Audio` model) into
-   `farm-runtime`. Add the differential fuzz test against the C# core. *Exit:*
+   `farm-runtime`. Saves refer to content by string id (see
+   [Saves](#saves-rust-only)). Add the differential fuzz test against the C#
+   core. *Exit:*
    all 23 replays and the RNG, hash and save goldens pass in Rust.
 3. **F# authoring.** Port the schema records, `Migrations`,
    `SchemaValidation`, Core `Validation`, `Packs`, `ContentBuiltin`,
    `FarmEngine.Content`, and the compiler to a compatibility cartridge. Add
-   `Document`, `Edit` and undo/redo. *Exit:* migration goldens pass in F#, and
+   `Document`, `Edit` and undo/redo, the `export` settings, and a clear
+   new-game start state. The compiler is deterministic (byte-identical
+   output). *Exit:* migration goldens pass in F#, and
    F# compile + Rust run gives the same hashes as the C# path for every
    golden scenario.
 4. **Switch the app.** `ProjectWorkspace` uses the F# document, Play Mode
@@ -441,8 +456,11 @@ The C# engine keeps working until its replacement passes the same tests.
 6. **Rust player and plugins.** `farm-plugins` (QuickJS in wasmtime),
    `farm-render` wgpu backend, `farm-ui`, `farm-player` with kira. Embed it in
    Play Mode through `NativeControlHost` and retire the C# play views and Jint.
-   Add native and HTML Export Game. *Exit:* screenshot tests and replays
-   match between embedded, standalone and wasm players.
+   Add the game shell (title screen, save slots, settings, gamepad) and Export
+   Game for Windows and Linux, then the optional web demo target
+   ([EXPORT.md](EXPORT.md)). *Exit:* screenshot tests and replays match
+   between embedded, standalone and wasm players, and exported sample games
+   replay their goldens on Windows and Linux.
 7. **Native numerics (v9).** First the web version adopts `farm-wasm` for play
    and Fable-compiled `FarmEngine.Authoring` for migrations, validation and
    compiling, so both apps run one engine. Then switch `farm-sim` to integer
