@@ -64,17 +64,31 @@ exit criteria for each phase.
 3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
 4. [ ] Switch the app to F# + Rust; delete the C# engine projects
 5. [ ] Editor port on the new stack (the list above)
-6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game
+6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
+   Windows and Linux, then an optional web demo target
 7. [ ] Native numerics (v9): one engine for web and native
+
+## Export Game
+
+Export makes real desktop games, not browser games. It copies a prebuilt
+`farm-player` for the target, renames it, and puts the compiled `game.cart`
+next to it. Windows and Linux (including Steam Deck) come first. A web demo
+build for itch.io pages is optional and comes after them, and macOS comes
+later. The web version's single-file HTML export is not ported.
+
+It ships in phase 6, but earlier phases make decisions it depends on (the
+cartridge's game info, saves that survive game updates, a deterministic
+compiler). [docs/EXPORT.md](docs/EXPORT.md) has the design and the list.
 
 ## Later
 
-- **Export Game**: a single-file HTML game and a hosting ZIP (embed the web
-  repo's prebuilt `shell.iife.js`, as in `src/lib/export-html.ts`), plus a
-  standalone native "player" build.
 - **Localization** of the editor UI (`src/lib/i18n.ts`).
 - **Code signing** for the Windows installer (see `docs/RELEASING.md`).
 - **Out-of-process plugin host.** Jint runs in-process today; a separate
   worker process would fully contain hostile plugins.
-- **macOS/Linux builds.** Avalonia and Velopack already support them; this
-  needs packaging and CI jobs.
+- **macOS/Linux builds** of the editor. Avalonia and Velopack already support
+  them; this needs packaging and CI jobs. (Exported *games* get Linux builds
+  in phase 6, whatever the editor runs on.)
+- **More export targets**: macOS, and Steamworks integration (achievements,
+  overlay, Steam Input). See the open questions in
+  [docs/EXPORT.md](docs/EXPORT.md#open-questions).
