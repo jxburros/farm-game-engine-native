@@ -82,7 +82,7 @@ pub fn create_game_state(project: &GameProject, seed: Option<&str>) -> GameState
                 QuestObjectiveProgress { progress: objective.progress, completed: objective.completed },
             );
         }
-        quests.insert(quest.id.clone(), QuestProgress { status: quest.status.clone(), objectives });
+        quests.insert(quest.id.clone(), QuestProgress { status: quest.status.clone(), objectives: Some(objectives) });
     }
 
     let mut npcs = IndexMap::new();
@@ -185,7 +185,7 @@ pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameP
         if let Some(progress) = state.quests.get(&quest.id) {
             quest.status = progress.status.clone();
             for objective in &mut quest.objectives {
-                if let Some(objective_progress) = progress.objectives.get(&objective.id) {
+                if let Some(objective_progress) = progress.objectives.as_ref().and_then(|map| map.get(&objective.id)) {
                     objective.progress = objective_progress.progress;
                     objective.completed = objective_progress.completed;
                 }

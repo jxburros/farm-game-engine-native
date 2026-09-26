@@ -1,3 +1,4 @@
-//! Farming modules (port of `FarmEngine.Core/Farming`, engine-core/src/farming).
+//! Farming systems (port of `Farming/*`).
 
 pub mod crops;
+pub mod farming_actions;

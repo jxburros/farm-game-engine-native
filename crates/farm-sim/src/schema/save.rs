@@ -123,7 +123,12 @@ pub struct QuestObjectiveProgress {
 pub struct QuestProgress {
     /// One of [`super::quest_statuses`].
     pub status: String,
-    pub objectives: IndexMap<String, QuestObjectiveProgress>,
+    /// Per-objective progress. `None` when the TS engine never wrote the key: `completeQuest`
+    /// spreads a missing entry (`{ ...undefined, status: 'completed' }`), so a quest completed
+    /// without a progress entry has no `objectives` key and hashes without it. Every normally
+    /// created entry has `Some(map)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub objectives: Option<IndexMap<String, QuestObjectiveProgress>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

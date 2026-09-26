@@ -89,6 +89,106 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
     }
 }
 
+// ─── Growth and harvest math (port of the rest of Farming/Crops.cs) ─────────────────────────
+
+use crate::rng::RandomSource;
+use crate::schema::{Crop, GameContent, Tile};
+
+pub fn get_crop_definition_from_content<'a>(content: &'a GameContent, crop_type: &str) -> Option<&'a CropDefinition> {
+    let _ = (content, crop_type);
+    todo!("port Crops.GetCropDefinitionFromContent")
+}
+
+pub fn get_crop_stage(planted_at: f64, current_time: f64, growth_time: f64, stages: f64, watered: bool) -> f64 {
+    let _ = (planted_at, current_time, growth_time, stages, watered);
+    todo!("port Crops.GetCropStage")
+}
+
+pub fn is_crop_mature(stage: f64, stages: f64) -> bool {
+    let _ = (stage, stages);
+    todo!("port Crops.IsCropMature")
+}
+
+pub fn calculate_crop_quality(watered: bool, fertilized: bool, days_without_water: f64) -> String {
+    let _ = (watered, fertilized, days_without_water);
+    todo!("port Crops.CalculateCropQuality")
+}
+
+pub fn roll_mutation(definition: Option<&CropDefinition>, quality: &str, rng: &mut dyn RandomSource) -> Option<String> {
+    let _ = (definition, quality, rng);
+    todo!("port Crops.RollMutation")
+}
+
+pub fn roll_yield(
+    definition: Option<&CropDefinition>,
+    quality: &str,
+    mutation: Option<&str>,
+    rng: &mut dyn RandomSource,
+) -> f64 {
+    let _ = (definition, quality, mutation, rng);
+    todo!("port Crops.RollYield")
+}
+
+pub fn calculate_harvest_value(
+    definition: Option<&CropDefinition>,
+    quality: &str,
+    mutation: Option<&str>,
+    quantity: f64,
+) -> f64 {
+    let _ = (definition, quality, mutation, quantity);
+    todo!("port Crops.CalculateHarvestValue")
+}
+
+pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> bool {
+    let _ = (definition, season);
+    todo!("port Crops.CanGrowInSeason")
+}
+
+pub fn get_current_season(game_day: f64) -> String {
+    let _ = game_day;
+    todo!("port Crops.GetCurrentSeason")
+}
+
+pub fn get_day_in_season(game_day: f64) -> f64 {
+    let _ = game_day;
+    todo!("port Crops.GetDayInSeason")
+}
+
+pub fn crop_growth_days(definition: &CropDefinition) -> f64 {
+    let _ = definition;
+    todo!("port Crops.CropGrowthDays")
+}
+
+pub fn crop_regrowth_days(definition: &CropDefinition) -> f64 {
+    let _ = definition;
+    todo!("port Crops.CropRegrowthDays")
+}
+
+pub fn compute_crop_stage(crop: &Crop, definition: &CropDefinition) -> f64 {
+    let _ = (crop, definition);
+    todo!("port Crops.ComputeCropStage")
+}
+
+pub fn is_crop_mature_by_days(crop: &Crop, definition: &CropDefinition) -> bool {
+    let _ = (crop, definition);
+    todo!("port Crops.IsCropMatureByDays")
+}
+
+pub fn create_planted_crop(crop_type: &str, planted_on_day: f64, fertilized: bool) -> Crop {
+    let _ = (crop_type, planted_on_day, fertilized);
+    todo!("port Crops.CreatePlantedCrop")
+}
+
+pub fn initialize_crop(crop_type: &str, planted_at: f64, fertilized: bool) -> Crop {
+    let _ = (crop_type, planted_at, fertilized);
+    todo!("port Crops.InitializeCrop")
+}
+
+pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: f64, y: f64, width: f64, height: f64) -> bool {
+    let _ = (tiles, x, y, width, height);
+    todo!("port Crops.CanPlaceMultiTileCrop")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

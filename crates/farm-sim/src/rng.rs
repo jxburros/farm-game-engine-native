@@ -96,6 +96,12 @@ pub fn next_int(state: &RngState, min: f64, max: f64) -> (f64, RngState) {
     ((value * (max - min + 1.0)).floor() + min, next)
 }
 
+/// Minimal random-source interface consumed by game math (port of `IRandomSource`).
+pub trait RandomSource {
+    fn float(&mut self) -> f64;
+    fn int(&mut self, min: f64, max: f64) -> f64;
+}
+
 /// Mutable convenience wrapper for command handlers: draws update the state in place; the
 /// handler stores the final state back into `GameState` once.
 #[derive(Debug, Clone)]
@@ -121,6 +127,7 @@ impl Rng {
     }
 
     /// Pick an index from weighted entries. Returns -1 for an empty/zero table.
+    #[allow(clippy::cast_possible_wrap)]
     pub fn weighted(&mut self, weights: &[f64]) -> i64 {
         let mut total = 0.0;
         for w in weights {
@@ -137,5 +144,15 @@ impl Rng {
             }
         }
         weights.len() as i64 - 1
+    }
+}
+
+impl RandomSource for Rng {
+    fn float(&mut self) -> f64 {
+        Rng::float(self)
+    }
+
+    fn int(&mut self, min: f64, max: f64) -> f64 {
+        Rng::int(self, min, max)
     }
 }

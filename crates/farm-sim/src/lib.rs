@@ -16,23 +16,45 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types, clippy::disallowed_methods)]
 
+pub mod animals;
 pub mod commands;
 pub mod content_builtin;
+pub mod crafting;
+pub mod dialogue_system;
+pub mod economy;
 pub mod effects;
+pub mod energy;
+pub mod engine;
 pub mod engine_types;
+pub mod events;
+pub mod extensibility;
 pub mod farming;
+pub mod fishing;
+pub mod game_time;
+pub mod gathering;
 pub mod hash;
 pub mod hooks;
+pub mod inventory;
 pub mod js;
+pub mod mines;
+pub mod npcs;
 pub mod packs;
+pub mod quests;
+pub mod replay;
 pub mod rng;
 pub mod schema;
+pub mod skills;
+pub mod social;
 pub mod stable_json;
 pub mod state;
+pub mod tools;
+pub mod weather;
+pub mod world;
 
 pub use commands::Command;
 pub use effects::Effect;
-pub use engine_types::{EngineContext, EngineStep};
+pub use engine::{advance_tick, apply_command};
+pub use engine_types::{Effects, EngineContext, StepOutput};
 pub use hash::{hash_state, hash_text, stable_stringify};
 pub use hooks::{HookBus, HookEvent};
 pub use rng::{Rng, RngState};
