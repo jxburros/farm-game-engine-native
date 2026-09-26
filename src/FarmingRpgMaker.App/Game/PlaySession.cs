@@ -269,6 +269,10 @@ public sealed class PlaySession : IDisposable
         }
 
         var moving = player.MoveIntent.Dx != 0 || player.MoveIntent.Dy != 0;
+        snapshot.Player.Moving = moving;
+        // Clock-driven atmosphere (time of day, weather, season) and the tick that animates
+        // water and walk cycles come straight from state; rendering never writes it back.
+        snapshot.Tick = State.Clock.Tick;
         return Graphics.ApplyGraphics(snapshot, GraphicsSource.FromState(Project, Content, State), scene, State.Clock.Tick, moving);
     }
 

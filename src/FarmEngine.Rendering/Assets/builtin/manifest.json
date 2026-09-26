@@ -1,0 +1,859 @@
+{
+ "version": 1,
+ "tileSize": 32,
+ "palette": [
+  "#2b2138",
+  "#4a3b4f",
+  "#1f4d2e",
+  "#2e6b3a",
+  "#3f8b44",
+  "#5fae4f",
+  "#8ccb5a",
+  "#c4e07a",
+  "#3d2a1e",
+  "#5c3d28",
+  "#7c563a",
+  "#a07350",
+  "#c49a6a",
+  "#e0c091",
+  "#4e3526",
+  "#3a3a48",
+  "#5a5a6b",
+  "#7d7d8e",
+  "#a3a3b1",
+  "#cfcfd8",
+  "#eef0f5",
+  "#a86a45",
+  "#d9a074",
+  "#f2c9a0",
+  "#1e3a6e",
+  "#2f6db5",
+  "#4f9be0",
+  "#8dd0f0",
+  "#d6f0fa",
+  "#7a1f2b",
+  "#c23a3a",
+  "#e8613f",
+  "#f28c3b",
+  "#f7b24a",
+  "#ffd96b",
+  "#fff0b0",
+  "#3c2a5c",
+  "#6a4a9c",
+  "#9b7bd0",
+  "#c9b3ee",
+  "#d95f8e",
+  "#f4a2c2",
+  "#b89a3c",
+  "#d8c06a",
+  "#b8642f",
+  "#6b7a90",
+  "#7fd6cc",
+  "#2f7f7a"
+ ],
+ "sheets": [
+  {
+   "file": "tiles.png",
+   "w": 256,
+   "h": 160
+  },
+  {
+   "file": "objects.png",
+   "w": 512,
+   "h": 288
+  },
+  {
+   "file": "characters.png",
+   "w": 512,
+   "h": 384
+  }
+ ],
+ "entries": [
+  {
+   "name": "animal-chicken",
+   "file": "characters.png",
+   "x": 0,
+   "y": 192,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 24
+  },
+  {
+   "name": "animal-cow",
+   "file": "characters.png",
+   "x": 64,
+   "y": 192,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 24
+  },
+  {
+   "name": "char-player",
+   "file": "characters.png",
+   "x": 0,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 4,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 6,
+   "idleFrame": 0
+  },
+  {
+   "name": "crop-blueberry",
+   "file": "objects.png",
+   "x": 96,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-carrot",
+   "file": "objects.png",
+   "x": 256,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-cauliflower",
+   "file": "objects.png",
+   "x": 0,
+   "y": 64,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-corn",
+   "file": "objects.png",
+   "x": 160,
+   "y": 64,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-generic",
+   "file": "objects.png",
+   "x": 320,
+   "y": 64,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-potato",
+   "file": "objects.png",
+   "x": 0,
+   "y": 112,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-pumpkin",
+   "file": "objects.png",
+   "x": 160,
+   "y": 112,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-strawberry",
+   "file": "objects.png",
+   "x": 320,
+   "y": 112,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-tomato",
+   "file": "objects.png",
+   "x": 0,
+   "y": 160,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-wheat",
+   "file": "objects.png",
+   "x": 160,
+   "y": 160,
+   "w": 32,
+   "h": 48,
+   "frames": 5,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "stages": 5
+  },
+  {
+   "name": "crop-withered",
+   "file": "objects.png",
+   "x": 192,
+   "y": 208,
+   "w": 32,
+   "h": 48,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "fx-ready",
+   "file": "tiles.png",
+   "x": 0,
+   "y": 128,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "item-generic",
+   "file": "objects.png",
+   "x": 224,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "item-material",
+   "file": "objects.png",
+   "x": 256,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "item-seed",
+   "file": "objects.png",
+   "x": 288,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "machine-altar",
+   "file": "objects.png",
+   "x": 320,
+   "y": 160,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "machine-furnace",
+   "file": "objects.png",
+   "x": 384,
+   "y": 160,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "machine-generic",
+   "file": "objects.png",
+   "x": 448,
+   "y": 160,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "machine-kitchen",
+   "file": "objects.png",
+   "x": 0,
+   "y": 208,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "machine-preserves",
+   "file": "objects.png",
+   "x": 64,
+   "y": 208,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "machine-workbench",
+   "file": "objects.png",
+   "x": 128,
+   "y": 208,
+   "w": 32,
+   "h": 48,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "states": [
+    "idle",
+    "working"
+   ]
+  },
+  {
+   "name": "node-boulder",
+   "file": "objects.png",
+   "x": 320,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-copper-ore",
+   "file": "objects.png",
+   "x": 352,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-iron-ore",
+   "file": "objects.png",
+   "x": 384,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-mine-rock",
+   "file": "objects.png",
+   "x": 416,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-quartz",
+   "file": "objects.png",
+   "x": 448,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-rock",
+   "file": "objects.png",
+   "x": 480,
+   "y": 208,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-stump",
+   "file": "objects.png",
+   "x": 0,
+   "y": 256,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-tree",
+   "file": "objects.png",
+   "x": 0,
+   "y": 0,
+   "w": 32,
+   "h": 64,
+   "frames": 3,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "node-weeds",
+   "file": "objects.png",
+   "x": 32,
+   "y": 256,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "npc-farmer",
+   "file": "characters.png",
+   "x": 128,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 4,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 6,
+   "idleFrame": 0
+  },
+  {
+   "name": "npc-merchant",
+   "file": "characters.png",
+   "x": 256,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 4,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 6,
+   "idleFrame": 0
+  },
+  {
+   "name": "npc-villager",
+   "file": "characters.png",
+   "x": 384,
+   "y": 0,
+   "w": 32,
+   "h": 48,
+   "frames": 4,
+   "rows": 4,
+   "anchor": "bottom",
+   "footprint": [
+    1,
+    1
+   ],
+   "directional": true,
+   "ticksPerFrame": 6,
+   "idleFrame": 0
+  },
+  {
+   "name": "tile-door",
+   "file": "tiles.png",
+   "x": 32,
+   "y": 128,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-floor",
+   "file": "tiles.png",
+   "x": 0,
+   "y": 96,
+   "w": 32,
+   "h": 32,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-grass",
+   "file": "tiles.png",
+   "x": 0,
+   "y": 0,
+   "w": 32,
+   "h": 32,
+   "frames": 4,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-grass-fall",
+   "file": "tiles.png",
+   "x": 128,
+   "y": 0,
+   "w": 32,
+   "h": 32,
+   "frames": 4,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-grass-summer",
+   "file": "tiles.png",
+   "x": 0,
+   "y": 32,
+   "w": 32,
+   "h": 32,
+   "frames": 4,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-grass-winter",
+   "file": "tiles.png",
+   "x": 128,
+   "y": 32,
+   "w": 32,
+   "h": 32,
+   "frames": 4,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-ladder",
+   "file": "tiles.png",
+   "x": 64,
+   "y": 128,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-path",
+   "file": "tiles.png",
+   "x": 128,
+   "y": 64,
+   "w": 32,
+   "h": 32,
+   "frames": 3,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-soil",
+   "file": "tiles.png",
+   "x": 64,
+   "y": 96,
+   "w": 32,
+   "h": 32,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-soil-fertilized",
+   "file": "tiles.png",
+   "x": 96,
+   "y": 128,
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-soil-watered",
+   "file": "tiles.png",
+   "x": 128,
+   "y": 96,
+   "w": 32,
+   "h": 32,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-wall",
+   "file": "tiles.png",
+   "x": 192,
+   "y": 96,
+   "w": 32,
+   "h": 32,
+   "frames": 2,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "tile-water",
+   "file": "tiles.png",
+   "x": 0,
+   "y": 64,
+   "w": 32,
+   "h": 32,
+   "frames": 4,
+   "rows": 1,
+   "anchor": "top",
+   "footprint": [
+    1,
+    1
+   ],
+   "ticksPerFrame": 8
+  }
+ ]
+}

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- **Built-in pixel art.** Sample games (and any project without its own art)
+  now render with a bundled pixel-art pack instead of colored rectangles:
+  textured grass, tilled/watered/fertilized soil, animated water, stone walls,
+  doors and wood floors; trees (three kinds, two tiles tall), stumps, rocks,
+  boulders and ore nodes; every built-in crop drawn through five growth stages
+  (plus a withered look); furnace, preserves jar, kitchen, workbench and altar
+  with a "working" state and an output-ready bubble; chickens and cows; and a
+  player, farmer, merchant and villager with four-direction walk cycles.
+  Creator-bound art always takes precedence; unknown mod ids fall back to
+  generic sprites.
+- **Atmosphere.** Play mode tints the world by the game clock (warm dawn and
+  dusk, cool blue nights, untouched at midday), colors grass and foliage by
+  season (autumn ochre, winter frost) and overlays rain streaks or snow
+  flakes for rainy, stormy and snowy weather. All of it is read from the
+  simulation state; rendering never writes back.
+- **Depth.** Entities and objects cast soft drop shadows and are drawn in
+  y-order, so you walk behind trees and in front of them.
+- Edit Mode uses the same art at its 28-px grid, so both modes look alike.
+- `tools/art`: the reproducible art pipeline (Blender-as-a-module renders of
+  procedural low-poly models, pixelated and quantized to one 48-color
+  palette; procedural tiles; sprite sheets + `manifest.json`). The generated
+  PNGs are committed, so building never needs Python or Blender.
+
 ## 0.1.0
 
 The first native Windows release of Farming RPG Maker: no browser inside,
