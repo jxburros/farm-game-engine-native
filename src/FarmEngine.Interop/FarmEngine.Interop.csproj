@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Interop</RootNamespace>
+    <Description>P/Invoke bindings and SafeHandle wrappers over the Rust farm-ffi library.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Set FarmFfiSkipCargo=true to build without a Rust toolchain; FarmFfi.IsAvailable is then false. -->
+    <FarmFfiSkipCargo Condition="'$(FarmFfiSkipCargo)' == ''">false</FarmFfiSkipCargo>
+    <CargoProfile Condition="'$(CargoProfile)' == ''">release</CargoProfile>
+    <CargoTargetDir>$(MSBuildThisFileDirectory)../../target/</CargoTargetDir>
+    <FarmFfiLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">farm_ffi.dll</FarmFfiLibraryName>
+    <FarmFfiLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libfarm_ffi.dylib</FarmFfiLibraryName>
+    <FarmFfiLibraryName Condition="'$(FarmFfiLibraryName)' == ''">libfarm_ffi.so</FarmFfiLibraryName>
+    <FarmFfiLibraryPath>$(CargoTargetDir)$(CargoProfile)/$(FarmFfiLibraryName)</FarmFfiLibraryPath>
+  </PropertyGroup>
+
+  <!--
+    Builds the Rust workspace's farm-ffi crate and copies the native library next to the managed
+    assembly, so `dotnet build`, `dotnet test` and `dotnet run` stay the only commands a
+    contributor needs (docs/LANGUAGES.md "Repository layout"). Without cargo on PATH the managed
+    build still succeeds and the FFI reports itself unavailable.
+  -->
+  <Target Name="CargoBuildFarmFfi" BeforeTargets="BeforeBuild" Condition="'$(FarmFfiSkipCargo)' != 'true'">
+    <Exec Command="cargo --version" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="CargoProbeExitCode" />
+    </Exec>
+    <Message Importance="high" Text="FarmEngine.Interop: cargo not found; building without the Rust farm-ffi library (set FarmFfiSkipCargo=true to silence this)." Condition="'$(CargoProbeExitCode)' != '0'" />
+    <Exec Command="cargo build --profile $(CargoProfile) -p farm-ffi" WorkingDirectory="$(MSBuildThisFileDirectory)../.." Condition="'$(CargoProbeExitCode)' == '0'" />
+    <ItemGroup Condition="'$(CargoProbeExitCode)' == '0' And Exists('$(FarmFfiLibraryPath)')">
+      <None Include="$(FarmFfiLibraryPath)" Link="$(FarmFfiLibraryName)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+  </Target>
+</Project>

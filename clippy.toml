@@ -1,0 +1,15 @@
+# Determinism rules for the Rust workspace (docs/LANGUAGES.md). These replace
+# BannedSymbols.txt from the C# engine.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "iteration order is random; use Vec, IndexMap or BTreeMap" },
+    { path = "std::collections::HashSet", reason = "iteration order is random; use Vec, IndexSet or BTreeSet" },
+    { path = "std::time::Instant", reason = "no wall clock in the simulation; use the game clock" },
+    { path = "std::time::SystemTime", reason = "no wall clock in the simulation; use the game clock" },
+]
+disallowed-methods = [
+    { path = "slice::sort_unstable", reason = "JavaScript sort is stable; use sort_by or js::stable_sort" },
+    { path = "slice::sort_unstable_by", reason = "JavaScript sort is stable; use sort_by or js::stable_sort" },
+    { path = "slice::sort_unstable_by_key", reason = "JavaScript sort is stable; use sort_by_key" },
+    { path = "f64::round", reason = "Rust rounds half away from zero; use js::round (JavaScript Math.round)" },
+    { path = "f32::round", reason = "use f64 and js::round in the compatibility phase" },
+]

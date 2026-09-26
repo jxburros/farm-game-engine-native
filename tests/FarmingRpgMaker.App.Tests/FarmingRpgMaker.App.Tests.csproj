@@ -22,6 +22,7 @@
     <ProjectReference Include="../../src/FarmEngine.Content/FarmEngine.Content.csproj" />
     <ProjectReference Include="../../src/FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
     <ProjectReference Include="../../src/FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Interop/FarmEngine.Interop.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />

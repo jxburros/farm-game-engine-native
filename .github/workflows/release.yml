@@ -41,6 +41,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # FarmEngine.Interop builds crates/farm-ffi (farm_ffi.dll ships in the installer).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94"
+
       - name: Determine version
         id: version
         shell: pwsh

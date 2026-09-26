@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Golden/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Golden fixtures are shared with the Rust and F# tests (docs/LANGUAGES.md). -->
+    <None Include="../../fixtures/golden/**/*.json" Link="Golden/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
