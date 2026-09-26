@@ -55,10 +55,10 @@ public static class Quests
         }
 
         // TS: { ...state.quests[questId], status: 'completed' }. A missing entry
-        // spreads to nothing; here it becomes an entry with empty objectives.
+        // spreads to nothing: the entry has no objectives key at all.
         var completed = state.Quests.TryGetValue(questId, out var existing)
             ? existing with { Status = "completed" }
-            : new QuestProgress { Status = "completed" };
+            : new QuestProgress { Status = "completed", Objectives = null };
         var quests = new OrderedDictionary<string, QuestProgress>(state.Quests) { [questId] = completed };
 
         return new EngineStep(
@@ -84,7 +84,7 @@ public static class Quests
             if (quest is null || progress is null || progress.Status != "active") continue;
 
             var changed = false;
-            var objectives = new OrderedDictionary<string, QuestObjectiveProgress>(progress.Objectives);
+            var objectives = new OrderedDictionary<string, QuestObjectiveProgress>(progress.Objectives ?? []);
 
             foreach (var objective in quest.Objectives)
             {

@@ -31,11 +31,33 @@ public sealed class App : Application
             var store = new JsonSettingsStore();
             var service = CreateUpdateService(store.Load().Channel);
             var coordinator = new UpdateCoordinator(service, store);
-            var viewModel = new MainWindowViewModel(coordinator, ShellComposition.CreateDefault());
+            var composition = ShellComposition.CreateDefault();
+            var viewModel = new MainWindowViewModel(coordinator, composition);
             var window = new MainWindow(new ShellUrlLauncher()) { DataContext = viewModel };
             desktop.MainWindow = window;
 
-            desktop.ShutdownRequested += (_, _) => coordinator.ApplyOnExitIfReady();
+            // Nothing a creator did in the last second is lost: flush before any exit path.
+            coordinator.Restarting += (_, _) => composition.PrepareForShutdown();
+            desktop.ShutdownRequested += (_, _) =>
+            {
+                composition.PrepareForShutdown();
+                coordinator.ApplyOnExitIfReady();
+            };
+            Dispatcher.UIThread.UnhandledException += (_, e) =>
+            {
+                // Last chance before the process dies: save what we can, then let it crash.
+                System.Diagnostics.Trace.TraceError($"Unhandled exception: {e.Exception}");
+                try
+                {
+                    composition.PrepareForShutdown();
+                }
+#pragma warning disable CA1031 // Already crashing; a second failure must not hide the first.
+                catch (Exception flushError)
+#pragma warning restore CA1031
+                {
+                    System.Diagnostics.Trace.TraceError($"Flush after crash failed: {flushError}");
+                }
+            };
             window.Opened += (_, _) => DispatcherTimer.RunOnce(
                 () => _ = RunStartupCheckAsync(coordinator),
                 StartupCheckDelay);

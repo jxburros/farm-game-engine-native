@@ -25,7 +25,17 @@
     </Exec>
     <Message Importance="high" Text="FarmEngine.Interop: cargo not found; building without the Rust farm-ffi library (set FarmFfiSkipCargo=true to silence this)." Condition="'$(CargoProbeExitCode)' != '0'" />
     <Exec Command="cargo build --profile $(CargoProfile) -p farm-ffi" WorkingDirectory="$(MSBuildThisFileDirectory)../.." Condition="'$(CargoProbeExitCode)' == '0'" />
-    <ItemGroup Condition="'$(CargoProbeExitCode)' == '0' And Exists('$(FarmFfiLibraryPath)')">
+    <PropertyGroup>
+      <FarmFfiStatus Condition="'$(CargoProbeExitCode)' == '0' And Exists('$(FarmFfiLibraryPath)')">built</FarmFfiStatus>
+      <FarmFfiStatus Condition="'$(FarmFfiStatus)' == ''">skipped</FarmFfiStatus>
+      <FarmFfiStatusFile>$(IntermediateOutputPath)farm_ffi.status</FarmFfiStatusFile>
+    </PropertyGroup>
+    <!-- farm_ffi.status tells tests whether the library is expected next to the assembly. -->
+    <WriteLinesToFile File="$(FarmFfiStatusFile)" Lines="$(FarmFfiStatus)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(FarmFfiStatusFile)" Link="farm_ffi.status" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(FarmFfiStatus)' == 'built'">
       <None Include="$(FarmFfiLibraryPath)" Link="$(FarmFfiLibraryName)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     </ItemGroup>
   </Target>

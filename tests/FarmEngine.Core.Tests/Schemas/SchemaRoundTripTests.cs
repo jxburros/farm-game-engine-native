@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
 
@@ -356,16 +357,56 @@ public class SchemaRoundTripTests
                 },
             ],
         };
+        // Parse-level: what zod rejects.
         var errors = SchemaValidation.ValidateProject(broken);
         Assert.Contains(errors, e => e.StartsWith("mode:", StringComparison.Ordinal));
         Assert.Contains(errors, e => e.StartsWith("scenes.0.height:", StringComparison.Ordinal));
-        Assert.Contains(errors, e => e.StartsWith("scenes.0.tiles.0:", StringComparison.Ordinal));
         Assert.Contains(errors, e => e.StartsWith("scenes.0.tiles.0.0.background:", StringComparison.Ordinal));
         Assert.Contains(errors, e => e.StartsWith("quests.0.status:", StringComparison.Ordinal));
-        Assert.Contains(errors, e => e.StartsWith("events.0.id:", StringComparison.Ordinal));
         Assert.Contains(errors, e => e.StartsWith("events.0.conditions.0.quantity:", StringComparison.Ordinal));
-        Assert.Contains(errors, e => e.StartsWith("events.0.conditions.1:", StringComparison.Ordinal));
         Assert.Contains(errors, e => e.StartsWith("events.0.outcomes.0.radius:", StringComparison.Ordinal));
+        // Lint-level: what the web editor lets a creator save. Never a parse error.
+        Assert.DoesNotContain(errors, e => e.StartsWith("scenes.0.tiles.0:", StringComparison.Ordinal));
+        Assert.DoesNotContain(errors, e => e.StartsWith("events.0.id:", StringComparison.Ordinal));
+        Assert.DoesNotContain(errors, e => e.StartsWith("events.0.conditions.1:", StringComparison.Ordinal));
+        var lint = SchemaValidation.LintProject(broken);
+        Assert.Contains(lint, e => e.StartsWith("scenes.0.tiles.0:", StringComparison.Ordinal));
+        Assert.Contains(lint, e => e.StartsWith("events.0.id:", StringComparison.Ordinal));
+        Assert.Contains(lint, e => e.StartsWith("events.0.conditions.1:", StringComparison.Ordinal));
+        Assert.DoesNotContain(lint, e => e.StartsWith("mode:", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Shapes the web editor produces and zod accepts (no refinements exist for them) must
+    /// load here: inverted regions, inverted day ranges, a start scene that was deleted, an
+    /// empty id. Import parity, not lint cleanliness.
+    /// </summary>
+    [Fact]
+    public void ValidateProjectAcceptsWhatZodAccepts()
+    {
+        var project = LoadV8(out _);
+        var webShaped = project with
+        {
+            StartSceneId = "scene-that-was-deleted",
+            Items = [.. project.Items, new Item { Id = "", Name = "Unnamed", Description = "", Type = "material", Stackable = true, MaxStack = 1, Value = 0 }],
+            Events =
+            [
+                new GameEvent
+                {
+                    Id = "e", Name = "E", Trigger = "enter",
+                    Conditions =
+                    [
+                        new EnterTileCondition { X = 5, Y = 5, X2 = 2, Y2 = 1 },
+                        new DayRangeCondition { MinDay = 20, MaxDay = 3 },
+                        new TimeOfDayCondition { MinMinute = 800, MaxMinute = 300 },
+                    ],
+                    Outcomes = [],
+                },
+            ],
+        };
+        Assert.Empty(SchemaValidation.ValidateProject(webShaped));
+        Assert.True(Migrations.MigrateProject(JsonNode.Parse(JsonDefaults.Serialize(webShaped))).Ok);
+        Assert.NotEmpty(SchemaValidation.LintProject(webShaped));
     }
 
     [Fact]

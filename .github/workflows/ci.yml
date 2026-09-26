@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Reads rust-toolchain.toml (channel, components, wasm32 target).
+      # Keep in step with rust-toolchain.toml (rustup adds the toml's components/targets).
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.94"

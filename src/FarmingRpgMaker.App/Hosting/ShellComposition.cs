@@ -8,8 +8,19 @@ namespace FarmingRpgMaker.App.Hosting;
 /// over the open project) and the File-menu project commands, sharing one
 /// <see cref="ProjectWorkspace"/>.
 /// </summary>
-public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IProjectCommandHandler ProjectCommands)
+public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IProjectCommandHandler ProjectCommands, ProjectWorkspace? Workspace = null)
 {
+    /// <summary>
+    /// Ends a running playtest (honouring Keep changes) and writes pending edits to disk. The
+    /// app calls this on shutdown, before "Restart &amp; install", and from the last-chance
+    /// exception handler, so nothing a creator did in the last second is lost.
+    /// </summary>
+    public void PrepareForShutdown()
+    {
+        (GameSurfaceFactory as GameSurfaceFactory)?.Surface?.PrepareForShutdown();
+        Workspace?.FlushPendingSave();
+    }
+
     /// <summary>
     /// The real app: projects under <paramref name="dataDirectory"/> (default
     /// <see cref="AppDataPaths.DefaultRoot"/>, i.e. <c>%APPDATA%/FarmingRpgMaker</c>).
@@ -21,6 +32,6 @@ public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IP
     public static ShellComposition Create(ProjectWorkspace workspace, GameSurfaceOptions? options = null, IProjectDialogs? dialogs = null)
     {
         dialogs ??= new AvaloniaProjectDialogs();
-        return new ShellComposition(new GameSurfaceFactory(workspace, options, dialogs), new ProjectCommandHandler(workspace, dialogs));
+        return new ShellComposition(new GameSurfaceFactory(workspace, options, dialogs), new ProjectCommandHandler(workspace, dialogs), workspace);
     }
 }

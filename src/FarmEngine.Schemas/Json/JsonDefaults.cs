@@ -27,7 +27,9 @@ public static class JsonDefaults
             PropertyNameCaseInsensitive = false,
             ReadCommentHandling = JsonCommentHandling.Skip,
             AllowTrailingCommas = true,
-            NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+            // JSON.parse has no NaN/Infinity, and zod's z.number() rejects NaN: a project that
+            // carried them could never be opened by the web version again.
+            NumberHandling = JsonNumberHandling.Strict,
             WriteIndented = indented,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             RespectNullableAnnotations = false,

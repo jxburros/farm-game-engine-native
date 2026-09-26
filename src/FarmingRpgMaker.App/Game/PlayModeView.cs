@@ -211,6 +211,12 @@ public sealed class PlayModeView : UserControl
     public void ShowToast(ToastMessage message) => _toasts.Show(message);
 
     /// <summary>
+    /// The frame loop threw (engine, plugin mutation or renderer). The loop has stopped; the
+    /// host ends the playtest without keeping changes so the editor (and the autosave) survive.
+    /// </summary>
+    public event EventHandler<Exception>? Faulted;
+
+    /// <summary>
     /// One display frame (web game loop <c>update</c> + <c>draw</c>). The loop calls this
     /// at the display rate; tests call it directly with fixed deltas.
     /// </summary>
@@ -349,7 +355,19 @@ public sealed class PlayModeView : UserControl
         // Cap deltaTime to prevent a spiral of death (useGameLoop.ts).
         var delta = _lastFrameTime is { } last ? Math.Clamp((time - last).TotalSeconds, 0, 0.1) : 0;
         _lastFrameTime = time;
-        AdvanceFrame(delta);
+        try
+        {
+            AdvanceFrame(delta);
+        }
+#pragma warning disable CA1031 // A broken project or plugin must end the playtest, not the editor.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _running = false;
+            Faulted?.Invoke(this, ex);
+            return;
+        }
+
         _topLevel.RequestAnimationFrame(OnAnimationFrame);
     }
 

@@ -113,7 +113,13 @@ public sealed record QuestProgress
 {
     /// <summary>One of <see cref="QuestStatuses"/>.</summary>
     public string Status { get; init; } = "";
-    public OrderedDictionary<string, QuestObjectiveProgress> Objectives { get; init; } = [];
+    /// <summary>
+    /// Per-objective progress. Null when the TS engine never wrote the key: <c>completeQuest</c>
+    /// spreads a missing entry (<c>{ ...undefined, status: 'completed' }</c>), so a quest completed
+    /// without a progress entry has no <c>objectives</c> key and hashes without it. Every
+    /// normally created entry has a map.
+    /// </summary>
+    public OrderedDictionary<string, QuestObjectiveProgress>? Objectives { get; init; }
 }
 
 public sealed record DialogueState

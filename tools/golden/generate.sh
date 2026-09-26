@@ -9,13 +9,13 @@
 # tools/golden/.work/ts-ref and checked out at $REF (default: main).
 # With an argument that checkout is used as-is (its current HEAD).
 #
-# Output: tests/FarmEngine.Core.Tests/Golden/ (wiped and rewritten), plus
-# Golden/SOURCE.txt recording the exact source commit.
+# Output: fixtures/golden/ (wiped and rewritten; shared by the C#, Rust and F#
+# tests), plus fixtures/golden/SOURCE.txt recording the exact source commit.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NATIVE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-OUT="$NATIVE_ROOT/tests/FarmEngine.Core.Tests/Golden"
+OUT="$NATIVE_ROOT/fixtures/golden"
 GENERATOR="$SCRIPT_DIR/golden.gen.test.ts"
 REPO_URL="${REPO_URL:-https://github.com/jxburros/farm-game-engine}"
 REF="${REF:-main}"

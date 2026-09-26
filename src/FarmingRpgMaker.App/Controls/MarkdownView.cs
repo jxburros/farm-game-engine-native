@@ -38,6 +38,9 @@ public sealed class MarkdownView : Border
     /// <summary>The rendered blocks (for tests).</summary>
     public StackPanel Document { get; private set; } = new();
 
+    /// <summary>A link in the text was clicked; the host decides how to open it.</summary>
+    public event EventHandler<string>? LinkClicked;
+
     private void Rebuild()
     {
         var panel = new StackPanel { Spacing = 6 };
@@ -65,7 +68,7 @@ public sealed class MarkdownView : Border
         Child = panel;
     }
 
-    private static SelectableTextBlock Text(IReadOnlyList<MarkdownInline> inlines, string styleClass, double topMargin = 0)
+    private SelectableTextBlock Text(IReadOnlyList<MarkdownInline> inlines, string styleClass, double topMargin = 0)
     {
         var block = new SelectableTextBlock
         {
@@ -76,10 +79,30 @@ public sealed class MarkdownView : Border
         };
         foreach (var inline in inlines)
         {
-            block.Inlines!.Add(ToRun(inline));
+            block.Inlines!.Add(ToInline(inline));
         }
 
         return block;
+    }
+
+    private Inline ToInline(MarkdownInline inline)
+    {
+        if (inline.LinkUrl is { } url)
+        {
+            var link = new HyperlinkButton
+            {
+                Content = inline.Text,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Classes = { "md-link" },
+            };
+            ToolTip.SetTip(link, url);
+            link.Click += (_, _) => LinkClicked?.Invoke(this, url);
+            return new InlineUIContainer { Child = link, BaselineAlignment = BaselineAlignment.Baseline };
+        }
+
+        return ToRun(inline);
     }
 
     private static Run ToRun(MarkdownInline inline)
@@ -101,16 +124,10 @@ public sealed class MarkdownView : Border
             run.Background = Brush("FarmCodeBackgroundBrush", Color.FromRgb(0xEE, 0xE8, 0xDA));
         }
 
-        if (inline.LinkUrl is not null)
-        {
-            run.Foreground = Brush("FarmPrimaryBrush", Color.FromRgb(0x09, 0x5C, 0x34));
-            run.TextDecorations = TextDecorations.Underline;
-        }
-
         return run;
     }
 
-    private static Control ListItem(MarkdownListItem item)
+    private Control ListItem(MarkdownListItem item)
     {
         var grid = new Grid
         {
@@ -131,7 +148,7 @@ public sealed class MarkdownView : Border
         return grid;
     }
 
-    private static Control Quote(MarkdownQuote quote) => new Border
+    private Control Quote(MarkdownQuote quote) => new Border
     {
         Classes = { "md-quote" },
         Child = Text(quote.Inlines, "md-quote-text"),

@@ -2,8 +2,9 @@
 
 The TypeScript engine ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
 is the reference implementation. This folder generates JSON fixtures from it
-so `tests/FarmEngine.Core.Tests` can check that the C# port produces
-byte-identical `StableJson` and `Hash.HashState` output (see `docs/PORTING.md`).
+into `fixtures/golden/`, shared by the C# tests (`tests/FarmEngine.Core.Tests`),
+the Rust tests (`crates/farm-sim/tests`) and the F# tests, which all check for
+byte-identical stable JSON and state hashes (see `docs/PORTING.md`).
 
 ## Regenerate
 
@@ -18,8 +19,8 @@ tools/golden/generate.sh /path/to/farm-game-engine
 The script copies `golden.gen.test.ts` into the checkout as
 `tests/unit/golden.gen.test.ts`, so the repo's vitest config resolves the
 `@farm-engine/*` and `@/` aliases. It then runs only that file with
-`GOLDEN_OUT=tests/FarmEngine.Core.Tests/Golden`, deletes the copied file, and
-writes the source commit to `Golden/SOURCE.txt`. The script wipes and fully
+`GOLDEN_OUT=fixtures/golden`, deletes the copied file, and
+writes the source commit to `fixtures/golden/SOURCE.txt`. The script wipes and fully
 rewrites the output, and two runs produce byte-identical files. The fixtures
 are generated, so never edit them by hand.
 

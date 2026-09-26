@@ -4,20 +4,35 @@ namespace FarmEngine.Schemas;
 
 /// <summary>
 /// The C# records don't enforce zod refinements (int, positive, min/max,
-/// enum membership, …). This re-checks the constraints that matter most for a
-/// loaded <see cref="GameProject"/> — plus a few structural invariants zod can't
-/// express (tile grid dimensions, dangling start scene) — and reports them as
-/// <c>path: message</c> strings using zod's dotted issue paths
-/// (e.g. <c>scenes.0.tiles.1.2.background</c>). Not exhaustive.
+/// enum membership, …). <see cref="ValidateProject"/> re-checks exactly the
+/// constraints the web's zod schemas enforce on parse, so a project the web
+/// version accepts loads here too, and reports them as <c>path: message</c>
+/// strings using zod's dotted issue paths (e.g. <c>scenes.0.tiles.1.2.background</c>).
+/// <see cref="LintProject"/> adds the structural checks zod does not have
+/// (empty ids, duplicate scene ids, tile grid vs. width/height, a dangling
+/// start scene, inverted regions and ranges): they are problems for the
+/// Problems panel, never reasons to refuse a file. Not exhaustive.
 /// </summary>
 public static class SchemaValidation
 {
     private static readonly IReadOnlyList<string> NpcBirthdaySeasons = PrimitivesSchema.ClassicSeasons;
 
-    public static IReadOnlyList<string> ValidateProject(GameProject p)
+    /// <summary>Parse-level checks only (what zod rejects). Import and migrations use this.</summary>
+    public static IReadOnlyList<string> ValidateProject(GameProject p) => Collect(p, parse: true, lint: false);
+
+    /// <summary>
+    /// Structural lint zod cannot express. The web editor lets creators save all of these, so
+    /// they are reported, not rejected.
+    /// </summary>
+    public static IReadOnlyList<string> LintProject(GameProject p) => Collect(p, parse: false, lint: true);
+
+    private static IReadOnlyList<string> Collect(GameProject p, bool parse, bool lint)
     {
         var errors = new List<string>();
-        void Error(string path, string message) => errors.Add($"{path}: {message}");
+        var parseErrors = new List<string>();
+        var lintErrors = new List<string>();
+        void Error(string path, string message) => parseErrors.Add($"{path}: {message}");
+        void Lint(string path, string message) => lintErrors.Add($"{path}: {message}");
 
         void Int(string path, double value)
         {
@@ -40,9 +55,10 @@ public static class SchemaValidation
         {
             if (!(value >= min && value <= max)) Error(path, $"Number must be between {Js.Num(min)} and {Js.Num(max)}");
         }
+        // zod: `z.string()` accepts "" — an empty id is a lint problem, not a parse error.
         void NonEmpty(string path, string? value)
         {
-            if (string.IsNullOrEmpty(value)) Error(path, "Required id must be a non-empty string");
+            if (string.IsNullOrEmpty(value)) Lint(path, "Required id must be a non-empty string");
         }
         void OneOf(string path, string? value, IReadOnlyList<string> allowed, bool optional = false)
         {
@@ -70,13 +86,13 @@ public static class SchemaValidation
             var scene = p.Scenes[s];
             var sp = $"scenes.{s}";
             NonEmpty($"{sp}.id", scene.Id);
-            if (!string.IsNullOrEmpty(scene.Id) && !sceneIds.Add(scene.Id)) Error($"{sp}.id", $"Duplicate scene id '{scene.Id}'");
+            if (!string.IsNullOrEmpty(scene.Id) && !sceneIds.Add(scene.Id)) Lint($"{sp}.id", $"Duplicate scene id '{scene.Id}'");
             PositiveInt($"{sp}.width", scene.Width);
             PositiveInt($"{sp}.height", scene.Height);
 
             if (Js.IsInteger(scene.Height) && scene.Height > 0 && scene.Tiles.Count != scene.Height)
             {
-                Error($"{sp}.tiles", $"Expected {Js.Num(scene.Height)} rows (scene height), found {scene.Tiles.Count}");
+                Lint($"{sp}.tiles", $"Expected {Js.Num(scene.Height)} rows (scene height), found {scene.Tiles.Count}");
             }
             for (var y = 0; y < scene.Tiles.Count; y++)
             {
@@ -88,7 +104,7 @@ public static class SchemaValidation
                 }
                 if (Js.IsInteger(scene.Width) && scene.Width > 0 && row.Count != scene.Width)
                 {
-                    Error($"{sp}.tiles.{y}", $"Expected {Js.Num(scene.Width)} tiles (scene width), found {row.Count}");
+                    Lint($"{sp}.tiles.{y}", $"Expected {Js.Num(scene.Width)} tiles (scene width), found {row.Count}");
                 }
                 for (var x = 0; x < row.Count; x++)
                 {
@@ -118,7 +134,7 @@ public static class SchemaValidation
         }
         if (p.Scenes.Count > 0 && !sceneIds.Contains(p.StartSceneId))
         {
-            Error("startSceneId", $"No scene with id '{p.StartSceneId}'");
+            Lint("startSceneId", $"No scene with id '{p.StartSceneId}'");
         }
 
         // Player
@@ -187,7 +203,7 @@ public static class SchemaValidation
             var ep = $"events.{e}";
             NonEmpty($"{ep}.id", ev.Id);
             OneOf($"{ep}.trigger", ev.Trigger, EventTriggers.All);
-            ValidateConditions(ep, ev.Conditions, Error, PositiveInt, OneOf);
+            ValidateConditions(ep, ev.Conditions, Error, Lint, PositiveInt, OneOf);
             ValidateOutcomes(ep, ev.Outcomes, Error, Int, Range, OneOf);
         }
 
@@ -199,7 +215,7 @@ public static class SchemaValidation
             NonEmpty($"{ap}.id", action.Id);
             NonNegative($"{ap}.energyCost", action.EnergyCost);
             if (action.Hotkey is { Length: > 1 }) Error($"{ap}.hotkey", "String must contain at most 1 character(s)");
-            ValidateConditions(ap, action.Conditions, Error, PositiveInt, OneOf);
+            ValidateConditions(ap, action.Conditions, Error, Lint, PositiveInt, OneOf);
             ValidateOutcomes(ap, action.Outcomes, Error, Int, Range, OneOf);
         }
         for (var m = 0; m < p.Minigames.Count; m++)
@@ -301,6 +317,8 @@ public static class SchemaValidation
             if (rng.S is null || rng.S.Length != 4) Error("rngState.s", "Expected a tuple of 4 integers");
         }
 
+        if (parse) errors.AddRange(parseErrors);
+        if (lint) errors.AddRange(lintErrors);
         return errors;
     }
 
@@ -387,6 +405,7 @@ public static class SchemaValidation
         string basePath,
         List<EventCondition> conditions,
         Action<string, string> error,
+        Action<string, string> lint,
         Action<string, double> positiveInt,
         Action<string, string?, IReadOnlyList<string>, bool> oneOf)
     {
@@ -399,39 +418,39 @@ public static class SchemaValidation
                     error(cp, "Expected object, received null");
                     break;
                 case EnterTileCondition t:
-                    RegionSanity(cp, t.X, t.Y, t.X2, t.Y2, error);
+                    RegionSanity(cp, t.X, t.Y, t.X2, t.Y2, lint);
                     break;
                 case InteractTileCondition t:
-                    RegionSanity(cp, t.X, t.Y, t.X2, t.Y2, error);
+                    RegionSanity(cp, t.X, t.Y, t.X2, t.Y2, lint);
                     break;
                 case HasItemCondition h:
-                    if (string.IsNullOrEmpty(h.ItemId)) error($"{cp}.itemId", "Required id must be a non-empty string");
+                    if (string.IsNullOrEmpty(h.ItemId)) lint($"{cp}.itemId", "Required id must be a non-empty string");
                     break;
                 case InventorySpaceCondition s:
-                    if (string.IsNullOrEmpty(s.ItemId)) error($"{cp}.itemId", "Required id must be a non-empty string");
+                    if (string.IsNullOrEmpty(s.ItemId)) lint($"{cp}.itemId", "Required id must be a non-empty string");
                     positiveInt($"{cp}.quantity", s.Quantity);
                     break;
                 case FlagCondition f:
-                    if (string.IsNullOrEmpty(f.Flag)) error($"{cp}.flag", "Flag name must be a non-empty string");
+                    if (string.IsNullOrEmpty(f.Flag)) lint($"{cp}.flag", "Flag name must be a non-empty string");
                     break;
                 case DayRangeCondition d:
-                    if (d.MinDay is { } minDay && d.MaxDay is { } maxDay && minDay > maxDay) error(cp, "minDay is greater than maxDay");
+                    if (d.MinDay is { } minDay && d.MaxDay is { } maxDay && minDay > maxDay) lint(cp, "minDay is greater than maxDay");
                     break;
                 case YearRangeCondition y:
-                    if (y.MinYear is { } minYear && y.MaxYear is { } maxYear && minYear > maxYear) error(cp, "minYear is greater than maxYear");
+                    if (y.MinYear is { } minYear && y.MaxYear is { } maxYear && minYear > maxYear) lint(cp, "minYear is greater than maxYear");
                     break;
                 case TimeOfDayCondition t:
-                    if (t.MinMinute > t.MaxMinute) error(cp, "minMinute is greater than maxMinute");
+                    if (t.MinMinute > t.MaxMinute) lint(cp, "minMinute is greater than maxMinute");
                     break;
                 case QuestStatusCondition q:
-                    if (string.IsNullOrEmpty(q.QuestId)) error($"{cp}.questId", "Required id must be a non-empty string");
+                    if (string.IsNullOrEmpty(q.QuestId)) lint($"{cp}.questId", "Required id must be a non-empty string");
                     oneOf($"{cp}.status", q.Status, QuestStatuses.All, false);
                     break;
                 case FriendshipCondition f:
-                    if (string.IsNullOrEmpty(f.NpcId)) error($"{cp}.npcId", "Required id must be a non-empty string");
+                    if (string.IsNullOrEmpty(f.NpcId)) lint($"{cp}.npcId", "Required id must be a non-empty string");
                     break;
                 case FestivalIdCondition f:
-                    if (string.IsNullOrEmpty(f.FestivalId)) error($"{cp}.festivalId", "Required id must be a non-empty string");
+                    if (string.IsNullOrEmpty(f.FestivalId)) lint($"{cp}.festivalId", "Required id must be a non-empty string");
                     break;
             }
         }
