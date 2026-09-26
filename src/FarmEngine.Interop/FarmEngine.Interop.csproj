@@ -13,6 +13,10 @@
     <FarmFfiLibraryPath>$(CargoTargetDir)$(CargoProfile)/$(FarmFfiLibraryName)</FarmFfiLibraryPath>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+  </ItemGroup>
+
   <!--
     Builds the Rust workspace's farm-ffi crate and copies the native library next to the managed
     assembly, so `dotnet build`, `dotnet test` and `dotnet run` stay the only commands a

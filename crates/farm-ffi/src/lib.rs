@@ -6,10 +6,13 @@
 //!   [`fe_bytes_free`]; no pointer into Rust memory outlives the next call on that session;
 //! - panics are caught at the boundary and returned as error results, never unwound into .NET.
 //!
-//! Phase 1 exposes the primitives (version, stable hash) so the MSBuild/cargo integration and the
-//! P/Invoke path can be exercised end to end. Sessions arrive with the `farm-sim` port (phase 2).
+//! `lib.rs` has the primitives (version, stable hash, buffers); [`session`] has the engine
+//! sessions (create from project JSON, apply commands, tick, read state/hash/views).
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+
+pub mod session;
+pub use session::FeSession;
 
 /// A Rust-allocated byte buffer handed to .NET. Free it with [`fe_bytes_free`].
 #[repr(C)]
@@ -21,13 +24,13 @@ pub struct FeBytes {
 }
 
 impl FeBytes {
-    fn from_vec(mut vec: Vec<u8>) -> Self {
+    pub(crate) fn from_vec(mut vec: Vec<u8>) -> Self {
         let bytes = Self { ptr: vec.as_mut_ptr(), len: vec.len(), cap: vec.capacity() };
         std::mem::forget(vec);
         bytes
     }
 
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self { ptr: std::ptr::null_mut(), len: 0, cap: 0 }
     }
 }
@@ -39,6 +42,8 @@ pub enum FeResult {
     Ok = 0,
     InvalidArgument = 1,
     Panic = 2,
+    /// A previous call on this session panicked; its state is not trustworthy.
+    Poisoned = 3,
 }
 
 /// The crate version as a NUL-terminated UTF-8 string (static; do not free).
