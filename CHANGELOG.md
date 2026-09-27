@@ -2,6 +2,16 @@
 
 ## 0.2.0 (unreleased)
 
+- **Creator content workspace.** Edit Mode now includes native forms for
+  NPCs, dialogue, items, crops, quests, events, shops, recipes, nodes,
+  machines, wildlife, actions and minigames. Creators can add, edit and delete
+  entries through the F# undoable document. Nested fields are editable as
+  JSON. Project settings and the calendar have their own controls, and the
+  Problems tab links issues to affected entries.
+- **Pack manager.** Creators can review a pack's manifest, dependencies,
+  requested permissions and plugin source before installing it. The Mods tab
+  supports enable/disable, load order, removal and importing content into
+  the project, all through undoable F# edits.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

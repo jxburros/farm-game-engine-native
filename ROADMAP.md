@@ -144,13 +144,20 @@ the most.
   drawer's skip day (`GameTime.PerformSleep`); then Edit Mode's preview,
   then delete the C# engine projects.
 
-**Editor port (phase 5)**: map tools are now available as native views.
+**Editor port (phase 5)**: map tools and a broad content workspace are now
+available as native views.
 - [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
   transitions and collision; art bindings remain in the art pipeline milestone.
-- [ ] Content editors: NPCs and dialogue, items, crops, quests, events,
-  shops, recipes, node types, wildlife.
-- [ ] Project settings and calendar, Problems panel, mods and actions, art
-  import.
+- [x] Content workspace for NPCs, dialogue, items, crops, quests, events,
+  shops, recipes, node and machine types, animal species, fish tables,
+  actions and minigames. Scalar fields have native controls; nested fields
+  accept JSON. Every save/removal uses the F# document and undo history.
+- [x] Project settings and calendar editor; Problems panel with navigation
+  to affected map scenes and content entries.
+- [x] Mods panel: validate and review pack manifests, permissions and plugin
+  source before install; enable/disable, reorder, remove and import packs.
+- [ ] Dedicated nested editors and cross-reference pickers for each content
+  type; art import/bindings, workshop and interface panels.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
