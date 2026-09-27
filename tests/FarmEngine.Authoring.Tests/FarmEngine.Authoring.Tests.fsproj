@@ -18,10 +18,16 @@
     <Compile Include="ProblemsTests.fs" />
     <Compile Include="PatternsTests.fs" />
     <Compile Include="PropertyTests.fs" />
+    <Compile Include="BrokenProjects.fs" />
+    <Compile Include="ValidationParityTests.fs" />
+    <Compile Include="ValidationTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../FarmEngine.Core.Tests/Fixtures/migrated/*.json" Link="Migrated/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/content/*.json" Link="Golden/content/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/replays/*.json" Link="Golden/replays/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../FarmEngine.Core.Tests/Fixtures/project-v*.json;../FarmEngine.Core.Tests/Fixtures/packs-project.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
