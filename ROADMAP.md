@@ -122,9 +122,11 @@ the most.
   and the F# migrations use them. A parity test compares them with the C#
   on every golden and sample project and on 111 broken projects that
   together hit every check (467 F# tests).
-- [ ] Port `Packs` merging and `ContentBuiltin` to F#; FlatBuffers
-  `cart.fbs`/`save.fbs` with the `GameInfo` table; the deterministic
-  cartridge compiler.
+- [ ] Finish `Packs` and `ContentBuiltin` in F#: load order, conflict-aware
+  content merge and project import now run in F#; namespacing and compatibility
+  checks still use the C# implementation.
+- [ ] Add FlatBuffers `cart.fbs`/`save.fbs` with the `GameInfo` table and the
+  deterministic cartridge compiler.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).

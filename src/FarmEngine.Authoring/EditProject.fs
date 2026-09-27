@@ -106,8 +106,8 @@ module internal EditProject =
         match project.ContentPacks |> Seq.tryFind (fun i -> packId i = id) with
         | None -> project
         | Some install ->
-            let result = Packs.ApplyPackToProject(project, install.Pack)
-            removePack id result.Project
+            let imported, _ = PackMerge.applyToProject project install.Pack
+            removePack id imported
 
     /// Imports and kept playtests: the whole project.
     let replaceProject (next: GameProject) (project: GameProject) =
