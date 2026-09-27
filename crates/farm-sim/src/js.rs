@@ -94,6 +94,38 @@ pub fn num(value: f64) -> String {
     buffer.format(value).to_owned()
 }
 
+/// JS `Number.prototype.toFixed(digits)` for finite values below 1e21 (larger magnitudes and
+/// non-finite values fall back to [`num`], as JavaScript does). JavaScript rounds an exact tie
+/// up (`(0.25).toFixed(1)` is `"0.3"`); Rust's `{:.N}` rounds ties to even, so ties are detected
+/// exactly (`value · 2^(digits+1)` is an odd integer) and rounded up by hand.
+pub fn to_fixed(value: f64, digits: usize) -> String {
+    if !value.is_finite() || value.abs() >= 1e21 {
+        return num(value);
+    }
+    if value < 0.0 {
+        // JS keeps the sign even when the rounded magnitude is zero ("-0.0").
+        return format!("-{}", to_fixed(-value, digits));
+    }
+    // -0 formats like 0 in JavaScript (`x < 0` is false for it).
+    let value = value.abs();
+    let scaled = value * 2f64.powi(digits as i32 + 1);
+    let is_tie = scaled.fract() == 0.0 && scaled % 2.0 == 1.0;
+    if !is_tie {
+        return format!("{value:.digits$}");
+    }
+    // Exact tie: JavaScript picks the larger candidate n / 10^digits.
+    let n = (value * 10f64.powi(digits as i32)).ceil();
+    let mut text = format!("{n:.0}");
+    if digits == 0 {
+        return text;
+    }
+    while text.len() <= digits {
+        text.insert(0, '0');
+    }
+    text.insert(text.len() - digits, '.');
+    text
+}
+
 /// JS `JSON.stringify` escaping of a string, including the quotes.
 pub fn quote_string(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
@@ -177,6 +209,22 @@ mod tests {
         assert_eq!(num(-0.0), "0");
         assert_eq!(num(5e-324), "5e-324");
         assert_eq!(num(0.000001), "0.000001");
+    }
+
+    #[test]
+    fn to_fixed_rounds_ties_up_like_javascript() {
+        assert_eq!(to_fixed(1.2, 1), "1.2");
+        assert_eq!(to_fixed(0.25, 1), "0.3");
+        assert_eq!(to_fixed(0.35, 1), "0.3"); // 0.35 is just below the tie in binary
+        assert_eq!(to_fixed(2.5, 0), "3");
+        assert_eq!(to_fixed(0.125, 2), "0.13");
+        assert_eq!(to_fixed(0.0625, 3), "0.063");
+        assert_eq!(to_fixed(-0.25, 1), "-0.3");
+        assert_eq!(to_fixed(-0.01, 1), "-0.0");
+        assert_eq!(to_fixed(-0.0, 1), "0.0");
+        assert_eq!(to_fixed(0.001, 1), "0.0");
+        assert_eq!(to_fixed(10.0, 1), "10.0");
+        assert_eq!(to_fixed(1e21, 1), "1e+21");
     }
 
     #[test]
