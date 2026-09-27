@@ -61,10 +61,10 @@ exit criteria for each phase.
 
 1. [x] Scaffolding: Cargo workspace, FFI, F# projects, Interop, CI (FlatBuffers
    schemas still to write: see [Remaining work](#remaining-work))
-2. [ ] Rust core in compatibility mode. **Mostly done:** all 23 replay,
-   content, RNG and hash goldens pass in Rust, and a differential test
-   agrees with the C# engine. Still to do: save migrations and
-   `farm-runtime` (input, minigames, panels, audio model).
+2. [x] Rust core in compatibility mode: all 23 replay, content, save, RNG
+   and hash goldens pass in Rust, a differential test agrees with the C#
+   engine, and `farm-runtime` has input, minigames, panels and the audio
+   model.
 3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
 4. [ ] Switch the app to F# + Rust; delete the C# engine projects
 5. [ ] Editor port on the new stack (the list above)
@@ -74,19 +74,28 @@ exit criteria for each phase.
 
 ## Remaining work
 
-Status after the September 2026 session. In order of what unblocks the most.
+Status after the second September 2026 session. In order of what unblocks
+the most.
 
-**Rust core (phase 2)**
-- [ ] Port `SaveMigrations.cs` to `farm-cart::save` and pass the save
-  migration goldens (`fixtures/golden/saves`).
-- [ ] Port `FarmEngine.Runtime` logic to `farm-runtime`: `Input.cs`,
-  `Minigames.cs`, `GamePanels.cs`, the `Audio.cs` model.
-- [ ] Check four ignored `farm-sim` tests against their C# originals: two
-  crafting-station tests and two weather/animal tests (see their
-  `#[ignore]` reasons). The golden replays pass, so these are likely test
-  setup problems.
-- [ ] Move saves to string-id references and the save header from
-  [EXPORT.md](docs/EXPORT.md#what-earlier-phases-must-get-right).
+**Rust core (phase 2)**: done.
+- [x] `SaveMigrations.cs` ported to `farm-cart::save`; all eight save
+  migration goldens (`fixtures/golden/saves`) match the TypeScript result,
+  stable JSON and hash.
+- [x] `FarmEngine.Runtime` logic ported to `farm-runtime`: `input`,
+  `minigames`, `panels` and the `audio` model, with every C# runtime test
+  ported (81 tests). Minigames take their cosmetic randomness from the host
+  (`with_random`) instead of the OS.
+- [x] The four ignored `farm-sim` tests were test setup problems (the
+  starter farm's own Kitchen; the C# 6x6 test field). All four pass now.
+- [x] Save files (`farm-cart::save_file`) carry the header from
+  [EXPORT.md](docs/EXPORT.md#what-earlier-phases-must-get-right): save
+  format, `gameId`, game version and cartridge hash. A save from another
+  game is refused, one from a newer game version loads with a warning, and
+  when the content changed, inventory items are matched by string id:
+  removed items go to quarantine and come back with their id. Exposed as
+  `fe_session_save` / `fe_session_load_save` and `RustSession.Save()` /
+  `LoadSave()`. Until the export settings exist (phase 3), `gameId` is the
+  project id.
 
 **F# authoring (phase 3)**
 - [x] F# authoring core merged: `Edit` cases for every editor, `Defaults`,
@@ -116,12 +125,12 @@ Status after the September 2026 session. In order of what unblocks the most.
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 
-**Audit follow-ups not yet done**
+**Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).
-- [ ] Decide absent-versus-null for `respawnDays` so hand-written packs hash
-  like the web version.
-- [ ] Share one `JsonSerializerOptions` between the two `settings.json`
-  stores.
+- [x] `respawnDays` keeps absent and `null` apart in both engines, like the
+  TypeScript `.nullable().optional()`, so hand-written packs hash like the
+  web version (content golden `packs-nodes`).
+- [x] Both `settings.json` stores share `JsonSettingsStore.JsonOptions`.
 
 ## Export Game
 

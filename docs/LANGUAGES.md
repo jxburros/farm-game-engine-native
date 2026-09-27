@@ -1,7 +1,8 @@
 # Language plan: Rust, F# and C#
 
-**Status:** in progress (September 2026). Phase 1 is done; phase 2 is
-mostly done (every golden replay passes in Rust). See the remaining work in
+**Status:** in progress (September 2026). Phases 1 and 2 are done: the
+Rust core passes every golden (replays, content, saves) and `farm-runtime`
+has the input, minigame, panel and audio logic. See the remaining work in
 [ROADMAP.md](../ROADMAP.md#remaining-work). This is the reference for
 where code goes as the native app grows. Read it before you port a new part of
 the web editor. [PORTING.md](PORTING.md) still covers how C# code mirrors the
