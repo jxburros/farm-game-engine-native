@@ -3,7 +3,7 @@
 //! hash differently. Such a field is an `Option<Option<T>>` with this module as its serde
 //! helper: `None` is absent, `Some(None)` is `null`, `Some(Some(v))` is a value.
 //!
-//! ```ignore
+//! ```text
 //! #[serde(default, skip_serializing_if = "Option::is_none", with = "super::nullable")]
 //! pub respawn_days: Option<Option<f64>>,
 //! ```
