@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Authoring.Net</RootNamespace>
+    <Description>.NET-only edge of the F# authoring core: System.Text.Json conversion and the typed schema parse (docs/LANGUAGES.md "F# conventions").</Description>
+    <WarnOn>3390;$(WarnOn)</WarnOn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);FS3370</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="JsonInterop.fs" />
+    <Compile Include="ProjectMigrations.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
+    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+</Project>

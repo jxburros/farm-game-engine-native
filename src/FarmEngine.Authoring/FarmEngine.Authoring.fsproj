@@ -8,6 +8,8 @@
     <NoWarn>$(NoWarn);FS3370</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Json.fs" />
+    <Compile Include="Migrations.fs" />
     <Compile Include="Records.fs" />
     <Compile Include="Edits.fs" />
     <Compile Include="Update.fs" />
