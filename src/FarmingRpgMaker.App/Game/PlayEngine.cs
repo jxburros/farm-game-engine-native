@@ -37,6 +37,56 @@ internal interface IPlayEngine : IDisposable
 
     /// <summary>The project with the live state written back (<c>applyStateToProject</c>).</summary>
     GameProject SyncedProject();
+
+    /// <summary>Rule-derived values for the currently displayed play overlays.</summary>
+    PlayOverlayView OverlayView();
+
+    /// <summary>Creator debug action: advance through the overnight pass.</summary>
+    void SkipDay();
+}
+
+/// <summary>One snapshot of the rule queries used by dialogue, shop and crafting views.</summary>
+internal sealed record PlayOverlayView
+{
+    public Dialogue? Dialogue { get; init; }
+    public List<DialogueOption> VisibleDialogueOptions { get; init; } = [];
+    public ShopDefinition? Shop { get; init; }
+    /// <summary>A null remainder denotes unlimited stock.</summary>
+    public Dictionary<string, double?> StockRemaining { get; init; } = [];
+    public GridPoint Facing { get; init; } = new();
+    public Dictionary<string, CraftableStatus> Craftable { get; init; } = [];
+    public Dictionary<string, bool> HasIngredients { get; init; } = [];
+
+    public double Remaining(string itemId) => StockRemaining.GetValueOrDefault(itemId) ?? double.PositiveInfinity;
+
+    public CraftableStatus Status(string recipeId) => Craftable.GetValueOrDefault(recipeId) ?? new CraftableStatus(false);
+
+    public bool Ingredients(string recipeId) => HasIngredients.GetValueOrDefault(recipeId);
+
+    public static PlayOverlayView FromCSharp(EngineContext context, GameState state)
+    {
+        var dialogue = state.Dialogue is { } activeDialogue
+            ? DialogueSystem.FindDialogue(context, activeDialogue.NpcId, activeDialogue.DialogueId)
+            : null;
+        var shop = state.Shop is { } activeShop ? Economy.FindShop(context, activeShop.ShopId) : null;
+        var facing = WorldMovement.FacingTarget(state);
+        return new PlayOverlayView
+        {
+            Dialogue = dialogue,
+            VisibleDialogueOptions = dialogue is null ? [] : Social.VisibleDialogueOptions(context, state, dialogue),
+            Shop = shop,
+            StockRemaining = shop?.Stock.ToDictionary(
+                entry => entry.ItemId,
+                entry =>
+                {
+                    var remaining = Economy.RemainingDailyStock(state, shop.Id, entry.ItemId, entry.DailyLimit);
+                    return double.IsFinite(remaining) ? (double?)remaining : null;
+                }) ?? [],
+            Facing = new GridPoint { X = facing.X, Y = facing.Y },
+            Craftable = context.Content.Recipes.ToDictionary(recipe => recipe.Id, recipe => Crafting.CraftableStatus(context, state, recipe)),
+            HasIngredients = context.Content.Recipes.ToDictionary(recipe => recipe.Id, recipe => Crafting.HasIngredients(state, recipe)),
+        };
+    }
 }
 
 internal static class PlayEngines
@@ -121,6 +171,10 @@ internal sealed class CSharpPlayEngine : IPlayEngine
 
     public GameProject SyncedProject() => EngineState.ApplyStateToProject(_project, State);
 
+    public PlayOverlayView OverlayView() => PlayOverlayView.FromCSharp(_context, State);
+
+    public void SkipDay() => State = GameTime.PerformSleep(_context, State, new SleepOptions(Collapsed: false)).State;
+
     public void Dispose()
     {
     }
@@ -187,6 +241,14 @@ internal sealed class RustPlayEngine : IPlayEngine
     }
 
     public GameProject SyncedProject() => _session.SyncedProject();
+
+    public PlayOverlayView OverlayView() => JsonSerializer.Deserialize<PlayOverlayView>(_session.OverlayJson(), FarmEngine.Json.JsonDefaults.Options)!;
+
+    public void SkipDay()
+    {
+        _session.SkipDay();
+        AfterCall();
+    }
 
     public void Dispose() => _session.Dispose();
 

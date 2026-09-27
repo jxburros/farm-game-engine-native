@@ -43,7 +43,14 @@ internal static class DebugDrawer
 
         Quick("+$500", (s, _) => s with { Player = s.Player with { Money = s.Player.Money + 500 } }, "+$500");
         Quick("Full energy", (s, _) => s with { Player = s.Player with { Energy = s.Player.MaxEnergy } }, "Energy restored");
-        Quick("Skip day", (s, ctx) => GameTime.PerformSleep(ctx, s, new SleepOptions(Collapsed: false)).State, "Advanced one day");
+        var skipDay = Ui.Button("Skip day", () =>
+        {
+            session.DebugSkipDay();
+            toast(new ToastMessage("Advanced one day", ToastKind.Success));
+        }, "tool");
+        skipDay.HorizontalAlignment = HorizontalAlignment.Stretch;
+        skipDay.Margin = new Thickness(0, 0, 4, 4);
+        quick.Children.Add(skipDay);
         Quick("+1 hour", (s, _) => s with { Clock = s.Clock with { TimeMinutes = s.Clock.TimeMinutes + 60 } }, "+1 hour");
         stack.Children.Add(quick);
 

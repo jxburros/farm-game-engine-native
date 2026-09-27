@@ -14,8 +14,11 @@ use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
-use farm_sim::schema::{GameProject, GameState};
-use farm_sim::{engine, hash, quests, stable_json, state};
+use farm_sim::schema::{Dialogue, DialogueOption, GameProject, GameState, ShopDefinition};
+use farm_sim::world::world_movement;
+use farm_sim::{crafting, dialogue_system, economy, engine, game_time, hash, quests, social, stable_json, state};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// An opaque engine session: immutable content plus the live state.
@@ -241,6 +244,85 @@ pub unsafe extern "C" fn fe_session_hash(session: *mut FeSession, out: *mut FeBy
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
     with_session(session, out, |s| Ok(stable_json::stringify(&state::apply_state_to_project(&s.project, &s.state))))
+}
+
+/// One batched read of the rule-derived data the play overlays need. This keeps dialogue
+/// gates, shop limits, recipe availability and the facing tile on the Rust side of the boundary.
+/// A `null` stock remainder means unlimited; JSON cannot carry positive infinity.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayView<'a> {
+    dialogue: Option<&'a Dialogue>,
+    visible_dialogue_options: Vec<DialogueOption>,
+    shop: Option<&'a ShopDefinition>,
+    stock_remaining: BTreeMap<&'a str, Option<f64>>,
+    facing: FacingTile,
+    craftable: BTreeMap<&'a str, crafting::CraftableStatus>,
+    has_ingredients: BTreeMap<&'a str, bool>,
+}
+
+#[derive(Serialize)]
+struct FacingTile {
+    x: f64,
+    y: f64,
+}
+
+fn overlay_view(session: &FeSession) -> OverlayView<'_> {
+    let dialogue = session
+        .state
+        .dialogue
+        .as_ref()
+        .and_then(|active| dialogue_system::find_dialogue(&session.ctx, &active.npc_id, &active.dialogue_id));
+    let visible_dialogue_options = dialogue
+        .map(|dialogue| social::visible_dialogue_options(&session.ctx, &session.state, dialogue))
+        .unwrap_or_default();
+    let shop = session.state.shop.as_ref().and_then(|active| economy::find_shop(&session.ctx, &active.shop_id));
+    let mut stock_remaining = BTreeMap::new();
+    if let Some(shop) = shop {
+        for entry in &shop.stock {
+            let remaining = economy::remaining_daily_stock(&session.state, &shop.id, &entry.item_id, entry.daily_limit);
+            stock_remaining.insert(entry.item_id.as_str(), remaining.is_finite().then_some(remaining));
+        }
+    }
+    let facing = world_movement::facing_target(&session.state);
+    let mut craftable = BTreeMap::new();
+    let mut has_ingredients = BTreeMap::new();
+    for recipe in &session.ctx.content.recipes {
+        craftable.insert(recipe.id.as_str(), crafting::craftable_status(&session.ctx, &session.state, recipe));
+        has_ingredients.insert(recipe.id.as_str(), crafting::has_ingredients(&session.state, recipe));
+    }
+    OverlayView {
+        dialogue,
+        visible_dialogue_options,
+        shop,
+        stock_remaining,
+        facing: FacingTile { x: facing.x, y: facing.y },
+        craftable,
+        has_ingredients,
+    }
+}
+
+/// Read-only overlay queries as one JSON object. No live state is copied or changed.
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_overlay_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
+    with_session(session, out, |s| Ok(view_json::to_json(&overlay_view(s))))
+}
+
+/// Creator debug action: run the same overnight pass as a sleep command without requiring
+/// the player to be at a bed. Effects are intentionally discarded, as in the debug drawer.
+/// Hook events remain available through [`fe_session_hook_events`].
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_skip_day(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
+    with_session(session, out, |s| {
+        game_time::perform_sleep(&s.ctx, &mut s.state, game_time::SleepOptions { collapsed: false });
+        Ok(String::new())
+    })
 }
 
 /// Drains the hook events emitted since the last drain, as a JSON array of
