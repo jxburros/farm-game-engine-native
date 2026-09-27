@@ -194,7 +194,7 @@ public static class EngineState
                 {
                     Status = progress.Status,
                     Objectives = quest.Objectives.Select(objective =>
-                        progress.Objectives.TryGetValue(objective.Id, out var objProgress) && objProgress is not null
+                        progress.Objectives is { } objectives && objectives.TryGetValue(objective.Id, out var objProgress) && objProgress is not null
                             ? objective with { Progress = objProgress.Progress, Completed = objProgress.Completed }
                             : objective).ToList(),
                 };

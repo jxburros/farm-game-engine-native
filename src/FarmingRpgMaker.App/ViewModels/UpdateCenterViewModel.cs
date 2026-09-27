@@ -36,6 +36,7 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
         OpenReleasesCommand = new RelayCommand(() => _launcher.Open(UpdateSource.ReleasesPageUrl));
         OpenReleasePageCommand = new RelayCommand(
             () => _launcher.Open(Coordinator.AvailableUpdate?.ReleaseUrl ?? UpdateSource.ReleasesPageUrl));
+        OpenLinkCommand = new RelayCommand<string>(url => _launcher.Open(url));
 
         Coordinator.PropertyChanged += OnCoordinatorChanged;
     }
@@ -216,6 +217,9 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
     public RelayCommand OpenReleasesCommand { get; }
 
     public RelayCommand OpenReleasePageCommand { get; }
+
+    /// <summary>Opens a link from the release notes (the launcher allows http/https only).</summary>
+    public RelayCommand<string> OpenLinkCommand { get; }
 
     public void Dispose() => Coordinator.PropertyChanged -= OnCoordinatorChanged;
 

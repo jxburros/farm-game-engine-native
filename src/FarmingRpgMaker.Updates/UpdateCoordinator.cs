@@ -339,6 +339,13 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged
         UpdateSettings(_settings with { SkippedVersion = _availableUpdate.Version });
     }
 
+    /// <summary>
+    /// Raised just before the process exits to install an update: the shell ends its
+    /// playtest and flushes unsaved edits here, because Velopack terminates the process
+    /// without closing windows.
+    /// </summary>
+    public event EventHandler? Restarting;
+
     /// <summary>Exits, installs the downloaded update and relaunches.</summary>
     public void ApplyAndRestart()
     {
@@ -349,6 +356,7 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged
 
         try
         {
+            Restarting?.Invoke(this, EventArgs.Empty);
             _service.ApplyAndRestart();
         }
 #pragma warning disable CA1031

@@ -1,3 +1,4 @@
+using FarmEngine.Content;
 using FarmEngine.Schemas;
 using static FarmEngine.Core.Tests.Core.CoreTestHelpers;
 
@@ -132,7 +133,7 @@ public class QuestsEngineTests
     {
         var (ctx, state) = MakeEngine(Activate(MakeQuest("q1", rewards: new QuestRewards { Money = 10 })));
         var half = Quests.ProgressQuests(ctx, state, "collect", "material-wood", 1);
-        Assert.Equal(1, half.State.Quests["q1"].Objectives["obj-1"].Progress);
+        Assert.Equal(1, half.State.Quests["q1"].Objectives!["obj-1"].Progress);
         Assert.DoesNotContain("q1", half.State.Player.CompletedQuests);
 
         var done = Quests.ProgressQuests(ctx, half.State, "collect", "material-wood", 5);
@@ -158,8 +159,8 @@ public class QuestsEngineTests
     public void IgnoresNonMatchingKindsAndTargetIds()
     {
         var (ctx, state) = MakeEngine(Activate(MakeQuest("q1")));
-        Assert.Equal(0, Quests.ProgressQuests(ctx, state, "harvest", "material-wood", 1).State.Quests["q1"].Objectives["obj-1"].Progress);
-        Assert.Equal(0, Quests.ProgressQuests(ctx, state, "collect", "material-stone", 1).State.Quests["q1"].Objectives["obj-1"].Progress);
+        Assert.Equal(0, Quests.ProgressQuests(ctx, state, "harvest", "material-wood", 1).State.Quests["q1"].Objectives!["obj-1"].Progress);
+        Assert.Equal(0, Quests.ProgressQuests(ctx, state, "collect", "material-stone", 1).State.Quests["q1"].Objectives!["obj-1"].Progress);
     }
 
     [Fact]
@@ -223,5 +224,27 @@ public class QuestsEngineTests
         });
         Assert.Equal(["a"], project.Quests.Where(q => project.Player.ActiveQuests.Contains(q.Id)).Select(q => q.Id));
         Assert.Equal(["c"], project.Quests.Where(q => project.Player.CompletedQuests.Contains(q.Id)).Select(q => q.Id));
+    }
+
+    /// <summary>
+    /// TS <c>{ ...state.quests[questId], status: 'completed' }</c> on a missing entry writes no
+    /// <c>objectives</c> key; the state hash must match that, not an empty map.
+    /// </summary>
+    [Fact]
+    public void CompletingAQuestWithoutAProgressEntryWritesNoObjectivesKey()
+    {
+        var project = DefaultContent.CreateInitialProject(0);
+        var ctx = new EngineContext(EngineState.CreateContentFromProject(project));
+        var created = EngineState.CreateGameState(project, "quests");
+        // Active (a pack or host activated it) but with no progress entry yet.
+        var state = created with
+        {
+            Quests = new OrderedDictionary<string, QuestProgress>(),
+            Player = created.Player with { ActiveQuests = ["quest-first-harvest"] },
+        };
+        var step = Quests.CompleteQuestById(ctx, state, "quest-first-harvest");
+        var json = Hash.StableStringify(step.State.Quests["quest-first-harvest"]);
+        Assert.Equal("{\"status\":\"completed\"}", json);
+        Assert.Null(step.State.Quests["quest-first-harvest"].Objectives);
     }
 }

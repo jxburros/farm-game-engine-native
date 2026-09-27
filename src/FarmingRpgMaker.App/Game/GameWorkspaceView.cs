@@ -93,6 +93,7 @@ public sealed class GameWorkspaceView : UserControl
         _audio.Unlock();
         _play = new PlayModeView(session, _options.AutoRun);
         _play.RestartRequested += OnRestartRequested;
+        _play.Faulted += OnPlayFaulted;
         Content = _play;
         _shell.ShowStatus($"Playtesting {DisplayName()} — changes are discarded on exit unless you keep them.");
         _play.Focus();
@@ -110,6 +111,7 @@ public sealed class GameWorkspaceView : UserControl
         var keep = play.KeepChanges;
         var finalProject = play.Session.SyncedProject();
         play.RestartRequested -= OnRestartRequested;
+        play.Faulted -= OnPlayFaulted;
         play.Session.Dispose();
         _play = null;
         _workspace.IsPlaytesting = false;
@@ -128,16 +130,42 @@ public sealed class GameWorkspaceView : UserControl
         _snapshot = null;
     }
 
-    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    /// <summary>
+    /// Ends a running playtest (honouring Keep changes) and flushes pending edits. Called
+    /// when the window closes, when the app shuts down, and before "Restart & install".
+    /// </summary>
+    public void PrepareForShutdown()
     {
-        base.OnDetachedFromVisualTree(e);
-        // Window closing: finish the playtest (honouring Keep changes) and flush edits.
         if (_play is not null)
         {
             EndPlaytest();
         }
 
         _workspace.FlushPendingSave();
+    }
+
+    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        // Window closing: the surface lives as long as the window.
+        PrepareForShutdown();
+        _shell.ModeChanged -= OnModeChanged;
+        _workspace.ProjectChanged -= OnProjectChanged;
+        _audio.Dispose();
+    }
+
+    private void OnPlayFaulted(object? sender, Exception exception)
+    {
+        if (_play is null)
+        {
+            return;
+        }
+
+        // The state that threw is not trusted: never write it back into the project.
+        _play.KeepChanges = false;
+        _shell.Mode = EditorMode.Edit;
+        _shell.ShowStatus($"The playtest stopped because of an error: {exception.Message}");
+        System.Diagnostics.Trace.TraceError($"Playtest faulted: {exception}");
     }
 
     private PlaySession CreateSession(FarmEngine.Schemas.GameProject project) =>

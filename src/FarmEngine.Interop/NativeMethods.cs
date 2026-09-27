@@ -28,6 +28,13 @@ internal static unsafe partial class NativeMethods
         Ok = 0,
         InvalidArgument = 1,
         Panic = 2,
+        /// <summary>A previous call on this session panicked; its state is not trustworthy.</summary>
+        Poisoned = 3,
+    }
+
+    /// <summary>Opaque session handle (<c>FeSession*</c>).</summary>
+    public struct FeSession
+    {
     }
 
     [LibraryImport(Library, EntryPoint = "fe_version")]
@@ -38,4 +45,31 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fe_hash_text")]
     public static partial FeResult fe_hash_text(byte* text, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_new")]
+    public static partial FeResult fe_session_new(byte* projectJson, nuint len, byte* seed, nuint seedLen, [MarshalAs(UnmanagedType.U1)] bool autoStartQuests, FeSession** output, FeBytes* error);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_free")]
+    public static partial void fe_session_free(FeSession* session);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_apply")]
+    public static partial FeResult fe_session_apply(FeSession* session, byte* commandsJson, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_tick")]
+    public static partial FeResult fe_session_tick(FeSession* session, uint ticks, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_state_json")]
+    public static partial FeResult fe_session_state_json(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_hash")]
+    public static partial FeResult fe_session_hash(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_project_json")]
+    public static partial FeResult fe_session_project_json(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_hook_events")]
+    public static partial FeResult fe_session_hook_events(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_last_error")]
+    public static partial FeResult fe_session_last_error(FeSession* session, FeBytes* output);
 }

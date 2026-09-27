@@ -500,7 +500,7 @@ internal static class PlayOverlays
 
         foreach (var objective in quest.Objectives)
         {
-            var objectiveProgress = progress?.Objectives.TryGetValue(objective.Id, out var p) == true ? p : null;
+            var objectiveProgress = progress?.Objectives?.TryGetValue(objective.Id, out var p) == true ? p : null;
             var done = completed || objectiveProgress?.Completed == true;
             var amount = objectiveProgress?.Progress ?? objective.Progress;
             var target = objective.TargetItemQuantity is { } a && a != 0 ? a : objective.TargetCropQuantity is { } b && b != 0 ? b : 1;

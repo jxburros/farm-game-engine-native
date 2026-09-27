@@ -9,6 +9,13 @@ public partial class UpdateCenterWindow : Window
     public UpdateCenterWindow()
     {
         InitializeComponent();
+        ReleaseNotesView.LinkClicked += (_, url) =>
+        {
+            if (DataContext is ViewModels.UpdateCenterViewModel viewModel && viewModel.OpenLinkCommand.CanExecute(url))
+            {
+                viewModel.OpenLinkCommand.Execute(url);
+            }
+        };
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

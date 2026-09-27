@@ -64,3 +64,23 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
 
     public void NotifyCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
+
+/// <summary>A synchronous command with a typed parameter.</summary>
+public sealed class RelayCommand<T>(Action<T> execute, Func<T, bool>? canExecute = null) : ICommand
+{
+    private readonly Action<T> _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) => parameter is T value && (canExecute?.Invoke(value) ?? true);
+
+    public void Execute(object? parameter)
+    {
+        if (parameter is T value)
+        {
+            _execute(value);
+        }
+    }
+
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}

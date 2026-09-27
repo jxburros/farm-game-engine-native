@@ -1,0 +1,179 @@
+//! Friendship and gifts (port of `Social.cs` / social.ts).
+//!
+//! NPC relationships & gifting (M4d) — port of social.ts: friendship points, per-NPC taste
+//! tables, heart-gated dialogue options, birthdays.
+
+use crate::effects::{message_levels, Effect};
+use crate::engine_types::{Effects, EngineContext};
+use crate::events;
+use crate::game_time;
+use crate::hooks::{GiftGivenHookPayload, HookEvent};
+use crate::inventory;
+use crate::js;
+use crate::quests;
+use crate::schema::{
+    gift_friendship_delta, gift_reactions, Dialogue, DialogueOption, GameState, Npc, NpcSocialState,
+    FRIENDSHIP_PER_HEART, MAX_FRIENDSHIP,
+};
+use crate::skills;
+use crate::world::world_movement;
+
+pub fn friendship_with(state: &GameState, npc_id: &str) -> f64 {
+    state.social.get(npc_id).map(|social| social.friendship).unwrap_or(0.0)
+}
+
+pub fn hearts(friendship: f64) -> f64 {
+    (friendship / FRIENDSHIP_PER_HEART).floor()
+}
+
+/// Returns one of [`gift_reactions`].
+pub fn gift_reaction(npc: &Npc, item_id: &str) -> String {
+    let Some(tastes) = &npc.gift_tastes else {
+        return gift_reactions::NEUTRAL.to_owned();
+    };
+    let has = |list: &[String]| list.iter().any(|id| id == item_id);
+    if has(&tastes.loved) {
+        return gift_reactions::LOVED.to_owned();
+    }
+    if has(&tastes.liked) {
+        return gift_reactions::LIKED.to_owned();
+    }
+    if has(&tastes.disliked) {
+        return gift_reactions::DISLIKED.to_owned();
+    }
+    if has(&tastes.hated) {
+        return gift_reactions::HATED.to_owned();
+    }
+    gift_reactions::NEUTRAL.to_owned()
+}
+
+/// TS `REACTION_LINES[reaction]`.
+fn reaction_line(reaction: &str) -> &'static str {
+    match reaction {
+        gift_reactions::LOVED => "They love it!",
+        gift_reactions::LIKED => "They like it.",
+        gift_reactions::NEUTRAL => "They accept it politely.",
+        gift_reactions::DISLIKED => "They don't seem thrilled…",
+        gift_reactions::HATED => "They hate it!",
+        _ => "",
+    }
+}
+
+/// `!string.IsNullOrEmpty(value)`: the string when it is present and non-empty.
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.filter(|s| !s.is_empty())
+}
+
+/// Give the first matching inventory item to the NPC the player faces.
+pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
+    let facing = world_movement::facing_target(state);
+    let target_x = facing.x;
+    let target_y = facing.y;
+    let npc_entry_id = state
+        .npcs
+        .iter()
+        .find(|(_, npc)| npc.scene_id == state.player.scene_id && npc.x == target_x && npc.y == target_y)
+        .map(|(id, _)| id.clone());
+    let Some(npc_entry_id) = npc_entry_id else {
+        return vec![Effect::message(message_levels::INFO, "No one to give that to.")];
+    };
+
+    let Some(npc_def) = ctx.content.npcs.iter().find(|npc| npc.id == npc_entry_id) else {
+        return Vec::new();
+    };
+
+    if !state.player.inventory.iter().any(|s| s.item.id == item_id) {
+        return vec![Effect::message(message_levels::ERROR, "You don't have that item.")];
+    }
+
+    let social = state.social.get(&npc_def.id).cloned().unwrap_or(NpcSocialState {
+        friendship: 0.0,
+        gifts_today: 0.0,
+        last_gift_day: None,
+    });
+    let social_today = if social.last_gift_day == Some(state.clock.day) {
+        social
+    } else {
+        NpcSocialState { gifts_today: 0.0, ..social }
+    };
+    if social_today.gifts_today >= 1.0 {
+        return vec![Effect::message(
+            message_levels::INFO,
+            format!("{} has already received a gift today.", npc_def.name),
+        )];
+    }
+
+    let reaction = gift_reaction(npc_def, item_id);
+    let mut delta = gift_friendship_delta(&reaction).unwrap_or(0.0);
+    let is_birthday = npc_def.birthday.as_ref().is_some_and(|birthday| {
+        birthday.season == state.clock.season
+            && birthday.day == game_time::day_of_season(&ctx.content.settings.calendar, state.clock.day)
+    });
+    if is_birthday {
+        delta *= 2.0;
+    }
+
+    let friendship = (social_today.friendship + delta).clamp(0.0, MAX_FRIENDSHIP);
+
+    state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1.0);
+    state.social.insert(
+        npc_def.id.clone(),
+        NpcSocialState {
+            friendship,
+            gifts_today: social_today.gifts_today + 1.0,
+            last_gift_day: Some(state.clock.day),
+        },
+    );
+
+    let mut effects = vec![Effect::message(
+        if delta >= 0.0 { message_levels::SUCCESS } else { message_levels::INFO },
+        format!(
+            "{}: {}{} ({}{})",
+            npc_def.name,
+            reaction_line(&reaction),
+            if is_birthday { " (Birthday!)" } else { "" },
+            if delta >= 0.0 { "+" } else { "" },
+            js::num(delta)
+        ),
+    )];
+    ctx.emit(HookEvent::GiftGiven(GiftGivenHookPayload {
+        npc_id: npc_def.id.clone(),
+        item_id: item_id.to_owned(),
+        reaction: reaction.clone(),
+    }));
+
+    effects.extend(skills::grant_xp(ctx, state, "social", 4.0));
+
+    effects.extend(quests::progress_quests(ctx, state, "gift", &npc_def.id, 1.0));
+    effects
+}
+
+/// Dialogue options visible in the current state (M4): friendship gates,
+/// required items and flags are finally honored. Used by BOTH the UI and
+/// chooseDialogueOption so indices always agree.
+pub fn visible_dialogue_options(ctx: &EngineContext, state: &GameState, dialogue: &Dialogue) -> Vec<DialogueOption> {
+    let _ = ctx;
+    dialogue
+        .options
+        .iter()
+        .filter(|option| {
+            if let (Some(requires_friendship), Some(open)) = (option.requires_friendship, &state.dialogue) {
+                if friendship_with(state, &open.npc_id) < requires_friendship {
+                    return false;
+                }
+            }
+            if let Some(requires_item) = non_empty(option.requires_item.as_deref()) {
+                if !state.player.inventory.iter().any(|slot| slot.item.id == requires_item) {
+                    return false;
+                }
+            }
+            if let Some(requires_flag) = non_empty(option.requires_flag.as_deref()) {
+                if !js::truthy(events::flag_value(state, requires_flag)) {
+                    return false;
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect()
+}

@@ -74,7 +74,16 @@ public sealed class PlaySession : IDisposable
         _plugins = engine.Plugins;
         if (_plugins is not null)
         {
-            _plugins.ErrorReported += error => PluginErrors.Add(error);
+            _plugins.ErrorReported += error =>
+            {
+                // A plugin that throws on every onCommand must not grow memory for the whole session.
+                if (PluginErrors.Count >= MaxPluginErrors)
+                {
+                    PluginErrors.RemoveAt(0);
+                }
+
+                PluginErrors.Add(error);
+            };
         }
 
         // Auto-start quests activate when play begins (availability + prerequisites respected).
@@ -92,7 +101,10 @@ public sealed class PlaySession : IDisposable
 
     public InputManager Input { get; } = new();
 
-    /// <summary>Plugin errors reported so far (init failures, throws, overruns).</summary>
+    /// <summary>Most plugin errors kept (oldest dropped first).</summary>
+    public const int MaxPluginErrors = 100;
+
+    /// <summary>The most recent plugin errors (init failures, throws, overruns), at most <see cref="MaxPluginErrors"/>.</summary>
     public List<PluginError> PluginErrors { get; } = [];
 
     /// <summary>True when enabled content packs run sandboxed plugins in this session.</summary>
@@ -269,6 +281,10 @@ public sealed class PlaySession : IDisposable
         }
 
         var moving = player.MoveIntent.Dx != 0 || player.MoveIntent.Dy != 0;
+        snapshot.Player.Moving = moving;
+        // Clock-driven atmosphere (time of day, weather, season) and the tick that animates
+        // water and walk cycles come straight from state; rendering never writes it back.
+        snapshot.Tick = State.Clock.Tick;
         return Graphics.ApplyGraphics(snapshot, GraphicsSource.FromState(Project, Content, State), scene, State.Clock.Tick, moving);
     }
 
