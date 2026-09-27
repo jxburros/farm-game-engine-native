@@ -1,10 +1,11 @@
 # Farming RPG Maker — native Windows app
 
 A native desktop rewrite of [Farming RPG Maker](https://github.com/jxburros/farm-game-engine),
-a 2D farming-RPG game engine and maker. It is written in C# on .NET 10, with
-[Avalonia](https://avaloniaui.net) for the UI and Skia for drawing, so there
-is no browser or web view inside. It updates itself from GitHub Releases
-through the built-in **Update Center**.
+a 2D farming-RPG game engine and maker. The desktop UI uses C# on .NET 10,
+[Avalonia](https://avaloniaui.net) and Skia; project edits and validation use
+F#, and Play Mode uses Rust when available. There is no browser or web view
+inside. The app updates itself from GitHub Releases through the built-in
+**Update Center**.
 
 | Play Mode | Edit Mode |
 |---|---|
@@ -16,13 +17,13 @@ through the built-in **Update Center**.
 
 ## Status
 
-The simulation engine, sample games, runtime and Play Mode are ported. The
-native map editor now has layered brushes, rectangle and area fill, selection,
-copy/paste, collision, scene management and transitions. Content editors are
-still being ported; build that content in the
-[web version](https://github.com/jxburros/farm-game-engine) and bring it in
-with **File → Import Project JSON**. Projects move freely between the two
-(same JSON format, schema v8). See [ROADMAP.md](ROADMAP.md).
+The simulation engine, sample games, runtime and Play Mode are ported. Edit
+Mode includes map painting and scene tools, content forms, project settings,
+Problems, mods, raster art, creator patterns and interface panels. Nested
+content fields currently use JSON where dedicated controls are still being
+built. Projects move between the native and
+[web version](https://github.com/jxburros/farm-game-engine) through the same
+schema v8 JSON format. See [ROADMAP.md](ROADMAP.md).
 
 **Moving to Rust and F#.** The simulation now also runs in Rust
 (`crates/farm-sim`) and passes every recorded session from the web version,
