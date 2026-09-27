@@ -45,7 +45,13 @@ type CartridgeCompiler =
                                     authorOffset, companyOffset, executableOffset,
                                     uint32 settings.Window.Width, uint32 settings.Window.Height,
                                     settings.Window.Fullscreen, scaleOffset, creditsOffset)
-        let projectBytes = JsonSerializer.SerializeToUtf8Bytes<GameProject>(project, JsonDefaults.Options)
+        // Embed the effective settings even when the source project has not saved them yet:
+        // the Rust save target must agree with GameInfo on its persistent identity.
+        let cartridgeProject =
+            match project.Export with
+            | null -> Records.withValue project "Export" (box settings)
+            | _ -> project
+        let projectBytes = JsonSerializer.SerializeToUtf8Bytes<GameProject>(cartridgeProject, JsonDefaults.Options)
         let content = EngineState.CreateContentFromProject project
         let contentBytes = JsonSerializer.SerializeToUtf8Bytes<GameContent>(content, JsonDefaults.Options)
         let projectOffset = Cartridge.CreateProjectJsonVector(builder, projectBytes)
