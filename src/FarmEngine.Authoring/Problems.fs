@@ -1,11 +1,10 @@
 namespace FarmEngine.Authoring
 
 open System
-open FarmEngine.Core
 open FarmEngine.Schemas
 
-/// The Problems pipeline (ProblemsPanel.tsx): the two existing C# validators mapped to
-/// `Problem`s with JSON paths and navigation targets, plus the editor-level checks in
+/// The Problems pipeline (ProblemsPanel.tsx): the schema checks (`SchemaChecks`) and the content
+/// lints (`ContentLints`) mapped to `Problem`s with JSON paths and navigation targets, plus the editor-level checks in
 /// `ChecksWorld` and `ChecksContent`.
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Problems =
@@ -67,13 +66,11 @@ module Problems =
         | "schemaVersion" :: _ | "id" :: _ | "rngState" :: _ | "mineDeepestFloor" :: _ -> Some NavigationTarget.Settings
         | _ -> None
 
-    /// `SchemaValidation.ValidateProject`: zod refinement failures (`path: message`), all errors.
+    /// `SchemaChecks.projectIssues`: zod refinement failures, all errors.
     let private fromSchema (project: GameProject) (sink: Sink) =
-        for entry in SchemaValidation.ValidateProject project do
-            let separator = entry.IndexOf(": ", StringComparison.Ordinal)
-            let path, message = if separator < 0 then entry, entry else entry.Substring(0, separator), entry.Substring(separator + 2)
-            let segments = path.Split('.') |> List.ofArray
-            sink.Error("schema." + (List.head segments), jsonPath path, message, schemaTarget project segments)
+        for issue in SchemaChecks.projectIssues project do
+            let segments = issue.Path.Split('.') |> List.ofArray
+            sink.Error("schema." + (List.head segments), jsonPath issue.Path, issue.Message, schemaTarget project segments)
 
     let private indexOf (list: Collections.Generic.List<'T>) (idOf: 'T -> string) (id: string | null) : int option =
         match id with
@@ -83,12 +80,12 @@ module Problems =
             | Some i -> Some i
             | None -> None
 
-    /// `Validation.ValidateProjectContent`: the web `validateProjectContent` lints, whose
+    /// `ContentLints.validateProjectContent`: the web `validateProjectContent` lints, whose
     /// `subject` is an id. The path is the list entry the subject names.
     let private fromContent (project: GameProject) (sink: Sink) =
-        for problem in Validation.ValidateProjectContent project do
-            let severity = if problem.Severity = Validation.ProblemSeverities.Error then Severity.Error else Severity.Warning
-            let subject = problem.Subject
+        for problem in ContentLints.validateProjectContent project do
+            let severity = problem.Severity
+            let subject = Option.toObj problem.Subject
             let entry (name: string) (list: Collections.Generic.List<'T>) (idOf: 'T -> string) (make: string -> NavigationTarget) =
                 match indexOf list idOf subject with
                 | Some i -> sprintf "%s[%d]" name i, Some(make (idOf list[i]))

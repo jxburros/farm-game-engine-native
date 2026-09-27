@@ -443,7 +443,15 @@ public static class Migrations
     /// migrations in FarmEngine.Authoring.Net call it after their own raw migration. Never throws.
     /// </summary>
     public static MigrationResult<GameProject> ParseMigratedProject(JsonObject data, double fromVersion, bool migrated) =>
-        Parse<GameProject>(data, fromVersion, migrated, SchemaValidation.ValidateProject);
+        ParseMigratedProject(data, fromVersion, migrated, SchemaValidation.ValidateProject);
+
+    /// <summary>
+    /// <see cref="ParseMigratedProject(JsonObject, double, bool)"/> with the validator supplied by
+    /// the caller (the F# schema checks). The parse, the 20-error cap and the error shapes are the same.
+    /// </summary>
+    public static MigrationResult<GameProject> ParseMigratedProject(
+        JsonObject data, double fromVersion, bool migrated, Func<GameProject, IReadOnlyList<string>> validate) =>
+        Parse(data, fromVersion, migrated, validate);
 
     /// <summary><see cref="MigrateProject(JsonNode?)"/> over JSON text. Never throws.</summary>
     public static MigrationResult<GameProject> MigrateProject(string json) =>
@@ -508,7 +516,12 @@ public static class Migrations
 
     /// <summary>The typed half of <see cref="MigrateExportedGame(JsonNode?)"/>, like <see cref="ParseMigratedProject"/>. Never throws.</summary>
     public static MigrationResult<ExportedGame> ParseMigratedExportedGame(JsonObject data, double fromVersion, bool migrated) =>
-        Parse<ExportedGame>(data, fromVersion, migrated, SchemaValidation.ValidateExportedGame);
+        ParseMigratedExportedGame(data, fromVersion, migrated, SchemaValidation.ValidateExportedGame);
+
+    /// <summary><see cref="ParseMigratedExportedGame(JsonObject, double, bool)"/> with the validator supplied by the caller.</summary>
+    public static MigrationResult<ExportedGame> ParseMigratedExportedGame(
+        JsonObject data, double fromVersion, bool migrated, Func<ExportedGame, IReadOnlyList<string>> validate) =>
+        Parse(data, fromVersion, migrated, validate);
 
     /// <summary><see cref="MigrateExportedGame(JsonNode?)"/> over JSON text. Never throws.</summary>
     public static MigrationResult<ExportedGame> MigrateExportedGame(string json) =>

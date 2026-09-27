@@ -20,6 +20,8 @@
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
     <Compile Include="Problem.fs" />
+    <Compile Include="SchemaChecks.fs" />
+    <Compile Include="ContentLints.fs" />
     <Compile Include="ChecksWorld.fs" />
     <Compile Include="ChecksContent.fs" />
     <Compile Include="Problems.fs" />
