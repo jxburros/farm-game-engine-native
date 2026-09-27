@@ -13,6 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 indexmap.workspace = true
 serde_path_to_error.workspace = true
+farm-cart-schema = { path = "../farm-cart-schema" }
 
 [lints]
 workspace = true

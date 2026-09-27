@@ -32,8 +32,7 @@ pub const SAVE_FORMAT: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SaveTarget {
-    /// Stable id of the game. Exported games take it from the export settings (phase 3); until
-    /// then it is the project id.
+    /// Stable id of the game. Export settings override the project id when present.
     pub game_id: String,
     /// The game's own version string (the project `version`).
     pub game_version: String,
@@ -42,10 +41,21 @@ pub struct SaveTarget {
 }
 
 impl SaveTarget {
-    /// The target for a project and the content compiled from it (compatibility phase: the
-    /// project id and version, and the hash of its `GameContent`).
+    /// The target for a project and its compiled content. The export block is additive to
+    /// project schema v8 and lands in the Rust project's passthrough fields.
     pub fn for_project(project: &GameProject, content: &GameContent) -> Self {
-        Self { game_id: project.id.clone(), game_version: project.version.clone(), cart_hash: cart_hash(content) }
+        let export = project.extra.get("export");
+        let game_id = export
+            .and_then(|value| value.get("gameId"))
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .unwrap_or(&project.id);
+        let game_version = export
+            .and_then(|value| value.get("version"))
+            .and_then(Value::as_str)
+            .filter(|version| !version.is_empty())
+            .unwrap_or(&project.version);
+        Self { game_id: game_id.to_owned(), game_version: game_version.to_owned(), cart_hash: cart_hash(content) }
     }
 }
 

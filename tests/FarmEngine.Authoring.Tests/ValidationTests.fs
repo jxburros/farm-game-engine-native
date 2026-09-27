@@ -43,6 +43,15 @@ let ``native export settings survive the web compatible import path`` () =
     Assert.Equal(settings.ExecutableName, result.Data.Export.ExecutableName)
 
 [<Fact>]
+let ``F sharp compiler reproduces the checked-in cartridge and blocks errors`` () =
+    let imported = ProjectMigrations.migrateProject (v8Json ())
+    Assert.True imported.Ok
+    let expected = File.ReadAllBytes(fixture "project-v8.cart")
+    Assert.Equal<byte>(expected, CartridgeCompiler.Compile imported.Data)
+    let broken = Records.withValue imported.Data "SelectedTileType" (box "lava")
+    Assert.Throws<InvalidOperationException>(fun () -> CartridgeCompiler.Compile broken |> ignore) |> ignore
+
+[<Fact>]
 let ``validateProject reports constraint violations`` () =
     let json = v8Json ()
     json.["mode"] <- JsonValue.Create "bogus"

@@ -122,12 +122,16 @@ the most.
   and the F# migrations use them. A parity test compares them with the C#
   on every golden and sample project and on 111 broken projects that
   together hit every check (467 F# tests).
-- [ ] Port `Packs` merging and `ContentBuiltin` to F#; FlatBuffers
-  `cart.fbs`/`save.fbs` with the `GameInfo` table; the deterministic
-  cartridge compiler.
+- [ ] Port `ContentBuiltin` to F#; add indexed content tables and
+  `save.fbs`. `Packs` merge and import authoring is on a separate draft PR.
+- [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
+  compiler and `farmc compile`; Rust verifies and loads the cartridge, and
+  cross-language tests compare its content and play state. Compiled content
+  still comes from the C# bridge and is stored as JSON while indexed binary
+  tables are developed.
 - [x] Add optional export identity/window/target settings to the project,
   with a stable generated game id and F# Problems validation. The cartridge
-  compiler and Export Game command still need to consume them.
+  compiler consumes them; Export Game still needs the player and packaging.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).

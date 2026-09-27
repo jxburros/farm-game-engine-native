@@ -1,0 +1,29 @@
+namespace FarmEngine.Cart;
+
+// Fields may be appended, never reordered. cart_format changes on a breaking revision.
+table GameInfo {
+  title:string (required);
+  version:string (required);
+  game_id:string (required);
+  author:string;
+  company:string;
+  executable_name:string;
+  window_width:uint = 1280;
+  window_height:uint = 800;
+  fullscreen:bool = false;
+  pixel_scale:string;
+  credits:string;
+}
+
+// Compatibility cartridge: JSON content keeps the v8 JavaScript numeric semantics while
+// the F# compiler moves each content family into indexed binary tables in later revisions.
+table Cartridge {
+  cart_format:uint;
+  project_schema_version:uint;
+  info:GameInfo (required);
+  project_json:[ubyte] (required);
+  content_json:[ubyte] (required);
+}
+
+root_type Cartridge;
+file_identifier "FGCT";
