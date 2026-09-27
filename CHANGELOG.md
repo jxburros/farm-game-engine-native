@@ -24,6 +24,31 @@
   procedural low-poly models, pixelated and quantized to one 48-color
   palette; procedural tiles; sprite sheets + `manifest.json`). The generated
   PNGs are committed, so building never needs Python or Blender.
+- **The engine now runs in Rust too.** The simulation is ported to the Rust
+  `farm-sim` crate. It replays all 23 recorded sessions from the web version
+  with byte-identical state hashes, and a random 400-command session gives
+  the same hash after every step in the Rust and C# engines. The app ships
+  the Rust library (`farm_ffi`) and can run a game in it through
+  `RustSession`; Play Mode still uses the C# engine until the switch-over.
+- **Language migration, phase 1.** A Cargo workspace (`farm-sim`,
+  `farm-cart`, `farm-runtime`, `farm-ffi`) with determinism lints, the
+  `FarmEngine.Interop` bindings built by `dotnet build`, and the F#
+  `FarmEngine.Authoring` project with the `Document`/`Edit` undo model. CI
+  runs rustfmt, clippy, the Rust tests and a WebAssembly build check.
+- **Fixes from an audit:**
+  - Projects the web editor saves now import. Checks that the web version
+    does not enforce (empty ids, inverted regions, a deleted start scene) are
+    reported instead of rejected.
+  - Completing a quest that had no progress entry now hashes like the web
+    version.
+  - An error during a playtest ends the playtest instead of closing the
+    editor.
+  - Unsaved edits are written before the app exits, before Restart &
+    install, and when the app crashes.
+  - Project files can't be named after Windows device names (`CON`, `NUL`…).
+  - Files with `NaN` or `Infinity` numbers are refused, as on the web.
+  - Links in release notes open in the browser.
+  - The golden generator writes where the tests read (`fixtures/golden`).
 
 ## 0.1.0
 
