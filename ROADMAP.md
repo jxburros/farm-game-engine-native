@@ -32,7 +32,8 @@ Ported in rough order of how often creators use each part:
 
 1. **Tile painter**: layers, brushes, rectangle/fill, copy/paste, universal
    undo/redo (`EditorPanel.tsx`, `GridTile.tsx`, `SceneManager.tsx`,
-   `TransitionEditor.tsx`).
+   `TransitionEditor.tsx`). The native map UI now covers these tools, collision,
+   scene management and transitions; artwork bindings remain in the art phase.
 2. **World content editors**:
    - NPCs and dialogue (`NPCEditor.tsx`)
    - items (`ItemEditor.tsx`)
@@ -143,9 +144,9 @@ the most.
   drawer's skip day (`GameTime.PerformSleep`); then Edit Mode's preview,
   then delete the C# engine projects.
 
-**Editor port (phase 5)**: the numbered list above, none started as views yet.
-- [ ] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
-  transitions.
+**Editor port (phase 5)**: map tools are now available as native views.
+- [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
+  transitions and collision; art bindings remain in the art pipeline milestone.
 - [ ] Content editors: NPCs and dialogue, items, crops, quests, events,
   shops, recipes, node types, wildlife.
 - [ ] Project settings and calendar, Problems panel, mods and actions, art

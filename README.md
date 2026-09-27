@@ -17,8 +17,10 @@ through the built-in **Update Center**.
 ## Status
 
 The simulation engine, sample games, runtime and Play Mode are ported. The
-visual editor is being ported next. Until then, build games in the
-[web version](https://github.com/jxburros/farm-game-engine) and bring them in
+native map editor now has layered brushes, rectangle and area fill, selection,
+copy/paste, collision, scene management and transitions. Content editors are
+still being ported; build that content in the
+[web version](https://github.com/jxburros/farm-game-engine) and bring it in
 with **File → Import Project JSON**. Projects move freely between the two
 (same JSON format, schema v8). See [ROADMAP.md](ROADMAP.md).
 
@@ -79,6 +81,14 @@ with **Restart & install**. Other options:
 | Esc | Close panel / dialogue / shop |
 | F5 / F6 | Play / Edit mode |
 | Ctrl+Z / Ctrl+Y | Undo / redo (Edit Mode) |
+
+In Edit Mode, choose a tile type and map tool in the side panel. Drag with
+Brush, Erase, Block or Unblock; drag with Rectangle or Select to define an
+area. Copy a selection, then choose **Paste on map** and click its destination.
+The scene controls create, rename, resize and duplicate maps, and can fill a
+whole scene or clear its crops and items. To make a door,
+choose **Door**, click its departure tile, choose a destination and save it;
+**Return door** creates the reverse link in the same undo step.
 
 Projects are saved in `%APPDATA%\FarmingRpgMaker\projects\`.
 

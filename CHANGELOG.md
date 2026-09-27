@@ -2,6 +2,11 @@
 
 ## 0.2.0 (unreleased)
 
+- **Native map editor.** Edit Mode now exposes layered brush, rectangle and
+  area fill, erase, collision, selection and copy/paste tools. Creators can add,
+  rename, resize, duplicate and delete scenes, set the start scene and player
+  start, and create one-way or return doors. Map changes use the F# document's
+  undo/redo and autosave.
 - **Built-in pixel art.** Sample games (and any project without its own art)
   now render with a bundled pixel-art pack instead of colored rectangles:
   textured grass, tilled/watered/fertilized soil, animated water, stone walls,
