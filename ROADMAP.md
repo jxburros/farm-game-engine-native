@@ -161,6 +161,9 @@ the most.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
+- [x] Headless `farm-player` loads `game.cart` beside the executable or by
+  `--cart`, replays commands, checks a hash, and loads/writes portable saves.
+  The graphical shell, plugin sandbox and packaging are still open.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).

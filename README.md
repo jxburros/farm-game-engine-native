@@ -112,8 +112,9 @@ cartridge for the Rust session:
 dotnet run --project src/FarmEngine.Cli -- compile my-project.json --out game.cart
 ```
 
-This cartridge is not yet a standalone game. The native player and export
-packaging are still being built.
+The Rust `farm-player` can load a cartridge and run a headless replay for
+validation; see [docs/PLAYER.md](docs/PLAYER.md). Its graphical shell and
+export packaging are still in progress.
 
 Everything builds and tests on Windows, macOS and Linux. The
 [CI workflow](.github/workflows/ci.yml) also publishes a self-contained
@@ -138,6 +139,7 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `crates/farm-ffi` (Rust) | C ABI the app loads | — |
 | `crates/farm-cart` (Rust) | Save migrations/files and verified cartridge reader | `packages/engine-schemas/src/save.ts` |
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
+| `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.

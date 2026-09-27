@@ -1,7 +1,8 @@
 # Export Game
 
-**Status:** export settings, validation and a format 1 cartridge compiler are
-available (September 2026); no playable desktop export yet. Export is built in phase 6
+**Status:** export settings, validation, a format 1 cartridge compiler and a
+headless Rust player are available (September 2026); no graphical desktop
+export yet. Export is built in phase 6
 of [LANGUAGES.md](LANGUAGES.md#phases), on the Rust player. This document
 covers what an exported game is. It also lists what the earlier phases must
 get right so that export works when it arrives.

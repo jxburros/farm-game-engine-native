@@ -10,6 +10,9 @@
   FlatBuffers `game.cart` with game identity and compiled compatibility
   content. Rust verifies and loads it; cartridge sessions use the persistent
   game id in saves. The standalone player and packaging remain future work.
+- **Headless player.** A standalone Rust executable loads cartridges, runs
+  scripted replays, checks deterministic state hashes, and loads/writes saves.
+  The graphical game shell is still being built.
 
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
