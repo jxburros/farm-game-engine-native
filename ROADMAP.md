@@ -89,11 +89,17 @@ Status after the September 2026 session. In order of what unblocks the most.
   [EXPORT.md](docs/EXPORT.md#what-earlier-phases-must-get-right).
 
 **F# authoring (phase 3)**
-- [ ] Finish and merge the interrupted F# authoring branch
-  (`worktree-agent-a3797ba3bb880f5b2`): `Edit` cases for every editor,
-  `Defaults`, the problems pipeline with JSON paths, workshop patterns, the
-  C# `Api`, and `ProjectWorkspace` on the F# `Document`. It was written but
-  its test run never finished.
+- [x] F# authoring core merged: `Edit` cases for every editor, `Defaults`,
+  the problems pipeline with JSON paths, workshop patterns, the C# `Api`,
+  and `ProjectWorkspace` on the F# `Document` (62 F# tests, all app tests
+  pass).
+- [ ] `tests/FarmEngine.Authoring.Tests/DefaultsTests.fs` hangs the F#
+  10.0.112 compiler and is excluded from the build. Split its large tests
+  (likely the many overloaded `Assert.Equal` calls in one function) and add
+  it back.
+- [ ] The F# test project takes about 11 minutes to compile. Find the slow
+  files (`SceneEditTests.fs` takes about 4.5 minutes alone) before CI time
+  becomes a problem.
 - [ ] Port `Migrations.cs`, `SchemaValidation.cs`, `Validation.cs`, `Packs`
   merging and `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with
   the `GameInfo` table; the deterministic cartridge compiler.
