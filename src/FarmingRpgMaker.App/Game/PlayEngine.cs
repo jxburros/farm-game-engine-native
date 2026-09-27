@@ -1,0 +1,215 @@
+using System.Text.Json;
+using FarmEngine.Core;
+using FarmEngine.Interop;
+using FarmEngine.Schemas;
+
+namespace FarmingRpgMaker.App.Game;
+
+/// <summary>Which simulation runs a playtest.</summary>
+public enum PlayEngineKind
+{
+    /// <summary>The Rust engine (<c>farm-sim</c> through <c>farm-ffi</c>): the default when its library loaded.</summary>
+    Rust,
+
+    /// <summary>The C# engine (<c>FarmEngine.Core</c>): the fallback, until it is deleted (roadmap phase 4).</summary>
+    CSharp,
+}
+
+/// <summary>
+/// The simulation behind a <see cref="PlaySession"/>: commands and ticks in, effects out, the
+/// live state readable as C# records. Both engines emit their hook events on the session's
+/// <see cref="EngineContext.Hooks"/> bus (where the plugin bridge listens) before the call
+/// returns. One thread only.
+/// </summary>
+internal interface IPlayEngine : IDisposable
+{
+    PlayEngineKind Kind { get; }
+
+    /// <summary>The live state (a mirror for Rust). Treat it as immutable.</summary>
+    GameState State { get; }
+
+    List<Effect> Apply(Command command);
+
+    List<Effect> Tick(int ticks);
+
+    /// <summary>Replaces the state as it is (creator debug tools only).</summary>
+    void ReplaceState(GameState state);
+
+    /// <summary>The project with the live state written back (<c>applyStateToProject</c>).</summary>
+    GameProject SyncedProject();
+}
+
+internal static class PlayEngines
+{
+    /// <summary>Environment variable that picks the engine: <c>csharp</c> or <c>rust</c>.</summary>
+    public const string EnvironmentVariable = "FARM_ENGINE";
+
+    /// <summary>
+    /// The engine a new playtest uses: <c>FARM_ENGINE=csharp</c> forces the C# engine (handy
+    /// when comparing behaviour); otherwise Rust whenever its library loaded.
+    /// </summary>
+    public static PlayEngineKind Default
+    {
+        get
+        {
+            var forced = Environment.GetEnvironmentVariable(EnvironmentVariable)?.Trim();
+            if (string.Equals(forced, "csharp", StringComparison.OrdinalIgnoreCase) || string.Equals(forced, "c#", StringComparison.OrdinalIgnoreCase))
+            {
+                return PlayEngineKind.CSharp;
+            }
+
+            return FarmFfi.IsAvailable ? PlayEngineKind.Rust : PlayEngineKind.CSharp;
+        }
+    }
+
+    /// <summary>
+    /// Starts <paramref name="project"/> on <paramref name="kind"/> with auto-start quests begun.
+    /// A project the Rust engine refuses to load (while both engines coexist) still plays on the
+    /// C# engine; the refusal is traced.
+    /// </summary>
+    public static IPlayEngine Create(PlayEngineKind kind, EngineContext context, GameProject project)
+    {
+        if (kind == PlayEngineKind.Rust)
+        {
+            try
+            {
+                return new RustPlayEngine(context, project);
+            }
+            catch (FarmFfiException ex)
+            {
+                System.Diagnostics.Trace.TraceWarning($"The Rust engine could not start this project; playing it on the C# engine. {ex.Message}");
+            }
+        }
+
+        return new CSharpPlayEngine(context, project);
+    }
+}
+
+/// <summary>The C# engine: pure functions over immutable <see cref="GameState"/> records.</summary>
+internal sealed class CSharpPlayEngine : IPlayEngine
+{
+    private readonly EngineContext _context;
+    private readonly GameProject _project;
+
+    public CSharpPlayEngine(EngineContext context, GameProject project)
+    {
+        _context = context;
+        _project = project;
+        // Auto-start quests activate when play begins (availability + prerequisites respected).
+        State = Quests.AutoStartQuests(context, EngineState.CreateGameState(project));
+    }
+
+    public PlayEngineKind Kind => PlayEngineKind.CSharp;
+
+    public GameState State { get; private set; }
+
+    public List<Effect> Apply(Command command)
+    {
+        var step = Engine.ApplyCommand(_context, State, command);
+        State = step.State;
+        return step.Effects;
+    }
+
+    public List<Effect> Tick(int ticks)
+    {
+        var step = Engine.AdvanceTick(_context, State, ticks);
+        State = step.State;
+        return step.Effects;
+    }
+
+    public void ReplaceState(GameState state) => State = state;
+
+    public GameProject SyncedProject() => EngineState.ApplyStateToProject(_project, State);
+
+    public void Dispose()
+    {
+    }
+}
+
+/// <summary>
+/// The Rust engine through <see cref="RustSession"/>. After every call the changed state
+/// sections are copied into a <see cref="GameStateMirror"/> (unchanged ones keep their
+/// objects), and the hook events Rust collected are replayed on the C# hook bus, so the plugin
+/// bridge dispatches them exactly as it does for the C# engine.
+/// </summary>
+internal sealed class RustPlayEngine : IPlayEngine
+{
+    private readonly EngineContext _context;
+    private readonly RustSession _session;
+    private readonly GameStateMirror _mirror = new();
+
+    public RustPlayEngine(EngineContext context, GameProject project)
+    {
+        _context = context;
+        // No seed: the project's own seed applies, as EngineState.CreateGameState(project) does.
+        _session = RustSession.Create(project, seed: null, autoStartQuests: true);
+        try
+        {
+            AfterCall();
+        }
+        catch
+        {
+            _session.Dispose();
+            throw;
+        }
+    }
+
+    public PlayEngineKind Kind => PlayEngineKind.Rust;
+
+    public GameState State => _mirror.State;
+
+    /// <summary>The underlying session (tests: hashes, saves).</summary>
+    public RustSession Session => _session;
+
+    public List<Effect> Apply(Command command)
+    {
+        var effects = _session.Apply(command);
+        AfterCall();
+        return effects;
+    }
+
+    public List<Effect> Tick(int ticks)
+    {
+        if (ticks <= 0)
+        {
+            return [];
+        }
+
+        var effects = _session.Tick((uint)ticks);
+        AfterCall();
+        return effects;
+    }
+
+    public void ReplaceState(GameState state)
+    {
+        _session.SetState(state);
+        AfterCall();
+    }
+
+    public GameProject SyncedProject() => _session.SyncedProject();
+
+    public void Dispose() => _session.Dispose();
+
+    private void AfterCall()
+    {
+        _mirror.Apply(_session.StateChanges());
+
+        // Rust collects hook events during the step; the C# engine emits them on the bus as they
+        // happen. Replaying them here, before the step's effects are handled, keeps the order the
+        // plugin bridge sees (engine hooks, then one onEffect per effect).
+        var events = _session.DrainHookEvents();
+        if (_context.Hooks is not { } hooks || events.GetArrayLength() == 0)
+        {
+            return;
+        }
+
+        foreach (var hookEvent in events.EnumerateArray())
+        {
+            var hook = hookEvent.GetProperty("hook").GetString();
+            if (hook is not null && hookEvent.TryGetProperty("payload", out var payload))
+            {
+                hooks.Emit(hook, payload);
+            }
+        }
+    }
+}

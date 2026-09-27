@@ -108,8 +108,23 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         var play = _play;
-        var keep = play.KeepChanges;
-        var finalProject = play.Session.SyncedProject();
+        // Read the state back only when it is kept: after a fault (Keep changes is then off)
+        // the Rust engine refuses every call.
+        FarmEngine.Schemas.GameProject? finalProject = null;
+        var unreadable = false;
+        if (play.KeepChanges)
+        {
+            try
+            {
+                finalProject = play.Session.SyncedProject();
+            }
+            catch (FarmEngine.Interop.FarmFfiException ex)
+            {
+                unreadable = true;
+                System.Diagnostics.Trace.TraceError($"Playtest state could not be read back: {ex}");
+            }
+        }
+
         play.RestartRequested -= OnRestartRequested;
         play.Faulted -= OnPlayFaulted;
         play.Session.Dispose();
@@ -117,10 +132,14 @@ public sealed class GameWorkspaceView : UserControl
         _workspace.IsPlaytesting = false;
         Content = EditView;
 
-        if (keep)
+        if (finalProject is not null)
         {
             _workspace.KeepPlaytestResult(finalProject);
             _shell.ShowStatus("Playtest changes kept.");
+        }
+        else if (unreadable)
+        {
+            _shell.ShowStatus("Playtest changes could not be kept: the engine stopped with an error.");
         }
         else
         {

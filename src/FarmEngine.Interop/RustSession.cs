@@ -127,7 +127,49 @@ public sealed class RustSession : IDisposable
         {
             NativeMethods.FeBytes output;
             var json = Check(NativeMethods.fe_session_hook_events(_handle, &output), output, nameof(DrainHookEvents));
-            return JsonDocument.Parse(json).RootElement.Clone();
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+    }
+
+    /// <summary>
+    /// Replaces the live state as it is (creator debug tools): unlike <see cref="LoadSave"/>
+    /// nothing is migrated or quarantined. A state Rust cannot read throws
+    /// <see cref="FarmFfiException"/> and leaves the state as it was.
+    /// </summary>
+    public void SetState(GameState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var json = JsonSerializer.SerializeToUtf8Bytes(state, JsonDefaults.Options);
+        unsafe
+        {
+            fixed (byte* ptr = json)
+            {
+                NativeMethods.FeBytes output;
+                Check(NativeMethods.fe_session_set_state(_handle, ptr, (nuint)json.Length, &output), output, nameof(SetState));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The top-level state sections that changed since the previous call, as one UTF-8 JSON
+    /// object (<c>{"clock":{…},"player":{…}}</c>, <c>{}</c> when nothing changed), in engine
+    /// order. <paramref name="full"/> sends every section. <see cref="GameStateMirror"/> turns
+    /// these into a <see cref="GameState"/>.
+    /// </summary>
+    public byte[] StateChanges(bool full = false)
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            var result = NativeMethods.fe_session_state_changes(_handle, full, &output);
+            var bytes = TakeBytes(output);
+            if (result != NativeMethods.FeResult.Ok)
+            {
+                Fail(result, nameof(StateChanges));
+            }
+
+            return bytes;
         }
     }
 
@@ -192,12 +234,32 @@ public sealed class RustSession : IDisposable
             return text;
         }
 
+        Fail(result, call);
+        return text;
+    }
+
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private void Fail(NativeMethods.FeResult result, string call)
+    {
         if (result is NativeMethods.FeResult.Panic or NativeMethods.FeResult.Poisoned)
         {
             _poisoned = true;
         }
 
         throw new FarmFfiException($"{call} failed: {result}. {LastError()}");
+    }
+
+    /// <summary>Copies a Rust buffer into a managed array and frees it.</summary>
+    private static unsafe byte[] TakeBytes(NativeMethods.FeBytes bytes)
+    {
+        try
+        {
+            return bytes.Ptr == null ? [] : new ReadOnlySpan<byte>(bytes.Ptr, (int)bytes.Len).ToArray();
+        }
+        finally
+        {
+            NativeMethods.fe_bytes_free(bytes);
+        }
     }
 
     /// <summary>Copies a Rust buffer into a string and frees it.</summary>
