@@ -3,6 +3,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
 using FarmingRpgMaker.App.Game;
+using SkiaSharp;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
 
 namespace FarmingRpgMaker.App.Tests.Game;
@@ -143,5 +144,44 @@ public sealed class ContentEditorTests
         Assert.Contains(host.Workspace.Current.Items, item => item.Id == "demo-glow-farm:glow-jelly");
         host.Workspace.Undo();
         Assert.Single(host.Workspace.Current.ContentPacks);
+    }
+
+    [AvaloniaFact]
+    public void ArtEditorImportsSlicesBindsAndPaintsCustomArt()
+    {
+        using var bitmap = new SKBitmap(32, 16);
+        bitmap.Erase(SKColors.Coral);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+
+        using var host = new GameTestHost();
+        var tabs = FindByName<TabControl>(host.Window, "EditorTabs");
+        tabs.SelectedIndex = 5;
+        Pump();
+        var art = FindByName<ArtEditorView>(host.Window, "ArtEditorView");
+        art.ImportBytes("sheet.png", encoded.ToArray());
+        var asset = Assert.Single(host.Workspace.Current!.CustomAssets);
+        Assert.Equal(32, asset.Width);
+        Assert.StartsWith("data:image/png;base64,", asset.DataUrl, StringComparison.Ordinal);
+        Press(host, "SliceArtButton");
+        asset = Assert.Single(host.Workspace.Current.CustomAssets);
+        Assert.Equal(2, Assert.Single(asset.Animations!).Frames.Count);
+
+        Press(host, "BindArtButton");
+        Assert.Equal(asset.Id, host.Workspace.Current.PlayerVisual?.AssetId);
+        FindByName<ComboBox>(host.Window, "ArtTarget").SelectedIndex = 1;
+        Press(host, "BindArtButton");
+        Assert.Equal(0, tabs.SelectedIndex);
+        Assert.Equal(asset.Id, host.Workspace.Current.SelectedTileVisual?.AssetId);
+        var edit = host.Surface.EditView;
+        edit.PaintTile(4, 4);
+        Assert.Equal(asset.Id, host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals?.Background?.AssetId);
+
+        tabs.SelectedIndex = 5;
+        Pump();
+        Press(host, "RemoveArtButton");
+        Assert.Empty(host.Workspace.Current.CustomAssets);
+        Assert.Null(host.Workspace.Current.PlayerVisual);
+        Assert.Null(host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals?.Background);
     }
 }

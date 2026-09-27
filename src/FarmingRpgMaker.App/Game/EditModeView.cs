@@ -21,7 +21,7 @@ public sealed partial class EditModeView : UserControl
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
-    public const string PortingNotice = "Map and content editing are available. Art, workshop and mod panels are still being ported.";
+    public const string PortingNotice = "Map, content, settings, art and mods are editable here. Workshop and interface panels are still being ported.";
 
     private readonly ProjectWorkspace _workspace;
     private readonly GameCanvas _canvas = new() { Name = "EditCanvas", ZoomMode = CanvasZoomMode.Fixed, Cursor = new Cursor(StandardCursorType.Hand) };
@@ -154,6 +154,11 @@ public sealed partial class EditModeView : UserControl
         var contentEditor = new ContentEditorView(workspace);
         var settingsEditor = new SettingsEditorView(workspace);
         var mods = new ModsEditorView(workspace);
+        var art = new ArtEditorView(workspace, (type, visual) =>
+        {
+            UseBrush(type, visual);
+            tabs.SelectedIndex = 0;
+        });
         var problems = new ProblemsView(workspace, problem =>
         {
             if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
@@ -203,6 +208,7 @@ public sealed partial class EditModeView : UserControl
         tabs.Items.Add(new TabItem { Header = "Problems", Content = problems });
         tabs.Items.Add(new TabItem { Header = "Settings", Content = settingsEditor });
         tabs.Items.Add(new TabItem { Header = "Mods", Content = mods });
+        tabs.Items.Add(new TabItem { Header = "Art", Content = art });
         tabs.SelectionChanged += (_, args) =>
         {
             if (!ReferenceEquals(args.Source, tabs)) return;
@@ -211,6 +217,7 @@ public sealed partial class EditModeView : UserControl
             if (tabs.SelectedIndex == 1) contentEditor.Refresh();
             if (tabs.SelectedIndex == 3) settingsEditor.Refresh();
             if (tabs.SelectedIndex == 4) mods.Refresh();
+            if (tabs.SelectedIndex == 5) art.Refresh();
         };
         tabs.SelectedIndex = 0;
         var root = new DockPanel();
@@ -231,25 +238,29 @@ public sealed partial class EditModeView : UserControl
     public string? Brush
     {
         get => _brush;
-        set
-        {
-            _brush = value;
-            _fillScene.IsEnabled = value is not null;
-            if (value is not null)
-            {
-                _selectedLayer = Edits.LayerFor(value);
-                SyncLayerSelector();
-                Tool = MapTool.Brush;
-            }
-            else
-            {
-                Tool = MapTool.Inspect;
-            }
-            foreach (var swatch in _palette.Children.OfType<ToggleButton>())
-            {
-                swatch.IsChecked = Equals(swatch.Tag, value);
-            }
+        set => SetBrush(value, null);
+    }
 
+    private void UseBrush(string type, VisualRef visual) => SetBrush(type, visual);
+
+    private void SetBrush(string? value, VisualRef? visual)
+    {
+        _brush = value;
+        if (value is not null) _workspace.Apply(Edits.SelectBrush(value, visual));
+        _fillScene.IsEnabled = value is not null;
+        if (value is not null)
+        {
+            _selectedLayer = Edits.LayerFor(value);
+            SyncLayerSelector();
+            Tool = MapTool.Brush;
+        }
+        else
+        {
+            Tool = MapTool.Inspect;
+        }
+        foreach (var swatch in _palette.Children.OfType<ToggleButton>())
+        {
+            swatch.IsChecked = Equals(swatch.Tag, value);
         }
     }
 

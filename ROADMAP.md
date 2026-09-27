@@ -156,8 +156,11 @@ available as native views.
   to affected map scenes and content entries.
 - [x] Mods panel: validate and review pack manifests, permissions and plugin
   source before install; enable/disable, reorder, remove and import packs.
+- [x] Raster art import (PNG, JPEG, WebP, GIF, BMP normalized to PNG),
+  animation clip slicing and frame edits, visual bindings for the player,
+  map brush and content definitions. Art edits use F# undo/redo.
 - [ ] Dedicated nested editors and cross-reference pickers for each content
-  type; art import/bindings, workshop and interface panels.
+  type; SVG import, more animation tools, workshop and interface panels.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.

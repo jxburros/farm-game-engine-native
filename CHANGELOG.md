@@ -12,6 +12,10 @@
   requested permissions and plugin source before installing it. The Mods tab
   supports enable/disable, load order, removal and importing content into
   the project, all through undoable F# edits.
+- **Art studio.** Import raster artwork into portable project assets, slice
+  sprite sheets into animation clips, append/reorder/remove frames, and bind
+  visuals to the player, map brush or content definitions. Removing an asset
+  clears its bindings. SVG import remains to be ported.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player
