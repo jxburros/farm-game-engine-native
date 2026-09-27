@@ -77,6 +77,12 @@
   a later version brings them back. Web saves still load.
 - **Project migrations in F#.** Opening and importing projects runs the new
   F# migrations, which match the web version on every migration golden.
+- **Validation in F#.** The Problems panel's schema checks and content
+  lints now run in F# too.
+- **Play Mode runs on the Rust engine.** Playtests use the Rust simulation
+  when its library is present (every build from source with a Rust
+  toolchain, and every release). Games play exactly as before; set
+  `FARM_ENGINE=csharp` to use the C# engine.
 - **Fixes:**
   - Hand-written packs whose node types leave out `respawnDays` now hash
     like the web version.

@@ -25,10 +25,11 @@ with **File → Import Project JSON**. Projects move freely between the two
 **Moving to Rust and F#.** The simulation now also runs in Rust
 (`crates/farm-sim`) and passes every recorded session from the web version,
 along with save migrations (`crates/farm-cart`) and the runtime logic
-(`crates/farm-runtime`). Play Mode still uses the C# engine until the switch-over in phase 4 of
-[docs/LANGUAGES.md](docs/LANGUAGES.md). Building from source needs a Rust
-toolchain as well as .NET; without one, `dotnet build` still works and the
-Rust library is simply left out.
+(`crates/farm-runtime`). Play Mode runs on the Rust engine (phase 4 of
+[docs/LANGUAGES.md](docs/LANGUAGES.md)), and projects open through the F#
+migrations. Building from source needs a Rust toolchain as well as .NET;
+without one, `dotnet build` still works, the Rust library is left out and
+Play Mode falls back to the C# engine.
 
 **Looks like a game out of the box.** Sample games ship with a built-in
 pixel-art pack (tiles, crops, trees, machines, animals, walking characters)
@@ -110,7 +111,8 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `FarmingRpgMaker.Updates` | Update Center backend (Velopack + GitHub Releases) | — |
 | `FarmingRpgMaker.App` | Avalonia desktop app | `src/` (React app) |
 | `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustSession`) | — |
-| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, validation (in progress) | `src/components/*` decisions |
+| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems | `src/components/*` decisions, `packages/engine-schemas` |
+| `FarmEngine.Authoring.Net` (F#) | JSON I/O for the F# core (`System.Text.Json` edge) | — |
 | `crates/farm-sim` (Rust) | Deterministic simulation, golden-verified | `packages/engine-core` |
 | `crates/farm-ffi` (Rust) | C ABI the app loads | — |
 | `crates/farm-cart` (Rust) | Save migrations and save files (header, id-based items); cartridge format later | `packages/engine-schemas/src/save.ts` |

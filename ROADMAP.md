@@ -66,7 +66,9 @@ exit criteria for each phase.
    engine, and `farm-runtime` has input, minigames, panels and the audio
    model.
 3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
+   (**done:** edits and undo, migrations, validation, problems)
 4. [ ] Switch the app to F# + Rust; delete the C# engine projects
+   (**started:** Play Mode runs on Rust, projects open through F#)
 5. [ ] Editor port on the new stack (the list above)
 6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
    Windows and Linux, then an optional web demo target
@@ -113,16 +115,33 @@ the most.
   schema. Every migration golden passes, and a differential test agrees
   with the C# `Migrations.MigrateProject` on 25 inputs, step by step (150 F#
   tests). `ProjectStore` (open and import) now uses the F# migrations.
-- [ ] Port `SchemaValidation.cs`, `Validation.cs`, `Packs` merging and
-  `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with the
-  `GameInfo` table; the deterministic cartridge compiler.
+- [x] Validation in F#: `SchemaChecks.fs` (the schema checks of
+  `SchemaValidation.cs`, project and exported game) and `ContentLints.fs`
+  (`Validation.cs`, the web `validateProjectContent`). The Problems panel
+  and the F# migrations use them. A parity test compares them with the C#
+  on every golden and sample project and on 111 broken projects that
+  together hit every check (467 F# tests).
+- [ ] Port `Packs` merging and `ContentBuiltin` to F#; FlatBuffers
+  `cart.fbs`/`save.fbs` with the `GameInfo` table; the deterministic
+  cartridge compiler.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).
 
 **Switch the app (phase 4)**
-- [ ] Play Mode runs `RustSession` instead of the C# engine; Edit Mode uses a
-  preview session; then delete the C# engine projects.
+- [x] Play Mode runs the Rust engine (`RustPlayEngine` behind `IPlayEngine`)
+  whenever the library is available, with the C# engine as the fallback
+  (`FARM_ENGINE=csharp` forces it). Rust sends only the state sections
+  that changed (`fe_session_state_changes`); `GameStateMirror` keeps a C#
+  copy for the overlays and reuses unchanged objects, so views that compare
+  by reference don't rebuild. Plugins get the Rust hook events through the
+  existing Jint bridge. A scripted play with a plugin pack matches the C#
+  engine after every step. A walking frame costs about 0.03 ms.
+- [ ] Port what the host still runs in C# during play: the overlay queries
+  (`FindDialogue`, `VisibleDialogueOptions`, `FindShop`,
+  `RemainingDailyStock`, `CraftableStatus`, `FacingTarget`) and the debug
+  drawer's skip day (`GameTime.PerformSleep`); then Edit Mode's preview,
+  then delete the C# engine projects.
 
 **Editor port (phase 5)**: the numbered list above, none started as views yet.
 - [ ] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
