@@ -14,15 +14,14 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>
-/// Native map editor: layered tile tools, scene and transition controls, and one-step undo
-/// for drag strokes. Content editors are still being ported.
+/// Native editor: map tools and the content workspace, with F# document undo/redo.
 /// </summary>
 public sealed partial class EditModeView : UserControl
 {
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
-    public const string PortingNotice = "Map editing is available here. Content editors are still being ported; import their projects from the web version.";
+    public const string PortingNotice = "Map, content, settings, art, mods, workshop and interface panels are editable here. Some advanced fields still use JSON.";
 
     private readonly ProjectWorkspace _workspace;
     private readonly GameCanvas _canvas = new() { Name = "EditCanvas", ZoomMode = CanvasZoomMode.Fixed, Cursor = new Cursor(StandardCursorType.Hand) };
@@ -151,9 +150,106 @@ public sealed partial class EditModeView : UserControl
         }.WithClasses("side-panel");
         DockPanel.SetDock(sidePanel, Dock.Left);
 
+        var tabs = new TabControl { Name = "EditorTabs" };
+        var contentEditor = new ContentEditorView(workspace);
+        var settingsEditor = new SettingsEditorView(workspace);
+        var mods = new ModsEditorView(workspace);
+        var art = new ArtEditorView(workspace, (type, visual) =>
+        {
+            UseBrush(type, visual);
+            tabs.SelectedIndex = 0;
+        });
+        var workshop = new WorkshopView(workspace, tab =>
+        {
+            var category = tab switch
+            {
+                "npcs" => "NPCs",
+                "actions" => "Actions",
+                "events" => "Events",
+                "nodes" => "Node types",
+                "craft" => "Recipes",
+                _ => null,
+            };
+            if (category is not null)
+            {
+                tabs.SelectedIndex = 1;
+                contentEditor.SelectCategory(category);
+            }
+        });
+        var interfaceEditor = new InterfaceEditorView(workspace);
+        var problems = new ProblemsView(workspace, problem =>
+        {
+            if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
+            {
+                tabs.SelectedIndex = 0;
+                SelectScene(sceneId);
+                return;
+            }
+
+            if (problem.TargetKind == "settings")
+            {
+                tabs.SelectedIndex = 3;
+                return;
+            }
+            if (problem.TargetKind == "interface")
+            {
+                tabs.SelectedIndex = 7;
+                return;
+            }
+            if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
+            {
+                tabs.SelectedIndex = 4;
+                mods.SelectPack(packId);
+                return;
+            }
+
+            var category = problem.TargetKind switch
+            {
+                "npc" => "NPCs",
+                "item" => "Items",
+                "crop" => "Crops",
+                "quest" => "Quests",
+                "event" => "Events",
+                "shop" => "Shops",
+                "recipe" => "Recipes",
+                "nodeType" => "Node types",
+                "machineType" => "Machine types",
+                "animalSpecies" => "Animal species",
+                "fishTable" => "Fish tables",
+                "action" => "Actions",
+                "minigame" => "Minigames",
+                _ => null,
+            };
+            if (category is not null && problem.TargetId is { } id)
+            {
+                tabs.SelectedIndex = 1;
+                contentEditor.SelectEntry(category, id);
+            }
+        });
+        tabs.Items.Add(new TabItem { Header = "Map", Content = center });
+        tabs.Items.Add(new TabItem { Header = "Content", Content = contentEditor });
+        tabs.Items.Add(new TabItem { Header = "Problems", Content = problems });
+        tabs.Items.Add(new TabItem { Header = "Settings", Content = settingsEditor });
+        tabs.Items.Add(new TabItem { Header = "Mods", Content = mods });
+        tabs.Items.Add(new TabItem { Header = "Art", Content = art });
+        tabs.Items.Add(new TabItem { Header = "Workshop", Content = workshop });
+        tabs.Items.Add(new TabItem { Header = "Interface", Content = interfaceEditor });
+        tabs.SelectionChanged += (_, args) =>
+        {
+            if (!ReferenceEquals(args.Source, tabs)) return;
+            sidePanel.IsVisible = tabs.SelectedIndex == 0;
+            if (tabs.SelectedIndex == 2) problems.Refresh();
+            if (tabs.SelectedIndex == 1) contentEditor.Refresh();
+            if (tabs.SelectedIndex == 3) settingsEditor.Refresh();
+            if (tabs.SelectedIndex == 4) mods.Refresh();
+            if (tabs.SelectedIndex == 5) art.Refresh();
+            if (tabs.SelectedIndex == 6) workshop.Refresh();
+            if (tabs.SelectedIndex == 7) interfaceEditor.Refresh();
+        };
+        tabs.SelectedIndex = 0;
         var root = new DockPanel();
         root.Children.Add(sidePanel);
-        root.Children.Add(center);
+        root.Children.Add(tabs);
         Content = root;
 
         _workspace.ProjectChanged += OnProjectChanged;
@@ -169,25 +265,29 @@ public sealed partial class EditModeView : UserControl
     public string? Brush
     {
         get => _brush;
-        set
-        {
-            _brush = value;
-            _fillScene.IsEnabled = value is not null;
-            if (value is not null)
-            {
-                _selectedLayer = Edits.LayerFor(value);
-                SyncLayerSelector();
-                Tool = MapTool.Brush;
-            }
-            else
-            {
-                Tool = MapTool.Inspect;
-            }
-            foreach (var swatch in _palette.Children.OfType<ToggleButton>())
-            {
-                swatch.IsChecked = Equals(swatch.Tag, value);
-            }
+        set => SetBrush(value, null);
+    }
 
+    private void UseBrush(string type, VisualRef visual) => SetBrush(type, visual);
+
+    private void SetBrush(string? value, VisualRef? visual)
+    {
+        _brush = value;
+        if (value is not null) _workspace.Apply(Edits.SelectBrush(value, visual));
+        _fillScene.IsEnabled = value is not null;
+        if (value is not null)
+        {
+            _selectedLayer = Edits.LayerFor(value);
+            SyncLayerSelector();
+            Tool = MapTool.Brush;
+        }
+        else
+        {
+            Tool = MapTool.Inspect;
+        }
+        foreach (var swatch in _palette.Children.OfType<ToggleButton>())
+        {
+            swatch.IsChecked = Equals(swatch.Tag, value);
         }
     }
 

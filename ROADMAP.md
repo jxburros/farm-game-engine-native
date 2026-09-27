@@ -147,13 +147,26 @@ the most.
 - [ ] Port Edit Mode's preview and remaining play-rule lookups, then delete
   the C# engine projects.
 
-**Editor port (phase 5)**: map tools are now available as native views.
+**Editor port (phase 5)**: map tools and a broad content workspace are now
+available as native views.
 - [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
   transitions and collision; art bindings remain in the art pipeline milestone.
-- [ ] Content editors: NPCs and dialogue, items, crops, quests, events,
-  shops, recipes, node types, wildlife.
-- [ ] Project settings and calendar, Problems panel, mods and actions, art
-  import.
+- [x] Content workspace for NPCs, dialogue, items, crops, quests, events,
+  shops, recipes, node and machine types, animal species, fish tables,
+  actions and minigames. Scalar fields have native controls; nested fields
+  accept JSON. Every save/removal uses the F# document and undo history.
+- [x] Project settings and calendar editor; Problems panel with navigation
+  to affected map scenes and content entries.
+- [x] Mods panel: validate and review pack manifests, permissions and plugin
+  source before install; enable/disable, reorder, remove and import packs.
+- [x] Raster art import (PNG, JPEG, WebP, GIF, BMP normalized to PNG),
+  animation clip slicing and frame edits, visual bindings for the player,
+  map brush and content definitions. Art edits use F# undo/redo.
+- [x] Creator Workshop exposes the 13 F# patterns with a one-step undo and
+  links to their generated content. Interface editor creates and edits
+  in-game panels and their entries.
+- [ ] Dedicated nested editors and cross-reference pickers for each content
+  type; SVG import and more animation tools.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.

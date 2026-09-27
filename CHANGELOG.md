@@ -9,6 +9,23 @@
   availability and facing tiles now come from the Rust play session in one
   batched read. The debug drawer's Skip day action runs Rust's overnight pass
   during Rust playtests. Both paths are checked against the C# engine.
+- **Creator content workspace.** Edit Mode now includes native forms for
+  NPCs, dialogue, items, crops, quests, events, shops, recipes, nodes,
+  machines, wildlife, actions and minigames. Creators can add, edit and delete
+  entries through the F# undoable document. Nested fields are editable as
+  JSON. Project settings and the calendar have their own controls, and the
+  Problems tab links issues to affected entries.
+- **Pack manager.** Creators can review a pack's manifest, dependencies,
+  requested permissions and plugin source before installing it. The Mods tab
+  supports enable/disable, load order, removal and importing content into
+  the project, all through undoable F# edits.
+- **Art studio.** Import raster artwork into portable project assets, slice
+  sprite sheets into animation clips, append/reorder/remove frames, and bind
+  visuals to the player, map brush or content definitions. Removing an asset
+  clears its bindings. SVG import remains to be ported.
+- **Workshop and interface.** The 13 F# creator patterns can now be used from
+  Edit Mode, each as one undo step. Creators can add in-game panels and edit
+  their titles, visibility flags and live entries.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player
