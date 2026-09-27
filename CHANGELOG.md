@@ -49,6 +49,22 @@
   - Files with `NaN` or `Infinity` numbers are refused, as on the web.
   - Links in release notes open in the browser.
   - The golden generator writes where the tests read (`fixtures/golden`).
+- **Project edits live in F#.** Every change the editor can make is an `Edit`
+  (`FarmEngine.Authoring`): tile painting, rectangle and flood fill, paste,
+  scene add/resize/duplicate/delete, transitions, NPCs and dialogues, items,
+  crops (with their seed and crop items), quests, events, shops, recipes,
+  machines, gathering nodes, animals, fish tables, actions, minigames,
+  weather, mine, settings, art bindings and assets, content packs. Removing
+  something also cleans up what pointed at it. Undo/redo, drag strokes as one
+  undo step and autosave come from the F# `Document`; `ProjectWorkspace`
+  only holds it.
+- **Defaults and ids.** "Add" buttons get the web editor's default values
+  from `Defaults`, with deterministic ids instead of the wall clock.
+- **Problems pipeline.** `Problems.collect` runs the schema and content
+  validators and adds editor checks (unreachable dialogue, unknown flags,
+  out-of-bounds doors and starts, duplicate ids, recipe and machine links,
+  artwork, packs), each with a JSON path and an editor to jump to.
+- **Workshop patterns** (`Patterns`) build their content as one batch edit.
 
 ## 0.1.0
 

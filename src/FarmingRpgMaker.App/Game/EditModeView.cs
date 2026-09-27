@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using FarmEngine.Authoring;
 using FarmEngine.Core;
 using FarmEngine.Rendering;
 using FarmEngine.Schemas;
@@ -39,7 +40,8 @@ public sealed class EditModeView : UserControl
     private GameContent? _content;
     private string? _sceneId;
     private string? _brush;
-    private IDisposable? _stroke;
+    private string? _strokeId;
+    private int _strokeCount;
     private (int X, int Y)? _lastPainted;
     private bool _fitPending = true;
     private double _zoom = 1;
@@ -264,7 +266,11 @@ public sealed class EditModeView : UserControl
         return string.Join(" · ", parts);
     }
 
-    /// <summary>Paints one tile with the current brush (web single-tile brush), recording undo.</summary>
+    /// <summary>
+    /// Paints one tile with the current brush (web single-tile brush) through the F# edit
+    /// (<see cref="Edits.PaintTile"/>: clears crop and node, updates the selected tile type).
+    /// Inside a drag stroke the paints merge into one undo entry.
+    /// </summary>
     public void PaintTile(int x, int y)
     {
         var brush = _brush;
@@ -274,30 +280,15 @@ public sealed class EditModeView : UserControl
             return;
         }
 
-        var sceneId = scene.Id;
-        _workspace.Edit(project =>
+        var edit = Edits.PaintTile(scene.Id, x, y, brush);
+        if (_strokeId is { } strokeId)
         {
-            var index = project.Scenes.FindIndex(s => s.Id == sceneId);
-            if (index < 0)
-            {
-                return project;
-            }
-
-            var target = project.Scenes[index];
-            var current = target.Tiles[y][x];
-            var painted = Tiles.SetTileLayer(current, brush) with { Crop = null, Node = null };
-            if (painted == current)
-            {
-                return project;
-            }
-
-            var tiles = target.Tiles.Select((row, rowIndex) => rowIndex == y
-                ? row.Select((tile, columnIndex) => columnIndex == x ? painted : tile).ToList()
-                : row).ToList();
-            var scenes = project.Scenes.ToList();
-            scenes[index] = target with { Tiles = tiles };
-            return project with { Scenes = scenes, SelectedTileType = brush };
-        });
+            _workspace.ApplyInStroke(strokeId, edit);
+        }
+        else
+        {
+            _workspace.Apply(edit);
+        }
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -508,7 +499,7 @@ public sealed class EditModeView : UserControl
         _hover.IsVisible = true;
         _hoverInfo.Text = DescribeTile(tile.X, tile.Y);
 
-        if (_stroke is not null && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed && _lastPainted != tile)
+        if (_strokeId is not null && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed && _lastPainted != tile)
         {
             _lastPainted = tile;
             PaintTile(tile.X, tile.Y);
@@ -522,8 +513,8 @@ public sealed class EditModeView : UserControl
             return;
         }
 
-        // Drag-to-paint: the whole stroke is ONE undo entry.
-        _stroke = _workspace.BeginStroke();
+        // Drag-to-paint: the whole stroke is ONE undo entry (a fresh stroke id per press).
+        _strokeId = $"paint-{++_strokeCount}";
         _lastPainted = tile;
         e.Pointer.Capture(_canvas);
         PaintTile(tile.X, tile.Y);
@@ -532,8 +523,12 @@ public sealed class EditModeView : UserControl
 
     private void EndStroke()
     {
-        _stroke?.Dispose();
-        _stroke = null;
+        if (_strokeId is not null)
+        {
+            _strokeId = null;
+            _workspace.EndStroke();
+        }
+
         _lastPainted = null;
         _undo.IsEnabled = _workspace.CanUndo;
         _redo.IsEnabled = _workspace.CanRedo;
