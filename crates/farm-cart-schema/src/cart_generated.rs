@@ -549,4 +549,3 @@ pub fn finish_size_prefixed_cartridge_buffer<'a, 'b, A: flatbuffers::Allocator +
 }
 }  // pub mod Cart
 }  // pub mod FarmEngine
-
