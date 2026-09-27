@@ -1,4 +1,5 @@
 using FarmEngine.Core;
+using FarmEngine.Interop;
 using FarmEngine.Rendering;
 using FarmEngine.Runtime;
 using FarmEngine.Schemas;
@@ -27,8 +28,10 @@ public sealed record FrameToggles(bool Inventory, bool Quests, bool Crafting, bo
 /// One running playtest: the deterministic engine loop of the web app's play mode
 /// (src/App.tsx <c>update()</c> + packages/game-shell <c>Shell</c>), without any UI.
 /// <list type="bullet">
-/// <item>All gameplay goes through <see cref="Engine.ApplyCommand"/> /
-/// <see cref="Engine.AdvanceTick"/>; the session never edits <see cref="GameState"/> itself
+/// <item>All gameplay goes through the engine's commands and ticks: the Rust engine
+/// (<see cref="RustSession"/>) when its library loaded, else the C# engine
+/// (<see cref="Engine.ApplyCommand"/> / <see cref="Engine.AdvanceTick"/>); see
+/// <see cref="PlayEngines.Default"/>. The session never edits <see cref="GameState"/> itself
 /// (the only exception is <see cref="DebugMutate"/>, the creator debug drawer, exactly as
 /// on the web).</item>
 /// <item>Frame time is fed in by the host (<see cref="Update"/>), converted to ticks by
@@ -56,11 +59,22 @@ public sealed class PlaySession : IDisposable
     private readonly List<(SnapshotPop Pop, double BornAt)> _pops = [];
     private readonly IGameAudio _audio;
     private readonly PluginBridge? _plugins;
+    private readonly IPlayEngine _engine;
     private MoveVector _lastIntent = new(0, 0);
     private (double X, double Y, string SceneId)? _prevPlayer;
     private bool _disposed;
 
     public PlaySession(GameProject project, IGameAudio? audio = null, bool reducedMotion = false)
+        : this(project, PlayEngines.Default, audio, reducedMotion)
+    {
+    }
+
+    /// <summary>
+    /// A session on a chosen engine (tests compare both; the app uses
+    /// <see cref="PlayEngines.Default"/>). <paramref name="pluginOptions"/> overrides the plugin
+    /// sandbox budgets (tests that must not depend on wall-clock timeouts).
+    /// </summary>
+    public PlaySession(GameProject project, PlayEngineKind engineKind, IGameAudio? audio = null, bool reducedMotion = false, JintPluginHostOptions? pluginOptions = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         Project = project;
@@ -69,7 +83,7 @@ public sealed class PlaySession : IDisposable
 
         // Content ctx + hook bus + sandboxed plugin host for enabled packs (App.tsx
         // buildPlayEngine): plugin results are queued and drained once per frame.
-        var engine = PluginBridge.CreateEngineContext(project);
+        var engine = PluginBridge.CreateEngineContext(project, pluginOptions);
         Context = engine.Ctx;
         _plugins = engine.Plugins;
         if (_plugins is not null)
@@ -86,9 +100,22 @@ public sealed class PlaySession : IDisposable
             };
         }
 
-        // Auto-start quests activate when play begins (availability + prerequisites respected).
-        State = Quests.AutoStartQuests(Context, EngineState.CreateGameState(project));
+        try
+        {
+            _engine = PlayEngines.Create(engineKind, Context, project);
+        }
+        catch
+        {
+            _plugins?.Dispose();
+            throw;
+        }
     }
+
+    /// <summary>The engine running this session.</summary>
+    public PlayEngineKind EngineKind => _engine.Kind;
+
+    /// <summary>The engine itself (tests reach the Rust session through it).</summary>
+    internal IPlayEngine Engine => _engine;
 
     /// <summary>The project the session started from (art, names, settings).</summary>
     public GameProject Project { get; }
@@ -97,7 +124,8 @@ public sealed class PlaySession : IDisposable
 
     public GameContent Content => Context.Content;
 
-    public GameState State { get; private set; }
+    /// <summary>The live state (for Rust, a mirror refreshed after every command and tick batch).</summary>
+    public GameState State => _engine.State;
 
     public InputManager Input { get; } = new();
 
@@ -130,6 +158,16 @@ public sealed class PlaySession : IDisposable
     /// <summary>Raised on <c>sceneChanged</c> effects (the host snaps its camera).</summary>
     public event EventHandler<SceneChangedEffect>? SceneChanged;
 
+    /// <summary>
+    /// The engine failed on a command from the UI (outside <see cref="Update"/>, whose failures
+    /// reach the frame loop): a Rust panic poisons the session, so every later call fails too.
+    /// The host ends the playtest without keeping changes. Commands are ignored from then on.
+    /// </summary>
+    public event EventHandler<Exception>? Faulted;
+
+    /// <summary>The engine failure that stopped this session, if any.</summary>
+    public Exception? Fault { get; private set; }
+
     public Scene? CurrentScene =>
         State.World.Scenes.FirstOrDefault(scene => scene.Id == State.Player.SceneId) ?? State.World.Scenes.FirstOrDefault();
 
@@ -137,17 +175,14 @@ public sealed class PlaySession : IDisposable
     public bool EngineModalOpen => State.Dialogue is not null || State.Shop is not null || State.Minigame is not null;
 
     /// <summary>The project with the live state written back (keep-changes / autosave bridge).</summary>
-    public GameProject SyncedProject() => EngineState.ApplyStateToProject(Project, State);
+    public GameProject SyncedProject() => _engine.SyncedProject();
 
     /// <summary>Run one command through the engine and react to its effects.</summary>
     public void RunCommand(Command command)
     {
         ArgumentNullException.ThrowIfNull(command);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var step = Engine.ApplyCommand(Context, State, command);
-        State = step.State;
-        HandleEffects(step.Effects);
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        Guard(() => Run(command));
     }
 
     /// <summary>
@@ -157,9 +192,13 @@ public sealed class PlaySession : IDisposable
     public void DebugMutate(Func<GameState, EngineContext, GameState> transform)
     {
         ArgumentNullException.ThrowIfNull(transform);
-        State = transform(State, Context);
-        _prevPlayer = null;
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard(() =>
+        {
+            _engine.ReplaceState(transform(State, Context));
+            _prevPlayer = null;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        });
     }
 
     /// <summary>
@@ -178,7 +217,7 @@ public sealed class PlaySession : IDisposable
         {
             foreach (var command in _plugins.DrainCommands())
             {
-                RunCommand(command);
+                Run(command);
             }
         }
 
@@ -188,23 +227,21 @@ public sealed class PlaySession : IDisposable
         if (vector != _lastIntent)
         {
             _lastIntent = vector;
-            RunCommand(new SetMoveIntentCommand(vector.Dx, vector.Dy));
+            Run(new SetMoveIntentCommand(vector.Dx, vector.Dy));
         }
 
         var ticks = _timestep.Advance(deltaSeconds);
         if (ticks > 0)
         {
             _prevPlayer = (State.Player.X, State.Player.Y, State.Player.SceneId);
-            var step = Engine.AdvanceTick(Context, State, ticks);
-            State = step.State;
-            HandleEffects(step.Effects);
+            HandleEffects(_engine.Tick(ticks));
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         var frame = InputBindings.PollPlayFrame(Input, State, Content, hostModalOpen);
         foreach (var command in frame.Commands)
         {
-            RunCommand(command);
+            Run(command);
         }
 
         Input.EndFrame();
@@ -296,7 +333,34 @@ public sealed class PlaySession : IDisposable
         }
 
         _disposed = true;
+        _engine.Dispose();
         _plugins?.Dispose();
+    }
+
+    /// <summary>One command through the engine; engine failures propagate (to the frame loop).</summary>
+    private void Run(Command command)
+    {
+        HandleEffects(_engine.Apply(command));
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Runs a UI-initiated engine call; an engine failure faults the session instead of unwinding into the UI.</summary>
+    private void Guard(Action call)
+    {
+        if (Fault is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            call();
+        }
+        catch (FarmFfiException ex)
+        {
+            Fault = ex;
+            Faulted?.Invoke(this, ex);
+        }
     }
 
     /// <summary>React to engine effects (toasts, sounds, juice, camera snaps).</summary>

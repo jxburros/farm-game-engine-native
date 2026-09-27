@@ -16,7 +16,12 @@ public sealed class JsonSettingsStore : ISettingsStore
 {
     public const string SectionName = "updates";
 
-    internal static readonly JsonSerializerOptions JsonOptions = new()
+    /// <summary>
+    /// The serializer options for <c>settings.json</c>. Every store that writes a section of the
+    /// shared file uses these: a save re-serializes the whole file, so stores with different
+    /// options would rewrite each other's sections (escaping, indentation, enum names).
+    /// </summary>
+    public static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,

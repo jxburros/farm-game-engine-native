@@ -1,7 +1,10 @@
 # Language plan: Rust, F# and C#
 
-**Status:** in progress (September 2026). Phase 1 is done; phase 2 is
-mostly done (every golden replay passes in Rust). See the remaining work in
+**Status:** in progress (September 2026). Phases 1 and 2 are done: the
+Rust core passes every golden (replays, content, saves) and `farm-runtime`
+has the input, minigame, panel and audio logic. Phase 3 has edits, undo,
+migrations and validation in F#; phase 4 has started (Play Mode runs on
+Rust). See the remaining work in
 [ROADMAP.md](../ROADMAP.md#remaining-work). This is the reference for
 where code goes as the native app grows. Read it before you port a new part of
 the web editor. [PORTING.md](PORTING.md) still covers how C# code mirrors the
@@ -144,6 +147,14 @@ what an exported game contains.
   ```
   Commands go in and effects plus hook events come out, each as a FlatBuffers
   buffer. This is the command/effect pipeline the engine already has.
+- **Live state for C# views (phase 4, interim).** Play Mode keeps a managed
+  mirror of the Rust state (`GameStateMirror`) for the C# overlays.
+  `fe_session_state_changes` sends only the top-level sections that changed
+  since the last call (Rust compares them by value), in engine order, not
+  sorted. The mirror reuses the objects of unchanged sections, so views that
+  compare by reference keep working. `fe_session_set_state` is the debug
+  drawer's write path. Set `FARM_ENGINE=csharp` to play on the C# engine
+  instead.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
   next call on that session.

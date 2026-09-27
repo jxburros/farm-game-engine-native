@@ -514,7 +514,8 @@ fn node_type(
         required_tool: required_tool.to_owned(),
         required_tool_tier,
         drops,
-        respawn_days,
+        // The built-in content spells the key out (`respawnDays: null`).
+        respawn_days: Some(respawn_days),
         color: color.to_owned(),
         blocks_movement,
         ..NodeTypeDefinition::default()

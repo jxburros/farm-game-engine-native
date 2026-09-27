@@ -3,10 +3,9 @@
 //! clock cases of `M2SystemsTests.cs` — plus direct-module variants of the C# engine-level tests
 //! so the ported logic is exercised before the engine dispatch lands.
 //!
-//! States come from the `project` in `fixtures/golden/content/starter-farm.json` (the C# used
-//! `EngineTests.MakeProject()`), with the M4 fixture additions (animals, mine config) applied on
-//! top. Tests that need `apply_command`, `crafting::settle_machines` (every overnight pass),
-//! `world::tiles::create_empty_scene` (floor generation) or the inventory helpers are `#[ignore]`d.
+//! Most states come from the `project` in `fixtures/golden/content/starter-farm.json`, with the M4
+//! fixture additions (animals, mine config) applied on top. Cases whose coordinates depend on the
+//! C# field (`EngineTests.MakeProject()`, 6x6 with soil at (3,2)) use [`make_csharp_engine`].
 
 use farm_sim::content_builtin::{self, ToolDefinition};
 use farm_sim::hooks::{WeatherRollHookPayload, WeatherRollListener};
@@ -21,6 +20,8 @@ use farm_sim::{
 use indexmap::IndexMap;
 use std::path::PathBuf;
 
+mod common;
+
 const SCENE: &str = "scene-farm";
 
 fn starter_farm_project() -> GameProject {
@@ -33,14 +34,18 @@ fn starter_farm_project() -> GameProject {
 
 /// M4 fixture: recipes, machines, animals, fishing, mining enabled (on the starter farm).
 fn m4_project() -> GameProject {
-    let mut project = starter_farm_project();
+    with_m4_content(starter_farm_project(), SCENE)
+}
+
+/// The M4 additions of [`m4_project`] applied to `project`.
+fn with_m4_content(mut project: GameProject, entrance_scene: &str) -> GameProject {
     project.recipes = content_builtin::create_default_recipes();
     project.machine_types = content_builtin::create_default_machine_types();
     project.animal_species = content_builtin::create_default_animal_species();
     project.fish_tables = content_builtin::create_default_fish_tables();
     project.mine = MineConfig {
         enabled: true,
-        entrance_scene_id: Some(SCENE.to_owned()),
+        entrance_scene_id: Some(entrance_scene.to_owned()),
         entrance_x: Some(5.0),
         entrance_y: Some(5.0),
         floors: 10.0,
@@ -48,6 +53,17 @@ fn m4_project() -> GameProject {
         ..MineConfig::default()
     };
     project
+}
+
+/// Exactly the C# `M4SystemsTests.MakeEngine`: the 6x6 `EngineTests.MakeProject` field (soil at
+/// (3,2), player at (3,4) facing up) with the M4 additions. For the cases whose coordinates
+/// depend on that layout.
+fn make_csharp_engine(mutate: impl FnOnce(&mut GameProject)) -> (EngineContext, GameState) {
+    let mut project = with_m4_content(common::make_project(), "scene-test");
+    mutate(&mut project);
+    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    let state = state::create_game_state(&project, Some("m4"));
+    (ctx, state)
 }
 
 fn make_engine(mutate: impl FnOnce(&mut GameProject)) -> (EngineContext, GameState) {
@@ -124,24 +140,23 @@ fn classifies_day_phases() {
 // --- weather (M4b) ---
 
 #[test]
-#[ignore = "unverified: soil state after a rainy morning differs from the test expectation; the golden replays pass, check the test setup against M4SystemsTests.cs"]
 fn rain_waters_soil_and_crops_at_day_start() {
-    let (ctx, mut current) = make_engine(|project| {
+    let (ctx, mut current) = make_csharp_engine(|project| {
         project.weather = always_weather(
             "rain",
             vec![weather_type("rain", "Rain", true, 0.0), weather_type("storm", "Storm", true, 1.0)],
         );
     });
-    at(&mut current, 8.0, 5.0, "up");
-    farm_sim::apply_command(&ctx, &mut current, &Command::Interact); // plant wheat on (8,4)
+    at(&mut current, 3.0, 3.0, "up");
+    farm_sim::apply_command(&ctx, &mut current, &Command::Interact); // plant wheat on (3,2)
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
     assert_eq!(current.clock.weather_id, "rain");
-    let tile = &current.world.scenes[0].tiles[4][8];
+    let tile = &current.world.scenes[0].tiles[2][3];
     assert_eq!(tile.soil_state.as_deref(), Some("watered"));
     assert!(tile.crop.as_ref().is_some_and(|c| c.watered));
     // Rainy day 2: sleeping again grows the crop without manual watering.
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
-    assert_eq!(current.world.scenes[0].tiles[4][8].crop.as_ref().and_then(|c| c.days_grown), Some(1.0));
+    assert_eq!(current.world.scenes[0].tiles[2][3].crop.as_ref().and_then(|c| c.days_grown), Some(1.0));
 }
 
 #[test]
@@ -222,9 +237,11 @@ fn ranch_engine() -> (EngineContext, GameState) {
 }
 
 #[test]
-#[ignore = "unverified: feed message not produced; check the test setup against M4SystemsTests.cs"]
 fn feeding_petting_and_daily_product_flow() {
-    let (ctx, mut current) = ranch_engine();
+    // C# `RanchEngine` on the 6x6 field: Clucky at (3,3), the player at (3,4) facing up.
+    let (ctx, mut current) = make_csharp_engine(|project| {
+        project.animals = vec![AnimalState { scene_id: "scene-test".to_owned(), ..clucky() }]
+    });
     give(&mut current, "feed-hay", 2.0, &ctx);
 
     // Interact 1: feeds (consumes hay)

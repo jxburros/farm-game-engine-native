@@ -36,8 +36,11 @@ fn recipe<'a>(ctx: &'a EngineContext, id: &str) -> &'a RecipeDefinition {
 }
 
 /// Adds a hand-craftable recipe gated behind a 'cooking' station, plus the machine that provides it.
+/// The starter farm's own Kitchen also provides 'cooking' and would be found first, so it is
+/// removed: the C# test content (`ContentBuiltin.CreateDefaultMachineTypes`) has no kitchen.
 fn with_cooking_station() -> (EngineContext, GameState) {
     make_m4_engine(|project| {
+        project.machine_types.retain(|machine| !machine.station_categories.iter().any(|c| c == "cooking"));
         project.machine_types.push(MachineTypeDefinition {
             id: "machine-test-kitchen".to_owned(),
             name: "Test Kitchen".to_owned(),
@@ -137,7 +140,6 @@ fn machines_block_movement() {
 // --- crafting stations & categories ---
 
 #[test]
-#[ignore = "test setup: the built-in Kitchen also provides cooking and is found first; the C# test builds content without it"]
 fn fails_a_station_gated_recipe_away_from_the_station_naming_it_in_the_message() {
     let (ctx, mut state) = with_cooking_station();
     give(&ctx, &mut state, "material-fiber", 5.0);
@@ -208,7 +210,6 @@ fn craftable_status_reports_locked_when_unlock_conditions_are_not_met() {
 }
 
 #[test]
-#[ignore = "test setup: the built-in Kitchen also provides cooking and is found first; the C# test builds content without it"]
 fn craftable_status_reports_station_when_ingredients_and_unlocks_are_fine_but_no_station_is_nearby() {
     let (ctx, mut state) = with_cooking_station();
     give(&ctx, &mut state, "material-fiber", 5.0);
@@ -298,8 +299,10 @@ fn craft_rejects_unknown_and_machine_recipes_without_touching_state() {
 
 #[test]
 fn station_providing_names_the_first_machine_type_for_a_category() {
+    let (starter, _) = make_m4_engine(|_| {});
+    assert_eq!(station_providing(&starter, "cooking").map(|m| m.id.as_str()), Some("machine-kitchen"));
     let (ctx, _) = with_cooking_station();
-    assert_eq!(station_providing(&ctx, "cooking").map(|m| m.id.as_str()), Some("machine-kitchen"));
+    assert_eq!(station_providing(&ctx, "cooking").map(|m| m.id.as_str()), Some("machine-test-kitchen"));
     assert_eq!(station_providing(&ctx, "magic").map(|m| m.name.as_str()), Some("Enchanter's Altar"));
     assert_eq!(station_providing(&ctx, "alchemy"), None);
     assert_eq!(recipe_by_id(&ctx, "recipe-test-soup").map(|r| r.name.as_str()), Some("Test Soup"));

@@ -2465,6 +2465,24 @@ function writeHashFixture() {
   })))
 }
 
+/**
+ * A hand-written pack whose node types leave `respawnDays` out, set it to null, or set a
+ * number. `.nullable().optional()` keeps absent and null apart, and they hash differently.
+ */
+function packNodesProject(): GameProject {
+  const node = (id: string, extra: Record<string, unknown>) => ({
+    id, name: id, health: 2, requiredTool: 'pickaxe', requiredToolTier: 1,
+    drops: [{ itemId: 'material-stone', min: 1, max: 2, weight: 1 }], color: '#777777', blocksMovement: true, ...extra,
+  })
+  const pack = makePack({
+    manifest: { id: 'rocks', name: 'Rocks', version: '1.0.0' },
+    content: {
+      nodeTypes: [node('boulder-absent', {}), node('boulder-null', { respawnDays: null }), node('boulder-three', { respawnDays: 3 })],
+    },
+  })
+  return { ...starterProject(), contentPacks: [{ pack, enabled: true }] } as GameProject
+}
+
 function writeContentFixtures() {
   const sample: Record<string, () => unknown> = {
     'starter-farm': starterProject,
@@ -2477,6 +2495,7 @@ function writeContentFixtures() {
     'fixture-v1': () => JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/project-v1.json'), 'utf8')),
     'fixture-v8': () => JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/project-v8.json'), 'utf8')),
     'lab-calendar': calendarProject,
+    'packs-nodes': packNodesProject,
   }
   for (const [name, build] of Object.entries(sample)) {
     const migrated = migrateProject(clone(build()))

@@ -8,6 +8,8 @@
     <NoWarn>$(NoWarn);FS3370</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Json.fs" />
+    <Compile Include="Migrations.fs" />
     <Compile Include="Records.fs" />
     <Compile Include="Edits.fs" />
     <Compile Include="Update.fs" />
@@ -18,6 +20,8 @@
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
     <Compile Include="Problem.fs" />
+    <Compile Include="SchemaChecks.fs" />
+    <Compile Include="ContentLints.fs" />
     <Compile Include="ChecksWorld.fs" />
     <Compile Include="ChecksContent.fs" />
     <Compile Include="Problems.fs" />

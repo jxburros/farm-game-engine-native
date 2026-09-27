@@ -131,7 +131,7 @@ pub fn strike_node(
 
         let depleted_on_day = state.clock.day;
         let tile = &mut state.world.scenes[scene_index].tiles[y as usize][x as usize];
-        if definition.respawn_days.is_some() {
+        if definition.respawn_after().is_some() {
             tile.node = Some(TileNode {
                 type_id: node.type_id.clone(),
                 remaining_health: 0.0,

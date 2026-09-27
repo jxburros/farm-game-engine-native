@@ -127,7 +127,83 @@ public sealed class RustSession : IDisposable
         {
             NativeMethods.FeBytes output;
             var json = Check(NativeMethods.fe_session_hook_events(_handle, &output), output, nameof(DrainHookEvents));
-            return JsonDocument.Parse(json).RootElement.Clone();
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+    }
+
+    /// <summary>
+    /// Replaces the live state as it is (creator debug tools): unlike <see cref="LoadSave"/>
+    /// nothing is migrated or quarantined. A state Rust cannot read throws
+    /// <see cref="FarmFfiException"/> and leaves the state as it was.
+    /// </summary>
+    public void SetState(GameState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var json = JsonSerializer.SerializeToUtf8Bytes(state, JsonDefaults.Options);
+        unsafe
+        {
+            fixed (byte* ptr = json)
+            {
+                NativeMethods.FeBytes output;
+                Check(NativeMethods.fe_session_set_state(_handle, ptr, (nuint)json.Length, &output), output, nameof(SetState));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The top-level state sections that changed since the previous call, as one UTF-8 JSON
+    /// object (<c>{"clock":{…},"player":{…}}</c>, <c>{}</c> when nothing changed), in engine
+    /// order. <paramref name="full"/> sends every section. <see cref="GameStateMirror"/> turns
+    /// these into a <see cref="GameState"/>.
+    /// </summary>
+    public byte[] StateChanges(bool full = false)
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            var result = NativeMethods.fe_session_state_changes(_handle, full, &output);
+            var bytes = TakeBytes(output);
+            if (result != NativeMethods.FeResult.Ok)
+            {
+                Fail(result, nameof(StateChanges));
+            }
+
+            return bytes;
+        }
+    }
+
+    /// <summary>
+    /// A save file for the live state: a header (game id, game version, content hash) plus the
+    /// state, as stable JSON. Load it with <see cref="LoadSave"/>.
+    /// </summary>
+    public string Save()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            return Check(NativeMethods.fe_session_save(_handle, &output), output, nameof(Save));
+        }
+    }
+
+    /// <summary>
+    /// Replaces the state with a save file (or a bare web <c>GameState</c>). Old saves are
+    /// migrated and items the game no longer has are quarantined. A save from another game, or
+    /// one that fails validation, throws <see cref="FarmFfiException"/> and leaves the state as
+    /// it was.
+    /// </summary>
+    public SaveLoadReport LoadSave(string save)
+    {
+        ArgumentNullException.ThrowIfNull(save);
+        var bytes = Encoding.UTF8.GetBytes(save);
+        unsafe
+        {
+            fixed (byte* ptr = bytes)
+            {
+                NativeMethods.FeBytes output;
+                var json = Check(NativeMethods.fe_session_load_save(_handle, ptr, (nuint)bytes.Length, &output), output, nameof(LoadSave));
+                return JsonSerializer.Deserialize<SaveLoadReport>(json, JsonDefaults.Options)!;
+            }
         }
     }
 
@@ -158,12 +234,32 @@ public sealed class RustSession : IDisposable
             return text;
         }
 
+        Fail(result, call);
+        return text;
+    }
+
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private void Fail(NativeMethods.FeResult result, string call)
+    {
         if (result is NativeMethods.FeResult.Panic or NativeMethods.FeResult.Poisoned)
         {
             _poisoned = true;
         }
 
         throw new FarmFfiException($"{call} failed: {result}. {LastError()}");
+    }
+
+    /// <summary>Copies a Rust buffer into a managed array and frees it.</summary>
+    private static unsafe byte[] TakeBytes(NativeMethods.FeBytes bytes)
+    {
+        try
+        {
+            return bytes.Ptr == null ? [] : new ReadOnlySpan<byte>(bytes.Ptr, (int)bytes.Len).ToArray();
+        }
+        finally
+        {
+            NativeMethods.fe_bytes_free(bytes);
+        }
     }
 
     /// <summary>Copies a Rust buffer into a string and frees it.</summary>
@@ -179,3 +275,16 @@ public sealed class RustSession : IDisposable
         }
     }
 }
+
+/// <summary>What <see cref="RustSession.LoadSave"/> did besides loading the state.</summary>
+/// <param name="Warnings">Things the player should know (a newer game version wrote the save, items set aside).</param>
+/// <param name="Quarantined">Ids of items the game no longer has, moved to quarantine.</param>
+/// <param name="Restored">Ids of quarantined items that came back.</param>
+/// <param name="FromVersion">The save version before migration.</param>
+/// <param name="Migrated">The save went through save migrations.</param>
+public sealed record SaveLoadReport(
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string> Quarantined,
+    IReadOnlyList<string> Restored,
+    double FromVersion,
+    bool Migrated);

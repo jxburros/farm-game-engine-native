@@ -143,6 +143,28 @@ public sealed class ProjectStoreTests
         Assert.Equal("beta", root["updates"]!["channel"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void AppSettingsStore_DoesNotRewriteTheUpdateCentersSection()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "settings.json");
+        var updates = new FarmingRpgMaker.Updates.JsonSettingsStore(path);
+        updates.Save(new FarmingRpgMaker.Updates.UpdateSettings
+        {
+            Channel = FarmingRpgMaker.Updates.UpdateChannel.Prerelease,
+            LastChecked = new DateTimeOffset(2026, 9, 27, 8, 30, 0, TimeSpan.FromHours(2)),
+        });
+        new AppSettingsStore(path).Save(new WorkspaceSettings { LastProjectId = "proj-x" });
+        var afterWorkspace = File.ReadAllText(path);
+
+        // Both stores serialize the whole file the same way: saving the updates section again
+        // leaves the file byte-identical, and the timestamp keeps its readable "+02:00".
+        updates.Save(updates.Load());
+        Assert.Equal(afterWorkspace, File.ReadAllText(path));
+        Assert.Contains("+02:00", afterWorkspace, StringComparison.Ordinal);
+        Assert.Contains("\"prerelease\"", afterWorkspace, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("con", "con_")]
     [InlineData("NUL", "NUL_")]
