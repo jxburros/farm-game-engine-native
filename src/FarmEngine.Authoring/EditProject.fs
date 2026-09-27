@@ -24,6 +24,10 @@ module internal EditProject =
     let setSettings (settings: ProjectSettings) (project: GameProject) =
         if obj.Equals(project.Settings, settings) then project else Proj.set "Settings" (box settings) project
 
+    let setExportSettings (settings: ExportSettings option) (project: GameProject) =
+        let value = Option.toObj settings
+        if obj.Equals(project.Export, value) then project else Proj.set "Export" (box value) project
+
     /// ProjectSettingsEditor `removeSeason`: refused for the last season; festivals on it go too.
     let removeSeason (seasonId: string) (project: GameProject) =
         let calendar = project.Settings.Calendar
@@ -106,8 +110,8 @@ module internal EditProject =
         match project.ContentPacks |> Seq.tryFind (fun i -> packId i = id) with
         | None -> project
         | Some install ->
-            let result = Packs.ApplyPackToProject(project, install.Pack)
-            removePack id result.Project
+            let imported, _ = PackMerge.applyToProject project install.Pack
+            removePack id imported
 
     /// Imports and kept playtests: the whole project.
     let replaceProject (next: GameProject) (project: GameProject) =

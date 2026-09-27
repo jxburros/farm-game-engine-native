@@ -2,6 +2,41 @@
 
 ## 0.2.0 (unreleased)
 
+- **F# pack authoring progress.** Dependency ordering, conflict-aware content
+  merging, and importing a pack into editable project content now run through
+  F#. Differential tests compare the results with the C# compatibility engine.
+- **Rust play queries.** Dialogue gates, shop stock limits, crafting
+  availability and facing tiles now come from the Rust play session in one
+  batched read. The debug drawer's Skip day action runs Rust's overnight pass
+  during Rust playtests. Both paths are checked against the C# engine.
+- **Creator content workspace.** Edit Mode now includes native forms for
+  NPCs, dialogue, items, crops, quests, events, shops, recipes, nodes,
+  machines, wildlife, actions and minigames. Creators can add, edit and delete
+  entries through the F# undoable document. Nested fields are editable as
+  JSON. Project settings and the calendar have their own controls, and the
+  Problems tab links issues to affected entries.
+- **Pack manager.** Creators can review a pack's manifest, dependencies,
+  requested permissions and plugin source before installing it. The Mods tab
+  supports enable/disable, load order, removal and importing content into
+  the project, all through undoable F# edits.
+- **Art studio.** Import raster artwork into portable project assets, slice
+  sprite sheets into animation clips, append/reorder/remove frames, and bind
+  visuals to the player, map brush or content definitions. Removing an asset
+  clears its bindings. SVG import remains to be ported.
+- **Workshop and interface.** The 13 F# creator patterns can now be used from
+  Edit Mode, each as one undo step. Creators can add in-game panels and edit
+  their titles, visibility flags and live entries.
+- **Export groundwork.** Projects can store desktop export identity, window,
+  icon and target settings without changing the web-compatible schema version.
+  F# supplies a stable game id and reports invalid settings in Problems. The
+  graphical player and export packaging remain future work.
+- **Cartridge groundwork.** `farmc compile` now writes a deterministic
+  FlatBuffers `game.cart` with game identity and compiled compatibility
+  content. Rust verifies and loads it; cartridge sessions use the persistent
+  game id in saves. The graphical player and packaging remain future work.
+- **Headless player.** A standalone Rust executable loads cartridges, runs
+  scripted replays, checks deterministic state hashes, and loads/writes saves.
+  The graphical game shell is still being built.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

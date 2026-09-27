@@ -112,6 +112,10 @@ what an exported game contains.
 - **Compatibility phase:** until the v9 cutover (phase 7), the cartridge keeps
   today's `GameContent` shape and `double` values, so golden hashes still
   match the TypeScript engine.
+- **Format 1 transition:** `cart.fbs` currently wraps game info plus project
+  and compiled content JSON. `farmc compile` and Rust loading are in place;
+  the Rust session still reads the project for initial state. The indexed
+  content tables and project-free player load path remain to be ported.
 
 ### Saves (Rust only)
 

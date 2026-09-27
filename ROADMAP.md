@@ -122,9 +122,19 @@ the most.
   and the F# migrations use them. A parity test compares them with the C#
   on every golden and sample project and on 111 broken projects that
   together hit every check (467 F# tests).
-- [ ] Port `Packs` merging and `ContentBuiltin` to F#; FlatBuffers
-  `cart.fbs`/`save.fbs` with the `GameInfo` table; the deterministic
-  cartridge compiler.
+- [ ] Finish `Packs` and `ContentBuiltin` in F#: load order, conflict-aware
+  content merge and project import now run in F#; namespacing and compatibility
+  checks still use the C# implementation.
+- [ ] Add indexed content tables and `save.fbs` to the cartridge format;
+  port `ContentBuiltin` and the content compiler off the C# bridge.
+- [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
+  compiler and `farmc compile`; Rust verifies and loads the cartridge, and
+  cross-language tests compare its content and play state. Compiled content
+  still comes from the C# bridge and is stored as JSON while indexed binary
+  tables are developed.
+- [x] Add optional export identity/window/target settings to the project,
+  with a stable generated game id and F# Problems validation. The cartridge
+  compiler consumes them; Export Game still needs the graphical player and packaging.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).
@@ -138,22 +148,39 @@ the most.
   by reference don't rebuild. Plugins get the Rust hook events through the
   existing Jint bridge. A scripted play with a plugin pack matches the C#
   engine after every step. A walking frame costs about 0.03 ms.
-- [ ] Port what the host still runs in C# during play: the overlay queries
-  (`FindDialogue`, `VisibleDialogueOptions`, `FindShop`,
-  `RemainingDailyStock`, `CraftableStatus`, `FacingTarget`) and the debug
-  drawer's skip day (`GameTime.PerformSleep`); then Edit Mode's preview,
-  then delete the C# engine projects.
+- [x] Play overlays ask Rust for dialogue, visible options, shop stock limits,
+  recipe availability, ingredients and facing tile in one batched query.
+  The debug drawer's skip day uses Rust's overnight pass. A scripted play
+  compares these results with the C# engine after every step.
+- [ ] Port Edit Mode's preview and remaining play-rule lookups, then delete
+  the C# engine projects.
 
-**Editor port (phase 5)**: map tools are now available as native views.
+**Editor port (phase 5)**: map tools and a broad content workspace are now
+available as native views.
 - [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
   transitions and collision; art bindings remain in the art pipeline milestone.
-- [ ] Content editors: NPCs and dialogue, items, crops, quests, events,
-  shops, recipes, node types, wildlife.
-- [ ] Project settings and calendar, Problems panel, mods and actions, art
-  import.
+- [x] Content workspace for NPCs, dialogue, items, crops, quests, events,
+  shops, recipes, node and machine types, animal species, fish tables,
+  actions and minigames. Scalar fields have native controls; nested fields
+  accept JSON. Every save/removal uses the F# document and undo history.
+- [x] Project settings and calendar editor; Problems panel with navigation
+  to affected map scenes and content entries.
+- [x] Mods panel: validate and review pack manifests, permissions and plugin
+  source before install; enable/disable, reorder, remove and import packs.
+- [x] Raster art import (PNG, JPEG, WebP, GIF, BMP normalized to PNG),
+  animation clip slicing and frame edits, visual bindings for the player,
+  map brush and content definitions. Art edits use F# undo/redo.
+- [x] Creator Workshop exposes the 13 F# patterns with a one-step undo and
+  links to their generated content. Interface editor creates and edits
+  in-game panels and their entries.
+- [ ] Dedicated nested editors and cross-reference pickers for each content
+  type; SVG import and more animation tools.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
+- [x] Headless `farm-player` loads `game.cart` beside the executable or by
+  `--cart`, replays commands, checks a hash, and loads/writes portable saves.
+  The graphical shell, plugin sandbox and packaging are still open.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).

@@ -11,6 +11,7 @@
     <Compile Include="Json.fs" />
     <Compile Include="Migrations.fs" />
     <Compile Include="Records.fs" />
+    <Compile Include="PackMerge.fs" />
     <Compile Include="Edits.fs" />
     <Compile Include="Update.fs" />
     <Compile Include="Cleanup.fs" />
@@ -24,7 +25,9 @@
     <Compile Include="ContentLints.fs" />
     <Compile Include="ChecksWorld.fs" />
     <Compile Include="ChecksContent.fs" />
+    <Compile Include="ChecksExport.fs" />
     <Compile Include="Problems.fs" />
+    <Compile Include="CartridgeCompiler.fs" />
     <Compile Include="Patterns.fs" />
     <Compile Include="Api.fs" />
   </ItemGroup>

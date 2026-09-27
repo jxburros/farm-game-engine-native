@@ -17,6 +17,7 @@ use crate::schema::{
 use crate::skills;
 use crate::world::world_movement;
 use indexmap::IndexSet;
+use serde::Serialize;
 
 /// Why a recipe can't be crafted right now (TS `CraftableStatus.reason`).
 pub mod craft_block_reasons {
@@ -26,7 +27,7 @@ pub mod craft_block_reasons {
 }
 
 /// TS `CraftableStatus`. `reason` is one of [`craft_block_reasons`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 pub struct CraftableStatus {
     pub craftable: bool,
     pub reason: Option<String>,

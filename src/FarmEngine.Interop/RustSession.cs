@@ -39,6 +39,23 @@ public sealed class RustSession : IDisposable
         }
 
         var projectJson = JsonSerializer.SerializeToUtf8Bytes(project, JsonDefaults.Options);
+        return CreateFromBytes(projectJson, seed, autoStartQuests);
+    }
+
+    /// <summary>Starts a session from a compiled FlatBuffers cartridge.</summary>
+    public static RustSession CreateCartridge(byte[] cartridge, string? seed = null, bool autoStartQuests = false)
+    {
+        ArgumentNullException.ThrowIfNull(cartridge);
+        if (!FarmFfi.IsAvailable)
+        {
+            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
+        }
+
+        return CreateFromBytes(cartridge, seed, autoStartQuests);
+    }
+
+    private static RustSession CreateFromBytes(byte[] projectJson, string? seed, bool autoStartQuests)
+    {
         var seedBytes = Encoding.UTF8.GetBytes(seed ?? "");
         unsafe
         {
@@ -108,6 +125,26 @@ public sealed class RustSession : IDisposable
 
     /// <summary>The state copied into managed records (debug drawer, tests). Costs a JSON round trip.</summary>
     public GameState State() => JsonSerializer.Deserialize<GameState>(StateJson(), JsonDefaults.Options)!;
+
+    /// <summary>One read of the Rust rule queries used by the play overlays.</summary>
+    public string OverlayJson()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            return Check(NativeMethods.fe_session_overlay_json(_handle, &output), output, nameof(OverlayJson));
+        }
+    }
+
+    /// <summary>Creator debug action: run the overnight pass without a bed check.</summary>
+    public void SkipDay()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            Check(NativeMethods.fe_session_skip_day(_handle, &output), output, nameof(SkipDay));
+        }
+    }
 
     /// <summary>The project with the live state written back (<c>applyStateToProject</c>).</summary>
     public GameProject SyncedProject()

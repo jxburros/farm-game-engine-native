@@ -154,7 +154,7 @@ public sealed class PlayEngineTests(ITestOutputHelper output)
         });
         Step("debug: skip a day, money, season", run =>
         {
-            run.Session.DebugMutate((s, ctx) => GameTime.PerformSleep(ctx, s, new SleepOptions(Collapsed: false)).State);
+            run.Session.DebugSkipDay();
             run.Session.DebugMutate((s, _) => s with { Player = s.Player with { Money = s.Player.Money + 500 } });
             run.Frames(2);
         });
@@ -210,6 +210,9 @@ public sealed class PlayEngineTests(ITestOutputHelper output)
                 Assert.True(expected == actual, $"state differs after \"{label}\": {FirstDifference(expected, actual)}; plugin errors: {string.Join(" | ", csharp.Session.PluginErrors.Concat(rust.Session.PluginErrors).Select(e => $"{e.PluginId} {e.Kind} {e.Message}"))}");
                 Assert.Equal(csharp.Log, rust.Log);
                 Assert.Equal(csharp.StateChanges, rust.StateChanges);
+                var csharpOverlay = Hash.StableStringify(csharp.Session.OverlayView());
+                var rustOverlay = Hash.StableStringify(rust.Session.OverlayView());
+                Assert.True(csharpOverlay == rustOverlay, $"overlay queries differ after \"{label}\": {FirstDifference(csharpOverlay, rustOverlay)}");
                 // The mirror is exactly the Rust state.
                 Assert.Equal(rustSession.StateHash(), Hash.HashState(rust.Session.State));
             });
@@ -379,7 +382,7 @@ public sealed class PlayEngineTests(ITestOutputHelper output)
         session.RunCommand(new SleepCommand());
         Assert.Equal(money + 500, session.State.Player.Money);
         var day = session.State.Clock.Day;
-        session.DebugMutate((s, ctx) => GameTime.PerformSleep(ctx, s, new SleepOptions(Collapsed: false)).State);
+        session.DebugSkipDay();
         Assert.Equal(day + 1, session.State.Clock.Day);
         Assert.Equal(rust.StateHash(), Hash.HashState(session.State));
     }

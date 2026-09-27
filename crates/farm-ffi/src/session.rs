@@ -1,9 +1,9 @@
 //! Engine sessions over the C ABI (docs/LANGUAGES.md "FFI: .NET → Rust").
 //!
-//! Compatibility phase: the cartridge is the project JSON the web version writes, commands and
-//! effects cross as JSON arrays, and views are stable JSON. FlatBuffers replace the JSON
-//! buffers when the F# compiler produces cartridges (phase 3). The call shape stays the same:
-//! coarse, handle-based, batched; Rust allocates results, .NET frees them with `fe_bytes_free`.
+//! Compatibility phase: sessions accept web-compatible project JSON or the F# FlatBuffers
+//! cartridge. Commands and effects cross as JSON arrays, and views are stable JSON. The call
+//! shape stays coarse, handle-based and batched; Rust allocates results and .NET frees them
+//! with `fe_bytes_free`.
 //!
 //! A session is used by one thread at a time. Panics are caught at the boundary: the session
 //! is then *poisoned* (its state may be half-updated) and every later call answers
@@ -14,8 +14,11 @@ use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
-use farm_sim::schema::{GameProject, GameState};
-use farm_sim::{engine, hash, quests, stable_json, state};
+use farm_sim::schema::{Dialogue, DialogueOption, GameContent, GameProject, GameState, ShopDefinition};
+use farm_sim::world::world_movement;
+use farm_sim::{crafting, dialogue_system, economy, engine, game_time, hash, quests, social, stable_json, state};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// An opaque engine session: immutable content plus the live state.
@@ -72,7 +75,7 @@ unsafe fn write_empty(out: *mut FeBytes) {
     }
 }
 
-/// Creates a session from project JSON (the web version's format, schema v8, already migrated).
+/// Creates a session from migrated project JSON or a verified `FGCT` cartridge.
 /// `seed` may be empty (then the project's own `id:gameStartTime` seed applies, like the TS
 /// engine). `auto_start_quests` does what hosts do at game start.
 ///
@@ -103,15 +106,35 @@ pub unsafe extern "C" fn fe_session_new(
         Err(_) => return FeResult::InvalidArgument,
     };
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<FeSession, String> {
-        let project: GameProject = serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
-        let content = state::create_content_from_project(&project);
+        let (project, content, identity): (GameProject, GameContent, Option<(String, String)>) =
+            if farm_cart::is_cartridge(project_bytes) {
+                let cart = farm_cart::read_cartridge(project_bytes)?;
+                let project: GameProject =
+                    serde_json::from_slice(cart.project_json).map_err(|e| format!("cartridge project: {e}"))?;
+                let content: GameContent =
+                    serde_json::from_slice(cart.content_json).map_err(|e| format!("cartridge content: {e}"))?;
+                let expected = SaveTarget::for_project(&project, &content);
+                if cart.info.game_id != expected.game_id || cart.info.version != expected.game_version {
+                    return Err("Cartridge game identity differs from its project data.".to_owned());
+                }
+                (project, content, Some((cart.info.game_id.to_owned(), cart.info.version.to_owned())))
+            } else {
+                let project: GameProject =
+                    serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
+                let content = state::create_content_from_project(&project);
+                (project, content, None)
+            };
         let ctx = EngineContext::with_hooks(content, HookBus::new());
         let mut game_state =
             state::create_game_state(&project, if seed_text.is_empty() { None } else { Some(seed_text) });
         if auto_start_quests {
             quests::auto_start_quests(&ctx, &mut game_state);
         }
-        let target = SaveTarget::for_project(&project, &ctx.content);
+        let mut target = SaveTarget::for_project(&project, &ctx.content);
+        if let Some((game_id, version)) = identity {
+            target.game_id = game_id;
+            target.game_version = version;
+        }
         Ok(FeSession {
             ctx,
             state: game_state,
@@ -241,6 +264,85 @@ pub unsafe extern "C" fn fe_session_hash(session: *mut FeSession, out: *mut FeBy
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
     with_session(session, out, |s| Ok(stable_json::stringify(&state::apply_state_to_project(&s.project, &s.state))))
+}
+
+/// One batched read of the rule-derived data the play overlays need. This keeps dialogue
+/// gates, shop limits, recipe availability and the facing tile on the Rust side of the boundary.
+/// A `null` stock remainder means unlimited; JSON cannot carry positive infinity.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayView<'a> {
+    dialogue: Option<&'a Dialogue>,
+    visible_dialogue_options: Vec<DialogueOption>,
+    shop: Option<&'a ShopDefinition>,
+    stock_remaining: BTreeMap<&'a str, Option<f64>>,
+    facing: FacingTile,
+    craftable: BTreeMap<&'a str, crafting::CraftableStatus>,
+    has_ingredients: BTreeMap<&'a str, bool>,
+}
+
+#[derive(Serialize)]
+struct FacingTile {
+    x: f64,
+    y: f64,
+}
+
+fn overlay_view(session: &FeSession) -> OverlayView<'_> {
+    let dialogue = session
+        .state
+        .dialogue
+        .as_ref()
+        .and_then(|active| dialogue_system::find_dialogue(&session.ctx, &active.npc_id, &active.dialogue_id));
+    let visible_dialogue_options = dialogue
+        .map(|dialogue| social::visible_dialogue_options(&session.ctx, &session.state, dialogue))
+        .unwrap_or_default();
+    let shop = session.state.shop.as_ref().and_then(|active| economy::find_shop(&session.ctx, &active.shop_id));
+    let mut stock_remaining = BTreeMap::new();
+    if let Some(shop) = shop {
+        for entry in &shop.stock {
+            let remaining = economy::remaining_daily_stock(&session.state, &shop.id, &entry.item_id, entry.daily_limit);
+            stock_remaining.insert(entry.item_id.as_str(), remaining.is_finite().then_some(remaining));
+        }
+    }
+    let facing = world_movement::facing_target(&session.state);
+    let mut craftable = BTreeMap::new();
+    let mut has_ingredients = BTreeMap::new();
+    for recipe in &session.ctx.content.recipes {
+        craftable.insert(recipe.id.as_str(), crafting::craftable_status(&session.ctx, &session.state, recipe));
+        has_ingredients.insert(recipe.id.as_str(), crafting::has_ingredients(&session.state, recipe));
+    }
+    OverlayView {
+        dialogue,
+        visible_dialogue_options,
+        shop,
+        stock_remaining,
+        facing: FacingTile { x: facing.x, y: facing.y },
+        craftable,
+        has_ingredients,
+    }
+}
+
+/// Read-only overlay queries as one JSON object. No live state is copied or changed.
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_overlay_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
+    with_session(session, out, |s| Ok(view_json::to_json(&overlay_view(s))))
+}
+
+/// Creator debug action: run the same overnight pass as a sleep command without requiring
+/// the player to be at a bed. Effects are intentionally discarded, as in the debug drawer.
+/// Hook events remain available through [`fe_session_hook_events`].
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_skip_day(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
+    with_session(session, out, |s| {
+        game_time::perform_sleep(&s.ctx, &mut s.state, game_time::SleepOptions { collapsed: false });
+        Ok(String::new())
+    })
 }
 
 /// Drains the hook events emitted since the last drain, as a JSON array of

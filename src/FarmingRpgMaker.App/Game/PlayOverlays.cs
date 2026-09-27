@@ -28,7 +28,8 @@ internal static class PlayOverlays
             return null;
         }
 
-        var dialogue = DialogueSystem.FindDialogue(session.Context, dialogueState.NpcId, dialogueState.DialogueId);
+        var view = session.OverlayView();
+        var dialogue = view.Dialogue;
         if (dialogue is null)
         {
             return null;
@@ -57,7 +58,7 @@ internal static class PlayOverlays
         header.Children.Add(textStack);
 
         var options = new StackPanel { Name = "DialogueOptions", Spacing = 8, Margin = new Thickness(0, 18, 0, 0) };
-        var visible = Social.VisibleDialogueOptions(session.Context, session.State, dialogue);
+        var visible = view.VisibleDialogueOptions;
         for (var i = 0; i < visible.Count; i++)
         {
             var index = i;
@@ -107,7 +108,8 @@ internal static class PlayOverlays
             return null;
         }
 
-        var shop = Economy.FindShop(session.Context, shopSession.ShopId);
+        var view = session.OverlayView();
+        var shop = view.Shop;
         if (shop is null)
         {
             return null;
@@ -208,7 +210,7 @@ internal static class PlayOverlays
             foreach (var (entry, item) in stock)
             {
                 var price = entry.Price ?? item!.Value;
-                var remaining = entry.DailyLimit is not null ? Economy.RemainingDailyStock(state, shop.Id, entry.ItemId, entry.DailyLimit) : double.PositiveInfinity;
+                var remaining = view.Remaining(entry.ItemId);
                 var detail = item!.Description;
                 if (entry.DailyLimit is { } limit)
                 {
@@ -248,7 +250,7 @@ internal static class PlayOverlays
     /// </summary>
     public static Control Crafting(PlaySession session, Action onClose)
     {
-        var ctx = session.Context;
+        var view = session.OverlayView();
         var state = session.State;
         var content = session.Content;
         var inventory = state.Player.Inventory;
@@ -259,7 +261,7 @@ internal static class PlayOverlays
 
         // What machine is the player facing (for load actions)?
         var scene = session.CurrentScene;
-        var facing = WorldMovement.FacingTarget(state);
+        var facing = view.Facing;
         var facingTile = scene is not null && facing.Y >= 0 && facing.Y < scene.Tiles.Count && facing.X >= 0 && facing.X < scene.Tiles[(int)facing.Y].Count
             ? scene.Tiles[(int)facing.Y][(int)facing.X]
             : null;
@@ -284,7 +286,7 @@ internal static class PlayOverlays
                 foreach (var recipe in machineRecipes)
                 {
                     var load = Ui.Button("Load", () => session.RunCommand(new MachineLoadCommand(recipe.Id)), "accent", "small");
-                    load.IsEnabled = FarmEngine.Core.Crafting.HasIngredients(state, recipe);
+                    load.IsEnabled = view.Ingredients(recipe.Id);
                     body.Children.Add(Ui.Row(Ui.VStack(2, Ui.Text(recipe.Name, "h3"), Ui.Text($"{IngredientLine(recipe)} · {Ui.Num(recipe.ProcessingMinutes)} min", "muted", "small")), load));
                 }
             }
@@ -304,7 +306,7 @@ internal static class PlayOverlays
             body.Children.Add(header);
             foreach (var recipe in handRecipes.Where(r => r.Category == category))
             {
-                var status = FarmEngine.Core.Crafting.CraftableStatus(ctx, state, recipe);
+                var status = view.Status(recipe.Id);
                 var info = Ui.VStack(2, Ui.Text(recipe.Name, "h3"), Ui.Wrapped(IngredientLine(recipe), "muted", "small"));
                 if (!status.Craftable && status.Message is not null)
                 {

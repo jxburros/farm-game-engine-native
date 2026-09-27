@@ -4,6 +4,7 @@ open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Tests.TestProjects
 open FarmEngine.Content
+open FarmEngine.Json
 open FarmEngine.Schemas
 
 [<Fact>]
@@ -19,6 +20,22 @@ let ``project info and settings`` () =
     Assert.Same(changed, changed |> apply (SetSettings settings))
     let graphics = GraphicsSettings(PixelArt = false)
     Assert.False((nonNull (project |> apply (SetGraphics graphics)).Graphics).PixelArt)
+
+[<Fact>]
+let ``export settings keep identity through rename, JSON and undo`` () =
+    let project = starter ()
+    let settings = Defaults.newExportSettings project
+    Assert.StartsWith("local.", settings.GameId)
+    let doc = Document.create project |> Document.apply (SetExportSettings(Some settings))
+    let renamed = doc |> Document.apply (SetProjectInfo("Another Farm", "2.0.0"))
+    Assert.Equal(settings.GameId, renamed.Project.Export.GameId)
+    let json = JsonDefaults.Serialize renamed.Project
+    let restored = JsonDefaults.Deserialize<GameProject> json
+    Assert.Equal(settings.GameId, restored.Export.GameId)
+    Assert.Equal(settings.ExecutableName, restored.Export.ExecutableName)
+    Assert.Equal(settings.GameId, (Document.undo renamed).Project.Export.GameId)
+    Assert.Same(project, (doc |> Document.undo).Project)
+    Assert.DoesNotContain("\"export\"", JsonDefaults.Serialize project)
 
 [<Fact>]
 let ``removing a season drops its festivals and weather row but never the last season`` () =
