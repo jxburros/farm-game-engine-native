@@ -67,7 +67,7 @@ public sealed class MainWindowTests
         var host = Find<ContentControl>(window, "GameHostPresenter");
         var surface = Assert.IsType<FarmingRpgMaker.App.Game.GameWorkspaceView>(host.Content);
         Assert.Same(surface.EditView, surface.Content);
-        Assert.Contains("The full editor is being ported", AllVisibleText(host), StringComparison.Ordinal);
+        Assert.Contains(FarmingRpgMaker.App.Game.EditModeView.PortingNotice, AllVisibleText(host), StringComparison.Ordinal);
         Assert.False(string.IsNullOrWhiteSpace(viewModel.ProjectName));
         Assert.StartsWith("Editing: ", Find<TextBlock>(window, "HeaderSubtitle").Text, StringComparison.Ordinal);
         window.Close();

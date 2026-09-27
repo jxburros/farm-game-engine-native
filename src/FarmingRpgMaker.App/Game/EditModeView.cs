@@ -14,16 +14,15 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>
-/// Edit Mode for this phase: the current scene rendered with the game renderer (grid seams,
-/// zoom + scroll), a scene selector, project info, tile inspection on hover, and a basic
-/// tile brush (click/drag to paint, Ctrl+Z / Ctrl+Y). The full editor port comes later.
+/// Native map editor: layered tile tools, scene and transition controls, and one-step undo
+/// for drag strokes. Content editors are still being ported.
 /// </summary>
-public sealed class EditModeView : UserControl
+public sealed partial class EditModeView : UserControl
 {
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
-    public const string PortingNotice = "The full editor is being ported — use the web version to edit, then File → Import Project JSON.";
+    public const string PortingNotice = "Map editing is available here. Content editors are still being ported; import their projects from the web version.";
 
     private readonly ProjectWorkspace _workspace;
     private readonly GameCanvas _canvas = new() { Name = "EditCanvas", ZoomMode = CanvasZoomMode.Fixed, Cursor = new Cursor(StandardCursorType.Hand) };
@@ -76,7 +75,7 @@ public sealed class EditModeView : UserControl
             _hoverInfo.Text = "Hover a tile to inspect it.";
         };
         _canvas.PointerPressed += OnCanvasPointerPressed;
-        _canvas.PointerReleased += (_, _) => EndStroke();
+        _canvas.PointerReleased += OnCanvasPointerReleased;
         _canvas.PointerCaptureLost += (_, _) => EndStroke();
         _scroller.SizeChanged += (_, _) =>
         {
@@ -92,6 +91,7 @@ public sealed class EditModeView : UserControl
             if (!_updatingScenes && _sceneSelector.SelectedItem is ComboBoxItem { Tag: string id })
             {
                 _sceneId = id;
+                ClearSelection();
                 _fitPending = true;
                 Refresh();
                 FitToView();
@@ -121,7 +121,7 @@ public sealed class EditModeView : UserControl
         center.Children.Add(toolbarBorder);
         center.Children.Add(frame);
 
-        // Side panel: notice, project info, tile brush, history.
+        // Side panel: map tools, scene and transition controls, history.
         _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
         _undo.Name = "UndoButton";
         ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
@@ -140,7 +140,7 @@ public sealed class EditModeView : UserControl
         side.Children.Add(_info);
         side.Children.Add(Ui.Text("TILE BRUSH", "section"));
         side.Children.Add(_palette);
-        side.Children.Add(Ui.Wrapped("Pick a tile type, then click or drag on the map to paint. Choose Inspect to only look around.", "muted", "small"));
+        BuildEditorPanels(side);
         side.Children.Add(Ui.HStack(8, _undo, _redo));
         var sidePanel = new Border
         {
@@ -172,12 +172,22 @@ public sealed class EditModeView : UserControl
         set
         {
             _brush = value;
+            _fillScene.IsEnabled = value is not null;
+            if (value is not null)
+            {
+                _selectedLayer = Edits.LayerFor(value);
+                SyncLayerSelector();
+                Tool = MapTool.Brush;
+            }
+            else
+            {
+                Tool = MapTool.Inspect;
+            }
             foreach (var swatch in _palette.Children.OfType<ToggleButton>())
             {
                 swatch.IsChecked = Equals(swatch.Tag, value);
             }
 
-            _canvas.Cursor = new Cursor(value is null ? StandardCursorType.Arrow : StandardCursorType.Hand);
         }
     }
 
@@ -191,6 +201,7 @@ public sealed class EditModeView : UserControl
     public void SelectScene(string sceneId)
     {
         _sceneId = sceneId;
+        ClearSelection();
         Refresh();
         FitToView();
     }
@@ -267,8 +278,8 @@ public sealed class EditModeView : UserControl
     }
 
     /// <summary>
-    /// Paints one tile with the current brush (web single-tile brush) through the F# edit
-    /// (<see cref="Edits.PaintTile"/>: clears crop and node, updates the selected tile type).
+    /// Paints one tile with the current brush and selected layer through the F# edit
+    /// (clears crop and node, updates the selected tile type).
     /// Inside a drag stroke the paints merge into one undo entry.
     /// </summary>
     public void PaintTile(int x, int y)
@@ -280,7 +291,7 @@ public sealed class EditModeView : UserControl
             return;
         }
 
-        var edit = Edits.PaintTile(scene.Id, x, y, brush);
+        var edit = Edits.PaintTiles(scene.Id, _selectedLayer, new[] { new ValueTuple<int, int>(x, y) }, brush);
         if (_strokeId is { } strokeId)
         {
             _workspace.ApplyInStroke(strokeId, edit);
@@ -331,6 +342,9 @@ public sealed class EditModeView : UserControl
         if (e.Kind == ProjectChangeKind.Opened)
         {
             _sceneId = null;
+            _sceneControlsSceneId = null;
+            _copiedTiles = null;
+            ClearSelection();
             _fitPending = true;
         }
 
@@ -375,6 +389,7 @@ public sealed class EditModeView : UserControl
         _sceneId = scene?.Id;
         RefreshSceneSelector(project);
         RefreshInfo(project);
+        RefreshEditorPanels(project, scene);
         if (scene is null || _content is null)
         {
             _canvas.Snapshot = null;
@@ -499,30 +514,44 @@ public sealed class EditModeView : UserControl
         _hover.IsVisible = true;
         _hoverInfo.Text = DescribeTile(tile.X, tile.Y);
 
-        if (_strokeId is not null && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed && _lastPainted != tile)
+        if (_gestureStart is { } start && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed)
+        {
+            UpdateGesturePreview(start, tile);
+        }
+        else if (_strokeId is not null && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed && _lastPainted != tile)
         {
             _lastPainted = tile;
-            PaintTile(tile.X, tile.Y);
+            ApplyStrokeTile(tile.X, tile.Y);
         }
     }
 
     private void OnCanvasPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_brush is null || !e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed || _canvas.TileAt(e.GetPosition(_canvas)) is not { } tile)
+        if (!e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed || _canvas.TileAt(e.GetPosition(_canvas)) is not { } tile)
         {
             return;
         }
 
-        // Drag-to-paint: the whole stroke is ONE undo entry (a fresh stroke id per press).
-        _strokeId = $"paint-{++_strokeCount}";
-        _lastPainted = tile;
-        e.Pointer.Capture(_canvas);
-        PaintTile(tile.X, tile.Y);
-        e.Handled = true;
+        if (BeginToolAt(tile))
+        {
+            e.Pointer.Capture(_canvas);
+            e.Handled = true;
+        }
+    }
+
+    private void OnCanvasPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var tile = _canvas.TileAt(e.GetPosition(_canvas)) ?? _lastPainted;
+        if (tile is { } end)
+        {
+            CompleteGesture(end);
+        }
+        EndStroke();
     }
 
     private void EndStroke()
     {
+        _gestureStart = null;
         if (_strokeId is not null)
         {
             _strokeId = null;

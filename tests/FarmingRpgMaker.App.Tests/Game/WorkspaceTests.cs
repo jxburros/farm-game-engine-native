@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using FarmEngine.Authoring;
 using FarmEngine.Core;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
@@ -134,5 +137,112 @@ public sealed class WorkspaceTests
         Avalonia.Headless.HeadlessWindowExtensions.KeyPress(host.Window, Avalonia.Input.Key.Y, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.Y, "y");
         Pump();
         Assert.Equal("water", TileType(3, 2));
+    }
+
+    [AvaloniaFact]
+    public void EditMode_RectangleSelectionPasteAndLayerErase_AreUndoable()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var sceneId = edit.SceneId!;
+        FarmEngine.Schemas.Tile TileAt(int x, int y) => host.Workspace.Current!.Scenes.First(s => s.Id == sceneId).Tiles[y][x];
+        var before = TileAt(4, 4).Type;
+        var other = TileAt(5, 5).Type;
+
+        void Drag(int x0, int y0, int x1, int y1)
+        {
+            var from = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(x0, y0).Center, host.Window)!.Value;
+            var to = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(x1, y1).Center, host.Window)!.Value;
+            Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, from, MouseButton.Left);
+            Avalonia.Headless.HeadlessWindowExtensions.MouseMove(host.Window, to, RawInputModifiers.LeftMouseButton);
+            Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, to, MouseButton.Left);
+            Pump();
+        }
+
+        edit.Brush = "water";
+        edit.Tool = MapTool.Rectangle;
+        Drag(4, 4, 5, 5);
+        Assert.Equal("water", TileAt(4, 4).Type);
+        Assert.Equal("water", TileAt(5, 5).Type);
+        host.Workspace.Undo();
+        Assert.Equal(before, TileAt(4, 4).Type);
+        Assert.Equal(other, TileAt(5, 5).Type);
+        host.Workspace.Redo();
+
+        edit.Tool = MapTool.Select;
+        Drag(4, 4, 5, 5);
+        Assert.Equal((4, 4, 5, 5), edit.Selection);
+        edit.CopySelection();
+        edit.PasteAt(10, 8);
+        Assert.Equal("water", TileAt(10, 8).Type);
+        Assert.Equal("water", TileAt(11, 9).Type);
+        Assert.Equal(10, TileAt(10, 8).X);
+        host.Workspace.Undo();
+        Assert.NotEqual("water", TileAt(10, 8).Type);
+
+        edit.Layer = Edits.LayerFor("water");
+        edit.Tool = MapTool.Erase;
+        Drag(4, 4, 5, 4);
+        Assert.Equal("grass", TileAt(4, 4).Type);
+        Assert.Equal("grass", TileAt(5, 4).Type);
+        host.Workspace.Undo();
+        Assert.Equal("water", TileAt(4, 4).Type);
+        Assert.Equal("water", TileAt(5, 4).Type);
+    }
+
+    [AvaloniaFact]
+    public void EditMode_ManagesScenesAndBidirectionalDoors()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var farmId = edit.SceneId!;
+        void Press(string name) => FindByName<Button>(host.Window, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+        FindByName<TextBox>(host.Window, "SceneName").Text = "Barn";
+        FindByName<TextBox>(host.Window, "SceneWidth").Text = "8";
+        FindByName<TextBox>(host.Window, "SceneHeight").Text = "6";
+        Press("AddSceneButton");
+        Pump();
+        var barnId = edit.SceneId!;
+        Assert.NotEqual(farmId, barnId);
+        Assert.Equal("Barn", host.Workspace.Current!.Scenes.First(s => s.Id == barnId).Name);
+
+        FindByName<TextBox>(host.Window, "SceneName").Text = "Big Barn";
+        Press("RenameSceneButton");
+        FindByName<TextBox>(host.Window, "SceneWidth").Text = "10";
+        Press("ResizeSceneButton");
+        Pump();
+        Assert.Equal(10, host.Workspace.Current!.Scenes.First(s => s.Id == barnId).Width);
+        Assert.Equal("Big Barn", host.Workspace.Current.Scenes.First(s => s.Id == barnId).Name);
+
+        edit.Tool = MapTool.Door;
+        var point = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(1, 1).Center, host.Window)!.Value;
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, point, MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, point, MouseButton.Left);
+        var destination = FindByName<ComboBox>(host.Window, "DoorDestination");
+        destination.SelectedItem = destination.Items.OfType<ComboBoxItem>().First(i => Equals(i.Tag, farmId));
+        FindByName<TextBox>(host.Window, "DoorX").Text = "2";
+        FindByName<TextBox>(host.Window, "DoorY").Text = "2";
+        FindByName<CheckBox>(host.Window, "DoorReturn").IsChecked = true;
+        Press("SaveDoorButton");
+        Assert.Contains(host.Workspace.Current.Scenes.First(s => s.Id == barnId).Transitions,
+            t => t.FromX == 1 && t.FromY == 1 && t.ToSceneId == farmId && t.ToX == 2 && t.ToY == 2);
+        Assert.Contains(host.Workspace.Current.Scenes.First(s => s.Id == farmId).Transitions,
+            t => t.ToSceneId == barnId && t.FromX == 2 && t.FromY == 2);
+        host.Workspace.Undo();
+        Assert.Empty(host.Workspace.Current.Scenes.First(s => s.Id == barnId).Transitions);
+        Assert.Empty(host.Workspace.Current.Scenes.First(s => s.Id == farmId).Transitions);
+        host.Workspace.Redo();
+
+        Press("DuplicateSceneButton");
+        var copyId = edit.SceneId!;
+        Assert.Equal("Big Barn (Copy)", host.Workspace.Current.Scenes.First(s => s.Id == copyId).Name);
+        edit.Brush = "floor";
+        Press("FillSceneButton");
+        Assert.All(host.Workspace.Current.Scenes.First(s => s.Id == copyId).Tiles,
+            row => Assert.All(row, tile => Assert.Equal("floor", tile.Type)));
+        host.Workspace.Undo();
+        Press("DeleteSceneButton");
+        Assert.DoesNotContain(host.Workspace.Current.Scenes, s => s.Id == copyId);
     }
 }
