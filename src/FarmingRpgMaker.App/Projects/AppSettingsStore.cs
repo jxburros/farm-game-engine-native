@@ -19,12 +19,8 @@ public sealed class AppSettingsStore
 {
     public const string SectionName = "workspace";
 
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
+    /// <summary>Shared with the Update Center's store, which writes the same file.</summary>
+    private static JsonSerializerOptions Options => FarmingRpgMaker.Updates.JsonSettingsStore.JsonOptions;
 
     private readonly Lock _gate = new();
 
