@@ -159,8 +159,11 @@ available as native views.
 - [x] Raster art import (PNG, JPEG, WebP, GIF, BMP normalized to PNG),
   animation clip slicing and frame edits, visual bindings for the player,
   map brush and content definitions. Art edits use F# undo/redo.
+- [x] Creator Workshop exposes the 13 F# patterns with a one-step undo and
+  links to their generated content. Interface editor creates and edits
+  in-game panels and their entries.
 - [ ] Dedicated nested editors and cross-reference pickers for each content
-  type; SVG import, more animation tools, workshop and interface panels.
+  type; SVG import and more animation tools.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.

@@ -16,6 +16,9 @@
   sprite sheets into animation clips, append/reorder/remove frames, and bind
   visuals to the player, map brush or content definitions. Removing an asset
   clears its bindings. SVG import remains to be ported.
+- **Workshop and interface.** The 13 F# creator patterns can now be used from
+  Edit Mode, each as one undo step. Creators can add in-game panels and edit
+  their titles, visibility flags and live entries.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

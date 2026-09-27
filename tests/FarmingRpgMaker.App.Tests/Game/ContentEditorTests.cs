@@ -184,4 +184,43 @@ public sealed class ContentEditorTests
         Assert.Null(host.Workspace.Current.PlayerVisual);
         Assert.Null(host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals?.Background);
     }
+
+    [AvaloniaFact]
+    public void WorkshopCreatesEditableContentAsOneUndoStep()
+    {
+        using var host = new GameTestHost();
+        FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 6;
+        Pump();
+        var before = host.Workspace.Current!.Npcs.Count;
+        FindByName<TextBox>(host.Window, "WorkshopName").Text = "Luna";
+        FindByName<TextBox>(host.Window, "WorkshopX").Text = "4";
+        FindByName<TextBox>(host.Window, "WorkshopY").Text = "4";
+        Press(host, "CreatePatternButton");
+        Assert.Equal(before + 1, host.Workspace.Current.Npcs.Count);
+        Assert.Contains(host.Workspace.Current.Npcs, npc => npc.Name == "Luna" && npc.Dialogue.Count == 3);
+        host.Workspace.Undo();
+        Assert.Equal(before, host.Workspace.Current.Npcs.Count);
+    }
+
+    [AvaloniaFact]
+    public void InterfaceEditorSavesPanelEntriesThroughFSharpHistory()
+    {
+        using var host = new GameTestHost();
+        FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 7;
+        Pump();
+        var before = host.Workspace.Current!.GamePanels?.Count ?? 0;
+        Press(host, "AddInterfacePanelButton");
+        Assert.Equal(before + 1, host.Workspace.Current.GamePanels?.Count);
+        FindByName<TextBox>(host.Window, "InterfaceTitle").Text = "Farm Journal";
+        Press(host, "AddInterfaceEntryButton");
+        var newLabel = FindByName<TextBox>(host.Window, "InterfaceEntryLabel");
+        newLabel.Text = "Mood";
+        FindByName<TextBox>(host.Window, "InterfaceEntryValue").Text = "Calm";
+        Press(host, "SaveInterfacePanelButton");
+        var panel = host.Workspace.Current.GamePanels![^1];
+        Assert.Equal("Farm Journal", panel.Title);
+        Assert.Contains(panel.Entries, entry => entry.Label == "Mood" && entry.Value == "Calm");
+        host.Workspace.Undo();
+        Assert.NotEqual("Farm Journal", host.Workspace.Current.GamePanels![^1].Title);
+    }
 }

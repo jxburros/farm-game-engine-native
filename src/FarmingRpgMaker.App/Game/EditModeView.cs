@@ -21,7 +21,7 @@ public sealed partial class EditModeView : UserControl
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
-    public const string PortingNotice = "Map, content, settings, art and mods are editable here. Workshop and interface panels are still being ported.";
+    public const string PortingNotice = "Map, content, settings, art, mods, workshop and interface panels are editable here. Some advanced fields still use JSON.";
 
     private readonly ProjectWorkspace _workspace;
     private readonly GameCanvas _canvas = new() { Name = "EditCanvas", ZoomMode = CanvasZoomMode.Fixed, Cursor = new Cursor(StandardCursorType.Hand) };
@@ -159,6 +159,24 @@ public sealed partial class EditModeView : UserControl
             UseBrush(type, visual);
             tabs.SelectedIndex = 0;
         });
+        var workshop = new WorkshopView(workspace, tab =>
+        {
+            var category = tab switch
+            {
+                "npcs" => "NPCs",
+                "actions" => "Actions",
+                "events" => "Events",
+                "nodes" => "Node types",
+                "craft" => "Recipes",
+                _ => null,
+            };
+            if (category is not null)
+            {
+                tabs.SelectedIndex = 1;
+                contentEditor.SelectCategory(category);
+            }
+        });
+        var interfaceEditor = new InterfaceEditorView(workspace);
         var problems = new ProblemsView(workspace, problem =>
         {
             if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
@@ -171,6 +189,11 @@ public sealed partial class EditModeView : UserControl
             if (problem.TargetKind == "settings")
             {
                 tabs.SelectedIndex = 3;
+                return;
+            }
+            if (problem.TargetKind == "interface")
+            {
+                tabs.SelectedIndex = 7;
                 return;
             }
             if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
@@ -209,6 +232,8 @@ public sealed partial class EditModeView : UserControl
         tabs.Items.Add(new TabItem { Header = "Settings", Content = settingsEditor });
         tabs.Items.Add(new TabItem { Header = "Mods", Content = mods });
         tabs.Items.Add(new TabItem { Header = "Art", Content = art });
+        tabs.Items.Add(new TabItem { Header = "Workshop", Content = workshop });
+        tabs.Items.Add(new TabItem { Header = "Interface", Content = interfaceEditor });
         tabs.SelectionChanged += (_, args) =>
         {
             if (!ReferenceEquals(args.Source, tabs)) return;
@@ -218,6 +243,8 @@ public sealed partial class EditModeView : UserControl
             if (tabs.SelectedIndex == 3) settingsEditor.Refresh();
             if (tabs.SelectedIndex == 4) mods.Refresh();
             if (tabs.SelectedIndex == 5) art.Refresh();
+            if (tabs.SelectedIndex == 6) workshop.Refresh();
+            if (tabs.SelectedIndex == 7) interfaceEditor.Refresh();
         };
         tabs.SelectedIndex = 0;
         var root = new DockPanel();
