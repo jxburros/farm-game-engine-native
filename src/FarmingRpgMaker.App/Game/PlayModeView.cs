@@ -191,10 +191,12 @@ public sealed class PlayModeView : UserControl
         ArgumentNullException.ThrowIfNull(session);
         _session.Toast -= OnSessionToast;
         _session.StateChanged -= OnSessionStateChanged;
+        _session.Faulted -= OnSessionFaulted;
 
         _session = session;
         _session.Toast += OnSessionToast;
         _session.StateChanged += OnSessionStateChanged;
+        _session.Faulted += OnSessionFaulted;
         _panel = HostPanel.None;
         _debugOpen = false;
         _shownDialogue = null;
@@ -441,6 +443,13 @@ public sealed class PlayModeView : UserControl
     }
 
     private void OnSessionToast(object? sender, ToastMessage message) => ShowToast(message);
+
+    /// <summary>A command from a button or panel failed in the engine: same path as a frame-loop failure.</summary>
+    private void OnSessionFaulted(object? sender, Exception exception)
+    {
+        _running = false;
+        Faulted?.Invoke(this, exception);
+    }
 
     private void OnSessionStateChanged(object? sender, EventArgs e)
     {

@@ -26,6 +26,7 @@ dependencies = [
  "farm-cart",
  "farm-runtime",
  "farm-sim",
+ "serde",
  "serde_json",
 ]
 

@@ -12,6 +12,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod session;
+pub mod view_json;
 pub use session::FeSession;
 
 /// A Rust-allocated byte buffer handed to .NET. Free it with [`fe_bytes_free`].
