@@ -434,8 +434,16 @@ public static class Migrations
             return Fail<GameProject>(fromVersion, migrated, $"Migration failed: {ex.Message}");
         }
 
-        return Parse<GameProject>(project, fromVersion, migrated, SchemaValidation.ValidateProject);
+        return ParseMigratedProject(project, fromVersion, migrated);
     }
+
+    /// <summary>
+    /// The typed half of <see cref="MigrateProject(JsonNode?)"/>: parse already-migrated project
+    /// data into a <see cref="GameProject"/> and validate it (zod <c>safeParse</c>). The F#
+    /// migrations in FarmEngine.Authoring.Net call it after their own raw migration. Never throws.
+    /// </summary>
+    public static MigrationResult<GameProject> ParseMigratedProject(JsonObject data, double fromVersion, bool migrated) =>
+        Parse<GameProject>(data, fromVersion, migrated, SchemaValidation.ValidateProject);
 
     /// <summary><see cref="MigrateProject(JsonNode?)"/> over JSON text. Never throws.</summary>
     public static MigrationResult<GameProject> MigrateProject(string json) =>
@@ -495,8 +503,12 @@ public static class Migrations
             return Fail<ExportedGame>(fromVersion, migrated, $"Migration failed: {ex.Message}");
         }
 
-        return Parse<ExportedGame>(game, fromVersion, migrated, SchemaValidation.ValidateExportedGame);
+        return ParseMigratedExportedGame(game, fromVersion, migrated);
     }
+
+    /// <summary>The typed half of <see cref="MigrateExportedGame(JsonNode?)"/>, like <see cref="ParseMigratedProject"/>. Never throws.</summary>
+    public static MigrationResult<ExportedGame> ParseMigratedExportedGame(JsonObject data, double fromVersion, bool migrated) =>
+        Parse<ExportedGame>(data, fromVersion, migrated, SchemaValidation.ValidateExportedGame);
 
     /// <summary><see cref="MigrateExportedGame(JsonNode?)"/> over JSON text. Never throws.</summary>
     public static MigrationResult<ExportedGame> MigrateExportedGame(string json) =>
