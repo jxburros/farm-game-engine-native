@@ -65,6 +65,23 @@
   out-of-bounds doors and starts, duplicate ids, recipe and machine links,
   artwork, packs), each with a JSON path and an editor to jump to.
 - **Workshop patterns** (`Patterns`) build their content as one batch edit.
+- **Language migration, phase 2 done.** The Rust core now also has:
+  - save migrations (`farm-cart::save`), matching the web version on every
+    save golden;
+  - the runtime logic (`farm-runtime`): keyboard bindings, minigames,
+    creator panels and the audio model.
+- **Saves survive game updates.** Save files carry a header (game id, game
+  version, content hash). A save from another game is refused, a save from a
+  newer version of the game loads with a warning, and items the game no
+  longer has are set aside instead of breaking the load. They come back if
+  a later version brings them back. Web saves still load.
+- **Project migrations in F#.** Opening and importing projects runs the new
+  F# migrations, which match the web version on every migration golden.
+- **Fixes:**
+  - Hand-written packs whose node types leave out `respawnDays` now hash
+    like the web version.
+  - Saving the last-opened project no longer rewrites the Update Center's
+    settings.
 
 ## 0.1.0
 
