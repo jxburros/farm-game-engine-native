@@ -1,0 +1,225 @@
+module FarmEngine.Authoring.Tests.SceneEditTests
+
+open System.Collections.Generic
+open Xunit
+open FarmEngine.Authoring
+open FarmEngine.Authoring.Tests.TestProjects
+open FarmEngine.Schemas
+
+let private farmId = "scene-farm"
+
+[<Fact>]
+let ``painting on the natural layer follows the web brush and clears crop and node`` () =
+    let project = starter ()
+    // (2,2) holds a starter tree.
+    Assert.NotNull((tile project farmId 2 2).Node)
+    let painted = project |> apply (PaintTiles(farmId, Background, [ (2, 2) ], "soil"))
+    let t = tile painted farmId 2 2
+    Assert.Equal("soil", t.Type)
+    Assert.Equal("soil", t.Background)
+    Assert.Null t.Node
+    let walled = painted |> apply (PaintTiles(farmId, Object, [ (2, 2) ], "wall"))
+    let w = tile walled farmId 2 2
+    Assert.Equal("wall", orEmpty w.Object)
+    Assert.Equal("soil", w.Background)
+    Assert.True w.Collision
+
+[<Fact>]
+let ``painting on another layer writes that layer and the effective type`` () =
+    let project = starter () |> apply (PaintTiles(farmId, Overlay, [ (1, 1) ], "floor"))
+    let t = tile project farmId 1 1
+    Assert.Equal("floor", orEmpty t.Overlay)
+    Assert.Equal("floor", t.Type)
+    Assert.Equal("grass", t.Background)
+
+[<Fact>]
+let ``erasing the object layer drops the wall and its collision`` () =
+    let project = starter ()
+    Assert.Equal("wall", orEmpty (tile project farmId 0 0).Object)
+    let erased = project |> apply (EraseLayer(farmId, Object, [ (0, 0) ]))
+    let t = tile erased farmId 0 0
+    Assert.Null t.Object
+    Assert.False t.Collision
+    Assert.Equal("grass", t.Type)
+    Assert.Same(erased, erased |> apply (EraseLayer(farmId, Object, [ (0, 0) ])))
+
+[<Fact>]
+let ``fill rect is clamped to the scene`` () =
+    let project = starter () |> apply (FillRect(farmId, Background, 14, 10, 30, 30, "water"))
+    let scene = farm project
+    Assert.Equal("water", scene.Tiles.[11].[15].Type)
+    Assert.Equal("water", scene.Tiles.[10].[14].Type)
+    Assert.NotEqual<string>("water", scene.Tiles.[9].[14].Type)
+    Assert.Equal(16.0, scene.Width)
+
+[<Fact>]
+let ``flood fill only touches the connected region of the clicked type`` () =
+    let project = starter ()
+    let before = farm project
+    let count (s: Scene) (t: string) = s.Tiles |> Seq.sumBy (fun row -> row |> Seq.filter (fun x -> x.Type = t) |> Seq.length)
+    let soilCount = count before "soil"
+    Assert.True(soilCount > 0)
+    let filled = project |> apply (FloodFill(farmId, Background, 8, 6, "water"))
+    let after = farm filled
+    Assert.Equal("water", after.Tiles.[6].[8].Type)
+    Assert.Equal(soilCount, count after "water")
+    for y in 0 .. after.Tiles.Count - 1 do
+        for x in 0 .. after.Tiles.[y].Count - 1 do
+            if before.Tiles.[y].[x].Type <> "soil" then Assert.Same(before.Tiles.[y].[x], after.Tiles.[y].[x])
+
+[<Fact>]
+let ``flood fill with the same type and no art is a no-op`` () =
+    let project = starter ()
+    Assert.Same(project, project |> apply (FloodFill(farmId, Background, 1, 1, "grass")))
+
+[<Fact>]
+let ``paste stamps the region and repositions tiles`` () =
+    let project = starter ()
+    let region = [ [ tile project farmId 0 0; tile project farmId 1 0 ]; [ tile project farmId 0 1; tile project farmId 1 1 ] ]
+    let pasted = project |> apply (PasteTiles(farmId, 14, 10, region))
+    let t = tile pasted farmId 15 11
+    Assert.Equal(15.0, t.X)
+    Assert.Equal(11.0, t.Y)
+    Assert.Equal("grass", t.Type)
+    Assert.Equal("wall", orEmpty (tile pasted farmId 14 10).Object)
+    // Off the edge is dropped silently.
+    let edge = project |> apply (PasteTiles(farmId, 15, 11, region))
+    Assert.Equal("wall", orEmpty (tile edge farmId 15 11).Object)
+
+[<Fact>]
+let ``collision, nodes, items and machines`` () =
+    let project = starter ()
+    let blocked = project |> apply (SetCollision(farmId, [ (5, 5) ], true))
+    Assert.True((tile blocked farmId 5 5).Collision)
+    Assert.Same(blocked, blocked |> apply (SetCollision(farmId, [ (5, 5) ], true)))
+    let node = project |> apply (PlaceNode(farmId, 5, 5, "node-rock"))
+    let placedNode = nonNull (tile node farmId 5 5).Node
+    Assert.Equal("node-rock", placedNode.TypeId)
+    Assert.Equal(3.0, placedNode.RemainingHealth)
+    Assert.Same(project, project |> apply (PlaceNode(farmId, 5, 5, "node-unknown")))
+    Assert.Null((tile (node |> apply (RemoveNode(farmId, 5, 5))) farmId 5 5).Node)
+    let wood = project.Items |> Seq.find (fun i -> i.Id = "material-wood")
+    let placed = project |> apply (PlaceItem(farmId, 5, 5, wood))
+    Assert.Same(wood, (tile placed farmId 5 5).Item)
+    Assert.Null((tile (placed |> apply (RemovePlacedItem(farmId, 5, 5))) farmId 5 5).Item)
+    let machine = project |> apply (PlaceMachine(farmId, 5, 5, "machine-kitchen"))
+    Assert.Equal("machine-kitchen", (nonNull (tile machine farmId 5 5).Machine).TypeId)
+    Assert.Same(project, project |> apply (PlaceMachine(farmId, 5, 5, "machine-unknown")))
+    Assert.Null((tile (machine |> apply (RemoveMachine(farmId, 5, 5))) farmId 5 5).Machine)
+
+[<Fact>]
+let ``clear crops and items, reset soil and fill scene`` () =
+    let wood = (starter ()).Items |> Seq.find (fun i -> i.Id = "material-wood")
+    let project = starter () |> apply (PlaceItem(farmId, 5, 5, wood))
+    let cleared = project |> apply (ClearCropsAndItems farmId)
+    Assert.Null((tile cleared farmId 5 5).Item)
+    Assert.Same(cleared, cleared |> apply (ClearCropsAndItems farmId))
+    let reset = project |> apply (ResetSoil farmId)
+    let anySoil = (farm reset).Tiles |> Seq.exists (fun row -> row |> Seq.exists (fun t -> t.Type = "soil"))
+    Assert.False anySoil
+    Assert.Equal("dry", orEmpty (tile reset farmId 8 6).SoilState)
+    let filled = project |> apply (FillScene(farmId, "floor"))
+    let allFloor = (farm filled).Tiles |> Seq.forall (fun row -> row |> Seq.forall (fun t -> t.Type = "floor" && isNull t.Item && isNull t.Crop))
+    Assert.True allFloor
+
+[<Fact>]
+let ``add, rename, resize, duplicate and remove scenes`` () =
+    let project = starter ()
+    let barn = Defaults.newScene project "Barn" 8 6
+    let added = project |> apply (AddScene barn)
+    Assert.Equal(2, added.Scenes.Count)
+    Assert.Same(added, added |> apply (AddScene barn))
+    let renamed = added |> apply (RenameScene(barn.Id, "Big Barn"))
+    Assert.Equal("Big Barn", (scene renamed barn.Id).Name)
+    Assert.Same(added, added |> apply (RenameScene(barn.Id, "   ")))
+    let resized = renamed |> apply (ResizeScene(barn.Id, 10, 4))
+    let s = scene resized barn.Id
+    Assert.Equal(10.0, s.Width)
+    Assert.Equal(4, s.Tiles.Count)
+    Assert.True(s.Tiles |> Seq.forall (fun row -> row.Count = 10))
+    Assert.Equal("dry", orEmpty s.Tiles.[3].[9].SoilState)
+    Assert.Same(resized, resized |> apply (ResizeScene(barn.Id, 10, 4)))
+    let copied = resized |> apply (DuplicateScene(barn.Id, "scene-barn-copy"))
+    Assert.Equal("Big Barn (Copy)", (scene copied "scene-barn-copy").Name)
+    Assert.Empty((scene copied "scene-barn-copy").Npcs)
+    let removed = copied |> apply (RemoveScene "scene-barn-copy")
+    Assert.Equal(2, removed.Scenes.Count)
+    // Never the start scene, never the last scene.
+    Assert.Same(removed, removed |> apply (RemoveScene farmId))
+    let only = project |> apply (RemoveScene farmId)
+    Assert.Same(project, only)
+
+[<Fact>]
+let ``removing a scene drops doors into it, its NPCs and events, and moves the player`` () =
+    let project = starter ()
+    let barn = Defaults.newScene project "Barn" 8 6
+    let door = SceneTransition(FromX = 8.0, FromY = 11.0, ToSceneId = barn.Id, ToX = 4.0, ToY = 5.0)
+    let goat = Records.withValue (Defaults.newNpc project "Goat") "SceneId" (box barn.Id)
+    let warpOutcome = EventOutcome(Type = "warpPlayer", SceneId = barn.Id, X = 1.0, Y = 1.0)
+    let warp = Records.withValues (Defaults.newEvent project) [ ("SceneId", box farmId); ("Outcomes", box (listOf [ warpOutcome ])) ]
+    let inside = Records.withValues (Defaults.newEvent project) [ ("Id", box "event-inside"); ("SceneId", box barn.Id) ]
+    let setup = Batch("setup", [ AddScene barn; SetTransition(farmId, door); UpsertNpc goat; UpsertEvent warp; UpsertEvent inside; SetPlayerStart(barn.Id, 2, 2) ])
+    let built = project |> apply setup
+    Assert.Equal(barn.Id, built.Player.SceneId)
+    let removed = built |> apply (RemoveScene barn.Id)
+    Assert.Equal(1, removed.Scenes.Count)
+    Assert.False((farm removed).Transitions |> Seq.exists (fun t -> t.ToSceneId = barn.Id))
+    Assert.False(removed.Npcs |> Seq.exists (fun n -> n.Id = goat.Id))
+    Assert.False(removed.Events |> Seq.exists (fun e -> e.Id = inside.Id))
+    Assert.Empty((removed.Events |> Seq.find (fun e -> e.Id = warp.Id)).Outcomes)
+    Assert.Equal(farmId, removed.Player.SceneId)
+    let leftovers = errors removed |> List.filter (fun p -> p.Code.StartsWith "content." || p.Code.StartsWith "schema.")
+    Assert.True(leftovers.IsEmpty, describe leftovers)
+
+[<Fact>]
+let ``transitions are keyed by their departure tile`` () =
+    let project = starter ()
+    let barn = Defaults.newScene project "Barn" 8 6
+    let project = project |> apply (AddScene barn)
+    let door = SceneTransition(FromX = 8.0, FromY = 11.0, ToSceneId = barn.Id, ToX = 4.0, ToY = 5.0)
+    let withDoor = project |> apply (SetTransition(farmId, door))
+    Assert.Equal(1, (farm withDoor).Transitions.Count)
+    let moved = withDoor |> apply (SetTransition(farmId, Records.withValue door "ToX" (box 3.0)))
+    Assert.Equal(1, (farm moved).Transitions.Count)
+    Assert.Equal(3.0, (farm moved).Transitions.[0].ToX)
+    Assert.Same(moved, moved |> apply (SetTransition(farmId, Records.withValue door "ToX" (box 3.0))))
+    let linked = project |> apply (Defaults.linkScenes farmId door)
+    Assert.Equal(1, (farm linked).Transitions.Count)
+    Assert.Equal(1, (scene linked barn.Id).Transitions.Count)
+    Assert.Equal(farmId, (scene linked barn.Id).Transitions.[0].ToSceneId)
+    let removed = moved |> apply (RemoveTransition(farmId, 8, 11))
+    Assert.Empty((farm removed).Transitions)
+    Assert.Same(removed, removed |> apply (ClearTransitions farmId))
+    Assert.Empty((farm (linked |> apply (ClearTransitions farmId))).Transitions)
+
+[<Fact>]
+let ``start scene, player start and brush`` () =
+    let project = starter ()
+    Assert.Same(project, project |> apply (SetStartScene "nope"))
+    Assert.Same(project, project |> apply (SetStartScene farmId))
+    let barn = Defaults.newScene project "Barn" 8 6
+    let added = project |> apply (AddScene barn)
+    Assert.Equal(barn.Id, (added |> apply (SetStartScene barn.Id)).StartSceneId)
+    let moved = added |> apply (SetPlayerStart(barn.Id, 3, 2))
+    Assert.Equal(barn.Id, moved.Player.SceneId)
+    Assert.Equal(3.0, moved.Player.X)
+    Assert.Same(moved, moved |> apply (SetPlayerStart(barn.Id, 3, 2)))
+    Assert.Same(added, added |> apply (SetPlayerStart("nope", 1, 1)))
+    let brush = project |> apply (SelectBrush("water", None))
+    Assert.Equal("water", brush.SelectedTileType)
+    Assert.Equal("tiles", brush.Mode)
+    Assert.Same(brush, brush |> apply (SelectBrush("water", None)))
+
+[<Fact>]
+let ``the brush art rides along when painting the selected type`` () =
+    let project = starter ()
+    let asset = CustomAsset(Id = "art-1", Name = "tiles.png", Type = "art", DataUrl = "data:,", Width = 32.0, Height = 32.0)
+    let visual = VisualRef(AssetId = "art-1")
+    let painted = project |> apply (Batch("paint art", [ UpsertAsset asset; SelectBrush("water", Some visual); PaintTiles(farmId, Background, [ (3, 3) ], "water") ]))
+    Assert.Same(visual, (nonNull (tile painted farmId 3 3).Visuals).Background)
+    let plain = painted |> apply (PaintTiles(farmId, Background, [ (4, 4) ], "soil"))
+    Assert.Null((tile plain farmId 4 4).Visuals)
+    let cleared = painted |> apply (SetTileVisual(farmId, Background, [ (3, 3) ], None))
+    Assert.Null((tile cleared farmId 3 3).Visuals)
+    let art = errors cleared |> List.filter (fun p -> p.Code.StartsWith "graphics.")
+    Assert.True(art.IsEmpty, describe art)
