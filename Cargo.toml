@@ -11,6 +11,7 @@ members = [
     "crates/farm-cart-schema",
     "crates/farm-runtime",
     "crates/farm-ffi",
+    "crates/farm-player",
 ]
 
 [workspace.package]

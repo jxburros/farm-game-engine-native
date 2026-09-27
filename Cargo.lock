@@ -45,6 +45,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "farm-player"
+version = "0.2.0"
+dependencies = [
+ "farm-cart",
+ "farm-sim",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "farm-runtime"
 version = "0.2.0"
 dependencies = [
