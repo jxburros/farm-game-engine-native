@@ -1,0 +1,489 @@
+//! Events, conditions, outcomes and creator actions (port of `Events.cs` / events.ts).
+//!
+//! Event & trigger runtime (M3). Deterministic: events evaluate in content order; fire-once is
+//! tracked via an auto-managed flag; repeatable events opt in explicitly.
+
+use crate::effects::{message_levels, Effect};
+use crate::engine_types::{Effects, EngineContext};
+use crate::hooks::{ActionHookPayload, HookEvent, RelationshipChangeHookPayload};
+use crate::js;
+use crate::schema::{
+    event_fired_flag, DialogueState, EventCondition, EventOutcome, GameEvent, GameState, MinigameSession,
+    NpcSocialState, NpcState, MAX_FRIENDSHIP,
+};
+use crate::world::tiles;
+use crate::{energy, game_time, inventory, quests};
+use indexmap::IndexMap;
+use serde_json::Value;
+
+/// TS `EventPosition`: the tile entered or interacted with.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct EventPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// TS `PerformActionResult` minus the state (updated in place).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PerformActionResult {
+    pub effects: Effects,
+    pub ran: bool,
+}
+
+/// Actions may perform actions; cap the chain so cycles terminate.
+const MAX_ACTION_DEPTH: f64 = 4.0;
+
+const QUEST_STATUS_NOT_STARTED: &str = "not-started";
+
+/// JS `Math.min`: NaN propagates (Rust's `f64::min` returns the other operand).
+fn js_min(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
+    }
+}
+
+/// JS `Math.max`: NaN propagates (Rust's `f64::max` returns the other operand).
+fn js_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// TS `x || y` on a string: an empty (or missing) string is falsy.
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.filter(|text| !text.is_empty())
+}
+
+fn position_matches(x: f64, y: f64, x2: Option<f64>, y2: Option<f64>, pos: EventPosition) -> bool {
+    let min_x = js_min(x, x2.unwrap_or(x));
+    let max_x = js_max(x, x2.unwrap_or(x));
+    let min_y = js_min(y, y2.unwrap_or(y));
+    let max_y = js_max(y, y2.unwrap_or(y));
+    pos.x >= min_x && pos.x <= max_x && pos.y >= min_y && pos.y <= max_y
+}
+
+pub fn condition_met(
+    ctx: &EngineContext,
+    state: &GameState,
+    condition: &EventCondition,
+    pos: Option<EventPosition>,
+) -> bool {
+    match condition {
+        EventCondition::EnterTile { x, y, x2, y2 } => pos.is_some_and(|pos| position_matches(*x, *y, *x2, *y2, pos)),
+        EventCondition::InteractTile { x, y, x2, y2 } => pos.is_some_and(|pos| position_matches(*x, *y, *x2, *y2, pos)),
+        EventCondition::HasItem { item_id, quantity } => {
+            let held = state
+                .player
+                .inventory
+                .iter()
+                .filter(|slot| slot.item.id == *item_id)
+                .fold(0.0, |sum, slot| sum + slot.quantity);
+            held >= *quantity
+        }
+        EventCondition::InventorySpace { item_id, quantity } => {
+            let item = ctx.content.items.iter().find(|i| i.id == *item_id);
+            item.is_some_and(|item| {
+                inventory::add_item(&state.player.inventory, item, *quantity, state.player.max_inventory_size, None)
+                    .added
+            })
+        }
+        EventCondition::Flag { flag, value } => js::truthy(flag_value(state, flag)) == *value,
+        EventCondition::DayRange { min_day, max_day } => {
+            if min_day.is_some_and(|min_day| state.clock.day < min_day) {
+                return false;
+            }
+            if max_day.is_some_and(|max_day| state.clock.day > max_day) {
+                return false;
+            }
+            true
+        }
+        EventCondition::Season { seasons } => seasons.contains(&state.clock.season),
+        EventCondition::YearRange { min_year, max_year } => {
+            if min_year.is_some_and(|min_year| state.clock.year < min_year) {
+                return false;
+            }
+            if max_year.is_some_and(|max_year| state.clock.year > max_year) {
+                return false;
+            }
+            true
+        }
+        EventCondition::TimeOfDay { min_minute, max_minute } => {
+            state.clock.time_minutes >= *min_minute && state.clock.time_minutes <= *max_minute
+        }
+        EventCondition::QuestStatus { quest_id, status } => {
+            state.quests.get(quest_id).map_or(QUEST_STATUS_NOT_STARTED, |progress| progress.status.as_str()) == status
+        }
+        EventCondition::Friendship { npc_id, min } => {
+            state.social.get(npc_id).map_or(0.0, |social| social.friendship) >= *min
+        }
+        EventCondition::Weather { weather_ids } => weather_ids.contains(&state.clock.weather_id),
+        EventCondition::FestivalId { festival_id } => {
+            game_time::festival_on_day(&ctx.content.settings.calendar, state.clock.day)
+                .is_some_and(|festival| festival.id == *festival_id)
+        }
+    }
+}
+
+/// TS `state.flags[name]` (undefined → `None`).
+pub fn flag_value<'a>(state: &'a GameState, name: &str) -> Option<&'a Value> {
+    state.flags.get(name)
+}
+
+fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome, depth: f64) -> Effects {
+    match outcome.r#type.as_str() {
+        "message" => match non_empty(outcome.message.as_deref()) {
+            Some(message) => vec![Effect::message(message_levels::INFO, message)],
+            None => vec![],
+        },
+
+        "modifyFriendship" => {
+            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+            if !ctx.content.npcs.iter().any(|n| n.id == npc_id) {
+                return vec![];
+            }
+            let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
+                friendship: 0.0,
+                gifts_today: 0.0,
+                last_gift_day: None,
+            });
+            let friendship = js_max(0.0, js_min(MAX_FRIENDSHIP, current.friendship + outcome.amount.unwrap_or(0.0)));
+            ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload {
+                npc_id: npc_id.to_owned(),
+                friendship,
+            }));
+            state.social.insert(npc_id.to_owned(), NpcSocialState { friendship, ..current });
+            vec![]
+        }
+        "modifyEnergy" => {
+            let amount = outcome.amount.unwrap_or(0.0);
+            if !ctx.content.settings.energy_enabled {
+                return vec![];
+            }
+            if amount < 0.0 {
+                return energy::spend_energy(ctx, state, -amount).effects;
+            }
+            state.player.energy = js_min(state.player.max_energy, state.player.energy + amount);
+            vec![]
+        }
+        "waterArea" => {
+            let radius = js_min(10.0, js_max(0.0, outcome.radius.unwrap_or(1.0).floor()));
+            let cx = state.player.x.floor();
+            let cy = state.player.y.floor();
+            let day = state.clock.day;
+            let scene_id = state.player.scene_id.clone();
+            for scene in &mut state.world.scenes {
+                if scene.id != scene_id {
+                    continue;
+                }
+                for row in &mut scene.tiles {
+                    for tile in row {
+                        if (tile.x - cx).abs() > radius || (tile.y - cy).abs() > radius || tile.background != "soil" {
+                            continue;
+                        }
+                        tile.soil_state = Some("watered".to_owned());
+                        tile.soil_moisture = 100.0;
+                        if let Some(crop) = &mut tile.crop {
+                            crop.watered = true;
+                            crop.last_watered_day = Some(day);
+                        }
+                    }
+                }
+            }
+            vec![Effect::message(message_levels::SUCCESS, "The surrounding soil is watered.")]
+        }
+        "giveItem" => {
+            let item = outcome.item_id.as_deref().and_then(|id| ctx.content.items.iter().find(|i| i.id == id));
+            let Some(item) = item else { return vec![] };
+            let quantity = outcome.item_quantity.unwrap_or(1.0);
+            let result =
+                inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
+            if !result.added {
+                return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+            }
+            state.player.inventory = result.inventory;
+            let suffix = if quantity > 1.0 { format!(" x{}", js::num(quantity)) } else { String::new() };
+            vec![Effect::message(message_levels::SUCCESS, format!("Received {}{suffix}", item.name))]
+        }
+
+        "takeItem" => {
+            let Some(item_id) = non_empty(outcome.item_id.as_deref()) else { return vec![] };
+            state.player.inventory =
+                inventory::remove_item(&state.player.inventory, item_id, outcome.item_quantity.unwrap_or(1.0));
+            vec![]
+        }
+
+        "giveMoney" => {
+            let amount = outcome.amount.unwrap_or(0.0);
+            if amount <= 0.0 {
+                return vec![];
+            }
+            state.player.money += amount;
+            vec![Effect::message(message_levels::SUCCESS, format!("Received ${}", js::num(amount)))]
+        }
+
+        "takeMoney" => {
+            let amount = js_min(outcome.amount.unwrap_or(0.0), state.player.money);
+            if amount <= 0.0 {
+                return vec![];
+            }
+            state.player.money -= amount;
+            vec![Effect::message(message_levels::INFO, format!("Paid ${}", js::num(amount)))]
+        }
+
+        "setFlag" => {
+            let Some(flag_name) = non_empty(outcome.flag_name.as_deref()) else { return vec![] };
+            state.flags.insert(flag_name.to_owned(), Value::Bool(true));
+            vec![]
+        }
+
+        "clearFlag" => {
+            let Some(flag_name) = non_empty(outcome.flag_name.as_deref()) else { return vec![] };
+            state.flags.insert(flag_name.to_owned(), Value::Bool(false));
+            vec![]
+        }
+
+        "startQuest" => {
+            let Some(quest_id) = non_empty(outcome.quest_id.as_deref()) else { return vec![] };
+            quests::start_quest_by_id(ctx, state, quest_id)
+        }
+
+        "completeQuest" => {
+            let Some(quest_id) = non_empty(outcome.quest_id.as_deref()) else { return vec![] };
+            quests::complete_quest_by_id(ctx, state, quest_id)
+        }
+
+        "spawnNPC" => {
+            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+            let Some(npc_def) = ctx.content.npcs.iter().find(|n| n.id == npc_id) else { return vec![] };
+            let npc_state = NpcState {
+                x: outcome.x.unwrap_or(npc_def.x),
+                y: outcome.y.unwrap_or(npc_def.y),
+                scene_id: outcome.scene_id.clone().unwrap_or_else(|| npc_def.scene_id.clone()),
+                path: None,
+                patrol_index: None,
+            };
+            state.npcs.insert(npc_id.to_owned(), npc_state);
+            vec![]
+        }
+
+        "removeNPC" => {
+            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+            if !state.npcs.contains_key(npc_id) {
+                return vec![];
+            }
+            state.npcs.shift_remove(npc_id);
+            vec![]
+        }
+
+        "changeTile" => {
+            let (Some(tile_x), Some(tile_y)) = (outcome.tile_x, outcome.tile_y) else { return vec![] };
+            let Some(new_tile_type) = non_empty(outcome.new_tile_type.as_deref()) else { return vec![] };
+            let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
+            let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
+            let scene = &mut state.world.scenes[scene_index];
+            if tile_y < 0.0 || tile_y >= scene.height || tile_x < 0.0 || tile_x >= scene.width {
+                return vec![];
+            }
+            if let Some(tile) = scene.tiles.get_mut(tile_y as usize).and_then(|row| row.get_mut(tile_x as usize)) {
+                *tile = tiles::set_tile_layer(tile, new_tile_type, None);
+            }
+            vec![]
+        }
+
+        "warpPlayer" => {
+            let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
+            let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
+            if !state.world.scenes.iter().any(|s| s.id == scene_id) {
+                return vec![];
+            }
+            // Warp targets are authored as tile coordinates; land on the center.
+            state.player.scene_id = scene_id.to_owned();
+            state.player.x = x + 0.5;
+            state.player.y = y + 0.5;
+            vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x, y }]
+        }
+
+        "startDialogue" => {
+            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+            let npc_def = ctx.content.npcs.iter().find(|n| n.id == npc_id);
+            let dialogue_id = outcome
+                .dialogue_id
+                .clone()
+                .or_else(|| npc_def.and_then(|npc| npc.dialogue.first()).map(|dialogue| dialogue.id.clone()));
+            let Some(dialogue_id) = dialogue_id.filter(|id| !id.is_empty()) else { return vec![] };
+            state.dialogue = Some(DialogueState { npc_id: npc_id.to_owned(), dialogue_id });
+            vec![]
+        }
+
+        "lockTransition" | "unlockTransition" => {
+            let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
+            let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
+            let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
+            let locked = outcome.r#type == "lockTransition";
+            for transition in &mut state.world.scenes[scene_index].transitions {
+                if transition.from_x == x && transition.from_y == y {
+                    transition.locked = Some(locked);
+                }
+            }
+            vec![]
+        }
+
+        "playSound" => match non_empty(outcome.sound_id.as_deref()) {
+            Some(sound_id) => vec![Effect::Sound { id: sound_id.to_owned() }],
+            None => vec![],
+        },
+
+        "performAction" => {
+            let Some(action_id) = non_empty(outcome.action_id.as_deref()) else { return vec![] };
+            perform_action_internal(ctx, state, action_id, depth + 1.0)
+        }
+
+        "startMinigame" => {
+            let Some(minigame_id) = non_empty(outcome.minigame_id.as_deref()) else { return vec![] };
+            start_minigame_session(ctx, state, minigame_id, None)
+        }
+
+        "unlockScene" => {
+            // Legacy outcome (pre-v5): unlock every transition that leads to the named scene. It
+            // was authorable in the editor but a runtime no-op.
+            let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
+            for scene in &mut state.world.scenes {
+                for transition in &mut scene.transitions {
+                    if transition.to_scene_id == scene_id && transition.locked == Some(true) {
+                        transition.locked = Some(false);
+                    }
+                }
+            }
+            vec![]
+        }
+
+        _ => vec![],
+    }
+}
+
+/// Apply a sequence of outcomes (the shared executor behind events, custom actions, minigame
+/// result tiers and plugin mutations).
+pub fn apply_outcomes(ctx: &EngineContext, state: &mut GameState, outcomes: &[EventOutcome], depth: f64) -> Effects {
+    let mut effects = Vec::new();
+    for outcome in outcomes {
+        effects.extend(apply_outcome(ctx, state, outcome, depth));
+    }
+    effects
+}
+
+/// Run a creator-defined action (extensibility layer): check its conditions, spend energy, apply
+/// its outcomes, and notify plugins via `onAction`.
+pub fn perform_action(ctx: &EngineContext, state: &mut GameState, action_id: &str) -> PerformActionResult {
+    perform_action_detailed(ctx, state, action_id, 0.0)
+}
+
+fn perform_action_internal(ctx: &EngineContext, state: &mut GameState, action_id: &str, depth: f64) -> Effects {
+    perform_action_detailed(ctx, state, action_id, depth).effects
+}
+
+fn perform_action_detailed(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    action_id: &str,
+    depth: f64,
+) -> PerformActionResult {
+    if depth > MAX_ACTION_DEPTH {
+        return PerformActionResult { effects: vec![], ran: false };
+    }
+    let Some(action) = ctx.content.actions.iter().find(|def| def.id == action_id) else {
+        return PerformActionResult {
+            effects: vec![Effect::message(message_levels::ERROR, format!("Unknown action '{action_id}'"))],
+            ran: false,
+        };
+    };
+
+    for condition in &action.conditions {
+        if !condition_met(ctx, state, condition, None) {
+            return PerformActionResult {
+                effects: match non_empty(Some(&action.fail_message)) {
+                    Some(fail_message) => vec![Effect::message(message_levels::INFO, fail_message)],
+                    None => vec![],
+                },
+                ran: false,
+            };
+        }
+    }
+
+    let mut effects = Vec::new();
+
+    if action.energy_cost > 0.0 {
+        let spend = energy::spend_energy(ctx, state, action.energy_cost);
+        effects.extend(spend.effects);
+        if spend.collapsed {
+            return PerformActionResult { effects, ran: false };
+        }
+    }
+
+    effects.extend(apply_outcomes(ctx, state, &action.outcomes, depth));
+
+    ctx.emit(HookEvent::Action(ActionHookPayload { action_id: action.id.clone() }));
+    PerformActionResult { effects, ran: true }
+}
+
+/// Open a declared minigame session (modal, resolves via the command log).
+pub fn start_minigame_session(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    minigame_id: &str,
+    context: Option<&IndexMap<String, Value>>,
+) -> Effects {
+    if !ctx.content.minigames.iter().any(|def| def.id == minigame_id) {
+        return vec![Effect::message(message_levels::ERROR, format!("Unknown minigame '{minigame_id}'"))];
+    }
+    if state.minigame.is_some() {
+        return vec![];
+    }
+    state.minigame =
+        Some(MinigameSession { minigame_id: minigame_id.to_owned(), context: context.cloned().unwrap_or_default() });
+    vec![]
+}
+
+pub fn fire_event(ctx: &EngineContext, state: &mut GameState, event: &GameEvent) -> Effects {
+    let mut effects = Vec::new();
+    for outcome in &event.outcomes {
+        effects.extend(apply_outcome(ctx, state, outcome, 0.0));
+    }
+    if !event.repeatable {
+        state.flags.insert(event_fired_flag(&event.id), Value::Bool(true));
+    }
+    effects
+}
+
+/// Evaluate all events for a trigger kind. `pos` is the tile entered or interacted with (for
+/// position conditions).
+pub fn evaluate_events(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    trigger: &str,
+    pos: Option<EventPosition>,
+) -> Effects {
+    let mut effects = Vec::new();
+
+    for event in &ctx.content.events {
+        if !event.active || event.trigger != trigger {
+            continue;
+        }
+        if !event.scene_id.is_empty() && event.scene_id != state.player.scene_id {
+            continue;
+        }
+        if !event.repeatable && js::truthy(flag_value(state, &event_fired_flag(&event.id))) {
+            continue;
+        }
+        if !event.conditions.iter().all(|condition| condition_met(ctx, state, condition, pos)) {
+            continue;
+        }
+
+        effects.extend(fire_event(ctx, state, event));
+    }
+
+    effects
+}

@@ -6,6 +6,10 @@ namespace FarmEngine.Rendering;
 // callbacks) and draws it. Unlike engine records these are mutable classes:
 // hosts build a fresh snapshot per frame and `Graphics.ApplyGraphics`
 // decorates it in place, exactly like the TS objects.
+//
+// Content ids (crop/node/machine/species/appearance) ride along so the
+// renderer can pick built-in art when a `Sprite` is null; they are never
+// interpreted by the renderer beyond that.
 
 /// <summary>Crop drawn on a tile.</summary>
 public sealed class SnapshotCrop
@@ -18,6 +22,12 @@ public sealed class SnapshotCrop
     public bool Mature { get; set; }
 
     public bool Withered { get; set; }
+
+    /// <summary>Crop definition id (built-in art lookup).</summary>
+    public string? CropId { get; set; }
+
+    /// <summary>Growth stages of the definition (0 = unknown).</summary>
+    public int Stages { get; set; }
 }
 
 /// <summary>Gathering node occupying a tile.</summary>
@@ -29,6 +39,9 @@ public sealed class SnapshotNode
 
     /// <summary>Depleted nodes render faded while awaiting respawn.</summary>
     public bool Depleted { get; set; }
+
+    /// <summary>Node type id (built-in art lookup).</summary>
+    public string? TypeId { get; set; }
 }
 
 /// <summary>Placed machine (M4).</summary>
@@ -41,6 +54,9 @@ public sealed class SnapshotMachine
     public bool Working { get; set; }
 
     public bool OutputReady { get; set; }
+
+    /// <summary>Machine type id (built-in art lookup).</summary>
+    public string? TypeId { get; set; }
 }
 
 /// <summary>Item lying on a tile.</summary>
@@ -49,6 +65,9 @@ public sealed class SnapshotItem
     public string? ImageUrl { get; set; }
 
     public SnapshotSprite? Sprite { get; set; }
+
+    /// <summary>Item type (<c>seed</c>, <c>crop</c>, <c>tool</c>, …) for the built-in art.</summary>
+    public string? ItemType { get; set; }
 }
 
 public sealed class SnapshotTile
@@ -75,6 +94,15 @@ public sealed class SnapshotTile
     public bool LadderDown { get; set; }
 
     public SnapshotItem? Item { get; set; }
+
+    /// <summary>Soil that has been worked (hoed or planted): drawn with furrows.</summary>
+    public bool Tilled { get; set; }
+
+    /// <summary>Soil is wet (watered today or by rain).</summary>
+    public bool Watered { get; set; }
+
+    /// <summary>Fertilizer applied: a speckle marker is drawn over the soil.</summary>
+    public bool Fertilized { get; set; }
 }
 
 /// <summary>
@@ -112,12 +140,25 @@ public class SnapshotEntity
 
     /// <summary>Fallback fill color (defaults to the NPC gold).</summary>
     public string? Color { get; set; }
+
+    /// <summary><c>npc</c> (default) or <c>animal</c>.</summary>
+    public string Kind { get; set; } = "npc";
+
+    /// <summary>NPC appearance id (<c>farmer</c>, <c>merchant</c>, …) for the built-in art.</summary>
+    public string? Appearance { get; set; }
+
+    /// <summary>Animal species id for the built-in art.</summary>
+    public string? SpeciesId { get; set; }
+
+    /// <summary>Facing direction (down/left/right/up).</summary>
+    public string Direction { get; set; } = "down";
+
+    /// <summary>True while walking (drives the walk cycle; idle frame otherwise).</summary>
+    public bool Moving { get; set; }
 }
 
 public sealed class SnapshotPlayer : SnapshotEntity
 {
-    public string Direction { get; set; } = "down";
-
     /// <summary>Pixel-space override for interpolated movement (play mode).</summary>
     public double? PixelX { get; set; }
 
@@ -145,6 +186,19 @@ public sealed class SnapshotPop
 /// </summary>
 public sealed record SnapshotCamera(double X, double Y, double Width, double Height);
 
+/// <summary>
+/// Time of day, weather and season for the atmosphere pass (day/night tint, seasonal
+/// foliage, rain/snow). Null on a snapshot means no atmosphere (edit mode).
+/// </summary>
+/// <param name="TimeMinutes">Minute of day of the game clock (360 = 6:00).</param>
+/// <param name="WeatherId">Today's weather id (<c>sun</c>, <c>rain</c>, <c>storm</c>, <c>snow</c>, …).</param>
+/// <param name="Season">Season id (<c>spring</c>, <c>summer</c>, <c>fall</c>, <c>winter</c>, …).</param>
+public sealed record SnapshotAtmosphere(double TimeMinutes, string? WeatherId, string? Season)
+{
+    /// <summary>Renderer overlay hint from the weather definition (<c>rain</c> | <c>snow</c>), when known.</summary>
+    public string? WeatherOverlay { get; init; }
+}
+
 public sealed class WorldSnapshot
 {
     public int Width { get; set; }
@@ -167,6 +221,12 @@ public sealed class WorldSnapshot
     public bool? PixelArt { get; set; }
 
     public bool GridOverlay { get; set; }
+
+    /// <summary>Engine tick the frame shows (drives water, walk cycles and weather; 0 in edit mode).</summary>
+    public double Tick { get; set; }
+
+    /// <summary>Atmosphere for this frame; null draws the world as-is (edit mode).</summary>
+    public SnapshotAtmosphere? Atmosphere { get; set; }
 
     /// <summary>Rows of tiles: <c>Tiles[y][x]</c>.</summary>
     public List<List<SnapshotTile>> Tiles { get; set; } = [];

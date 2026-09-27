@@ -1,0 +1,50 @@
+# Rust workspace: the part of Farming RPG Maker that runs while a game is
+# being played (see docs/LANGUAGES.md). `farm-sim` is the deterministic core,
+# `farm-cart` the cartridge and save formats, `farm-runtime` the timestep, input
+# and minigame logic, and `farm-ffi` the C ABI that .NET loads through
+# `FarmEngine.Interop`.
+[workspace]
+resolver = "2"
+members = [
+    "crates/farm-sim",
+    "crates/farm-cart",
+    "crates/farm-runtime",
+    "crates/farm-ffi",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/jxburros/farm-game-engine-native"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+indexmap = { version = "2", features = ["serde"] }
+ryu-js = "1"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Determinism rules (docs/LANGUAGES.md "Determinism rules for Rust"). The
+# disallowed lists live in clippy.toml at the workspace root.
+disallowed_types = "deny"
+disallowed_methods = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+debug = 1
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

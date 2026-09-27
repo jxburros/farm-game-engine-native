@@ -1,5 +1,6 @@
 bin/
 obj/
+target/
 artifacts/
 publish/
 Releases/
@@ -14,3 +15,8 @@ TestResults/
 node_modules/
 .DS_Store
 tools/golden/.work/
+tools/art/.cache/
+__pycache__/
+
+# Agent worktrees
+.claude/worktrees/

@@ -59,14 +59,72 @@ Ported in rough order of how often creators use each part:
 Proposed in [docs/LANGUAGES.md](docs/LANGUAGES.md), which has the details and
 exit criteria for each phase.
 
-1. [ ] Scaffolding: Cargo workspace, FlatBuffers schemas, FFI, F# projects, CI
-2. [ ] Rust core in compatibility mode (all goldens pass in Rust)
+1. [x] Scaffolding: Cargo workspace, FFI, F# projects, Interop, CI (FlatBuffers
+   schemas still to write: see [Remaining work](#remaining-work))
+2. [ ] Rust core in compatibility mode. **Mostly done:** all 23 replay,
+   content, RNG and hash goldens pass in Rust, and a differential test
+   agrees with the C# engine. Still to do: save migrations and
+   `farm-runtime` (input, minigames, panels, audio model).
 3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
 4. [ ] Switch the app to F# + Rust; delete the C# engine projects
 5. [ ] Editor port on the new stack (the list above)
 6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
    Windows and Linux, then an optional web demo target
 7. [ ] Native numerics (v9): one engine for web and native
+
+## Remaining work
+
+Status after the September 2026 session. In order of what unblocks the most.
+
+**Rust core (phase 2)**
+- [ ] Port `SaveMigrations.cs` to `farm-cart::save` and pass the save
+  migration goldens (`fixtures/golden/saves`).
+- [ ] Port `FarmEngine.Runtime` logic to `farm-runtime`: `Input.cs`,
+  `Minigames.cs`, `GamePanels.cs`, the `Audio.cs` model.
+- [ ] Check four ignored `farm-sim` tests against their C# originals: two
+  crafting-station tests and two weather/animal tests (see their
+  `#[ignore]` reasons). The golden replays pass, so these are likely test
+  setup problems.
+- [ ] Move saves to string-id references and the save header from
+  [EXPORT.md](docs/EXPORT.md#what-earlier-phases-must-get-right).
+
+**F# authoring (phase 3)**
+- [x] F# authoring core merged: `Edit` cases for every editor, `Defaults`,
+  the problems pipeline with JSON paths, workshop patterns, the C# `Api`,
+  and `ProjectWorkspace` on the F# `Document` (62 F# tests, all app tests
+  pass).
+- [ ] `tests/FarmEngine.Authoring.Tests/DefaultsTests.fs` hangs the F#
+  10.0.112 compiler and is excluded from the build. Split its large tests
+  (likely the many overloaded `Assert.Equal` calls in one function) and add
+  it back.
+- [ ] The F# test project takes about 11 minutes to compile. Find the slow
+  files (`SceneEditTests.fs` takes about 4.5 minutes alone) before CI time
+  becomes a problem.
+- [ ] Port `Migrations.cs`, `SchemaValidation.cs`, `Validation.cs`, `Packs`
+  merging and `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with
+  the `GameInfo` table; the deterministic cartridge compiler.
+
+**Switch the app (phase 4)**
+- [ ] Play Mode runs `RustSession` instead of the C# engine; Edit Mode uses a
+  preview session; then delete the C# engine projects.
+
+**Editor port (phase 5)**: the numbered list above, none started as views yet.
+- [ ] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
+  transitions.
+- [ ] Content editors: NPCs and dialogue, items, crops, quests, events,
+  shops, recipes, node types, wildlife.
+- [ ] Project settings and calendar, Problems panel, mods and actions, art
+  import.
+
+**Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
+wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
+
+**Audit follow-ups not yet done**
+- [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).
+- [ ] Decide absent-versus-null for `respawnDays` so hand-written packs hash
+  like the web version.
+- [ ] Share one `JsonSerializerOptions` between the two `settings.json`
+  stores.
 
 ## Export Game
 

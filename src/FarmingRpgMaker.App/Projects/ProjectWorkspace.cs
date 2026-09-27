@@ -1,4 +1,5 @@
 using Avalonia.Threading;
+using FarmEngine.Authoring;
 using FarmEngine.Content;
 using FarmEngine.Schemas;
 
@@ -28,16 +29,16 @@ public sealed class ProjectChangedEventArgs(ProjectChangeKind kind) : EventArgs
 /// autosave to the <see cref="ProjectStore"/>. Shared by the game surface (views) and the
 /// File-menu project commands. UI-thread only.
 /// </summary>
+/// <remarks>
+/// The project and its history live in an F# <see cref="Document"/> (docs/LANGUAGES.md: "F#
+/// understands the project"). Every change is an <see cref="Edit"/> applied through
+/// <see cref="Documents"/>; this class only holds the current document, fires events and saves.
+/// </remarks>
 public sealed class ProjectWorkspace
 {
-    /// <summary>Undo depth (web <c>UNDO_LIMIT</c>).</summary>
-    public const int UndoLimit = 50;
-
-    private readonly List<GameProject> _past = [];
-    private readonly List<GameProject> _future = [];
     private readonly TimeSpan _autosaveDelay;
     private DispatcherTimer? _autosaveTimer;
-    private GameProject? _current;
+    private Document? _document;
     private bool _dirty;
 
     public ProjectWorkspace(ProjectStore store, AppSettingsStore settings, TimeSpan? autosaveDelay = null)
@@ -46,6 +47,9 @@ public sealed class ProjectWorkspace
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _autosaveDelay = autosaveDelay ?? TimeSpan.FromSeconds(1);
     }
+
+    /// <summary>Undo depth (web <c>UNDO_LIMIT</c>), owned by the F# document.</summary>
+    public static int UndoLimit => Documents.UndoLimit;
 
     /// <summary>Workspace over the default app-data folder (<see cref="AppDataPaths.DefaultRoot"/>).</summary>
     public static ProjectWorkspace CreateDefault(string? rootDirectory = null)
@@ -58,14 +62,17 @@ public sealed class ProjectWorkspace
 
     public AppSettingsStore Settings { get; }
 
-    public GameProject? Current => _current;
+    public GameProject? Current => _document?.Project;
+
+    /// <summary>The open document (project + history); null before the first <see cref="Open"/>.</summary>
+    public Document? Document => _document;
 
     /// <summary>True while a playtest runs: the stored file stays the pre-play snapshot.</summary>
     public bool IsPlaytesting { get; set; }
 
-    public bool CanUndo => _past.Count > 0;
+    public bool CanUndo => _document is { } document && Documents.CanUndo(document);
 
-    public bool CanRedo => _future.Count > 0;
+    public bool CanRedo => _document is { } document && Documents.CanRedo(document);
 
     /// <summary>True when edits are waiting for the debounced autosave.</summary>
     public bool HasPendingSave => _dirty;
@@ -119,12 +126,11 @@ public sealed class ProjectWorkspace
     {
         ArgumentNullException.ThrowIfNull(project);
         FlushPendingSave();
-        _past.Clear();
-        _future.Clear();
-        _current = project with { Mode = project.Mode == "play" ? "tiles" : project.Mode };
+        var opened = project with { Mode = project.Mode == "play" ? "tiles" : project.Mode };
+        _document = Documents.Create(opened);
         if (save || !Store.Exists(project.Id))
         {
-            Store.Save(_current);
+            Store.Save(opened);
         }
 
         Settings.Update(s => s with { LastProjectId = project.Id });
@@ -144,83 +150,74 @@ public sealed class ProjectWorkspace
     }
 
     /// <summary>
-    /// Editor mutation with undo capture (web <c>editProject</c>). No-ops (same instance
-    /// returned) are not recorded. Schedules an autosave.
+    /// Editor mutation with undo capture (web <c>editProject</c>): applies an F# <see cref="Edit"/>.
+    /// No-ops are not recorded and return false. Schedules an autosave.
     /// </summary>
-    public void Edit(Func<GameProject, GameProject> change)
+    public bool Apply(Edit edit)
     {
-        ArgumentNullException.ThrowIfNull(change);
-        if (_current is null)
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_document is null)
         {
-            return;
+            return false;
         }
 
-        var next = change(_current);
-        if (ReferenceEquals(next, _current))
-        {
-            return;
-        }
-
-        PushHistory(_current);
-        _future.Clear();
-        SetCurrent(next, ProjectChangeKind.Edited);
+        return Commit(Documents.Apply(_document, edit), ProjectChangeKind.Edited);
     }
 
-    /// <summary>Starts a drag stroke: the returned token commits ONE undo entry for all its edits.</summary>
-    public IDisposable BeginStroke()
+    /// <summary>
+    /// A drag-stroke edit (web <c>beginPaintStroke</c>/<c>endPaintStroke</c>): every edit with the
+    /// same <paramref name="strokeId"/> lands in ONE undo entry. Use a fresh id per pointer press.
+    /// </summary>
+    public bool ApplyInStroke(string strokeId, Edit edit)
     {
-        var baseProject = _current;
-        var depth = _past.Count;
-        return new Stroke(() =>
+        ArgumentNullException.ThrowIfNull(strokeId);
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_document is null)
         {
-            // Collapse every entry the stroke pushed into a single one (the stroke's start).
-            if (baseProject is not null && _past.Count > depth)
-            {
-                _past.RemoveRange(depth, _past.Count - depth);
-                PushHistory(baseProject);
-            }
-        });
+            return false;
+        }
+
+        return Commit(Documents.ApplyInStroke(_document, strokeId, edit), ProjectChangeKind.Edited);
+    }
+
+    /// <summary>Ends the current drag stroke, so the next stroke edit starts a new undo entry.</summary>
+    public void EndStroke()
+    {
+        if (_document is { } document)
+        {
+            _document = Documents.EndStroke(document);
+        }
     }
 
     public bool Undo()
     {
-        if (_current is null || _past.Count == 0)
+        if (_document is null || !Documents.CanUndo(_document))
         {
             return false;
         }
 
-        var previous = _past[^1];
-        _past.RemoveAt(_past.Count - 1);
-        _future.Add(_current);
-        SetCurrent(previous, ProjectChangeKind.Edited);
-        return true;
+        return Commit(Documents.Undo(_document), ProjectChangeKind.Edited);
     }
 
     public bool Redo()
     {
-        if (_current is null || _future.Count == 0)
+        if (_document is null || !Documents.CanRedo(_document))
         {
             return false;
         }
 
-        var next = _future[^1];
-        _future.RemoveAt(_future.Count - 1);
-        PushHistory(_current);
-        SetCurrent(next, ProjectChangeKind.Edited);
-        return true;
+        return Commit(Documents.Redo(_document), ProjectChangeKind.Edited);
     }
 
-    /// <summary>Keep-changes playtest exit: the synced project replaces the current one (saved).</summary>
+    /// <summary>Keep-changes playtest exit: the synced project replaces the current one (saved), as one undo step.</summary>
     public void KeepPlaytestResult(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        if (_current is not null)
-        {
-            PushHistory(_current);
-            _future.Clear();
-        }
-
-        SetCurrent(project with { Mode = "tiles" }, ProjectChangeKind.PlaytestKept);
+        var kept = project with { Mode = "tiles" };
+        _document = _document is { } document
+            ? Documents.Apply(document, Edits.ReplaceProject(kept))
+            : Documents.Create(kept);
+        SetCurrent(ProjectChangeKind.PlaytestKept);
         FlushPendingSave();
     }
 
@@ -228,27 +225,31 @@ public sealed class ProjectWorkspace
     public void FlushPendingSave()
     {
         _autosaveTimer?.Stop();
-        if (_dirty && _current is not null)
+        if (_dirty && _document is { } document)
         {
             _dirty = false;
-            Store.Save(_current);
+            Store.Save(document.Project);
         }
     }
 
-    private void SetCurrent(GameProject project, ProjectChangeKind kind)
+    private bool Commit(Document next, ProjectChangeKind kind)
     {
-        _current = project;
+        // A no-op may still hand back a new document (a stroke ended); only a project change counts.
+        var changed = !ReferenceEquals(next.Project, _document?.Project);
+        _document = next;
+        if (!changed)
+        {
+            return false;
+        }
+
+        SetCurrent(kind);
+        return true;
+    }
+
+    private void SetCurrent(ProjectChangeKind kind)
+    {
         ScheduleSave();
         ProjectChanged?.Invoke(this, new ProjectChangedEventArgs(kind));
-    }
-
-    private void PushHistory(GameProject project)
-    {
-        _past.Add(project);
-        if (_past.Count > UndoLimit)
-        {
-            _past.RemoveAt(0);
-        }
     }
 
     private void ScheduleSave()
@@ -268,16 +269,5 @@ public sealed class ProjectWorkspace
 
         _autosaveTimer.Stop();
         _autosaveTimer.Start();
-    }
-
-    private sealed class Stroke(Action onEnd) : IDisposable
-    {
-        private Action? _onEnd = onEnd;
-
-        public void Dispose()
-        {
-            _onEnd?.Invoke();
-            _onEnd = null;
-        }
     }
 }

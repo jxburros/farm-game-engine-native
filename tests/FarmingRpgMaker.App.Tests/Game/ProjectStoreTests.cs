@@ -142,4 +142,14 @@ public sealed class ProjectStoreTests
         var root = JsonNode.Parse(File.ReadAllText(path))!;
         Assert.Equal("beta", root["updates"]!["channel"]!.GetValue<string>());
     }
+
+    [Theory]
+    [InlineData("con", "con_")]
+    [InlineData("NUL", "NUL_")]
+    [InlineData("com1.backup", "com1.backup_")]
+    [InlineData("a/b:c", "a_b_c")]
+    [InlineData("..", "project")]
+    [InlineData("project-1", "project-1")]
+    public void SafeFileName_AvoidsReservedAndInvalidNames(string id, string expected) =>
+        Assert.Equal(expected, ProjectStore.SafeFileName(id));
 }

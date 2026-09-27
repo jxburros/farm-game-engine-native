@@ -149,4 +149,4 @@ The TS engine is a pure reducer built from object spreads. Port it the same way:
 Port each `*.test.ts` next to the module to
 `tests/FarmEngine.Core.Tests/<Area>/<Name>Tests.cs` (xUnit, `[Fact]` per
 `it(...)`, same test names in PascalCase). Golden parity fixtures live in
-`tests/FarmEngine.Core.Tests/Golden/` and are generated, never hand-edited.
+`fixtures/golden/` (shared with the Rust and F# tests) and are generated, never hand-edited.

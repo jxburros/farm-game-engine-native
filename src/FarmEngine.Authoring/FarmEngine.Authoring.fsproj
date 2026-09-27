@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Authoring</RootNamespace>
+    <Description>Project logic: edits, undo/redo, validation (docs/LANGUAGES.md "F#").</Description>
+    <WarnOn>3390;$(WarnOn)</WarnOn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- FS0044: obsolete warnings, FS1182: unused variables. Keep the rest at the C# bar. -->
+    <NoWarn>$(NoWarn);FS3370</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Records.fs" />
+    <Compile Include="Edits.fs" />
+    <Compile Include="Update.fs" />
+    <Compile Include="Cleanup.fs" />
+    <Compile Include="EditScenes.fs" />
+    <Compile Include="EditContent.fs" />
+    <Compile Include="EditProject.fs" />
+    <Compile Include="Document.fs" />
+    <Compile Include="Defaults.fs" />
+    <Compile Include="Problem.fs" />
+    <Compile Include="ChecksWorld.fs" />
+    <Compile Include="ChecksContent.fs" />
+    <Compile Include="Problems.fs" />
+    <Compile Include="Patterns.fs" />
+    <Compile Include="Api.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+  </ItemGroup>
+</Project>

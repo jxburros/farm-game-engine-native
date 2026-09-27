@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TestProjects.fs" />
+    <Compile Include="DocumentTests.fs" />
+    <Compile Include="SceneEditTests.fs" />
+    <Compile Include="ContentEditTests.fs" />
+    <Compile Include="ProjectEditTests.fs" />
+    <!-- DefaultsTests.fs hangs the F# 10.0.112 compiler (over 5 minutes, never finishes); excluded
+         until it is split up. See ROADMAP.md "Remaining work". -->
+    <None Include="DefaultsTests.fs" />
+    <Compile Include="ProblemsTests.fs" />
+    <Compile Include="PatternsTests.fs" />
+    <Compile Include="PropertyTests.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="FsCheck.Xunit" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
+    <ProjectReference Include="../../src/FarmEngine.Content/FarmEngine.Content.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Core/FarmEngine.Core.csproj" />
+    <ProjectReference Include="../../src/FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+</Project>

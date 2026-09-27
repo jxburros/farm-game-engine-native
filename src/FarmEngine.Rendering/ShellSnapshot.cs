@@ -38,7 +38,19 @@ public static class ShellSnapshot
         foreach (var npc in sceneNpcs)
         {
             var live = state.Npcs.TryGetValue(npc.Id, out var s) ? s : null;
-            npcs.Add(new SnapshotEntity { X = live?.X ?? npc.X, Y = live?.Y ?? npc.Y, ImageUrl = npc.CustomImage });
+            var x = live?.X ?? npc.X;
+            var y = live?.Y ?? npc.Y;
+            // A scheduled/patrolling NPC with path steps left is walking toward the next step.
+            var next = live?.Path is { Count: > 0 } path ? path[0] : null;
+            npcs.Add(new SnapshotEntity
+            {
+                X = x,
+                Y = y,
+                ImageUrl = npc.CustomImage,
+                Appearance = npc.Appearance,
+                Direction = next is null ? "down" : DirectionToward(x, y, next.X, next.Y),
+                Moving = next is not null,
+            });
         }
 
         foreach (var animal in state.Animals.Where(animal => animal.SceneId == scene.Id))
@@ -48,9 +60,14 @@ public static class ShellSnapshot
                 X = animal.X,
                 Y = animal.Y,
                 Color = animalSpecies.TryGetValue(animal.SpeciesId, out var species) ? species.Color : null,
+                Kind = "animal",
+                SpeciesId = animal.SpeciesId,
+                // Animals face a stable direction chosen from their id so a herd isn't uniform.
+                Direction = Directions.All[(int)(BuiltinArt.Hash(animal.Id.Length, (int)(animal.X + animal.Y)) % 4)],
             });
         }
 
+        var clock = state.Clock;
         return new WorldSnapshot
         {
             Width = (int)scene.Width,
@@ -61,6 +78,11 @@ public static class ShellSnapshot
             TileGap = 0,
             Camera = options.Camera,
             GridOverlay = false,
+            Tick = clock.Tick,
+            Atmosphere = new SnapshotAtmosphere(clock.TimeMinutes, clock.WeatherId, clock.Season)
+            {
+                WeatherOverlay = content.Weather.Types.FirstOrDefault(w => w.Id == clock.WeatherId)?.Overlay,
+            },
             Tiles = tiles,
             Npcs = npcs,
             Player = new SnapshotPlayer
@@ -70,8 +92,21 @@ public static class ShellSnapshot
                 Direction = state.Player.Direction,
                 PixelX = options.PixelX,
                 PixelY = options.PixelY,
+                Moving = state.Player.MoveIntent.Dx != 0 || state.Player.MoveIntent.Dy != 0,
             },
         };
+    }
+
+    private static string DirectionToward(double x, double y, double targetX, double targetY)
+    {
+        var dx = targetX - x;
+        var dy = targetY - y;
+        if (Math.Abs(dx) > Math.Abs(dy))
+        {
+            return dx < 0 ? Directions.Left : Directions.Right;
+        }
+
+        return dy < 0 ? Directions.Up : Directions.Down;
     }
 
     /// <summary>
@@ -98,7 +133,7 @@ public static class ShellSnapshot
         var tiles = BuildTiles(scene, content.Crops, nodeTypes, machineTypes, Occupied);
 
         var npcs = new List<SnapshotEntity>();
-        npcs.AddRange(sceneNpcs.Select(npc => new SnapshotEntity { X = npc.X, Y = npc.Y, ImageUrl = npc.CustomImage }));
+        npcs.AddRange(sceneNpcs.Select(npc => new SnapshotEntity { X = npc.X, Y = npc.Y, ImageUrl = npc.CustomImage, Appearance = npc.Appearance }));
         npcs.AddRange((project.Animals ?? [])
             .Where(animal => animal.SceneId == scene.Id)
             .Select(animal => new SnapshotEntity
@@ -106,6 +141,8 @@ public static class ShellSnapshot
                 X = animal.X,
                 Y = animal.Y,
                 Color = animalSpecies.TryGetValue(animal.SpeciesId, out var species) ? species.Color : null,
+                Kind = "animal",
+                SpeciesId = animal.SpeciesId,
             }));
 
         var snapshot = new WorldSnapshot
@@ -152,12 +189,18 @@ public static class ShellSnapshot
             for (var x = 0; x < scene.Width; x++)
             {
                 var tile = x < sourceRow.Count ? sourceRow[x] : Tiles.CreateEmptyTile(x, y);
+                var background = string.IsNullOrEmpty(tile.Background) ? tile.Type : tile.Background;
                 var snapshotTile = new SnapshotTile
                 {
-                    Background = string.IsNullOrEmpty(tile.Background) ? tile.Type : tile.Background,
+                    Background = background,
                     Overlay = tile.Overlay,
                     Object = tile.Object,
                     ImageUrl = tile.CustomImage,
+                    // Soil state (read only): plantable soil is drawn tilled; wet after watering
+                    // or rain (moisture), speckled once fertilized.
+                    Tilled = background == TileTypes.Soil,
+                    Watered = background == TileTypes.Soil && (tile.SoilState == SoilStates.Watered || tile.SoilMoisture > 0),
+                    Fertilized = background == TileTypes.Soil && (tile.SoilState == SoilStates.Fertilized || tile.SoilFertility > 0),
                 };
 
                 if (tile.Crop is { } crop && crops.TryGetValue(crop.Type, out var definition) && definition is not null)
@@ -167,6 +210,8 @@ public static class ShellSnapshot
                         ColorIndex = (int)Math.Max(0, crop.Stage),
                         Mature = Crops.IsCropMatureByDays(crop, definition),
                         Withered = crop.Withered == true,
+                        CropId = crop.Type,
+                        Stages = (int)Math.Max(0, definition.Stages),
                     };
                 }
 
@@ -176,6 +221,7 @@ public static class ShellSnapshot
                     {
                         Color = nodeTypes.TryGetValue(node.TypeId, out var nodeDef) ? nodeDef.Color : "#7a5a3a",
                         Depleted = node.RemainingHealth <= 0,
+                        TypeId = node.TypeId,
                     };
                 }
 
@@ -186,6 +232,7 @@ public static class ShellSnapshot
                         Color = machineTypes.TryGetValue(machine.TypeId, out var machineDef) ? machineDef.Color : "#9a7b4f",
                         Working = machine.Processing is not null,
                         OutputReady = machine.Output is { Count: > 0 },
+                        TypeId = machine.TypeId,
                     };
                 }
 
@@ -196,7 +243,7 @@ public static class ShellSnapshot
 
                 if (tile.Item is { } item && hideItemAt?.Invoke(x, y) != true)
                 {
-                    snapshotTile.Item = new SnapshotItem { ImageUrl = item.CustomImage };
+                    snapshotTile.Item = new SnapshotItem { ImageUrl = item.CustomImage, ItemType = item.Type };
                 }
 
                 row.Add(snapshotTile);

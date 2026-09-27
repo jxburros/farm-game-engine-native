@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- **Built-in pixel art.** Sample games (and any project without its own art)
+  now render with a bundled pixel-art pack instead of colored rectangles:
+  textured grass, tilled/watered/fertilized soil, animated water, stone walls,
+  doors and wood floors; trees (three kinds, two tiles tall), stumps, rocks,
+  boulders and ore nodes; every built-in crop drawn through five growth stages
+  (plus a withered look); furnace, preserves jar, kitchen, workbench and altar
+  with a "working" state and an output-ready bubble; chickens and cows; and a
+  player, farmer, merchant and villager with four-direction walk cycles.
+  Creator-bound art always takes precedence; unknown mod ids fall back to
+  generic sprites.
+- **Atmosphere.** Play mode tints the world by the game clock (warm dawn and
+  dusk, cool blue nights, untouched at midday), colors grass and foliage by
+  season (autumn ochre, winter frost) and overlays rain streaks or snow
+  flakes for rainy, stormy and snowy weather. All of it is read from the
+  simulation state; rendering never writes back.
+- **Depth.** Entities and objects cast soft drop shadows and are drawn in
+  y-order, so you walk behind trees and in front of them.
+- Edit Mode uses the same art at its 28-px grid, so both modes look alike.
+- `tools/art`: the reproducible art pipeline (Blender-as-a-module renders of
+  procedural low-poly models, pixelated and quantized to one 48-color
+  palette; procedural tiles; sprite sheets + `manifest.json`). The generated
+  PNGs are committed, so building never needs Python or Blender.
+- **The engine now runs in Rust too.** The simulation is ported to the Rust
+  `farm-sim` crate. It replays all 23 recorded sessions from the web version
+  with byte-identical state hashes, and a random 400-command session gives
+  the same hash after every step in the Rust and C# engines. The app ships
+  the Rust library (`farm_ffi`) and can run a game in it through
+  `RustSession`; Play Mode still uses the C# engine until the switch-over.
+- **Language migration, phase 1.** A Cargo workspace (`farm-sim`,
+  `farm-cart`, `farm-runtime`, `farm-ffi`) with determinism lints, the
+  `FarmEngine.Interop` bindings built by `dotnet build`, and the F#
+  `FarmEngine.Authoring` project with the `Document`/`Edit` undo model. CI
+  runs rustfmt, clippy, the Rust tests and a WebAssembly build check.
+- **Fixes from an audit:**
+  - Projects the web editor saves now import. Checks that the web version
+    does not enforce (empty ids, inverted regions, a deleted start scene) are
+    reported instead of rejected.
+  - Completing a quest that had no progress entry now hashes like the web
+    version.
+  - An error during a playtest ends the playtest instead of closing the
+    editor.
+  - Unsaved edits are written before the app exits, before Restart &
+    install, and when the app crashes.
+  - Project files can't be named after Windows device names (`CON`, `NUL`…).
+  - Files with `NaN` or `Infinity` numbers are refused, as on the web.
+  - Links in release notes open in the browser.
+  - The golden generator writes where the tests read (`fixtures/golden`).
+- **Project edits live in F#.** Every change the editor can make is an `Edit`
+  (`FarmEngine.Authoring`): tile painting, rectangle and flood fill, paste,
+  scene add/resize/duplicate/delete, transitions, NPCs and dialogues, items,
+  crops (with their seed and crop items), quests, events, shops, recipes,
+  machines, gathering nodes, animals, fish tables, actions, minigames,
+  weather, mine, settings, art bindings and assets, content packs. Removing
+  something also cleans up what pointed at it. Undo/redo, drag strokes as one
+  undo step and autosave come from the F# `Document`; `ProjectWorkspace`
+  only holds it.
+- **Defaults and ids.** "Add" buttons get the web editor's default values
+  from `Defaults`, with deterministic ids instead of the wall clock.
+- **Problems pipeline.** `Problems.collect` runs the schema and content
+  validators and adds editor checks (unreachable dialogue, unknown flags,
+  out-of-bounds doors and starts, duplicate ids, recipe and machine links,
+  artwork, packs), each with a JSON path and an editor to jump to.
+- **Workshop patterns** (`Patterns`) build their content as one batch edit.
+
 ## 0.1.0
 
 The first native Windows release of Farming RPG Maker: no browser inside,

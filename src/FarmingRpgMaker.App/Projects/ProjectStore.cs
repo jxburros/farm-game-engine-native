@@ -222,11 +222,29 @@ public sealed class ProjectStore
 
     private static string DisplayName(GameProject project) => string.IsNullOrWhiteSpace(project.Name) ? "Untitled Game" : project.Name;
 
-    private static string SafeFileName(string id)
+    private static readonly HashSet<string> WindowsReservedNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
+
+    /// <summary>
+    /// A file stem for a project id: invalid characters replaced, and Windows device names
+    /// (<c>CON</c>, <c>NUL</c>, <c>COM1</c>, …, which Windows refuses even with an extension)
+    /// suffixed so the file can be created on every platform.
+    /// </summary>
+    internal static string SafeFileName(string id)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var safe = new string(id.Select(c => invalid.Contains(c) || c is '/' or '\\' or ':' ? '_' : c).ToArray()).Trim('.', ' ');
-        return string.IsNullOrEmpty(safe) ? "project" : safe;
+        if (string.IsNullOrEmpty(safe))
+        {
+            return "project";
+        }
+
+        var stem = safe.Split('.')[0];
+        return WindowsReservedNames.Contains(stem) ? safe + "_" : safe;
     }
 
     private IndexFile ReadIndex()

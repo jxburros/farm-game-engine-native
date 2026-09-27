@@ -91,10 +91,13 @@ public sealed class ImageStore : IDisposable
 
     public void Dispose() => Clear();
 
-    /// <summary>Decodes a <c>data:</c> URL (base64 payload) into an image; null when unsupported.</summary>
+    /// <summary>
+    /// Decodes a <c>data:</c> URL (base64 payload) or a <c>builtin://</c> sheet of the
+    /// embedded art pack into an image; null when unsupported.
+    /// </summary>
     public static SKImage? Decode(string source)
     {
-        var bytes = DataUrlBytes(source);
+        var bytes = SourceBytes(source);
         if (bytes is null || bytes.Length == 0)
         {
             return null;
@@ -113,9 +116,34 @@ public sealed class ImageStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// The raw image bytes behind a source: a base64 <c>data:</c> URL or a
+    /// <c>builtin://</c> sheet (see <see cref="BuiltinArt.SheetUrl"/>); null otherwise.
+    /// </summary>
+    public static byte[]? SourceBytes(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.StartsWith(BuiltinArt.UrlScheme, StringComparison.Ordinal))
+        {
+            try
+            {
+                return BuiltinArt.ResolveSheet(source);
+            }
+#pragma warning disable CA1031 // A broken embedded pack degrades to color blocks, never a crash.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return null;
+            }
+        }
+
+        return DataUrlBytes(source);
+    }
+
     /// <summary>The raw bytes of a base64 <c>data:</c> URL, or null.</summary>
     public static byte[]? DataUrlBytes(string source)
     {
+        ArgumentNullException.ThrowIfNull(source);
         if (!source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             return null;
