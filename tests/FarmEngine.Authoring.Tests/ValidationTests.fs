@@ -33,6 +33,16 @@ let ``the v8 fixture validates`` () =
     Assert.Empty(SchemaChecks.validateProject (parse (v8Json ())))
 
 [<Fact>]
+let ``native export settings survive the web compatible import path`` () =
+    let project = starter ()
+    let settings = Defaults.newExportSettings project
+    let project = project |> apply (SetExportSettings(Some settings))
+    let result = ProjectMigrations.migrateProject (JsonSerializer.SerializeToNode(project, JsonDefaults.Options))
+    Assert.True(result.Ok, String.concat "\n" result.Errors)
+    Assert.Equal(settings.GameId, result.Data.Export.GameId)
+    Assert.Equal(settings.ExecutableName, result.Data.Export.ExecutableName)
+
+[<Fact>]
 let ``validateProject reports constraint violations`` () =
     let json = v8Json ()
     json.["mode"] <- JsonValue.Create "bogus"

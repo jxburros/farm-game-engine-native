@@ -2,6 +2,11 @@
 
 ## 0.2.0 (unreleased)
 
+- **Export groundwork.** Projects can store desktop export identity, window,
+  icon and target settings without changing the web-compatible schema version.
+  F# supplies a stable game id and reports invalid settings in Problems. The
+  standalone player and export command remain future work.
+
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

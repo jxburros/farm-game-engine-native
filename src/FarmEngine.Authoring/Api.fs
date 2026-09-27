@@ -91,6 +91,7 @@ type Edits =
 
     static member SetProjectInfo(name: string, version: string) : Edit = SetProjectInfo(name, version)
     static member SetSettings(settings: ProjectSettings) : Edit = SetSettings settings
+    static member SetExportSettings(settings: ExportSettings | null) : Edit = SetExportSettings(Option.ofObj settings)
     static member RemoveSeason(seasonId: string) : Edit = RemoveSeason seasonId
     static member SetGraphics(graphics: GraphicsSettings) : Edit = SetGraphics graphics
     static member SetPlayerVisual(visual: VisualRef | null) : Edit = SetPlayerVisual(Edits.Visual visual)

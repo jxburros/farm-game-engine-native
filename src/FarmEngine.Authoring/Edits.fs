@@ -125,6 +125,8 @@ type Edit =
     // ---- Project (ProjectSettingsEditor.tsx, AssetManager.tsx, ArtBindings.tsx, ModsEditor.tsx) ----
     | SetProjectInfo of name: string * version: string
     | SetSettings of settings: ProjectSettings
+    /// Native export identity and target settings; None disables standalone export metadata.
+    | SetExportSettings of settings: ExportSettings option
     /// ProjectSettingsEditor `removeSeason`: also drops festivals and weather rows of that season; refused for the last season.
     | RemoveSeason of seasonId: string
     | SetGraphics of graphics: GraphicsSettings

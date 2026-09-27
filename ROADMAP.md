@@ -125,6 +125,9 @@ the most.
 - [ ] Port `Packs` merging and `ContentBuiltin` to F#; FlatBuffers
   `cart.fbs`/`save.fbs` with the `GameInfo` table; the deterministic
   cartridge compiler.
+- [x] Add optional export identity/window/target settings to the project,
+  with a stable generated game id and F# Problems validation. The cartridge
+  compiler and Export Game command still need to consume them.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).

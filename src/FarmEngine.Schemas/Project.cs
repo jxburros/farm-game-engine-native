@@ -59,6 +59,8 @@ public sealed record GameProject
     public List<MinigameDef> Minigames { get; init; } = [];
     /// <summary>Installed content packs (M5). Array order = load order.</summary>
     public List<PackInstallation> ContentPacks { get; init; } = [];
+    /// <summary>Optional native export identity, window and target settings (additive to schema v8).</summary>
+    public ExportSettings? Export { get; init; }
     /// <summary>Serialized PRNG state so play sessions resume deterministically (additive, optional).</summary>
     public RngState? RngState { get; init; }
     // Runtime state mirrored by applyStateToProject. These used to ride the
