@@ -6,6 +6,10 @@
   icon and target settings without changing the web-compatible schema version.
   F# supplies a stable game id and reports invalid settings in Problems. The
   standalone player and export command remain future work.
+- **Cartridge groundwork.** `farmc compile` now writes a deterministic
+  FlatBuffers `game.cart` with game identity and compiled compatibility
+  content. Rust verifies and loads it; cartridge sessions use the persistent
+  game id in saves. The standalone player and packaging remain future work.
 
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,

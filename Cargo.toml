@@ -8,6 +8,7 @@ resolver = "2"
 members = [
     "crates/farm-sim",
     "crates/farm-cart",
+    "crates/farm-cart-schema",
     "crates/farm-runtime",
     "crates/farm-ffi",
 ]

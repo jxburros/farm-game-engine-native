@@ -14,7 +14,7 @@ use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
-use farm_sim::schema::{GameProject, GameState};
+use farm_sim::schema::{GameContent, GameProject, GameState};
 use farm_sim::{engine, hash, quests, stable_json, state};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -72,7 +72,7 @@ unsafe fn write_empty(out: *mut FeBytes) {
     }
 }
 
-/// Creates a session from project JSON (the web version's format, schema v8, already migrated).
+/// Creates a session from migrated project JSON or a verified `FGCT` cartridge.
 /// `seed` may be empty (then the project's own `id:gameStartTime` seed applies, like the TS
 /// engine). `auto_start_quests` does what hosts do at game start.
 ///
@@ -103,15 +103,35 @@ pub unsafe extern "C" fn fe_session_new(
         Err(_) => return FeResult::InvalidArgument,
     };
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<FeSession, String> {
-        let project: GameProject = serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
-        let content = state::create_content_from_project(&project);
+        let (project, content, identity): (GameProject, GameContent, Option<(String, String)>) =
+            if farm_cart::is_cartridge(project_bytes) {
+                let cart = farm_cart::read_cartridge(project_bytes)?;
+                let project: GameProject =
+                    serde_json::from_slice(cart.project_json).map_err(|e| format!("cartridge project: {e}"))?;
+                let content: GameContent =
+                    serde_json::from_slice(cart.content_json).map_err(|e| format!("cartridge content: {e}"))?;
+                let expected = SaveTarget::for_project(&project, &content);
+                if cart.info.game_id != expected.game_id || cart.info.version != expected.game_version {
+                    return Err("Cartridge game identity differs from its project data.".to_owned());
+                }
+                (project, content, Some((cart.info.game_id.to_owned(), cart.info.version.to_owned())))
+            } else {
+                let project: GameProject =
+                    serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
+                let content = state::create_content_from_project(&project);
+                (project, content, None)
+            };
         let ctx = EngineContext::with_hooks(content, HookBus::new());
         let mut game_state =
             state::create_game_state(&project, if seed_text.is_empty() { None } else { Some(seed_text) });
         if auto_start_quests {
             quests::auto_start_quests(&ctx, &mut game_state);
         }
-        let target = SaveTarget::for_project(&project, &ctx.content);
+        let mut target = SaveTarget::for_project(&project, &ctx.content);
+        if let Some((game_id, version)) = identity {
+            target.game_id = game_id;
+            target.game_version = version;
+        }
         Ok(FeSession {
             ctx,
             state: game_state,

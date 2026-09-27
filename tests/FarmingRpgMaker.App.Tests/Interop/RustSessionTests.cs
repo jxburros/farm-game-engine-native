@@ -1,9 +1,12 @@
 using System.Text.Json;
+using FarmEngine.Authoring;
+using FarmEngine.Cart;
 using FarmEngine.Content;
 using FarmEngine.Core;
 using FarmEngine.Interop;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
+using Google.FlatBuffers;
 
 namespace FarmingRpgMaker.App.Tests.Interop;
 
@@ -29,6 +32,36 @@ public sealed class RustSessionTests
         Assert.Equal(expected, session.StateHash());
         Assert.Equal(Hash.StableStringify(EngineState.CreateGameState(project, "parity")), session.StateJson());
         Assert.Equal(expected, Hash.HashState(session.State()));
+    }
+
+    [Fact]
+    public void CompiledCartridgeRunsInRustAndUsesPersistentSaveIdentity()
+    {
+        var project = Starter() with
+        {
+            Export = new ExportSettings { GameId = "local.test-farm", Version = "3.1.0", Title = "Test Farm" },
+        };
+        var bytes = CartridgeCompiler.Compile(project);
+        Assert.Equal(bytes, CartridgeCompiler.Compile(project));
+        var buffer = new ByteBuffer(bytes);
+        Assert.True(Cartridge.CartridgeBufferHasIdentifier(buffer));
+        var cart = Cartridge.GetRootAsCartridge(buffer);
+        Assert.Equal(1u, cart.CartFormat);
+        Assert.Equal("local.test-farm", cart.Info!.Value.GameId);
+        Assert.Equal("3.1.0", cart.Info.Value.Version);
+        Assert.NotEmpty(cart.GetContentJsonArray());
+
+        if (!FarmFfi.IsAvailable) return;
+        using var fromCart = RustSession.CreateCartridge(bytes, "parity");
+        using var fromProject = RustSession.Create(project, "parity");
+        Assert.Equal(fromProject.StateHash(), fromCart.StateHash());
+        using var saved = JsonDocument.Parse(fromCart.Save());
+        Assert.Equal("local.test-farm", saved.RootElement.GetProperty("header").GetProperty("gameId").GetString());
+        Assert.Equal("3.1.0", saved.RootElement.GetProperty("header").GetProperty("gameVersion").GetString());
+        fromCart.Apply(new SleepCommand());
+        fromProject.Apply(new SleepCommand());
+        Assert.Equal(fromProject.StateHash(), fromCart.StateHash());
+        Assert.Throws<FarmFfiException>(() => RustSession.CreateCartridge([0, 0, 0, 0, (byte)'F', (byte)'G', (byte)'C', (byte)'T']));
     }
 
     [Fact]
