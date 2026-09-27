@@ -77,5 +77,5 @@ let ``patterns refuse bad tiles with the web messages`` () =
     expectError "That tile already has an item. Choose an empty tile." (Patterns.build Magic options magic)
     let building = project |> apply (build Building options project)
     expectError "That tile already has a doorway." (Patterns.build Building options building)
-    let noScenes = Records.withValue project "Scenes" (box (listOf<Scene> []))
+    let noScenes = Records.withValue project "Scenes" (box (listOf ([] : Scene list)))
     expectError "Select a scene first." (Patterns.build Story options noScenes)
