@@ -14,6 +14,7 @@
     <Compile Include="SceneEditTests.fs" />
     <Compile Include="ContentEditTests.fs" />
     <Compile Include="ProjectEditTests.fs" />
+    <Compile Include="PackMergeTests.fs" />
     <Compile Include="DefaultsTests.fs" />
     <Compile Include="ProblemsTests.fs" />
     <Compile Include="PatternsTests.fs" />

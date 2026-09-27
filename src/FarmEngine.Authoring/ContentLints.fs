@@ -198,7 +198,7 @@ module ContentLints =
           // Content packs (M5): load-order errors, compatibility warnings and undeclared-override
           // conflicts from a dry-run merge.
           if not (missing project.ContentPacks) && project.ContentPacks.Count > 0 then
-              let merged = Packs.MergePacksIntoContent(EngineState.CreateBaseContentFromProject project, project.ContentPacks)
-              for problem in merged.Problems do
+              let _, mergedProblems = PackMerge.mergeIntoContent (EngineState.CreateBaseContentFromProject project) project.ContentPacks
+              for problem in mergedProblems do
                   let severity = if problem.Severity = "error" then Severity.Error else Severity.Warning
                   lint severity "packs" problem.Message problem.PackId ]

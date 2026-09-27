@@ -11,6 +11,7 @@
     <Compile Include="Json.fs" />
     <Compile Include="Migrations.fs" />
     <Compile Include="Records.fs" />
+    <Compile Include="PackMerge.fs" />
     <Compile Include="Edits.fs" />
     <Compile Include="Update.fs" />
     <Compile Include="Cleanup.fs" />

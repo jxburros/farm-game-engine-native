@@ -2,6 +2,9 @@
 
 ## 0.2.0 (unreleased)
 
+- **F# pack authoring progress.** Dependency ordering, conflict-aware content
+  merging, and importing a pack into editable project content now run through
+  F#. Differential tests compare the results with the C# compatibility engine.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player
