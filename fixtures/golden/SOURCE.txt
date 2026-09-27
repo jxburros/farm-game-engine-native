@@ -2,10 +2,10 @@ Golden fixtures generated from the TypeScript reference engine.
 Do not hand-edit; rerun tools/golden/generate.sh instead.
 
 source:    local checkout (as-is)
-origin:    /home/user/farm-game-engine
+origin:    https://github.com/jxburros/farm-game-engine
 commit:    01b2d8f0a789b9cde5355823a1ae36feaf1babe3
 describe:  01b2d8f
 dirty:     no
 node:      v22.22.2
 vitest:    vitest/4.1.11 linux-x64 node-v22.22.2
-generator: tools/golden/golden.gen.test.ts sha256 2cd3f4171375a0dc630d6f6455f6c996f82be5b8e9fa16211f796dc934e85a7f
+generator: tools/golden/golden.gen.test.ts sha256 91120cf80d8f72a6fc4d6ebdb47dc6128bbdcbeff60cfc02f4d2d2d2ddcf45e3

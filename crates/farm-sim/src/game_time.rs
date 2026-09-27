@@ -284,7 +284,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                 let respawned = tile.node.as_ref().and_then(|node| {
                     let depleted_on_day = node.depleted_on_day?;
                     let definition = node_types.get(node.type_id.as_str())?;
-                    let respawn_days = definition.respawn_days?;
+                    let respawn_days = definition.respawn_after()?;
                     (new_day - depleted_on_day >= respawn_days).then(|| TileNode {
                         type_id: node.type_id.clone(),
                         remaining_health: definition.health,

@@ -37,15 +37,24 @@ pub struct NodeTypeDefinition {
     /// Weighted drop table; each hit that depletes the node rolls once per entry range.
     pub drops: Vec<NodeDrop>,
     /// Days until a depleted node respawns; null/absent = never. int, positive.
-    /// TS is `.nullable().optional()`; like the C# port this cannot tell absent from null, so it
-    /// is always written (as `null` when unset) — the built-in content always spells the key out.
-    pub respawn_days: Option<f64>,
+    /// TS is `.nullable().optional()` and the two hash differently, so absent (`None`, the
+    /// default, as in hand-written packs) and `null` (`Some(None)`, as the built-in content
+    /// spells it) stay apart. Read it with [`NodeTypeDefinition::respawn_after`].
+    #[serde(skip_serializing_if = "Option::is_none", with = "super::nullable")]
+    pub respawn_days: Option<Option<f64>>,
     /// Renderer hint (hex color).
     pub color: String,
     /// Whether the node blocks movement while present.
     pub blocks_movement: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+impl NodeTypeDefinition {
+    /// Days until a depleted node respawns, or `None` for never (absent or null alike).
+    pub fn respawn_after(&self) -> Option<f64> {
+        self.respawn_days.flatten()
+    }
 }
 
 impl Default for NodeTypeDefinition {
