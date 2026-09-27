@@ -112,7 +112,7 @@ the most.
   `System.Text.Json` and still parses and validates the result with the C#
   schema. Every migration golden passes, and a differential test agrees
   with the C# `Migrations.MigrateProject` on 25 inputs, step by step (150 F#
-  tests). The app still calls the C# migrations; switch the callers next.
+  tests). `ProjectStore` (open and import) now uses the F# migrations.
 - [ ] Port `SchemaValidation.cs`, `Validation.cs`, `Packs` merging and
   `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with the
   `GameInfo` table; the deterministic cartridge compiler.

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Content;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
@@ -21,7 +22,7 @@ public sealed record ProjectLoadResult(GameProject? Project, IReadOnlyList<strin
 /// Desktop project storage (web src/lib/projects.ts, with files instead of localStorage):
 /// one web-compatible project JSON per project in <c>&lt;root&gt;/projects/&lt;id&gt;.json</c>
 /// plus <c>index.json</c> (id, name, updated time). Every write is atomic (temp file +
-/// move), and every load goes through <see cref="Migrations.MigrateProject(JsonNode?)"/>.
+/// move), and every load goes through the F# project migrations (<see cref="ProjectMigrations"/>).
 /// </summary>
 public sealed class ProjectStore
 {
@@ -142,7 +143,7 @@ public sealed class ProjectStore
     /// <summary>Parses + migrates stored project JSON. Never throws.</summary>
     public static ProjectLoadResult Parse(string json)
     {
-        var result = Migrations.MigrateProject(json);
+        var result = ProjectMigrations.migrateProjectText(json);
         return result.Ok && result.Data is not null
             ? new ProjectLoadResult(result.Data, [], result.Migrated ? result.FromVersion : null)
             : ProjectLoadResult.Fail(result.Errors.Count > 0 ? [.. result.Errors] : ["Invalid project data"]);
@@ -170,7 +171,7 @@ public sealed class ProjectStore
             return ProjectLoadResult.Fail("The file does not contain a project (expected a JSON object).");
         }
 
-        var asProject = Migrations.MigrateProject(node);
+        var asProject = ProjectMigrations.migrateProject(node);
         GameProject project;
         double? migratedFrom;
         if (asProject.Ok && asProject.Data is not null)
@@ -180,7 +181,7 @@ public sealed class ProjectStore
         }
         else
         {
-            var exported = Migrations.MigrateExportedGame(node);
+            var exported = ProjectMigrations.migrateExportedGame(node);
             if (!exported.Ok || exported.Data is null)
             {
                 var errors = asProject.Errors.Count > 0 ? asProject.Errors : exported.Errors;
@@ -196,7 +197,7 @@ public sealed class ProjectStore
             }
 
             merged["schemaVersion"] = ProjectSchema.CurrentProjectSchemaVersion;
-            var reparsed = Migrations.MigrateProject(merged);
+            var reparsed = ProjectMigrations.migrateProject(merged);
             if (!reparsed.Ok || reparsed.Data is null)
             {
                 return ProjectLoadResult.Fail(reparsed.Errors.Count > 0 ? [.. reparsed.Errors] : ["Invalid project data"]);
