@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 farm-sim = { path = "../farm-sim" }
+farm-cart = { path = "../farm-cart" }
 farm-runtime = { path = "../farm-runtime" }
 serde_json.workspace = true
 

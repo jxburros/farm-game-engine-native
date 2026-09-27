@@ -22,7 +22,7 @@ pub const SAVE_MIGRATIONS: &[(f64, SaveMigration)] =
     &[(1.0, migrate_v1_to_v2), (2.0, migrate_v2_to_v3), (3.0, migrate_v3_to_v4)];
 
 /// The most errors a failed parse reports (zod `issues.slice(0, 20)`).
-const MAX_ERRORS: usize = 20;
+pub(crate) const MAX_ERRORS: usize = 20;
 
 /// Upgrade and validate serialized simulation state. This is deliberately independent from
 /// project migrations: authored content and a player's live runtime state evolve on different

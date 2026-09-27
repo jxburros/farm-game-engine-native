@@ -47,8 +47,8 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: WebAssembly build check (farm-sim, farm-runtime)
-        run: cargo check -p farm-sim -p farm-runtime --target wasm32-unknown-unknown
+      - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime)
+        run: cargo check -p farm-sim -p farm-cart -p farm-runtime --target wasm32-unknown-unknown
 
   build-and-test:
     name: Build & test (Linux)

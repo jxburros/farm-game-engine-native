@@ -131,6 +131,40 @@ public sealed class RustSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// A save file for the live state: a header (game id, game version, content hash) plus the
+    /// state, as stable JSON. Load it with <see cref="LoadSave"/>.
+    /// </summary>
+    public string Save()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            return Check(NativeMethods.fe_session_save(_handle, &output), output, nameof(Save));
+        }
+    }
+
+    /// <summary>
+    /// Replaces the state with a save file (or a bare web <c>GameState</c>). Old saves are
+    /// migrated and items the game no longer has are quarantined. A save from another game, or
+    /// one that fails validation, throws <see cref="FarmFfiException"/> and leaves the state as
+    /// it was.
+    /// </summary>
+    public SaveLoadReport LoadSave(string save)
+    {
+        ArgumentNullException.ThrowIfNull(save);
+        var bytes = Encoding.UTF8.GetBytes(save);
+        unsafe
+        {
+            fixed (byte* ptr = bytes)
+            {
+                NativeMethods.FeBytes output;
+                var json = Check(NativeMethods.fe_session_load_save(_handle, ptr, (nuint)bytes.Length, &output), output, nameof(LoadSave));
+                return JsonSerializer.Deserialize<SaveLoadReport>(json, JsonDefaults.Options)!;
+            }
+        }
+    }
+
     public void Dispose()
     {
         unsafe
@@ -179,3 +213,16 @@ public sealed class RustSession : IDisposable
         }
     }
 }
+
+/// <summary>What <see cref="RustSession.LoadSave"/> did besides loading the state.</summary>
+/// <param name="Warnings">Things the player should know (a newer game version wrote the save, items set aside).</param>
+/// <param name="Quarantined">Ids of items the game no longer has, moved to quarantine.</param>
+/// <param name="Restored">Ids of quarantined items that came back.</param>
+/// <param name="FromVersion">The save version before migration.</param>
+/// <param name="Migrated">The save went through save migrations.</param>
+public sealed record SaveLoadReport(
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string> Quarantined,
+    IReadOnlyList<string> Restored,
+    double FromVersion,
+    bool Migrated);

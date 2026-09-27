@@ -70,6 +70,12 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "fe_session_hook_events")]
     public static partial FeResult fe_session_hook_events(FeSession* session, FeBytes* output);
 
+    [LibraryImport(Library, EntryPoint = "fe_session_save")]
+    public static partial FeResult fe_session_save(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_load_save")]
+    public static partial FeResult fe_session_load_save(FeSession* session, byte* save, nuint len, FeBytes* output);
+
     [LibraryImport(Library, EntryPoint = "fe_session_last_error")]
     public static partial FeResult fe_session_last_error(FeSession* session, FeBytes* output);
 }

@@ -47,6 +47,34 @@ public sealed class RustSessionTests
     }
 
     [Fact]
+    public void SavesRoundTripThroughTheRustSession()
+    {
+        if (!FarmFfi.IsAvailable)
+        {
+            return;
+        }
+
+        var project = Starter();
+        using var session = RustSession.Create(project, "save");
+        var before = session.StateHash();
+        var save = session.Save();
+        session.Apply(new SleepCommand());
+        Assert.NotEqual(before, session.StateHash());
+
+        var report = session.LoadSave(save);
+        Assert.Equal(before, session.StateHash());
+        Assert.Empty(report.Warnings);
+        Assert.Empty(report.Quarantined);
+        Assert.False(report.Migrated);
+
+        // A save from another game is refused and the state stays put.
+        using var other = RustSession.Create(project with { Id = "another-game" }, "save");
+        var ex = Assert.Throws<FarmFfiException>(() => session.LoadSave(other.Save()));
+        Assert.Contains("different game", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(before, session.StateHash());
+    }
+
+    [Fact]
     public void RejectsUnparsableProjects()
     {
         if (!FarmFfi.IsAvailable)
