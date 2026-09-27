@@ -2,6 +2,9 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- With nullness checking on, some F# 10 compilers (SDK 10.0.112, for one) take minutes per
+         file on these tests, so `dotnet build` looks hung. The library keeps it on. -->
+    <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TestProjects.fs" />
@@ -9,9 +12,7 @@
     <Compile Include="SceneEditTests.fs" />
     <Compile Include="ContentEditTests.fs" />
     <Compile Include="ProjectEditTests.fs" />
-    <!-- DefaultsTests.fs hangs the F# 10.0.112 compiler (over 5 minutes, never finishes); excluded
-         until it is split up. See ROADMAP.md "Remaining work". -->
-    <None Include="DefaultsTests.fs" />
+    <Compile Include="DefaultsTests.fs" />
     <Compile Include="ProblemsTests.fs" />
     <Compile Include="PatternsTests.fs" />
     <Compile Include="PropertyTests.fs" />

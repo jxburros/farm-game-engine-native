@@ -93,13 +93,10 @@ Status after the September 2026 session. In order of what unblocks the most.
   the problems pipeline with JSON paths, workshop patterns, the C# `Api`,
   and `ProjectWorkspace` on the F# `Document` (62 F# tests, all app tests
   pass).
-- [ ] `tests/FarmEngine.Authoring.Tests/DefaultsTests.fs` hangs the F#
-  10.0.112 compiler and is excluded from the build. Split its large tests
-  (likely the many overloaded `Assert.Equal` calls in one function) and add
-  it back.
-- [ ] The F# test project takes about 11 minutes to compile. Find the slow
-  files (`SceneEditTests.fs` takes about 4.5 minutes alone) before CI time
-  becomes a problem.
+- [x] The F# test project hung `dotnet build` on SDK 10.0.112 (minutes per
+  file; `DefaultsTests.fs` was excluded). The cause was nullness checking in
+  the tests; it is now off for the test project only, the whole project
+  compiles in about 15 seconds and `DefaultsTests.fs` is back (68 F# tests).
 - [ ] Port `Migrations.cs`, `SchemaValidation.cs`, `Validation.cs`, `Packs`
   merging and `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with
   the `GameInfo` table; the deterministic cartridge compiler.
