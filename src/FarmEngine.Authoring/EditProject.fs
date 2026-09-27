@@ -24,6 +24,10 @@ module internal EditProject =
     let setSettings (settings: ProjectSettings) (project: GameProject) =
         if obj.Equals(project.Settings, settings) then project else Proj.set "Settings" (box settings) project
 
+    let setExportSettings (settings: ExportSettings option) (project: GameProject) =
+        let value = Option.toObj settings
+        if obj.Equals(project.Export, value) then project else Proj.set "Export" (box value) project
+
     /// ProjectSettingsEditor `removeSeason`: refused for the last season; festivals on it go too.
     let removeSeason (seasonId: string) (project: GameProject) =
         let calendar = project.Settings.Calendar

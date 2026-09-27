@@ -125,8 +125,16 @@ the most.
 - [ ] Finish `Packs` and `ContentBuiltin` in F#: load order, conflict-aware
   content merge and project import now run in F#; namespacing and compatibility
   checks still use the C# implementation.
-- [ ] Add FlatBuffers `cart.fbs`/`save.fbs` with the `GameInfo` table and the
-  deterministic cartridge compiler.
+- [ ] Add indexed content tables and `save.fbs` to the cartridge format;
+  port `ContentBuiltin` and the content compiler off the C# bridge.
+- [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
+  compiler and `farmc compile`; Rust verifies and loads the cartridge, and
+  cross-language tests compare its content and play state. Compiled content
+  still comes from the C# bridge and is stored as JSON while indexed binary
+  tables are developed.
+- [x] Add optional export identity/window/target settings to the project,
+  with a stable generated game id and F# Problems validation. The cartridge
+  compiler consumes them; Export Game still needs the graphical player and packaging.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).
@@ -170,6 +178,9 @@ available as native views.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
+- [x] Headless `farm-player` loads `game.cart` beside the executable or by
+  `--cart`, replays commands, checks a hash, and loads/writes portable saves.
+  The graphical shell, plugin sandbox and packaging are still open.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).

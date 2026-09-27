@@ -1,5 +1,5 @@
 [package]
-name = "farm-cart"
+name = "farm-player"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,10 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+farm-cart = { path = "../farm-cart" }
 farm-sim = { path = "../farm-sim" }
 serde.workspace = true
 serde_json.workspace = true
-indexmap.workspace = true
-serde_path_to_error.workspace = true
-farm-cart-schema = { path = "../farm-cart-schema" }
 
 [lints]
 workspace = true

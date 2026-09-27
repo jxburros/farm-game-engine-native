@@ -26,6 +26,17 @@
 - **Workshop and interface.** The 13 F# creator patterns can now be used from
   Edit Mode, each as one undo step. Creators can add in-game panels and edit
   their titles, visibility flags and live entries.
+- **Export groundwork.** Projects can store desktop export identity, window,
+  icon and target settings without changing the web-compatible schema version.
+  F# supplies a stable game id and reports invalid settings in Problems. The
+  graphical player and export packaging remain future work.
+- **Cartridge groundwork.** `farmc compile` now writes a deterministic
+  FlatBuffers `game.cart` with game identity and compiled compatibility
+  content. Rust verifies and loads it; cartridge sessions use the persistent
+  game id in saves. The graphical player and packaging remain future work.
+- **Headless player.** A standalone Rust executable loads cartridges, runs
+  scripted replays, checks deterministic state hashes, and loads/writes saves.
+  The graphical game shell is still being built.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

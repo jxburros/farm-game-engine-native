@@ -23,6 +23,38 @@ let ``the starter project and every template have no errors`` () =
         Assert.False(Problems.blocksExport (Problems.collect project))
 
 [<Fact>]
+let ``export settings accept valid defaults and reject broken identities and targets`` () =
+    let project = starter ()
+    let settings = Defaults.newExportSettings project
+    let valid = project |> apply (SetExportSettings(Some settings))
+    Assert.Empty(Problems.collect valid |> List.filter (fun p -> p.Code.StartsWith "export."))
+    let broken =
+        Records.withValues settings
+            [ ("GameId", box "Bad Id")
+              ("ExecutableName", box "CON")
+              ("Window", box (ExportWindow(Width = 200)))
+              ("PixelScale", box "stretch")
+              ("Targets", box (listOf [ "windows-x64"; "windows-x64"; "macos" ]))
+              ("IconAssetId", box "missing") ]
+        |> fun bad -> valid |> apply (SetExportSettings(Some bad))
+    for code in [ "export.gameId"; "export.executableName"; "export.window"; "export.pixelScale"; "export.target"; "export.targets"; "export.icon" ] do
+        let problem = has code broken
+        Assert.Equal("settings", problem.TargetKind)
+        Assert.True problem.IsError
+    Assert.True(Problems.blocksExport (Problems.collect broken))
+
+[<Fact>]
+let ``export icon must be large PNG artwork`` () =
+    let project = starter ()
+    let small = CustomAsset(Id = "icon-1", Name = "icon.png", Type = "art", DataUrl = "data:image/png;base64,AA==", Width = 128.0, Height = 128.0)
+    let withAsset = project |> apply (UpsertAsset small)
+    let settings = Records.withValue (Defaults.newExportSettings withAsset) "IconAssetId" (box small.Id)
+    let withIcon = withAsset |> apply (SetExportSettings(Some settings))
+    has "export.icon" withIcon |> ignore
+    let large = Records.withValues small [ ("Width", box 256.0); ("Height", box 256.0) ]
+    lacks "export.icon" (withIcon |> apply (UpsertAsset large))
+
+[<Fact>]
 let ``schema errors get JSON paths and targets`` () =
     Assert.Equal("scenes[0].tiles[1][2].background", Problems.jsonPath "scenes.0.tiles.1.2.background")
     Assert.Equal("settings.time.dayStartMinute", Problems.jsonPath "settings.time.dayStartMinute")

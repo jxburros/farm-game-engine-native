@@ -1,6 +1,8 @@
 # Export Game
 
-**Status:** decided, not started (September 2026). Export is built in phase 6
+**Status:** export settings, validation, a format 1 cartridge compiler and a
+headless Rust player are available (September 2026); no graphical desktop
+export yet. Export is built in phase 6
 of [LANGUAGES.md](LANGUAGES.md#phases), on the Rust player. This document
 covers what an exported game is. It also lists what the earlier phases must
 get right so that export works when it arrives.
@@ -106,9 +108,11 @@ when the template is built.
 ## Export settings
 
 Export settings live in the project, in a new optional `export` object. The
-field is additive and optional, so it doesn't bump the schema version. Before
-relying on it, confirm that the web version keeps unknown fields when it loads
-and saves a project (the native app does, through `[JsonExtensionData]`).
+field is additive and optional, so it doesn't bump the schema version. The
+web `GameProjectSchema` is `.passthrough()`, and native import and JSON
+round-trip tests preserve the block. `Defaults.newExportSettings` creates
+`gameId` once from the project id; later title changes leave it alone. The
+F# Problems pipeline validates the block and blocks export on errors.
 
 | Field | Example | Notes |
 |---|---|---|
@@ -123,7 +127,7 @@ and saves a project (the native app does, through `[JsonExtensionData]`).
 | `credits` | text | Shown on the credits screen. |
 | `targets` | `["windows-x64", "linux-x64"]` | The targets the creator exported last time. |
 
-Validation lives in F# `Authoring.Validation`, like every other check.
+Validation lives in F# `ChecksExport`, called by `Problems.collect`.
 
 ## What the player must include (phase 6)
 

@@ -88,6 +88,7 @@ module Document =
         | SetGamePanels panels -> EditContent.setGamePanels panels project
         | SetProjectInfo(name, version) -> EditProject.setProjectInfo name version project
         | SetSettings settings -> EditProject.setSettings settings project
+        | SetExportSettings settings -> EditProject.setExportSettings settings project
         | RemoveSeason seasonId -> EditProject.removeSeason seasonId project
         | SetGraphics graphics -> EditProject.setGraphics graphics project
         | SetPlayerVisual visual -> EditProject.setPlayerVisual visual project

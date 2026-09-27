@@ -105,6 +105,17 @@ dotnet run --project src/FarmingRpgMaker.App
 cargo test --workspace   # Rust engine tests, including the golden replays
 ```
 
+The F# command-line compiler can turn a validated project into a format 1
+cartridge for the Rust session:
+
+```sh
+dotnet run --project src/FarmEngine.Cli -- compile my-project.json --out game.cart
+```
+
+The Rust `farm-player` can load a cartridge and run a headless replay for
+validation; see [docs/PLAYER.md](docs/PLAYER.md). Its graphical shell and
+export packaging are still in progress.
+
 Everything builds and tests on Windows, macOS and Linux. The
 [CI workflow](.github/workflows/ci.yml) also publishes a self-contained
 `win-x64` build on every push.
@@ -121,11 +132,14 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `FarmingRpgMaker.Updates` | Update Center backend (Velopack + GitHub Releases) | — |
 | `FarmingRpgMaker.App` | Avalonia desktop app | `src/` (React app) |
 | `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustSession`) | — |
-| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems | `src/components/*` decisions, `packages/engine-schemas` |
+| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, cartridge compiler | `src/components/*` decisions, `packages/engine-schemas` |
 | `FarmEngine.Authoring.Net` (F#) | JSON I/O for the F# core (`System.Text.Json` edge) | — |
+| `FarmEngine.Cli` (F#) | `farmc compile` command-line cartridge builder | — |
 | `crates/farm-sim` (Rust) | Deterministic simulation, golden-verified | `packages/engine-core` |
 | `crates/farm-ffi` (Rust) | C ABI the app loads | — |
-| `crates/farm-cart` (Rust) | Save migrations and save files (header, id-based items); cartridge format later | `packages/engine-schemas/src/save.ts` |
+| `crates/farm-cart` (Rust) | Save migrations/files and verified cartridge reader | `packages/engine-schemas/src/save.ts` |
+| `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
+| `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.

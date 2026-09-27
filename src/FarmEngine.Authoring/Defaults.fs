@@ -43,6 +43,12 @@ module Defaults =
                 if taken.Contains candidate then go (n + 1) else candidate
             go 2
 
+    /// Create the export identity once when a creator enables desktop export. The persisted
+    /// game id uses the project id, so later edits to the display name cannot move saves.
+    let newExportSettings (project: GameProject) : ExportSettings =
+        ExportSettings(GameId = "local." + slugId project.Id Seq.empty "game",
+                       ExecutableName = slugId project.Name Seq.empty "game")
+
     /// Every id in the project, so a new id collides with nothing (web `creator-patterns.ts` `ids`).
     let allIds (project: GameProject) : seq<string> = Proj.allIds project :> seq<string>
 
