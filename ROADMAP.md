@@ -138,11 +138,12 @@ the most.
   by reference don't rebuild. Plugins get the Rust hook events through the
   existing Jint bridge. A scripted play with a plugin pack matches the C#
   engine after every step. A walking frame costs about 0.03 ms.
-- [ ] Port what the host still runs in C# during play: the overlay queries
-  (`FindDialogue`, `VisibleDialogueOptions`, `FindShop`,
-  `RemainingDailyStock`, `CraftableStatus`, `FacingTarget`) and the debug
-  drawer's skip day (`GameTime.PerformSleep`); then Edit Mode's preview,
-  then delete the C# engine projects.
+- [x] Play overlays ask Rust for dialogue, visible options, shop stock limits,
+  recipe availability, ingredients and facing tile in one batched query.
+  The debug drawer's skip day uses Rust's overnight pass. A scripted play
+  compares these results with the C# engine after every step.
+- [ ] Port Edit Mode's preview and remaining play-rule lookups, then delete
+  the C# engine projects.
 
 **Editor port (phase 5)**: map tools are now available as native views.
 - [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,

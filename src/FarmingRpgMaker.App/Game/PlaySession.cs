@@ -127,6 +127,9 @@ public sealed class PlaySession : IDisposable
     /// <summary>The live state (for Rust, a mirror refreshed after every command and tick batch).</summary>
     public GameState State => _engine.State;
 
+    /// <summary>Dialogue, shop and crafting availability computed by the running engine.</summary>
+    internal PlayOverlayView OverlayView() => _engine.OverlayView();
+
     public InputManager Input { get; } = new();
 
     /// <summary>Most plugin errors kept (oldest dropped first).</summary>
@@ -196,6 +199,18 @@ public sealed class PlaySession : IDisposable
         Guard(() =>
         {
             _engine.ReplaceState(transform(State, Context));
+            _prevPlayer = null;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    /// <summary>Advance one day using the running engine's overnight pass.</summary>
+    public void DebugSkipDay()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Guard(() =>
+        {
+            _engine.SkipDay();
             _prevPlayer = null;
             StateChanged?.Invoke(this, EventArgs.Empty);
         });

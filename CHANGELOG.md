@@ -2,6 +2,10 @@
 
 ## 0.2.0 (unreleased)
 
+- **Rust play queries.** Dialogue gates, shop stock limits, crafting
+  availability and facing tiles now come from the Rust play session in one
+  batched read. The debug drawer's Skip day action runs Rust's overnight pass
+  during Rust playtests. Both paths are checked against the C# engine.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player

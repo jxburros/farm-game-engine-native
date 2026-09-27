@@ -109,6 +109,26 @@ public sealed class RustSession : IDisposable
     /// <summary>The state copied into managed records (debug drawer, tests). Costs a JSON round trip.</summary>
     public GameState State() => JsonSerializer.Deserialize<GameState>(StateJson(), JsonDefaults.Options)!;
 
+    /// <summary>One read of the Rust rule queries used by the play overlays.</summary>
+    public string OverlayJson()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            return Check(NativeMethods.fe_session_overlay_json(_handle, &output), output, nameof(OverlayJson));
+        }
+    }
+
+    /// <summary>Creator debug action: run the overnight pass without a bed check.</summary>
+    public void SkipDay()
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            Check(NativeMethods.fe_session_skip_day(_handle, &output), output, nameof(SkipDay));
+        }
+    }
+
     /// <summary>The project with the live state written back (<c>applyStateToProject</c>).</summary>
     public GameProject SyncedProject()
     {
