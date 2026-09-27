@@ -1,4 +1,6 @@
 //! Inventory (port of `Inventory.cs` / inventory.ts). Pure list helpers: they return new lists.
+//!
+//! Pure inventory helpers. All return new lists; slots are copied on write.
 
 use crate::schema::{InventorySlot, Item};
 
@@ -15,6 +17,10 @@ pub struct AddItemOptions {
     pub require_stackable_for_merge: Option<bool>,
 }
 
+/// Add `quantity` of `item`. Mirrors the historical app semantics:
+/// an existing slot with the same item id absorbs the quantity (optionally
+/// only when the item is stackable); otherwise a new slot is appended if
+/// there is room.
 pub fn add_item(
     inventory: &[InventorySlot],
     item: &Item,
@@ -22,13 +28,77 @@ pub fn add_item(
     max_inventory_size: f64,
     options: Option<AddItemOptions>,
 ) -> AddItemResult {
-    let _ = (inventory, item, quantity, max_inventory_size, options);
-    todo!("port Inventory.AddItem")
+    let options = options.unwrap_or_default();
+    let index = inventory.iter().position(|slot| slot.item.id == item.id);
+    if let Some(index) = index {
+        if options.require_stackable_for_merge != Some(true) || inventory[index].item.stackable {
+            let slot = &inventory[index];
+            // Honor an authored stack cap (the item editor writes maxStack); items
+            // without one keep the historical unbounded-merge behavior.
+            // NOTE: Item.max_stack is a required number in the schema, so it is never
+            // "undefined"; the Option view keeps this branch valid if the schema ever
+            // makes it optional.
+            let cap: Option<f64> = Some(slot.item.max_stack);
+            if let Some(cap_value) = cap {
+                if slot.quantity + quantity > cap_value {
+                    let room_in_slot = (cap_value - slot.quantity).max(0.0);
+                    let overflow = quantity - room_in_slot;
+                    if inventory.len() as f64 >= max_inventory_size {
+                        // No room for an overflow slot: absorb what fits, reject the rest.
+                        if room_in_slot == 0.0 {
+                            return AddItemResult { inventory: inventory.to_vec(), added: false };
+                        }
+                        let capped = with_quantity_at(inventory, index, cap_value);
+                        return AddItemResult { inventory: capped, added: false };
+                    }
+                    let mut next = with_quantity_at(inventory, index, cap_value);
+                    next.push(InventorySlot { item: item.clone(), quantity: overflow });
+                    return AddItemResult { inventory: next, added: true };
+                }
+            }
+            let merged = with_quantity_at(inventory, index, slot.quantity + quantity);
+            return AddItemResult { inventory: merged, added: true };
+        }
+    }
+    if (inventory.len() as f64) < max_inventory_size {
+        let mut next = inventory.to_vec();
+        next.push(InventorySlot { item: item.clone(), quantity });
+        return AddItemResult { inventory: next, added: true };
+    }
+    AddItemResult { inventory: inventory.to_vec(), added: false }
 }
 
+/// TS `inventory.map((s, i) => i === index ? { ...s, quantity } : s)`.
+fn with_quantity_at(inventory: &[InventorySlot], index: usize, quantity: f64) -> Vec<InventorySlot> {
+    inventory
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| if i == index { InventorySlot { quantity, ..slot.clone() } } else { slot.clone() })
+        .collect()
+}
+
+/// Remove `quantity` of `item_id`, draining across EVERY slot holding it;
+/// deletes emptied slots. Multiple slots per item id can exist (stack caps,
+/// pack reconciliation), and `has_ingredients` counts across all of them —
+/// consuming from only the first slot allowed item duplication.
 pub fn remove_item(inventory: &[InventorySlot], item_id: &str, quantity: f64) -> Vec<InventorySlot> {
-    let _ = (inventory, item_id, quantity);
-    todo!("port Inventory.RemoveItem")
+    if !inventory.iter().any(|slot| slot.item.id == item_id) {
+        return inventory.to_vec();
+    }
+    let mut remaining_to_remove = quantity;
+    let mut next = Vec::new();
+    for slot in inventory {
+        if slot.item.id != item_id || remaining_to_remove <= 0.0 {
+            next.push(slot.clone());
+            continue;
+        }
+        let removed = slot.quantity.min(remaining_to_remove);
+        remaining_to_remove -= removed;
+        if slot.quantity > removed {
+            next.push(InventorySlot { quantity: slot.quantity - removed, ..slot.clone() });
+        }
+    }
+    next
 }
 
 pub fn find_slot(inventory: &[InventorySlot], predicate: impl Fn(&InventorySlot) -> bool) -> Option<&InventorySlot> {
@@ -36,11 +106,21 @@ pub fn find_slot(inventory: &[InventorySlot], predicate: impl Fn(&InventorySlot)
 }
 
 pub fn find_tool_slot<'a>(inventory: &'a [InventorySlot], tool_type: &str) -> Option<&'a InventorySlot> {
-    let _ = (inventory, tool_type);
-    todo!("port Inventory.FindToolSlot")
+    inventory.iter().find(|slot| slot.item.tool_type.as_deref() == Some(tool_type))
 }
 
+/// Replace the item object in the slot matching `item_id` (e.g. durability change).
 pub fn replace_item(inventory: &[InventorySlot], item_id: &str, item: &Item) -> Vec<InventorySlot> {
-    let _ = (inventory, item_id, item);
-    todo!("port Inventory.ReplaceItem")
+    inventory
+        .iter()
+        .map(
+            |slot| {
+                if slot.item.id == item_id {
+                    InventorySlot { item: item.clone(), ..slot.clone() }
+                } else {
+                    slot.clone()
+                }
+            },
+        )
+        .collect()
 }

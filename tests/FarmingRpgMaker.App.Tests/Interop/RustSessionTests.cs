@@ -31,7 +31,7 @@ public sealed class RustSessionTests
         Assert.Equal(expected, Hash.HashState(session.State()));
     }
 
-    [Fact(Skip = "Enable when the farm-sim gameplay port passes the golden replays")]
+    [Fact]
     public void AutoStartedQuestsMatchTheCSharpEngine()
     {
         if (!FarmFfi.IsAvailable)
@@ -62,10 +62,9 @@ public sealed class RustSessionTests
 
     /// <summary>
     /// Differential test (docs/LANGUAGES.md, phase 2): the same seeded random command stream
-    /// through both engines, hashes compared after every step. Enabled once the Rust gameplay
-    /// modules pass the golden replays.
+    /// through both engines, hashes compared after every step.
     /// </summary>
-    [Fact(Skip = "Enable when the farm-sim gameplay port passes the golden replays")]
+    [Fact]
     public void RandomCommandStreamsHashIdentically()
     {
         if (!FarmFfi.IsAvailable)
