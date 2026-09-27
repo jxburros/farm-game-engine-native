@@ -106,9 +106,19 @@ the most.
   file; `DefaultsTests.fs` was excluded). The cause was nullness checking in
   the tests; it is now off for the test project only, the whole project
   compiles in about 15 seconds and `DefaultsTests.fs` is back (68 F# tests).
-- [ ] Port `Migrations.cs`, `SchemaValidation.cs`, `Validation.cs`, `Packs`
-  merging and `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with
-  the `GameInfo` table; the deterministic cartridge compiler.
+- [x] Project migrations in F#: `Migrations.fs` (v1→v8 and exported games)
+  runs on a Fable-safe immutable JSON type (`Json.fs`) with JavaScript
+  semantics; `FarmEngine.Authoring.Net` converts to and from
+  `System.Text.Json` and still parses and validates the result with the C#
+  schema. Every migration golden passes, and a differential test agrees
+  with the C# `Migrations.MigrateProject` on 25 inputs, step by step (150 F#
+  tests). The app still calls the C# migrations; switch the callers next.
+- [ ] Port `SchemaValidation.cs`, `Validation.cs`, `Packs` merging and
+  `ContentBuiltin` to F#; FlatBuffers `cart.fbs`/`save.fbs` with the
+  `GameInfo` table; the deterministic cartridge compiler.
+- [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
+  the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
+  Fable-safe today).
 
 **Switch the app (phase 4)**
 - [ ] Play Mode runs `RustSession` instead of the C# engine; Edit Mode uses a
