@@ -93,4 +93,26 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fe_session_last_error")]
     public static partial FeResult fe_session_last_error(FeSession* session, FeBytes* output);
+
+    // ---- crates/farm-ffi/src/render.rs ------------------------------------------------------
+
+    /// <summary>Opaque Edit Mode preview handle (<c>FePreview*</c>).</summary>
+    public struct FePreview
+    {
+    }
+
+    [LibraryImport(Library, EntryPoint = "fe_render_json")]
+    public static partial FeResult fe_render_json(byte* request, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_preview_new")]
+    public static partial FeResult fe_preview_new(byte* projectJson, nuint len, FePreview** output, FeBytes* error);
+
+    [LibraryImport(Library, EntryPoint = "fe_preview_set_project")]
+    public static partial FeResult fe_preview_set_project(FePreview* preview, byte* projectJson, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_preview_render")]
+    public static partial FeResult fe_preview_render(FePreview* preview, byte* request, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_preview_free")]
+    public static partial void fe_preview_free(FePreview* preview);
 }
