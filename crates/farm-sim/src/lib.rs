@@ -10,7 +10,7 @@
 //! TypeScript engine hash identically here. The native-numerics switch (phase 7) replaces
 //! this with integer and fixed-point types.
 //!
-//! Layout mirrors `src/FarmEngine.Core` (docs/PORTING.md): the data shapes live in [`schema`],
+//! Layout mirrors the retired C# `FarmEngine.Core` (docs/PORTING.md): the data shapes live in [`schema`],
 //! the root modules are the engine files, and gameplay systems live in their folders
 //! (`farming`, …).
 #![forbid(unsafe_code)]

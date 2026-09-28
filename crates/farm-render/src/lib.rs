@@ -1,7 +1,7 @@
 //! `farm-render`: what the game world looks like, as data, plus a CPU rasterizer.
 //!
-//! This crate is the single implementation of *what to draw* for a game world (a port of the C#
-//! `FarmEngine.Rendering`). It never writes simulation state; rendering may use floats.
+//! This crate is the single implementation of *what to draw* for a game world (a port of the retired
+//! C# renderer). It never writes simulation state; rendering may use floats.
 //!
 //! The pipeline, per frame:
 //!

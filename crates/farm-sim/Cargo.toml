@@ -1,6 +1,6 @@
 [package]
 name = "farm-sim"
-description = "Deterministic farming-RPG simulation core (port of FarmEngine.Core / packages/engine-core)"
+description = "Deterministic farming-RPG simulation core (port of packages/engine-core)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

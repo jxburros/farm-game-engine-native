@@ -8,14 +8,13 @@ namespace FarmEngine.Interop;
 /// <summary>
 /// Stateless requests to the Rust renderer (<c>crates/farm-render</c> through
 /// <c>fe_render_json</c>): the decorated Edit Mode snapshot, and a PNG of any world snapshot.
-/// The snapshot JSON has the shape of <c>FarmEngine.Rendering.WorldSnapshot</c>.
+/// The snapshot JSON has the shape of <c>farm_render::WorldSnapshot</c>.
 /// </summary>
 public static class RustRender
 {
     /// <summary>
     /// The Edit Mode snapshot of <paramref name="sceneId"/> decorated with the project's art, as
-    /// JSON: what <c>EditModeView</c> builds with <c>ShellSnapshot.BuildEditorSnapshot</c> and
-    /// <c>Graphics.ApplyGraphics(snapshot, GraphicsSource.FromProject(project), scene, 0, false)</c>.
+    /// JSON (grid seams, the project's art at tick 0, nothing moving).
     /// </summary>
     public static string EditorSnapshotJson(GameProject project, string sceneId, double tileSize = 28, double padding = 12)
     {
@@ -27,7 +26,7 @@ public static class RustRender
 
     /// <summary>
     /// Rasterizes a world snapshot (JSON) with the Rust CPU renderer and returns PNG bytes of the
-    /// viewport at <paramref name="scale"/>, like <c>SkiaWorldRenderer.RenderToBitmap</c>.
+    /// viewport at <paramref name="scale"/>.
     /// </summary>
     public static byte[] RasterizePng(string snapshotJson, double scale = 1)
     {

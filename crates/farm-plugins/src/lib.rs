@@ -1,4 +1,4 @@
-//! `farm-plugins`: the plugin sandbox (port of `FarmEngine.Runtime/Plugins.cs`, itself a port
+//! `farm-plugins`: the plugin sandbox (port of the retired C# `Plugins.cs`, itself a port
 //! of the web `packages/engine-runtime/src/plugins.ts`).
 //!
 //! A plugin is JavaScript from a content pack. Its source is the body of `function (api)`, and

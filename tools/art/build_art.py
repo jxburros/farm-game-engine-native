@@ -6,7 +6,7 @@
     python3 tools/art/build_art.py --samples 8  # faster, noisier preview renders
 
 Writes `assets/builtin-art/{tiles,objects,characters}.png` and `manifest.json`
-(embedded by both `crates/farm-render` and `FarmEngine.Rendering`). Raw renders
+(embedded by `crates/farm-render`). Raw renders
 are cached in `tools/art/.cache/` (ignored by git). The generated PNGs are
 committed, so `cargo build` and `dotnet build` never need Python or Blender;
 this script is only for changing the art.
