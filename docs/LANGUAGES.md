@@ -161,6 +161,18 @@ what an exported game contains.
   compare by reference keep working. `fe_session_set_state` is the debug
   drawer's write path. Set `FARM_ENGINE=csharp` to play on the C# engine
   instead.
+- **Runtime views (phase 4).** `fe_session_runtime_json` accepts tagged JSON
+  requests for frame preparation, post-tick input polling, creator panels,
+  calendar views, sound cues, world snapshots and minigame interaction. The
+  frame split preserves command/tick/hook order: the host applies movement,
+  runs ticks, then polls one-shot commands against the new live state. Raw
+  keyboard events and frame time originate in C#; rules execute in Rust.
+  Minigame mounts return a generation token and a plain view. Input updates
+  that view and yields a score; the host records `resolveMinigame` once.
+  Cancellation, replacement and disposal invalidate old mounts. Cosmetic
+  randomness is supplied by the host and never consumes simulation RNG.
+  `farm-render` snapshots currently cross this same compatibility boundary;
+  C# still adds artwork bindings, interpolation/camera and transient pops.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
   next call on that session.

@@ -405,7 +405,8 @@ pub mod key_names {
 }
 
 /// What a play-mode frame's one-shot input asks the host to do (C# `PlayFrameInput`).
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlayFrameInput {
     /// Engine commands to run, in order.
     pub commands: Vec<Command>,

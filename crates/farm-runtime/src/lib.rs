@@ -9,6 +9,7 @@
 #![deny(clippy::disallowed_types, clippy::disallowed_methods)]
 
 pub mod audio;
+pub mod host;
 pub mod input;
 pub mod minigames;
 pub mod panels;

@@ -136,6 +136,23 @@ public sealed class RustSession : IDisposable
         }
     }
 
+    /// <summary>Send raw host input to Rust's runtime and copy its plain view model.</summary>
+    public T Runtime<T>(object request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonDefaults.Options);
+        unsafe
+        {
+            ObjectDisposedException.ThrowIf(_handle == null, this);
+            fixed (byte* ptr = bytes)
+            {
+                NativeMethods.FeBytes output;
+                var result = NativeMethods.fe_session_runtime_json(_handle, ptr, (nuint)bytes.Length, &output);
+                return JsonSerializer.Deserialize<T>(Check(result, output, nameof(Runtime)), JsonDefaults.Options)!;
+            }
+        }
+    }
+
     /// <summary>Creator debug action: run the overnight pass without a bed check.</summary>
     public void SkipDay()
     {
