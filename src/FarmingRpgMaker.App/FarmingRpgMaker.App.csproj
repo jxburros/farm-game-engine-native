@@ -18,6 +18,11 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- farm_ffi (the Rust engine, renderer and player) is built from crates inside farm-player's
+         dependency graph, so the player's notices cover it (tools/player-licenses). -->
+    <None Include="../../tools/player-licenses/THIRD-PARTY.txt" Link="licenses/THIRD-PARTY-rust.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Skia" />

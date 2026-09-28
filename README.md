@@ -1,15 +1,15 @@
 # Farming RPG Maker — native Windows app
 
 A native desktop rewrite of [Farming RPG Maker](https://github.com/jxburros/farm-game-engine),
-a 2D farming-RPG game engine and maker. The desktop UI uses C# on .NET 10,
-[Avalonia](https://avaloniaui.net) and Skia; project edits and validation use
-F#, and Play Mode uses Rust when available. There is no browser or web view
-inside. The app updates itself from GitHub Releases through the built-in
+a 2D farming-RPG game engine and maker. The game engine, renderer, in-game UI
+and player are Rust; project edits, validation, the content compiler and
+Export Game are F#; the editor's desktop UI is C# on .NET 10 with
+[Avalonia](https://avaloniaui.net). There is no browser or web view inside. The app updates itself from GitHub Releases through the built-in
 **Update Center**.
 
 | Play Mode | Edit Mode |
 |---|---|
-| ![Play Mode: HUD, toolbar, farm with planted wheat and toasts](docs/media/play-mode.png) | ![Edit Mode: scene map with tile brush and hover inspector](docs/media/edit-mode.png) |
+| ![Play Mode: the Rust player's HUD, a farm with planted wheat and toasts](docs/media/play-mode.png) | ![Edit Mode: scene map with tile brush and hover inspector](docs/media/edit-mode.png) |
 
 | Dialogue | Update Center |
 |---|---|
@@ -17,37 +17,31 @@ inside. The app updates itself from GitHub Releases through the built-in
 
 ## Status
 
-The simulation engine, sample games, runtime and Play Mode are ported. Edit
-Mode includes map painting and scene tools, content forms, project settings,
-Problems, mods, art (raster and SVG), creator patterns and interface panels.
-Content forms have nested editors, list rows and reference pickers; each
-nested field also has an Edit as JSON box. Projects move between the native and
+The port of the web version is complete. The simulation, runtime, renderer,
+in-game UI, plugin sandbox and game player run in Rust; the editor keeps its
+Avalonia UI and does its project work in F#. Edit Mode includes map painting
+and scene tools, content forms with nested editors and reference pickers,
+project and export settings, Problems, mods, art (raster and SVG), creator
+patterns and interface panels. Projects move between the native and
 [web version](https://github.com/jxburros/farm-game-engine) through the same
 schema v8 JSON format. See [ROADMAP.md](ROADMAP.md).
 
-**Moving to Rust and F#.** The simulation now also runs in Rust
-(`crates/farm-sim`) and passes every recorded session from the web version,
-along with save migrations (`crates/farm-cart`) and the runtime logic
-(`crates/farm-runtime`). Play Mode runs on the Rust engine (phase 4 of
-[docs/LANGUAGES.md](docs/LANGUAGES.md)), and projects open through the F#
-migrations. Building from source needs a Rust toolchain as well as .NET;
-without one, `dotnet build` still works, the Rust library is left out and
-Play Mode falls back to the C# engine.
+**One player, in the editor and in exported games.** Play Mode embeds the Rust
+game player (`crates/farm-player` with `crates/farm-ui`) through the C ABI:
+the world, HUD, dialogue, shops, crafting, inventory, quests, minigames and
+toasts look and behave exactly as they do in an exported game. Frames run on a
+worker thread, so plugins never stall the editor. The editor adds Restart,
+Keep changes and a debug drawer. Content-pack plugins run in `farm-plugins`, a
+QuickJS-in-WebAssembly sandbox with deterministic fuel budgets.
 
-Rust Play Mode also uses `farm-runtime` for frame timing, gameplay bindings,
-minigame scoring, creator panels, calendar views and sound cues. `farm-render`
-builds its world snapshots, including crop maturity and live NPC/animal views.
-Avalonia/Skia still draws the editor's Play Mode UI and artwork. Exported games
-run the graphical Rust player (`farm-player` with `farm-ui`); embedding it in
-Play Mode and a GPU renderer are still to come. Differential tests compare the
-runtime views and resulting game states with the C# reference.
+**F# authoring.** Project migrations, validation, the Problems pipeline,
+content compilation, pack composition, localization, the starter pack and the
+New Project templates are F#. `farmc` compiles a project into a deterministic
+cartridge and exports standalone games. The C# schema records remain the
+editor's data model.
 
-Content compilation, built-in authored definitions, pack composition and
-localization now run in F#. Editor content previews and cartridge exports use
-the same compiler. The authoring project no longer depends on the C# simulation
-assembly; it still uses the C# schema records during the migration.
-The starter pack and New Project templates also come from F#; the desktop
-app no longer references the legacy C# content project.
+Building from source needs a Rust toolchain as well as .NET: `dotnet build`
+builds the Rust library and the player templates too.
 
 **Looks like a game out of the box.** Sample games ship with a built-in
 pixel-art pack (tiles, crops, trees, machines, animals, walking characters)
@@ -57,7 +51,7 @@ creator binds still wins. The pack is generated by
 JSON manifest).
 
 **Same engine, proven.** The web version's TypeScript engine is the reference.
-[`tools/golden`](tools/golden) records play sessions from it, and the C# tests
+[`tools/golden`](tools/golden) records play sessions from it, and the Rust tests
 replay them and require every state hash to match byte for byte. The recorded
 sessions cover farming, weather, NPC schedules, events, shops, crafting, mines,
 fishing, content packs and plugins, 23 in all. Same seed + same inputs ⇒ the
@@ -94,7 +88,7 @@ with **Restart & install**. Other options:
 | Z | Sleep |
 | I · J · X | Inventory · Quests · Crafting |
 | 1–9 | Pick a dialogue option |
-| Esc | Close panel / dialogue / shop |
+| Esc | Close panel / dialogue / shop, else the pause menu |
 | F5 / F6 | Play / Edit mode |
 | Ctrl+Z / Ctrl+Y | Undo / redo (Edit Mode) |
 
@@ -146,8 +140,8 @@ dotnet run --project src/FarmingRpgMaker.App
 cargo test --workspace   # Rust engine tests, including the golden replays
 ```
 
-The F# command-line compiler can turn a validated project into a cartridge
-for the Rust session:
+The F# command-line compiler turns a validated project into a cartridge for
+the Rust player:
 
 ```sh
 dotnet run --project src/FarmEngine.Cli -- compile my-project.json --out game.cart
@@ -173,31 +167,27 @@ Everything builds and tests on Windows, macOS and Linux. The
 
 | Project | What it is | Ported from (web repo) |
 |---|---|---|
-| `FarmEngine.Schemas` | Data shapes, JSON, migrations, JS-semantics helpers | `packages/engine-schemas` |
-| `FarmEngine.Core` | Deterministic simulation (commands, ticks, all game systems) | `packages/engine-core` |
-| `FarmEngine.Content` | Legacy default pack and templates, retained as test references | `packages/content-default`, `src/lib/templates.ts` |
-| `FarmEngine.Runtime` | Fixed timestep, input, minigames, panels, audio, Jint plugin sandbox | `packages/engine-runtime` |
-| `FarmEngine.Rendering` | Skia world renderer, snapshots, camera | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts` |
+| `FarmEngine.Schemas` | The editor's data model: C# records, JSON, JS-semantics helpers, generated cartridge accessors | `packages/engine-schemas` |
 | `FarmingRpgMaker.Updates` | Update Center backend (Velopack + GitHub Releases) | — |
-| `FarmingRpgMaker.App` | Avalonia desktop app | `src/` (React app) |
-| `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustSession`) | — |
-| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, content/compiler, sample templates | `src/components/*` decisions, `packages/engine-schemas`, `packages/content-default`, `src/lib/templates.ts` |
+| `FarmingRpgMaker.App` | Avalonia desktop app: Edit Mode, Play Mode host, Export Game dialog | `src/` (React app) |
+| `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustPlayer`, `RustPreview`, `RustSession`) | — |
+| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, content compiler, packs, sample templates, cartridge compiler | `src/components/*` decisions, `packages/engine-schemas`, `packages/content-default`, `src/lib/templates.ts` |
 | `FarmEngine.Authoring.Net` (F#) | JSON I/O for the F# core (`System.Text.Json` edge) | — |
 | `FarmEngine.Export` (F#) | Export Game: player templates, Windows icon/version patching, folders and archives | — |
 | `FarmEngine.Cli` (F#) | `farmc compile` and `farmc export` | — |
 | `crates/farm-sim` (Rust) | Deterministic simulation, golden-verified | `packages/engine-core` |
-| `crates/farm-ffi` (Rust) | C ABI the app loads | — |
-| `crates/farm-cart` (Rust) | Save migrations/files and verified cartridge reader | `packages/engine-schemas/src/save.ts` |
+| `crates/farm-ffi` (Rust) | C ABI the app loads: the embedded player, map previews, headless sessions | — |
+| `crates/farm-cart` (Rust) | Cartridge reader, save files and save migrations | `packages/engine-schemas/src/save.ts` |
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
-| `crates/farm-player` (Rust) | The game player: window, game shell, saves, settings, audio, gamepads; headless replays and screenshots; the Export Game template | `packages/game-shell` |
+| `crates/farm-player` (Rust) | The game player: game shell, saves, settings, audio, gamepads, window; headless replays and screenshots; embedded in Play Mode and the Export Game template | `packages/game-shell` |
 | `crates/farm-ui` (Rust) | In-game UI on draw lists: HUD, dialogue, shop, crafting, inventory, quests, panels, minigames, the game shell's screens | `GameView.tsx` and its dialogs |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
-| `crates/farm-render` (Rust) | World snapshots, art decoration, draw lists, a CPU rasterizer and fonts; the app still draws with Skia | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts`, native `FarmEngine.Rendering` |
+| `crates/farm-render` (Rust) | World and Edit Mode snapshots, art decoration, built-in art, draw lists, a CPU rasterizer and fonts | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts` |
 | `crates/farm-plugins` (Rust) | Plugin sandbox: QuickJS in WebAssembly, one wasmi instance per plugin, fuel budgets | `packages/engine-runtime/src/plugins.ts` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
-[docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust
-and the project logic to F#, with C# keeping the desktop app.
+[docs/LANGUAGES.md](docs/LANGUAGES.md) describes the Rust / F# / C# split and
+what is left (phase 7: native numerics and the web version on the same core).
 [docs/EXPORT.md](docs/EXPORT.md) covers Export Game: standalone Windows and
 Linux games built on the native player.
 

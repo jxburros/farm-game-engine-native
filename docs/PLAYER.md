@@ -1,8 +1,8 @@
 # The game player
 
 `farm-player` runs a compiled `game.cart`. It is the program inside every
-exported game ([EXPORT.md](EXPORT.md)), and the same player will run the
-editor's Play Mode through `farm-ffi`. It has three faces:
+exported game ([EXPORT.md](EXPORT.md)), and the same player runs the editor's
+Play Mode through `farm-ffi` ([below](#in-the-editor)). It has three faces:
 
 - **The game.** `farm-player` opens a window with a title screen, save slots,
   a pause menu, settings and credits around the game. Keyboard, mouse and
@@ -181,7 +181,32 @@ loop {
 
 The crate's `desktop` feature (on by default) adds the window: winit and
 softbuffer, gilrs gamepads, cpal audio and the user folders. farm-ffi and the
-WebAssembly build use the library without it.
+WebAssembly build use the library without it; farm-ffi turns on `audio-out`
+alone (cpal through `speaker::SpeakerThread`, which keeps the stream on its own
+thread so the player can move between threads).
+
+## In the editor
+
+Play Mode embeds an `Embedded` player through `fe_player_*`
+(`crates/farm-ffi/src/player.rs`, `RustPlayer` in `FarmEngine.Interop`):
+
+- `fe_player_new` takes the project JSON (or a cartridge) and
+  `{seed, reducedMotion, uiScale, audio}`.
+- `fe_player_frame` takes `{dt, events, width, height, render}` and returns
+  the frame size, a small JSON block (sounds, requests, screen, whether a
+  panel or modal is open) and the premultiplied RGBA pixels.
+- `fe_player_debug` runs the debug drawer's actions (`DebugAction`),
+  `fe_player_synced_project` is "keep changes", and `fe_player_query_json`
+  answers the drawer's summary, widget rectangles, toasts and plugin errors
+  (the last three for tests).
+- An engine failure or panic poisons the handle: every later call fails, and
+  the editor ends the playtest without keeping changes.
+
+`PlayModeView` renders at the surface's device pixels (at most 1920×1200;
+larger surfaces are scaled up), maps Avalonia keys to the engine's key names
+and pointer positions to frame pixels, and runs each frame on a worker thread
+under one lock, so plugin hooks never block the editor. Editor shortcuts
+(Ctrl/Alt combinations, F5/F6) stay with the editor.
 
 ## How a frame is drawn
 

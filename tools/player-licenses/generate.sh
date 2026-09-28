@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates THIRD-PARTY.txt: the license notices for the Rust crates in farm-player.
 # Every player template ships this file, and Export Game copies it to
-# licenses/THIRD-PARTY.txt in each exported game (docs/EXPORT.md).
+# licenses/THIRD-PARTY.txt in each exported game (docs/EXPORT.md). The editor ships it too, as
+# licenses/THIRD-PARTY-rust.txt: farm-ffi is built from crates inside farm-player's graph.
 #
 # Needs cargo-about (cargo install cargo-about --locked --features cli).
 # Run it after changing farm-player's dependencies and commit the result.
