@@ -22,7 +22,7 @@ exclude = ["crates/farm-plugin-guest"]
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/jxburros/farm-game-engine-native"
 publish = false
