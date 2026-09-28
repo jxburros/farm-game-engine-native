@@ -99,6 +99,29 @@ public sealed class RustPreview : IDisposable
         }
     }
 
+    /// <summary>
+    /// One frame of a visual binding of the project, resolved as the game resolves it (clip and
+    /// frame at <paramref name="tick"/>, facing <paramref name="direction"/>), fitted into a
+    /// <paramref name="size"/>-pixel square. A 0×0 frame when the binding resolves to nothing.
+    /// </summary>
+    public PreviewFrame RenderVisual(VisualRef? visual, double tick, double size, double scale = 1, string direction = "down", bool moving = true)
+    {
+        var request = JsonSerializer.SerializeToUtf8Bytes(new { visual, tick, size, scale, direction, moving }, JsonDefaults.Options);
+        unsafe
+        {
+            ObjectDisposedException.ThrowIf(_handle == null, this);
+            fixed (byte* ptr = request)
+            {
+                NativeMethods.FeBytes output;
+                var result = NativeMethods.fe_preview_render_visual(_handle, ptr, (nuint)request.Length, &output);
+                var bytes = Check(result, RustRender.TakeBytes(output), nameof(RenderVisual));
+                var width = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
+                var height = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
+                return new PreviewFrame(width, height, bytes[8..]);
+            }
+        }
+    }
+
     public void Dispose()
     {
         unsafe

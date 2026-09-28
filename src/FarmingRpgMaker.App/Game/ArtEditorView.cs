@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FarmEngine.Authoring;
-using FarmEngine.Rendering;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -19,6 +18,7 @@ public sealed class ArtEditorView : UserControl
     private readonly DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private readonly ListBox _assets = new() { Name = "ArtAssets", MinHeight = 130 };
     private readonly Border _preview = new() { Name = "ArtPreview", Width = 140, Height = 140 };
+    private readonly VisualPreview _art = new();
     private readonly TextBlock _message = Ui.Wrapped("Import an image to start.", "muted", "small");
     private readonly TextBox _assetName = new() { Name = "ArtAssetName" };
     private readonly ComboBox _clips = new() { Name = "ArtClips" };
@@ -153,6 +153,7 @@ public sealed class ArtEditorView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _previewTimer.Stop();
+        _art.Dispose();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -275,8 +276,8 @@ public sealed class ArtEditorView : UserControl
         var project = _workspace.Current;
         if (asset is null || project is null) { _preview.Child = null; return; }
         var visual = new VisualRef { AssetId = asset.Id, Animation = (_clips.SelectedItem as ComboBoxItem)?.Tag as string };
-        var sprite = Graphics.ResolveVisual(project.CustomAssets, visual, _tick);
-        _preview.Child = sprite is null ? null : SpriteImage.Create(sprite, project.Graphics?.PixelArt != false);
+        // The Rust renderer resolves and draws the frame, exactly as the game will show it.
+        _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
     }
 
     private void RefreshFrames()

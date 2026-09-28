@@ -68,6 +68,35 @@ struct PreviewRequest {
     scale: f64,
 }
 
+/// `{visual?, tick, direction, moving, size, scale}` for [`fe_preview_render_visual`].
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VisualRequest {
+    #[serde(default)]
+    visual: Option<farm_sim::schema::VisualRef>,
+    #[serde(default)]
+    tick: f64,
+    #[serde(default = "default_direction")]
+    direction: String,
+    #[serde(default = "default_moving")]
+    moving: bool,
+    /// The square the frame is fitted into, in logical pixels.
+    size: f64,
+    #[serde(default = "default_scale")]
+    scale: f64,
+}
+
+fn default_direction() -> String {
+    "down".to_owned()
+}
+
+fn default_moving() -> bool {
+    true
+}
+
+/// Largest side of a visual preview.
+const MAX_VISUAL_SIZE: f64 = 1024.0;
+
 /// The Edit Mode snapshot of a scene decorated with the project's art, as `EditModeView` does:
 /// `BuildEditorSnapshot` then `ApplyGraphics(snapshot, FromProject(project), scene, 0, false)`.
 fn decorated_editor_snapshot(
@@ -237,6 +266,63 @@ impl FePreview {
     }
 }
 
+impl FePreview {
+    /// One frame of a visual binding, resolved exactly as the game resolves it (clip, frame at
+    /// `tick`, direction), scaled to fit `size` and centered. An empty frame (0×0) when the
+    /// binding resolves to nothing.
+    fn render_visual(&mut self, request: &VisualRequest) -> Result<Vec<u8>, String> {
+        let scale = check_scale(request.scale)?;
+        if !request.size.is_finite() || request.size < 1.0 || request.size > MAX_VISUAL_SIZE {
+            return Err(format!("Visual size must be in [1, {MAX_VISUAL_SIZE}], got {}.", request.size));
+        }
+        let tick = if request.tick.is_finite() { request.tick } else { 0.0 };
+        let sprite = farm_render::resolve_visual(
+            &self.graphics.assets,
+            request.visual.as_ref(),
+            tick,
+            &request.direction,
+            request.moving,
+        );
+        let frame = sprite.and_then(|sprite| {
+            let image = self.renderer.images.get_shared(&sprite.image_url)?;
+            let (image_width, image_height) = self.renderer.images.size(image)?;
+            let (image_width, image_height) = (f64::from(image_width), f64::from(image_height));
+            let width = if sprite.frame_width > 0.0 { sprite.frame_width } else { image_width };
+            let height = if sprite.frame_height > 0.0 { sprite.frame_height } else { image_height };
+            let x = sprite.source_x.unwrap_or(sprite.frame * width);
+            let y = sprite.source_y.unwrap_or(sprite.row * height);
+            let inside = x >= 0.0 && y >= 0.0 && x + width <= image_width && y + height <= image_height;
+            (inside && width > 0.0 && height > 0.0).then_some((image, x, y, width, height))
+        });
+        let Some((image, x, y, width, height)) = frame else {
+            return Ok(vec![0; 8]);
+        };
+        let side = request.size;
+        let fit = (side / width).min(side / height);
+        let (w, h) = (width * fit, height * fit);
+        let mut list = farm_render::DrawList::new();
+        list.push(farm_render::DrawCmd::Image {
+            image,
+            src: farm_render::Rect::new(x as f32, y as f32, width as f32, height as f32),
+            dst: farm_render::Rect::new(((side - w) / 2.0) as f32, ((side - h) / 2.0) as f32, w as f32, h as f32),
+            opacity: 1.0,
+            sampling: if self.graphics.pixel_art {
+                farm_render::Sampling::Nearest
+            } else {
+                farm_render::Sampling::Smooth
+            },
+            tint: None,
+        });
+        let pixels = (side * f64::from(scale)).ceil() as u32;
+        let pixmap = self.renderer.rasterizer.render_to_pixmap(&list, &self.renderer.images, pixels, pixels, scale);
+        let mut out = Vec::with_capacity(8 + pixmap.data().len());
+        out.extend_from_slice(&pixmap.width().to_le_bytes());
+        out.extend_from_slice(&pixmap.height().to_le_bytes());
+        out.extend_from_slice(pixmap.data());
+        Ok(out)
+    }
+}
+
 fn parse_project(bytes: &[u8]) -> Result<GameProject, String> {
     serde_json::from_slice(bytes).map_err(|e| format!("project JSON: {e}"))
 }
@@ -359,6 +445,30 @@ pub unsafe extern "C" fn fe_preview_render(
     with_preview(preview, out, |preview| {
         let request: PreviewRequest = serde_json::from_slice(bytes).map_err(|e| format!("preview request: {e}"))?;
         preview.render(&request)
+    })
+}
+
+/// Renders one frame of a visual binding of the previewed project (the art studio's preview):
+/// `request` is `{"visual":{"assetId":…,"animation"?:…,"frame"?:…}|null,"tick":0,
+/// "direction":"down","moving":true,"size":96,"scale":1}`. `out` receives the width and height
+/// as little-endian `u32`s and the premultiplied RGBA8 pixels; 0×0 when nothing resolves.
+///
+/// # Safety
+/// `preview` from [`fe_preview_new`]; `request` points to `len` bytes; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_preview_render_visual(
+    preview: *mut FePreview,
+    request: *const u8,
+    len: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    let Some(bytes) = bytes_arg(request, len) else {
+        write_empty(out);
+        return FeResult::InvalidArgument;
+    };
+    with_preview(preview, out, |preview| {
+        let request: VisualRequest = serde_json::from_slice(bytes).map_err(|e| format!("visual request: {e}"))?;
+        preview.render_visual(&request)
     })
 }
 
@@ -492,5 +602,60 @@ mod tests {
         assert_eq!(String::from_utf8(message).unwrap(), "Scene missing not found.");
         unsafe { fe_preview_free(preview) };
         unsafe { fe_preview_free(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn previews_render_one_frame_of_a_visual_binding() {
+        // A 4×2 sheet: two 2×2 frames, red then blue.
+        let mut sheet = farm_render::tiny_skia::Pixmap::new(4, 2).unwrap();
+        for (i, pixel) in sheet.pixels_mut().iter_mut().enumerate() {
+            let blue = i % 4 >= 2;
+            *pixel = farm_render::tiny_skia::PremultipliedColorU8::from_rgba(
+                if blue { 0 } else { 255 },
+                0,
+                if blue { 255 } else { 0 },
+                255,
+            )
+            .unwrap();
+        }
+        let png = farm_render::encode_png(&sheet);
+        let mut project: serde_json::Value = serde_json::from_str(&starter_project()).unwrap();
+        project["customAssets"] = serde_json::json!([{
+            "id": "art-sheet", "name": "sheet.png", "type": "art", "width": 4, "height": 2,
+            "dataUrl": format!("data:image/png;base64,{}", farm_cart::cartridge::base64_encode(&png)),
+            "animations": [{"name": "idle", "loop": true, "frames": [
+                {"x": 0, "y": 0, "width": 2, "height": 2, "ticks": 10},
+                {"x": 2, "y": 0, "width": 2, "height": 2, "ticks": 10}
+            ]}]
+        }]);
+        let project = project.to_string();
+        let mut preview: *mut FePreview = std::ptr::null_mut();
+        let mut error = FeBytes::empty();
+        let result = unsafe { fe_preview_new(project.as_ptr(), project.len(), &mut preview, &mut error) };
+        assert_eq!(result, FeResult::Ok, "{}", String::from_utf8_lossy(&unsafe { take(error) }));
+        let render = |request: &str| {
+            let mut out = FeBytes::empty();
+            let result = unsafe { fe_preview_render_visual(preview, request.as_ptr(), request.len(), &mut out) };
+            (result, unsafe { take(out) })
+        };
+        let center = |frame: &[u8]| {
+            let width = u32::from_le_bytes(frame[0..4].try_into().unwrap()) as usize;
+            let at = 8 + ((width / 2) * width + width / 2) * 4;
+            (frame[at], frame[at + 2])
+        };
+
+        let (result, first) = render(r#"{"visual":{"assetId":"art-sheet"},"tick":0,"size":16}"#);
+        assert_eq!(result, FeResult::Ok, "{}", String::from_utf8_lossy(&first));
+        assert_eq!(&first[0..8], &[16, 0, 0, 0, 16, 0, 0, 0]);
+        assert_eq!(center(&first), (255, 0), "tick 0 shows the red frame");
+        let (_, second) = render(r#"{"visual":{"assetId":"art-sheet"},"tick":12,"size":16}"#);
+        assert_eq!(center(&second), (0, 255), "tick 12 shows the blue frame");
+
+        let (result, none) = render(r#"{"visual":{"assetId":"missing"},"size":16}"#);
+        assert_eq!(result, FeResult::Ok);
+        assert_eq!(none, vec![0; 8]);
+        let (result, _) = render(r#"{"visual":null,"size":0}"#);
+        assert_eq!(result, FeResult::InvalidArgument);
+        unsafe { fe_preview_free(preview) };
     }
 }

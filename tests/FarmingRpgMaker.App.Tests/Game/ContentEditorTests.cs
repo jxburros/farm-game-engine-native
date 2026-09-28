@@ -166,6 +166,10 @@ public sealed class ContentEditorTests
         Press(host, "SliceArtButton");
         asset = Assert.Single(host.Workspace.Current.CustomAssets);
         Assert.Equal(2, Assert.Single(asset.Animations!).Frames.Count);
+        // The Rust renderer draws the preview frame (a 16×16 frame fitted into the 140px box).
+        var preview = FindByName<Border>(host.Window, "ArtPreview");
+        var shown = Assert.IsType<Image>(preview.Child);
+        Assert.Equal(new Avalonia.PixelSize(140, 140), Assert.IsAssignableFrom<Avalonia.Media.Imaging.Bitmap>(shown.Source).PixelSize);
 
         Press(host, "BindArtButton");
         Assert.Equal(asset.Id, host.Workspace.Current.PlayerVisual?.AssetId);

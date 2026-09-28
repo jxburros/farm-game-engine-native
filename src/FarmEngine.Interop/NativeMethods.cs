@@ -113,6 +113,9 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "fe_preview_render")]
     public static partial FeResult fe_preview_render(FePreview* preview, byte* request, nuint len, FeBytes* output);
 
+    [LibraryImport(Library, EntryPoint = "fe_preview_render_visual")]
+    public static partial FeResult fe_preview_render_visual(FePreview* preview, byte* request, nuint len, FeBytes* output);
+
     [LibraryImport(Library, EntryPoint = "fe_preview_free")]
     public static partial void fe_preview_free(FePreview* preview);
 }
