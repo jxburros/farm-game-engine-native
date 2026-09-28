@@ -29,6 +29,7 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
         OpenProjectCommand = ProjectCommand(() => _projectCommands.OpenProjectAsync(this));
         ImportProjectJsonCommand = ProjectCommand(() => _projectCommands.ImportProjectJsonAsync(this));
         ExportProjectJsonCommand = ProjectCommand(() => _projectCommands.ExportProjectJsonAsync(this));
+        ExportGameCommand = ProjectCommand(() => _projectCommands.ExportGameAsync(this));
         ExitCommand = new RelayCommand(() => ExitRequested?.Invoke(this, EventArgs.Empty));
         PlayModeCommand = new RelayCommand(() => Mode = EditorMode.Play);
         EditModeCommand = new RelayCommand(() => Mode = EditorMode.Edit);
@@ -121,6 +122,9 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
     public AsyncRelayCommand ImportProjectJsonCommand { get; }
 
     public AsyncRelayCommand ExportProjectJsonCommand { get; }
+
+    /// <summary>File → Export Game… (standalone Windows and Linux builds).</summary>
+    public AsyncRelayCommand ExportGameCommand { get; }
 
     public RelayCommand ExitCommand { get; }
 

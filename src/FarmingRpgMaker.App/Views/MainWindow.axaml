@@ -14,6 +14,7 @@
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
     <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+E" Command="{Binding ExportGameCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding PlayModeCommand}" />
     <KeyBinding Gesture="F6" Command="{Binding EditModeCommand}" />
   </Window.KeyBindings>
@@ -26,6 +27,8 @@
         <Separator />
         <MenuItem Header="_Import Project JSON…" Command="{Binding ImportProjectJsonCommand}" />
         <MenuItem Header="_Export Project JSON…" Command="{Binding ExportProjectJsonCommand}" />
+        <Separator />
+        <MenuItem Name="ExportGameMenuItem" Header="Export _Game…" InputGesture="Ctrl+Shift+E" Command="{Binding ExportGameCommand}" />
         <Separator />
         <MenuItem Header="E_xit" InputGesture="Alt+F4" Command="{Binding ExitCommand}" />
       </MenuItem>

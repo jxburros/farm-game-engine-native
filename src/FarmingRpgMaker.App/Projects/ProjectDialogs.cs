@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using FarmEngine.Authoring;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
+using FarmingRpgMaker.App.ViewModels;
 
 namespace FarmingRpgMaker.App.Projects;
 
@@ -28,6 +29,12 @@ public interface IProjectDialogs
     Task<string?> SaveExportAsync(IShellHost shell, string suggestedFileName, string json);
 
     Task ShowErrorsAsync(IShellHost shell, string title, IReadOnlyList<string> errors);
+
+    /// <summary>Asks for a folder (starting at <paramref name="startFolder"/> when given). Null when cancelled.</summary>
+    Task<string?> PickFolderAsync(IShellHost shell, string title, string? startFolder);
+
+    /// <summary>Shows the Export Game dialog over <paramref name="viewModel"/> until it closes.</summary>
+    Task ShowExportGameAsync(IShellHost shell, ExportGameViewModel viewModel);
 }
 
 /// <summary>Avalonia implementation: modal windows + the platform file pickers.</summary>
@@ -105,6 +112,33 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
         await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
         await writer.WriteAsync(json).ConfigureAwait(true);
         return file.Name;
+    }
+
+    public async Task<string?> PickFolderAsync(IShellHost shell, string title, string? startFolder)
+    {
+        if (shell.TopLevel?.StorageProvider is not { CanPickFolder: true } storage)
+        {
+            return null;
+        }
+
+        var start = startFolder is null ? null : await storage.TryGetFolderFromPathAsync(startFolder).ConfigureAwait(true);
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            SuggestedStartLocation = start,
+        }).ConfigureAwait(true);
+        return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
+    }
+
+    public async Task ShowExportGameAsync(IShellHost shell, ExportGameViewModel viewModel)
+    {
+        if (shell.TopLevel is not Window owner)
+        {
+            return;
+        }
+
+        await new ExportGameWindow(viewModel).ShowDialog(owner).ConfigureAwait(true);
     }
 
     public async Task ShowErrorsAsync(IShellHost shell, string title, IReadOnlyList<string> errors)

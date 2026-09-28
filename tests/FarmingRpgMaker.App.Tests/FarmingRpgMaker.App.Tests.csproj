@@ -29,5 +29,7 @@
     <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../FarmEngine.Core.Tests/Fixtures/project-v1.json" Link="Fixtures/project-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../FarmEngine.Core.Tests/Fixtures/demo-mod.json" Link="Fixtures/demo-mod.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- A tiny Windows program with the player template's placeholder resources (see that folder's build.sh). -->
+    <None Include="../FarmEngine.Export.Tests/Fixtures/pe/player-fixture.exe" Link="Fixtures/player-fixture.exe" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

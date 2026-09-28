@@ -54,7 +54,7 @@ public sealed class MainWindowTests
         Assert.Equal(["_File", "_Game", "_Help"], headers);
 
         var file = menu.Items.OfType<MenuItem>().First().Items.OfType<MenuItem>().Select(m => m.Header as string);
-        Assert.Equal(["_New Project", "_Open Project…", "_Import Project JSON…", "_Export Project JSON…", "E_xit"], file);
+        Assert.Equal(["_New Project", "_Open Project…", "_Import Project JSON…", "_Export Project JSON…", "Export _Game…", "E_xit"], file);
         var help = menu.Items.OfType<MenuItem>().Last().Items.OfType<MenuItem>().Select(m => m.Header as string);
         Assert.Equal(["_Update Center…", "_About Farming RPG Maker"], help);
     }
@@ -186,5 +186,7 @@ public sealed class MainWindowTests
         }
 
         public Task ExportProjectJsonAsync(IShellHost shell) => Task.CompletedTask;
+
+        public Task ExportGameAsync(IShellHost shell) => Task.CompletedTask;
     }
 }
