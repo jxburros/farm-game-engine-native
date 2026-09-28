@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -278,5 +279,182 @@ public sealed class WorkspaceTests
         host.Workspace.Undo();
         Press("DeleteSceneButton");
         Assert.DoesNotContain(host.Workspace.Current.Scenes, s => s.Id == copyId);
+    }
+    private static void ClickTile(GameTestHost host, int x, int y)
+    {
+        var edit = host.Surface.EditView;
+        var point = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(x, y).Center, host.Window)!.Value;
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, point, MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, point, MouseButton.Left);
+        Pump();
+    }
+
+    [AvaloniaFact]
+    public void EditMode_PlaceToolsPutContentOnTheMap_AndRemoveClearsIt()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var sceneId = edit.SceneId!;
+        FarmEngine.Schemas.Tile TileAt(int x, int y) => host.Workspace.Current!.Scenes.First(s => s.Id == sceneId).Tiles[y][x];
+        var picker = FindByName<ComboBox>(host.Window, "PlaceChoice");
+        Assert.False(picker.IsEnabled);
+
+        FindByName<ToggleButton>(host.Window, "Tool_PlaceNode").RaiseEvent(new RoutedEventArgs(ToggleButton.ClickEvent));
+        Assert.Equal(MapTool.PlaceNode, edit.Tool);
+        Assert.True(picker.IsEnabled);
+        Assert.Contains(picker.Items.OfType<ComboBoxItem>(), item => Equals(item.Tag, "node-rock"));
+        edit.PlaceChoice = "node-rock";
+        ClickTile(host, 5, 5);
+        Assert.Equal("node-rock", TileAt(5, 5).Node?.TypeId);
+        Assert.Contains("node node-rock", edit.DescribeTile(5, 5), StringComparison.Ordinal);
+        host.Workspace.Undo();
+        Assert.Null(TileAt(5, 5).Node);
+        host.Workspace.Redo();
+
+        edit.Tool = MapTool.PlaceItem;
+        edit.PlaceChoice = "material-wood";
+        ClickTile(host, 6, 5);
+        Assert.Equal("material-wood", TileAt(6, 5).Item?.Id);
+
+        edit.Tool = MapTool.PlaceMachine;
+        edit.PlaceChoice = "machine-kitchen";
+        ClickTile(host, 7, 5);
+        Assert.Equal("machine-kitchen", TileAt(7, 5).Machine?.TypeId);
+
+        edit.Tool = MapTool.PlaceNpc;
+        edit.PlaceChoice = "npc-farmer";
+        ClickTile(host, 4, 4);
+        var farmer = host.Workspace.Current!.Npcs.First(n => n.Id == "npc-farmer");
+        Assert.Equal((sceneId, 4.0, 4.0), (farmer.SceneId, farmer.X, farmer.Y));
+
+        // Each Place tool remembers its own choice.
+        edit.Tool = MapTool.PlaceItem;
+        Assert.Equal("material-wood", edit.PlaceChoice);
+
+        var species = host.Workspace.Current.AnimalSpecies[0];
+        var existing = host.Workspace.Current.Animals.Select(a => a.Id).ToHashSet();
+        edit.Tool = MapTool.PlaceAnimal;
+        edit.PlaceChoice = species.Id;
+        ClickTile(host, 5, 5);
+        ClickTile(host, 8, 5);
+        var animals = host.Workspace.Current!.Animals.Where(a => !existing.Contains(a.Id)).ToList();
+        Assert.Equal(2, animals.Count);
+        Assert.All(animals, a => Assert.Equal((sceneId, species.Id), (a.SceneId, a.SpeciesId)));
+        Assert.Contains($"animal {species.Name}", edit.DescribeTile(5, 5), StringComparison.Ordinal);
+        Assert.Contains($"{species.Name} (8, 5)", AllVisibleText(FindByName<StackPanel>(host.Window, "SceneAnimals")), StringComparison.Ordinal);
+
+        // Remove clears the tile: node and the animal on it; the NPC list is untouched.
+        edit.Tool = MapTool.Remove;
+        ClickTile(host, 5, 5);
+        Assert.Null(TileAt(5, 5).Node);
+        Assert.DoesNotContain(host.Workspace.Current!.Animals, a => a.Id == animals[0].Id);
+        Assert.Contains(host.Workspace.Current.Animals, a => a.Id == animals[1].Id);
+        host.Workspace.Undo();
+        Assert.NotNull(TileAt(5, 5).Node);
+        Assert.Contains(host.Workspace.Current!.Animals, a => a.Id == animals[0].Id);
+
+        // Placed animals are listed for the scene and can be removed from the side panel.
+        FindByName<Button>(host.Window, $"RemoveAnimal_{animals[1].Id}").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Pump();
+        Assert.DoesNotContain(host.Workspace.Current!.Animals, a => a.Id == animals[1].Id);
+        Assert.Null(TryFindByName<Button>(host.Window, $"RemoveAnimal_{animals[1].Id}"));
+    }
+
+    [AvaloniaFact]
+    public void EditMode_PickToolTakesTheTileTypeAsTheBrush()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        edit.Brush = "water";
+        ClickTile(host, 2, 2);
+
+        Click(host.Window, FindByName<ToggleButton>(host.Window, "Tool_Pick"));
+        ClickTile(host, 0, 0);
+        Assert.Equal("wall", edit.Brush);
+        Assert.Equal(MapTool.Brush, edit.Tool);
+        Assert.Equal(Edits.LayerFor("wall"), edit.Layer);
+        Assert.Equal("wall", host.Workspace.Current!.SelectedTileType);
+        Assert.True(FindByName<ToggleButton>(host.Window, "Brush_wall").IsChecked);
+
+        edit.Tool = MapTool.Pick;
+        ClickTile(host, 2, 2);
+        Assert.Equal("water", edit.Brush);
+        Assert.Equal("water", host.Workspace.Current!.SelectedTileType);
+    }
+
+    [AvaloniaFact]
+    public void EditMode_ListsTransitions_AndClearsThemAll()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var farmId = edit.SceneId!;
+        void Press(string name) => FindByName<Button>(host.Window, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+        FindByName<TextBox>(host.Window, "SceneName").Text = "Pond";
+        FindByName<TextBox>(host.Window, "SceneWidth").Text = "6";
+        FindByName<TextBox>(host.Window, "SceneHeight").Text = "5";
+        var tile = FindByName<ComboBox>(host.Window, "NewSceneTile");
+        Assert.Equal("grass", (tile.SelectedItem as ComboBoxItem)?.Tag);
+        tile.SelectedItem = tile.Items.OfType<ComboBoxItem>().First(item => Equals(item.Tag, "water"));
+        Press("AddSceneButton");
+        Pump();
+        var pondId = edit.SceneId!;
+        var pond = host.Workspace.Current!.Scenes.First(s => s.Id == pondId);
+        Assert.All(pond.Tiles, row => Assert.All(row, t => Assert.Equal("water", t.Type)));
+
+        edit.SelectScene(farmId);
+        Assert.Equal("0 transition(s) from this scene", FindByName<TextBlock>(host.Window, "TransitionCount").Text);
+        Assert.False(FindByName<Button>(host.Window, "ClearTransitionsButton").IsEnabled);
+        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId) with { FromX = 3, FromY = 4, ToX = 1, ToY = 2 }));
+        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId) with { FromX = 5, FromY = 4 }));
+        Pump();
+        Assert.Equal("2 transition(s) from this scene", FindByName<TextBlock>(host.Window, "TransitionCount").Text);
+        Assert.Equal("(3, 4) → Pond (1, 2)", FindByName<Button>(host.Window, "Transition_0").Content);
+
+        // A click on a listed transition opens it in the door form.
+        Press("Transition_0");
+        Assert.Equal(MapTool.Door, edit.Tool);
+        Assert.Contains("(3, 4)", FindByName<TextBlock>(host.Window, "DoorFrom").Text, StringComparison.Ordinal);
+        Assert.Equal("1", FindByName<TextBox>(host.Window, "DoorX").Text);
+        Assert.Equal("2", FindByName<TextBox>(host.Window, "DoorY").Text);
+        Assert.True(FindByName<Button>(host.Window, "RemoveDoorButton").IsEnabled);
+
+        Press("ClearTransitionsButton");
+        Pump();
+        Assert.Empty(host.Workspace.Current!.Scenes.First(s => s.Id == farmId).Transitions);
+        Assert.Null(TryFindByName<Button>(host.Window, "Transition_0"));
+        host.Workspace.Undo();
+        Pump();
+        Assert.Equal(2, host.Workspace.Current!.Scenes.First(s => s.Id == farmId).Transitions.Count);
+        Assert.NotNull(TryFindByName<Button>(host.Window, "Transition_1"));
+    }
+
+    [AvaloniaFact]
+    public void ProblemsGoTo_OpensTheAssetInTheArtTab()
+    {
+        using var host = new GameTestHost();
+        using var bitmap = new SkiaSharp.SKBitmap(16, 16);
+        bitmap.Erase(SkiaSharp.SKColors.SeaGreen);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        var asset = ArtImport.FromBytes(host.Workspace.Current!, "tiles.png", encoded.ToArray());
+        host.Workspace.Apply(Edits.UpsertAsset(asset));
+        // Two clips with one name: an error on the asset.
+        var clip = new FarmEngine.Schemas.AnimationClip { Name = "idle" };
+        host.Workspace.Apply(Edits.UpsertAsset(host.Workspace.Current!.CustomAssets.First(a => a.Id == asset.Id) with { Animations = [clip, clip] }));
+
+        var tabs = FindByName<TabControl>(host.Window, "EditorTabs");
+        tabs.SelectedIndex = 2;
+        Pump();
+        var problems = FindByName<ProblemsView>(host.Window, "ProblemsView");
+        var index = problems.CurrentProblems.ToList().FindIndex(problem => problem.TargetKind == "asset" && problem.TargetId == asset.Id);
+        Assert.True(index >= 0);
+
+        FindByName<Button>(host.Window, $"ProblemGo_{index}").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Pump();
+        Assert.Equal(5, tabs.SelectedIndex);
+        Assert.Equal(asset.Id, FindByName<ArtEditorView>(host.Window, "ArtEditorView").SelectedAssetId);
+        Assert.Equal(asset.Name, FindByName<TextBox>(host.Window, "ArtAssetName").Text);
+        Assert.Equal(asset.Id, (FindByName<ListBox>(host.Window, "ArtAssets").SelectedItem as ListBoxItem)?.Tag);
     }
 }

@@ -40,6 +40,10 @@ type Edits =
     static member RemovePlacedItem(sceneId: string, x: int, y: int) : Edit = RemovePlacedItem(sceneId, x, y)
     static member PlaceMachine(sceneId: string, x: int, y: int, machineTypeId: string) : Edit = PlaceMachine(sceneId, x, y, machineTypeId)
     static member RemoveMachine(sceneId: string, x: int, y: int) : Edit = RemoveMachine(sceneId, x, y)
+    static member ClearTile(sceneId: string, x: int, y: int) : Edit = ClearTile(sceneId, x, y)
+    /// Eyedropper: the brush the tile at (x, y) picks up, or null outside the scene.
+    static member PickBrush(project: GameProject, sceneId: string, x: int, y: int) : Edit | null =
+        EditScenes.brushAt project sceneId x y |> Option.map SelectBrush |> Option.toObj
     static member ClearCropsAndItems(sceneId: string) : Edit = ClearCropsAndItems sceneId
     static member ResetSoil(sceneId: string) : Edit = ResetSoil sceneId
     static member FillScene(sceneId: string, tileType: string) : Edit = FillScene(sceneId, tileType)
@@ -197,6 +201,45 @@ type Defaults =
     static member NewFestival(project: GameProject, calendar: CalendarConfig) : CalendarFestival | null = Defaults.newFestival project calendar |> Option.toObj
     static member MineEnabled(project: GameProject, enabled: bool) : MineConfig = Defaults.mineEnabled project enabled
     static member NewGamePanel(project: GameProject) : GamePanel = Defaults.newGamePanel project
+
+/// The map's Place tools for C# (web App.tsx `handleTileClick` placement modes and the Place
+/// buttons of NPCEditor, NodeTypeEditor, ItemEditor and WildlifeEditor): what each tool offers
+/// and the edit a click on a tile makes. Kinds: "npc", "nodeType", "item", "machineType",
+/// "animalSpecies".
+[<AbstractClass; Sealed>]
+type MapPlacement =
+    static member private Entries(entries: seq<string * string>) : IReadOnlyList<PickerOption> =
+        entries
+        |> Seq.distinctBy fst
+        |> Seq.map (fun (id, name) -> { Id = id; Label = (if System.String.IsNullOrWhiteSpace name then id else name); Missing = false })
+        |> Array.ofSeq
+        :> IReadOnlyList<PickerOption>
+
+    /// What the Place tool of `kind` offers, in project order (node types: the built-in ones,
+    /// mine rocks included, then the project's own); empty for an unknown kind.
+    static member Choices(kind: string, project: GameProject) : IReadOnlyList<PickerOption> =
+        match kind with
+        | "npc" -> project.Npcs |> Seq.map (fun n -> n.Id, n.Name) |> MapPlacement.Entries
+        | "nodeType" -> EditScenes.placeableNodeTypes project |> Seq.map (fun n -> n.Id, n.Name) |> MapPlacement.Entries
+        | "item" -> project.Items |> Seq.map (fun i -> i.Id, i.Name) |> MapPlacement.Entries
+        | "machineType" -> project.MachineTypes |> Seq.map (fun m -> m.Id, m.Name) |> MapPlacement.Entries
+        | "animalSpecies" -> project.AnimalSpecies |> Seq.map (fun s -> s.Id, s.Name) |> MapPlacement.Entries
+        | _ -> [||] :> IReadOnlyList<PickerOption>
+
+    /// The edit a click of the Place tool of `kind` makes on (x, y): an NPC moves there, a node,
+    /// item or machine is put on the tile, a newborn animal of the species is added. Null when
+    /// `id` is not one of `Choices(kind, project)`.
+    static member Place(project: GameProject, kind: string, id: string, sceneId: string, x: int, y: int) : Edit | null =
+        let edit =
+            if not (MapPlacement.Choices(kind, project) |> Seq.exists (fun o -> o.Id = id)) then None
+            else
+                match kind with
+                | "npc" -> Some(MoveNpc(id, sceneId, x, y))
+                | "nodeType" -> Some(PlaceNode(sceneId, x, y, id))
+                | "item" -> Some(PlaceItem(sceneId, x, y, project.Items |> Seq.find (fun i -> i.Id = id)))
+                | "machineType" -> Some(PlaceMachine(sceneId, x, y, id))
+                | _ -> Some(UpsertAnimal(Defaults.newAnimal project id sceneId x y))
+        Option.toObj edit
 
 /// A form field for C#: what a property or vocabulary field holds, as strings and read-only
 /// lists instead of F# unions (docs/LANGUAGES.md "C# friendliness at the boundary").
