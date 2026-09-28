@@ -143,7 +143,6 @@ type internal Context =
 
 module internal Context =
     open System.Collections.Generic
-    open FarmEngine.Core
 
     let private ids (xs: seq<string>) = HashSet<string>(xs)
 
@@ -157,7 +156,7 @@ module internal Context =
         for scene in project.Scenes do
             if not (scenes.ContainsKey scene.Id) then scenes[scene.Id] <- scene
         let crops =
-            let merged = Crops.MergeCropDefinitions project.CustomCrops
+            let merged = ContentCompiler.mergeCrops project.CustomCrops
             ids merged.Keys
         let flags = HashSet<string>()
         let add (xs: seq<string>) = for x in xs do flags.Add x |> ignore

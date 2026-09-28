@@ -4,7 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using FarmEngine.Content;
+using FarmEngine.Authoring;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 
@@ -16,7 +16,7 @@ public sealed record NewProjectChoice(string TemplateId, string Name);
 /// <summary>UI the project commands need (swappable for tests).</summary>
 public interface IProjectDialogs
 {
-    Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<TemplateInfo> templates);
+    Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<ProjectTemplateInfo> templates);
 
     /// <summary>Project list (open/delete). Returns the id to open, or null.</summary>
     Task<string?> ChooseProjectAsync(IShellHost shell, ProjectStore store, string? currentId);
@@ -35,7 +35,7 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
 {
     private static readonly FilePickerFileType JsonFiles = new("Project JSON") { Patterns = ["*.json"], MimeTypes = ["application/json"] };
 
-    public async Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<TemplateInfo> templates)
+    public async Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<ProjectTemplateInfo> templates)
     {
         if (shell.TopLevel is not Window owner)
         {
@@ -145,7 +145,7 @@ internal abstract class ProjectDialogWindow : Window
 /// <summary>File → New Project: name + template (web ProjectManager "New" tab).</summary>
 internal sealed class NewProjectWindow : ProjectDialogWindow
 {
-    public NewProjectWindow(IReadOnlyList<TemplateInfo> templates)
+    public NewProjectWindow(IReadOnlyList<ProjectTemplateInfo> templates)
         : base("New Project", 540, 560)
     {
         Name = "NewProjectWindow";

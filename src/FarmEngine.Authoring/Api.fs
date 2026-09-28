@@ -3,6 +3,11 @@ namespace FarmEngine.Authoring
 open System.Collections.Generic
 open FarmEngine.Schemas
 
+/// The same effective content for editor previews and cartridge exports.
+[<AbstractClass; Sealed>]
+type ProjectContent =
+    static member Compile(project: GameProject) : GameContent = ContentCompiler.compile project
+
 /// The C# boundary (docs/LANGUAGES.md "C# friendliness at the boundary"): static factories for
 /// every `Edit` case so view models never spell out F# union syntax, with .NET collections and
 /// nullable references instead of F# lists and options.

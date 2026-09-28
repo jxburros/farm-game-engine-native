@@ -1,20 +1,16 @@
 namespace FarmEngine.Authoring
 
 open System.Collections.Generic
-open FarmEngine.Core
 open FarmEngine.Schemas
 
-/// Authoring-side content pack load order and conflict-aware merge. The C# engine still owns
-/// runtime pack state; this module owns the project Problems preview and will feed the cartridge
-/// compiler. Namespacing currently delegates to the compatibility implementation in Core until
-/// the schema records are moved to F#.
+/// Authoring-side load order, conflict-aware composition, localization and project import.
 module PackMerge =
     let private orEmpty (items: seq<'T> | null) : seq<'T> =
         match items with
         | null -> Seq.empty
         | items -> items
 
-    let private problem id severity message = PackProblem(id, severity, message)
+    let private problem id severity message = { PackId = id; Severity = severity; Message = message }
 
     /// Install order with dependencies before dependents. Missing dependencies and cycles stay
     /// visible as errors while the pack remains inspectable, like the web editor.
@@ -52,10 +48,10 @@ module PackMerge =
 
         for pack in enabled do visit pack
         for pack in ordered do
-            if not (PacksSchema.IsEngineCompatible pack.Manifest.EngineCompatibility) then
+            if not (PackRules.isEngineCompatible pack.Manifest.EngineCompatibility PackRules.EngineVersion) then
                 problems.Add(problem pack.Manifest.Id "warning"
                     (sprintf "Pack '%s' targets engine %s; this engine is %s"
-                        pack.Manifest.Id pack.Manifest.EngineCompatibility PacksSchema.EngineVersion))
+                        pack.Manifest.Id pack.Manifest.EngineCompatibility PackRules.EngineVersion))
         List.ofSeq ordered, List.ofSeq problems
 
     let private mergeArray
@@ -101,7 +97,7 @@ module PackMerge =
             let minigames = List<MinigameDef>(baseContent.Minigames)
 
             for rawPack in packs do
-                let pack = Packs.NamespacePack rawPack
+                let pack = PackRules.namespacePack rawPack
                 let content = pack.Content
                 let overrides = HashSet<string>(orEmpty pack.Manifest.Overrides)
                 for crop in orEmpty content.Crops do
@@ -149,6 +145,42 @@ module PackMerge =
                       "Minigames", box minigames ]
             merged, List.ofSeq problems
 
+    /// Later enabled packs override earlier translations. Empty strings are valid translations;
+    /// absent keys/locales leave authored text intact.
+    let applyLocaleStrings (content: GameContent) (installs: List<PackInstallation>) (locale: string | null) =
+        if System.String.IsNullOrEmpty locale then content
+        else
+            let packs, _ = resolveOrder installs
+            let table = Dictionary<string, string>()
+            for rawPack in packs do
+                let pack = PackRules.namespacePack rawPack
+                let strings = pack.Content.Strings
+                if not (obj.ReferenceEquals(strings, null)) then
+                    let locale = match locale with null -> "" | value -> value
+                    if strings.ContainsKey locale then
+                        let values = strings[locale]
+                        if not (obj.ReferenceEquals(values, null)) then
+                            for KeyValue(key, value) in values do table[key] <- value
+            if table.Count = 0 then content
+            else
+                let lookup kind id field fallback =
+                    match table.TryGetValue(kind + ":" + id + ":" + field) with
+                    | true, value when not (obj.ReferenceEquals(value, null)) -> value
+                    | _ -> fallback
+                let dialogue (d: Dialogue) =
+                    Records.withValue d "Text" (box (lookup "dialogue" d.Id "text" d.Text))
+                Records.withValues content
+                    [ "Items", box (List<Item>(content.Items |> Seq.map (fun i ->
+                          Records.withValues i [ "Name", box (lookup "item" i.Id "name" i.Name)
+                                                 "Description", box (lookup "item" i.Id "description" i.Description) ])))
+                      "Quests", box (List<Quest>(content.Quests |> Seq.map (fun q ->
+                          Records.withValues q [ "Name", box (lookup "quest" q.Id "name" q.Name)
+                                                 "Description", box (lookup "quest" q.Id "description" q.Description) ])))
+                      "Dialogues", box (List<Dialogue>(content.Dialogues |> Seq.map dialogue))
+                      "Npcs", box (List<Npc>(content.Npcs |> Seq.map (fun n ->
+                          Records.withValues n [ "Name", box (lookup "npc" n.Id "name" n.Name)
+                                                 "Dialogue", box (List<Dialogue>(orEmpty n.Dialogue |> Seq.map dialogue)) ]))) ]
+
     let private customCrop (crop: CropDefinition) : CustomCropDefinition =
         CustomCropDefinition(
             Id = crop.Id, Name = crop.Name, Visual = crop.Visual,
@@ -163,7 +195,7 @@ module PackMerge =
     /// Materialize a pack as editable project content. The Mods editor's ImportPack edit uses
     /// this F# transform, including the pack's optional player-start inventory and location.
     let applyToProject (project: GameProject) (rawPack: ContentPack) : GameProject * PackProblem list =
-        let pack = Packs.NamespacePack rawPack
+        let pack = PackRules.namespacePack rawPack
         let content = pack.Content
         let problems = ResizeArray<PackProblem>()
         let overrides = HashSet<string>(orEmpty pack.Manifest.Overrides)

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
-using FarmEngine.Content;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
 
@@ -127,11 +127,11 @@ public sealed class ProjectStore
     public string NewId()
     {
         var now = (double)_time.GetUtcNow().ToUnixTimeMilliseconds();
-        var id = Templates.NewProjectId(now);
+        var id = ProjectCatalog.NewProjectId(now);
         while (Exists(id))
         {
             now++;
-            id = Templates.NewProjectId(now);
+            id = ProjectCatalog.NewProjectId(now);
         }
 
         return id;
@@ -189,7 +189,7 @@ public sealed class ProjectStore
             }
 
             // { ...createBlankProject(), ...exportedGame } at the JSON level, then re-validate.
-            var merged = JsonSerializer.SerializeToNode(DefaultContent.CreateBlankProject(_time.GetUtcNow().ToUnixTimeMilliseconds()), JsonDefaults.Options)!.AsObject();
+            var merged = JsonSerializer.SerializeToNode(ProjectCatalog.CreateBlankProject(_time.GetUtcNow().ToUnixTimeMilliseconds()), JsonDefaults.Options)!.AsObject();
             var data = JsonSerializer.SerializeToNode(exported.Data, JsonDefaults.Options)!.AsObject();
             foreach (var (key, value) in data)
             {

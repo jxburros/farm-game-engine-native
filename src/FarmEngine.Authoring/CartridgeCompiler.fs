@@ -3,7 +3,6 @@ namespace FarmEngine.Authoring
 open System
 open System.Text.Json
 open FarmEngine.Cart
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 open Google.FlatBuffers
@@ -52,7 +51,7 @@ type CartridgeCompiler =
             | null -> Records.withValue project "Export" (box settings)
             | _ -> project
         let projectBytes = JsonSerializer.SerializeToUtf8Bytes<GameProject>(cartridgeProject, JsonDefaults.Options)
-        let content = EngineState.CreateContentFromProject project
+        let content = ContentCompiler.compile project
         let contentBytes = JsonSerializer.SerializeToUtf8Bytes<GameContent>(content, JsonDefaults.Options)
         let projectOffset = Cartridge.CreateProjectJsonVector(builder, projectBytes)
         let contentOffset = Cartridge.CreateContentJsonVector(builder, contentBytes)

@@ -1,7 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 
@@ -50,9 +49,9 @@ module ContentLints =
         let npcIds = ids (fun (n: Npc) -> n.Id) project.Npcs
         let questIds = ids (fun (q: Quest) -> q.Id) project.Quests
         let shopIds = ids (fun (s: ShopDefinition) -> s.Id) project.Shops
-        let crops = Crops.MergeCropDefinitions project.CustomCrops
+        let crops = ContentCompiler.mergeCrops project.CustomCrops
         let nodeTypeIds =
-            Seq.append (ContentBuiltin.DefaultNodeTypes |> Seq.map (fun d -> d.Id)) (orEmpty project.NodeTypes |> Seq.map (fun d -> d.Id))
+            Seq.append (Builtin.nodeTypes () |> Seq.map (fun d -> d.Id)) (orEmpty project.NodeTypes |> Seq.map (fun d -> d.Id))
             |> Set.ofSeq
         let dialogueIds =
             Seq.append (orEmpty project.Dialogues) (orEmpty project.Npcs |> Seq.collect (fun npc -> orEmpty npc.Dialogue))
@@ -184,7 +183,7 @@ module ContentLints =
                       match Option.ofObj tile.Crop with
                       | Some crop when not (crops.ContainsKey crop.Type) ->
                           warning "crops" $"Scene \"{scene.Name}\" has a planted crop of missing type \"{crop.Type}\" at {at tile}" scene.Id
-                      | Some crop when not (Crops.CanGrowInSeason(crops[crop.Type], project.CurrentSeason)) ->
+                      | Some crop when not (crops[crop.Type].Seasons.Contains(project.CurrentSeason)) ->
                           warning "crops"
                               $"Scene \"{scene.Name}\": {crops[crop.Type].Name} at {at tile} cannot grow in the starting season ({project.CurrentSeason})"
                               scene.Id
@@ -198,7 +197,7 @@ module ContentLints =
           // Content packs (M5): load-order errors, compatibility warnings and undeclared-override
           // conflicts from a dry-run merge.
           if not (missing project.ContentPacks) && project.ContentPacks.Count > 0 then
-              let _, mergedProblems = PackMerge.mergeIntoContent (EngineState.CreateBaseContentFromProject project) project.ContentPacks
+              let _, mergedProblems = PackMerge.mergeIntoContent (ContentCompiler.baseContent project) project.ContentPacks
               for problem in mergedProblems do
                   let severity = if problem.Severity = "error" then Severity.Error else Severity.Warning
                   lint severity "packs" problem.Message problem.PackId ]

@@ -1,4 +1,4 @@
-using FarmEngine.Content;
+using FarmEngine.Authoring;
 using FarmingRpgMaker.App.Hosting;
 
 namespace FarmingRpgMaker.App.Projects;
@@ -21,7 +21,7 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
     public async Task NewProjectAsync(IShellHost shell)
     {
         ArgumentNullException.ThrowIfNull(shell);
-        var choice = await _dialogs.ChooseNewProjectAsync(shell, Templates.TemplateInfo).ConfigureAwait(true);
+        var choice = await _dialogs.ChooseNewProjectAsync(shell, ProjectCatalog.TemplateInfo).ConfigureAwait(true);
         if (choice is null)
         {
             return;
@@ -30,7 +30,7 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         LeavePlayMode(shell);
         var project = _workspace.CreateProject(choice.TemplateId, choice.Name);
         _workspace.Open(project);
-        var template = Templates.TemplateInfo.FirstOrDefault(t => t.Id == choice.TemplateId)?.Name ?? choice.TemplateId;
+        var template = ProjectCatalog.TemplateInfo.FirstOrDefault(t => t.Id == choice.TemplateId)?.Name ?? choice.TemplateId;
         shell.ShowStatus($"Created \"{project.Name}\" from the {template} template.");
     }
 

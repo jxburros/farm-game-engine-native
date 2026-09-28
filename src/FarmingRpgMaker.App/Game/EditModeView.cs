@@ -482,7 +482,7 @@ public sealed partial class EditModeView : UserControl
         if (!ReferenceEquals(project, _projectForContent))
         {
             _projectForContent = project;
-            _content = EngineState.CreateContentFromProject(project);
+            _content = ProjectContent.Compile(project);
         }
 
         var scene = CurrentScene();

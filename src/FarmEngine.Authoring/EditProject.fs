@@ -1,7 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System.Collections.Generic
-open FarmEngine.Core
 open FarmEngine.Schemas
 
 /// The project-level edits (ProjectSettingsEditor.tsx, AssetManager.tsx, ArtBindings.tsx,

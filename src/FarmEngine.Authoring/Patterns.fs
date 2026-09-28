@@ -2,7 +2,6 @@ namespace FarmEngine.Authoring
 
 open System.Collections.Generic
 open System.Text.Json
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 
@@ -166,8 +165,8 @@ module Patterns =
                 | Building ->
                     if scene.Transitions |> Seq.exists (fun t -> int t.FromX = x && int t.FromY = y) then Error "That tile already has a doorway."
                     else
-                        let interior = Tiles.CreateEmptyScene(id + "-inside", name + " interior", 10.0, 8.0)
-                        let interior = Proj.mapTiles (fun t -> Tiles.SetTileLayer(t, TileTypes.Floor)) interior
+                        let interior = AuthoringTiles.CreateEmptyScene(id + "-inside", name + " interior", 10.0, 8.0)
+                        let interior = Proj.mapTiles (fun t -> AuthoringTiles.SetTileLayer(t, TileTypes.Floor)) interior
                         let interior = Records.withValue interior "Transitions" (box (List<SceneTransition>([ SceneTransition(FromX = 4.0, FromY = 7.0, ToSceneId = scene.Id, ToX = float x, ToY = float y) ])))
                         let door = SceneTransition(FromX = float x, FromY = float y, ToSceneId = interior.Id, ToX = 4.0, ToY = 6.0, Locked = System.Nullable true)
                         let e =

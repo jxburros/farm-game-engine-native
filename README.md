@@ -34,6 +34,13 @@ migrations. Building from source needs a Rust toolchain as well as .NET;
 without one, `dotnet build` still works, the Rust library is left out and
 Play Mode falls back to the C# engine.
 
+Content compilation, built-in authored definitions, pack composition and
+localization now run in F#. Editor content previews and cartridge exports use
+the same compiler. The authoring project no longer depends on the C# simulation
+assembly; it still uses the C# schema records during the migration.
+The starter pack and New Project templates also come from F#; the desktop
+app no longer references the legacy C# content project.
+
 **Looks like a game out of the box.** Sample games ship with a built-in
 pixel-art pack (tiles, crops, trees, machines, animals, walking characters)
 plus day/night, seasons and weather, with zero project changes; any art a
@@ -127,13 +134,13 @@ Everything builds and tests on Windows, macOS and Linux. The
 |---|---|---|
 | `FarmEngine.Schemas` | Data shapes, JSON, migrations, JS-semantics helpers | `packages/engine-schemas` |
 | `FarmEngine.Core` | Deterministic simulation (commands, ticks, all game systems) | `packages/engine-core` |
-| `FarmEngine.Content` | Default content pack, sample games, templates | `packages/content-default`, `src/lib/templates.ts` |
+| `FarmEngine.Content` | Legacy default pack and templates, retained as test references | `packages/content-default`, `src/lib/templates.ts` |
 | `FarmEngine.Runtime` | Fixed timestep, input, minigames, panels, audio, Jint plugin sandbox | `packages/engine-runtime` |
 | `FarmEngine.Rendering` | Skia world renderer, snapshots, camera | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts` |
 | `FarmingRpgMaker.Updates` | Update Center backend (Velopack + GitHub Releases) | — |
 | `FarmingRpgMaker.App` | Avalonia desktop app | `src/` (React app) |
 | `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustSession`) | — |
-| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, cartridge compiler | `src/components/*` decisions, `packages/engine-schemas` |
+| `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, content/compiler, sample templates | `src/components/*` decisions, `packages/engine-schemas`, `packages/content-default`, `src/lib/templates.ts` |
 | `FarmEngine.Authoring.Net` (F#) | JSON I/O for the F# core (`System.Text.Json` edge) | — |
 | `FarmEngine.Cli` (F#) | `farmc compile` command-line cartridge builder | — |
 | `crates/farm-sim` (Rust) | Deterministic simulation, golden-verified | `packages/engine-core` |
