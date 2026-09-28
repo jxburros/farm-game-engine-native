@@ -231,9 +231,10 @@ F# Problems pipeline validates the block and blocks export on errors.
 | `credits` | text | Shown on the credits screen. |
 | `targets` | `["windows-x64", "linux-x64"]` | The targets the creator exported last time. |
 
-Validation lives in F# `ChecksExport`, called by `Problems.collect`. The editor
-has no controls for these fields yet (Export Game records `targets`); until it
-does, export uses the defaults or values set in the project JSON.
+Validation lives in F# `ChecksExport`, called by `Problems.collect`. Project
+Settings → Export edits every field except `gameId` (set once) and `targets`
+(Export Game records them), and shows the `ChecksExport` problems inline. A
+project that never saved export settings exports with the defaults.
 
 ## What the player must include (phase 6)
 

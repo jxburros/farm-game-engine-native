@@ -19,9 +19,9 @@ inside. The app updates itself from GitHub Releases through the built-in
 
 The simulation engine, sample games, runtime and Play Mode are ported. Edit
 Mode includes map painting and scene tools, content forms, project settings,
-Problems, mods, raster art, creator patterns and interface panels. Nested
-content fields currently use JSON where dedicated controls are still being
-built. Projects move between the native and
+Problems, mods, art (raster and SVG), creator patterns and interface panels.
+Content forms have nested editors, list rows and reference pickers; each
+nested field also has an Edit as JSON box. Projects move between the native and
 [web version](https://github.com/jxburros/farm-game-engine) through the same
 schema v8 JSON format. See [ROADMAP.md](ROADMAP.md).
 
