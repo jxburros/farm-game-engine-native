@@ -23,6 +23,7 @@
     <PackageReference Include="Avalonia.Skia" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Svg.Skia" />
     <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>

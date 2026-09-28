@@ -1,9 +1,4 @@
-using System.Globalization;
-using System.Reflection;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -15,9 +10,9 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>
-/// Native content workspace. Field editors cover scalar properties directly; collections and
-/// nested records have a JSON field so every schema property remains editable while dedicated
-/// nested controls are added. All saves and removals go through the F# document.
+/// Native content workspace. <see cref="ContentForm"/> builds the fields: nested records, lists,
+/// reference pickers and the condition/outcome editors, each with an "Edit as JSON" box. One save
+/// is one F# upsert, so it is one undo step. All saves and removals go through the F# document.
 /// </summary>
 public sealed class ContentEditorView : UserControl
 {
@@ -65,7 +60,7 @@ public sealed class ContentEditorView : UserControl
     private string? _selectedId;
     private bool _refreshing;
     private object? _editing;
-    private Action<JsonObject>[] _writeFields = [];
+    private ContentForm? _contentForm;
 
     public ContentEditorView(ProjectWorkspace workspace)
     {
@@ -104,7 +99,7 @@ public sealed class ContentEditorView : UserControl
         listSide.Children.Add(_category);
         listSide.Children.Add(_entities);
         listSide.Children.Add(Ui.HStack(8, _add, _delete));
-        listSide.Children.Add(Ui.Wrapped("Select a type, then edit its fields. Lists and nested settings accept JSON.", "muted", "small"));
+        listSide.Children.Add(Ui.Wrapped("Select a type, then edit its fields. Every nested field also has an Edit as JSON box.", "muted", "small"));
         var editor = new StackPanel { Spacing = 12 };
         editor.Children.Add(Ui.Text("DETAILS", "section"));
         editor.Children.Add(_message);
@@ -176,82 +171,21 @@ public sealed class ContentEditorView : UserControl
     private void BuildForm()
     {
         _form.Children.Clear();
-        _writeFields = [];
+        _contentForm = null;
         _editing = _selectedId is { } id && _workspace.Current is { } project
             ? _selectedCategory.Entries(project).FirstOrDefault(entity => IdOf(entity) == id)
             : null;
         _save.IsEnabled = _editing is not null;
         _revert.IsEnabled = _editing is not null;
         _delete.IsEnabled = _editing is not null;
-        if (_editing is null)
+        if (_editing is null || _workspace.Current is not { } current)
         {
             _message.Text = "Select an entry to edit it.";
             return;
         }
 
         _message.Text = $"Editing {_selectedCategory.Name.ToLowerInvariant()} · {_selectedId}";
-        var values = JsonSerializer.SerializeToNode(_editing, _selectedCategory.EntityType, JsonDefaults.Options) as JsonObject
-            ?? throw new InvalidOperationException("Content did not serialize to an object.");
-        var writers = new List<Action<JsonObject>>();
-        foreach (var property in _selectedCategory.EntityType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (!property.CanRead || property.GetCustomAttribute<JsonExtensionDataAttribute>() is not null) continue;
-            var key = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? JsonNamingPolicy.CamelCase.ConvertName(property.Name);
-            values.TryGetPropertyValue(key, out var node);
-            var label = Ui.Text(Title(property.Name), "muted", "small");
-            _form.Children.Add(label);
-            if (property.Name == "Id")
-            {
-                _form.Children.Add(new TextBox { Name = "ContentField_Id", Text = node?.GetValue<string>() ?? "", IsReadOnly = true });
-                continue;
-            }
-
-            var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-            var optional = Nullable.GetUnderlyingType(property.PropertyType) is not null
-                || (!property.PropertyType.IsValueType && new NullabilityInfoContext().Create(property).WriteState == NullabilityState.Nullable);
-            if (type == typeof(bool))
-            {
-                var check = new CheckBox { Name = $"ContentField_{property.Name}", IsChecked = node is null ? null : node.GetValue<bool>(), IsThreeState = Nullable.GetUnderlyingType(property.PropertyType) is not null };
-                _form.Children.Add(check);
-                writers.Add(target => target[key] = check.IsChecked is { } value ? JsonValue.Create(value) : null);
-            }
-            else
-            {
-                var complex = type != typeof(string) && type != typeof(double) && type != typeof(int);
-                var input = new TextBox
-                {
-                    Name = $"ContentField_{property.Name}",
-                    Text = node is null ? "" : type == typeof(string) ? node.GetValue<string>() : complex ? node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) : node.ToJsonString(),
-                    AcceptsReturn = complex || property.Name is "Description" or "Text",
-                    TextWrapping = complex || property.Name is "Description" or "Text" ? Avalonia.Media.TextWrapping.Wrap : Avalonia.Media.TextWrapping.NoWrap,
-                    MinHeight = complex ? 70 : 30,
-                    Watermark = complex ? "JSON array or object" : null,
-                };
-                _form.Children.Add(input);
-                writers.Add(target =>
-                {
-                    var raw = input.Text ?? "";
-                    if (type == typeof(string)) target[key] = optional && raw.Length == 0 ? null : JsonValue.Create(raw);
-                    else if (raw.Trim().Length == 0) target[key] = null;
-                    else if (type == typeof(double)) target[key] = JsonValue.Create(double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture));
-                    else if (type == typeof(int)) target[key] = JsonValue.Create(int.Parse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture));
-                    else target[key] = JsonNode.Parse(raw);
-                });
-            }
-        }
-
-        _writeFields = [.. writers];
-    }
-
-    private static string Title(string name)
-    {
-        var text = new StringBuilder();
-        for (var i = 0; i < name.Length; i++)
-        {
-            if (i > 0 && char.IsUpper(name[i]) && char.IsLower(name[i - 1])) text.Append(' ');
-            text.Append(name[i]);
-        }
-        return text.ToString();
+        _contentForm = new ContentForm(current, _editing, _selectedCategory.EntityType, _form, message => _message.Text = message);
     }
 
     private void Add()
@@ -276,14 +210,10 @@ public sealed class ContentEditorView : UserControl
 
     private void Save()
     {
-        if (_editing is null) return;
+        if (_editing is null || _contentForm is null) return;
         try
         {
-            var data = JsonSerializer.SerializeToNode(_editing, _selectedCategory.EntityType, JsonDefaults.Options) as JsonObject
-                ?? throw new JsonException("Content must be an object.");
-            foreach (var write in _writeFields) write(data);
-            var updated = JsonSerializer.Deserialize(data.ToJsonString(), _selectedCategory.EntityType, JsonDefaults.Options)
-                ?? throw new JsonException("Content is empty.");
+            var updated = _contentForm.Commit();
             if (IdOf(updated) != _selectedId) throw new JsonException("The id cannot be changed here.");
             if (!_workspace.Apply(_selectedCategory.Upsert(updated))) _message.Text = "No changes were made.";
         }

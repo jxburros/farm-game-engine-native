@@ -69,7 +69,7 @@ public sealed class ContentEditorTests
         Assert.Equal("A native greeting.", host.Workspace.Current.Dialogues.First(d => d.Id == id).Text);
         Assert.Equal("A native greeting.", host.Workspace.Current.Npcs.First(n => n.Id == npcId).Dialogue.First(d => d.Id == id).Text);
 
-        FindByName<TextBox>(host.Window, "ContentField_Options").Text = "not JSON";
+        FindByName<TextBox>(host.Window, "ContentJson_Options").Text = "not JSON";
         Press(host, "SaveContentButton");
         Assert.Contains("Could not save", FindByName<TextBlock>(host.Window, "ContentMessage").Text);
         Assert.Equal("A native greeting.", host.Workspace.Current.Dialogues.First(d => d.Id == id).Text);

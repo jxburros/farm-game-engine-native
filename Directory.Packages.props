@@ -12,6 +12,8 @@
     <!-- Keep in step with the SkiaSharp that Avalonia.Skia depends on. -->
     <PackageVersion Include="SkiaSharp" Version="2.88.9" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
+    <!-- SVG import: renders on the same SkiaSharp 2.88 (Svg.Skia 4+ needs SkiaSharp 3). -->
+    <PackageVersion Include="Svg.Skia" Version="3.7.0" />
     <PackageVersion Include="Velopack" Version="1.2.158" />
     <PackageVersion Include="Jint" Version="4.16.3" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
