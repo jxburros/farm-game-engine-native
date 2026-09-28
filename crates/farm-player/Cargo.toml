@@ -13,5 +13,10 @@ farm-sim = { path = "../farm-sim" }
 serde.workspace = true
 serde_json.workspace = true
 
+# build.rs embeds placeholder icon and version resources when the target is Windows;
+# Export Game patches them (docs/EXPORT.md).
+[build-dependencies]
+embed-resource = "3"
+
 [lints]
 workspace = true
