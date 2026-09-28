@@ -517,8 +517,8 @@ module internal ChecksContent =
             let target = Some(NavigationTarget.Pack manifest.Id)
             if not (seen.Add manifest.Id) then
                 sink.Error("pack.duplicate", path + ".pack.manifest.id", sprintf "Pack \"%s\" is installed twice" manifest.Id, target)
-            if not (PacksSchema.IsEngineCompatible manifest.EngineCompatibility) then
-                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PacksSchema.EngineVersion, target))
+            if not (PackRules.isEngineCompatible manifest.EngineCompatibility PackRules.EngineVersion) then
+                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
 
     let run (context: Context) (sink: Sink) =
         duplicates context sink

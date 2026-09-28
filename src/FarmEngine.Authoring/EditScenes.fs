@@ -1,7 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System.Collections.Generic
-open FarmEngine.Core
 open FarmEngine.Schemas
 
 /// The tile and scene edits (web EditorPanel.tsx tile painter, App.tsx `handleTileClick`,
@@ -65,8 +64,8 @@ module internal EditScenes =
 
     /// Node types a creator can place: the built-in ones (incl. mine rocks) plus the project's own.
     let placeableNodeTypes (project: GameProject) : NodeTypeDefinition list =
-        [ yield! ContentBuiltin.DefaultNodeTypes
-          yield! ContentBuiltin.MineNodeTypes
+        [ yield! Builtin.nodeTypes ()
+          yield! Builtin.mineNodeTypes ()
           yield! project.NodeTypes ]
 
     /// App.tsx node placement mode: `{ typeId, remainingHealth: def.health }`; unknown types are ignored.
@@ -106,13 +105,13 @@ module internal EditScenes =
         Proj.mapScene sceneId (Proj.mapTiles (fun tile ->
             if tile.Type <> TileTypes.Soil then tile
             else
-                Records.withValues (Tiles.SetTileLayer(tile, TileTypes.Grass))
+                Records.withValues (AuthoringTiles.SetTileLayer(tile, TileTypes.Grass))
                     [ ("Crop", null); ("SoilState", box SoilStates.Dry); ("SoilMoisture", box 0.0); ("SoilFertility", box 0.0) ])) project
 
     /// SceneManager `fillScene`: every tile takes the type (through the layer rules), losing crops and items.
     let fillScene (sceneId: string) (tileType: string) (project: GameProject) =
         Proj.mapScene sceneId (Proj.mapTiles (fun tile ->
-            Records.withValues (Tiles.SetTileLayer(tile, tileType)) [ ("Crop", null); ("Item", null) ])) project
+            Records.withValues (AuthoringTiles.SetTileLayer(tile, tileType)) [ ("Crop", null); ("Item", null) ])) project
 
     /// SceneManager `createScene` / `duplicateScene` (the scene is built by `Defaults`); an existing id is a no-op.
     let addScene (scene: Scene) (project: GameProject) =
@@ -145,7 +144,7 @@ module internal EditScenes =
                         let row = List<Tile>(width)
                         for x in 0 .. width - 1 do
                             if Proj.inBounds scene x y then row.Add(scene.Tiles.[y].[x])
-                            else row.Add(setField (Tiles.CreateEmptyTile(float x, float y, TileTypes.Grass)) "SoilState" (box SoilStates.Dry))
+                            else row.Add(setField (AuthoringTiles.CreateEmptyTile(float x, float y, TileTypes.Grass)) "SoilState" (box SoilStates.Dry))
                         tiles.Add row
                     Records.withValues scene [ ("Width", box (float width)); ("Height", box (float height)); ("Tiles", box tiles) ]) project
 

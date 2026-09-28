@@ -34,6 +34,11 @@ migrations. Building from source needs a Rust toolchain as well as .NET;
 without one, `dotnet build` still works, the Rust library is left out and
 Play Mode falls back to the C# engine.
 
+Content compilation, built-in authored definitions, pack composition and
+localization now run in F#. Editor content previews and cartridge exports use
+the same compiler. The authoring project no longer depends on the C# simulation
+assembly; it still uses the C# schema records during the migration.
+
 **Looks like a game out of the box.** Sample games ship with a built-in
 pixel-art pack (tiles, crops, trees, machines, animals, walking characters)
 plus day/night, seasons and weather, with zero project changes; any art a

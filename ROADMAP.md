@@ -67,7 +67,8 @@ exit criteria for each phase.
    engine, and `farm-runtime` has input, minigames, panels and the audio
    model.
 3. [ ] F# authoring: schema, migrations, validation, packs, compiler, undo
-   (**done:** edits and undo, migrations, validation, problems)
+   (**done:** edits and undo, migrations, validation, problems, pack composition,
+   built-in authored catalog and compatibility content compiler)
 4. [ ] Switch the app to F# + Rust; delete the C# engine projects
    (**started:** Play Mode runs on Rust, projects open through F#)
 5. [ ] Editor port on the new stack (the list above)
@@ -122,16 +123,20 @@ the most.
   and the F# migrations use them. A parity test compares them with the C#
   on every golden and sample project and on 111 broken projects that
   together hit every check (467 F# tests).
-- [ ] Finish `Packs` and `ContentBuiltin` in F#: load order, conflict-aware
-  content merge and project import now run in F#; namespacing and compatibility
-  checks still use the C# implementation.
-- [ ] Add indexed content tables and `save.fbs` to the cartridge format;
-  port `ContentBuiltin` and the content compiler off the C# bridge.
+- [x] F# pack namespacing, compatibility checks, load order, conflict-aware
+  merge, localization and project import. The built-in authored catalog and
+  project-to-content compiler now also run in F#. Cartridge exports, editor
+  content previews and Problems use this path. Content goldens and differential
+  tests preserve TypeScript behavior, including absent/null fields and ordering.
+- [x] Remove `FarmEngine.Authoring`'s dependency on the C# simulation project:
+  map construction and layer edits use F# authoring helpers, and the assembly
+  dependency is guarded by a test. C# schema records remain a compatibility bridge.
+- [ ] Add indexed content tables and `save.fbs` to the cartridge format.
 - [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
   compiler and `farmc compile`; Rust verifies and loads the cartridge, and
   cross-language tests compare its content and play state. Compiled content
-  still comes from the C# bridge and is stored as JSON while indexed binary
-  tables are developed.
+  now comes from F# and is stored as JSON while indexed binary tables are
+  developed. Initial state still comes from the embedded project JSON.
 - [x] Add optional export identity/window/target settings to the project,
   with a stable generated game id and F# Problems validation. The cartridge
   compiler consumes them; Export Game still needs the graphical player and packaging.

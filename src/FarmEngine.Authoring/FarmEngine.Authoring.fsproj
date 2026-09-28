@@ -11,7 +11,11 @@
     <Compile Include="Json.fs" />
     <Compile Include="Migrations.fs" />
     <Compile Include="Records.fs" />
+    <Compile Include="PackRules.fs" />
+    <Compile Include="Builtin.fs" />
     <Compile Include="PackMerge.fs" />
+    <Compile Include="ContentCompiler.fs" />
+    <Compile Include="AuthoringTiles.fs" />
     <Compile Include="Edits.fs" />
     <Compile Include="Update.fs" />
     <Compile Include="Cleanup.fs" />
@@ -36,6 +40,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
-    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
   </ItemGroup>
 </Project>

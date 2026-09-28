@@ -3,7 +3,6 @@ namespace FarmEngine.Authoring
 open System
 open System.Collections.Generic
 open System.Text.Json
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 
@@ -253,9 +252,9 @@ module Defaults =
         let width = max 1 width
         let height = max 1 height
         let name = if String.IsNullOrWhiteSpace name then "New Scene" else name.Trim()
-        let scene = Tiles.CreateEmptyScene(nextId "scene" (allIds project), name, float width, float height)
+        let scene = AuthoringTiles.CreateEmptyScene(nextId "scene" (allIds project), name, float width, float height)
         if defaultTile = TileTypes.Grass then scene
-        else Proj.mapTiles (fun tile -> Tiles.CreateEmptyTile(tile.X, tile.Y, defaultTile)) scene
+        else Proj.mapTiles (fun tile -> AuthoringTiles.CreateEmptyTile(tile.X, tile.Y, defaultTile)) scene
 
     /// SceneManager `createScene` with the dialog defaults (16×12, grass).
     let newScene (project: GameProject) (name: string) (width: int) (height: int) : Scene = newSceneWith project name width height TileTypes.Grass
@@ -282,7 +281,7 @@ module Defaults =
     /// ProjectSettingsEditor mine toggle: enabling fills in the default bands when there are none.
     let mineEnabled (project: GameProject) (enabled: bool) : MineConfig =
         let mine = project.Mine
-        let bands = if mine.Bands.Count > 0 then mine.Bands else ContentBuiltin.CreateDefaultMineBands()
+        let bands = if mine.Bands.Count > 0 then mine.Bands else Builtin.mineBands ()
         Records.withValues mine [ ("Enabled", box enabled); ("Bands", box bands) ]
 
     /// InterfaceEditor: an empty creator panel.

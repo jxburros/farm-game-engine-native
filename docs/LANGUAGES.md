@@ -113,7 +113,9 @@ what an exported game contains.
   today's `GameContent` shape and `double` values, so golden hashes still
   match the TypeScript engine.
 - **Format 1 transition:** `cart.fbs` currently wraps game info plus project
-  and compiled content JSON. `farmc compile` and Rust loading are in place;
+  and compiled content JSON. F# now resolves the authored built-in catalog,
+  pack namespacing, load order, overrides and locale strings without calling
+  the C# simulation assembly. `farmc compile` and Rust loading are in place;
   the Rust session still reads the project for initial state. The indexed
   content tables and project-free player load path remain to be ported.
 

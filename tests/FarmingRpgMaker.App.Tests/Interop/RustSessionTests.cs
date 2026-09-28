@@ -79,6 +79,36 @@ public sealed class RustSessionTests
         Assert.Equal(Hash.HashState(expected), session.StateHash());
     }
 
+    [Theory]
+    [InlineData(ProjectTemplates.Starter)]
+    [InlineData(ProjectTemplates.Blank)]
+    [InlineData(ProjectTemplates.Cozy)]
+    [InlineData(ProjectTemplates.Quest)]
+    public void FSharpCartridgeContentAndRustPlayMatchEveryTemplate(string template)
+    {
+        var project = Templates.CreateProjectForTemplate(template, 0);
+        var bytes = CartridgeCompiler.Compile(project);
+        var cart = Cartridge.GetRootAsCartridge(new ByteBuffer(bytes));
+        var content = JsonSerializer.Deserialize<GameContent>(cart.GetContentJsonArray(), JsonDefaults.Options)!;
+        Assert.Equal(Hash.StableStringify(EngineState.CreateContentFromProject(project)), Hash.StableStringify(content));
+        Assert.Equal(Hash.StableStringify(ProjectContent.Compile(project)), Hash.StableStringify(content));
+        Assert.Equal(bytes, CartridgeCompiler.Compile(project));
+        if (!FarmFfi.IsAvailable) return;
+
+        using var compiled = RustSession.CreateCartridge(bytes, "compiled-template");
+        using var reference = RustSession.Create(project, "compiled-template");
+        Assert.Equal(reference.StateHash(), compiled.StateHash());
+        Command[] commands = [new MoveCommand("down"), new UseToolCommand("hoe"), new InteractCommand(), new CloseDialogueCommand(), new SleepCommand()];
+        foreach (var command in commands)
+        {
+            reference.Apply(command);
+            compiled.Apply(command);
+            reference.Tick(30);
+            compiled.Tick(30);
+            Assert.Equal(reference.StateHash(), compiled.StateHash());
+        }
+    }
+
     [Fact]
     public void SavesRoundTripThroughTheRustSession()
     {

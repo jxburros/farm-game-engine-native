@@ -1,7 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System.Collections.Generic
-open FarmEngine.Core
 open FarmEngine.Schemas
 
 /// Change-tracking helpers over the C# `List<T>` collections of the schema records. Every function
@@ -164,7 +163,7 @@ module internal Proj =
 module TileRules =
     /// The layer a tile type naturally lives on (web `classifyTileType`).
     let layerOf (tileType: string) : TileLayer =
-        match Tiles.ClassifyTileType tileType with
+        match AuthoringTiles.ClassifyTileType tileType with
         | "overlay" -> Overlay
         | "object" -> Object
         | _ -> Background
@@ -209,7 +208,7 @@ module TileRules =
     let paint (layer: TileLayer) (tileType: string) (visual: VisualRef option) (tile: Tile) : Tile =
         let painted =
             if layerOf tileType = layer then
-                Tiles.SetTileLayer(tile, tileType, Option.toObj visual)
+                AuthoringTiles.SetTileLayer(tile, tileType, Option.toObj visual)
             else
                 let byLayer =
                     match layer with
