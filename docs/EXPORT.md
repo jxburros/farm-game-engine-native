@@ -226,10 +226,11 @@ This material goes in the in-app help later.
   when the F# schema is designed (possibly in v9).
 - **Player-installed mods** for exported games: see
   [LANGUAGES.md](LANGUAGES.md#open-questions).
-- **Plugin sandbox without a JIT.** wasmtime compiles with a JIT by default,
-  which is fine on Windows, Linux and macOS. Consoles and iOS forbid JITs.
-  wasmtime's Pulley interpreter avoids them. Keep `farm-plugins` independent
-  of which wasmtime backend is used, so that choice stays a build flag.
+- **Plugin sandbox without a JIT.** Settled: `farm-plugins` runs plugins in
+  wasmi, a pure-Rust interpreter, so no platform needs a JIT (consoles and iOS
+  forbid them). The wasm engine sits behind a small internal trait, so
+  wasmtime (JIT or its Pulley interpreter) can be added as a build flag if
+  plugins ever need more speed.
 - **Web demo limits.** Should the web demo target offer a "the demo ends after
   day N" option?
 - **macOS.** It needs a Mac (or [rcodesign](https://github.com/indygreg/apple-platform-rs))
