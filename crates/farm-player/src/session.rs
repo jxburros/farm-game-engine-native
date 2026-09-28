@@ -92,6 +92,10 @@ pub trait SessionPlugins {
     fn dispatch(&mut self, events: &[HookEvent]);
     /// Plugin mutations to run now, as `pluginMutation` commands, in arrival order.
     fn drain_commands(&mut self) -> Vec<Command>;
+    /// The most recent plugin errors (init failures, throws, overruns), oldest first.
+    fn recent_errors(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// A creator debug-drawer action (web `debugMutate`): tooling, never gameplay.
@@ -200,6 +204,11 @@ impl PlaySession {
 
     pub fn has_plugins(&self) -> bool {
         self.plugins.is_some()
+    }
+
+    /// The most recent plugin errors, oldest first (empty without plugins).
+    pub fn plugin_errors(&self) -> Vec<String> {
+        self.plugins.as_ref().map(|plugins| plugins.recent_errors()).unwrap_or_default()
     }
 
     /// Seed for cosmetic randomness (minigame target placement); tests pin it.

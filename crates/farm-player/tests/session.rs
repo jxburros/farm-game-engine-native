@@ -167,6 +167,43 @@ fn plugin_mutations_enter_the_command_log_at_the_next_frame() {
     assert_eq!(session.state().player.money, money + 25.0);
 }
 
+/// The golden plugin scenario's project with the real sandbox: its `onDayStart` plugin speaks
+/// after every sleep, and the message enters the game at the next frame.
+#[test]
+fn the_wasm_sandbox_runs_pack_plugins_in_a_session() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/golden/replays/content-packs-and-plugins.json")).unwrap();
+    let project: GameProject = serde_json::from_value(fixture["project"].clone()).unwrap();
+    let specs = farm_plugins::plugin_specs_from_project(&project);
+    assert!(!specs.is_empty(), "the scenario ships plugins");
+    let cart_plugins: Vec<farm_cart::CartPlugin> = specs
+        .iter()
+        .map(|spec| farm_cart::CartPlugin {
+            id: spec.id.clone(),
+            pack_id: spec.pack_id.clone(),
+            source: spec.source.clone(),
+            granted_hooks: spec.granted_hooks.clone(),
+        })
+        .collect();
+    let mut session = session_for(&project);
+    session.set_plugins(farm_player::plugins::for_cartridge(&cart_plugins, Default::default()));
+    assert!(session.has_plugins());
+    assert!(session.plugin_errors().is_empty(), "{:?}", session.plugin_errors());
+    session.run_command(&Command::Sleep);
+    session.drain_events();
+    session.update(0.0, false);
+    let toasts: Vec<String> = session
+        .drain_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            SessionEvent::Toast { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert!(!toasts.is_empty(), "the plugin's day-start message reached the game");
+    assert!(farm_player::plugins::for_project(&starter(), Default::default()).is_none());
+}
+
 #[test]
 fn debug_actions_change_state_without_commands() {
     let mut session = session_for(&starter());

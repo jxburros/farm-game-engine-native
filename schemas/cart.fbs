@@ -23,6 +23,15 @@ table Asset {
   data:[ubyte] (required);
 }
 
+// A sandboxed plugin of an enabled content pack, in load order. `granted_hooks` is the plugin's
+// hooks that the pack manifest's permissions allow.
+table Plugin {
+  id:string (required);
+  pack_id:string (required);
+  source:string (required);
+  granted_hooks:[string];
+}
+
 // Format 2. The player never reads project JSON: the compiler splits a project into the
 // compiled content, the inputs of a new game (start) and what the renderer and game panels
 // need (presentation). The JSON sections keep the v8 JavaScript number behaviour until the
@@ -38,6 +47,7 @@ table Cartridge {
   presentation_json:[ubyte] (required);
   // Sorted by id.
   assets:[Asset];
+  plugins:[Plugin];
 }
 
 root_type Cartridge;

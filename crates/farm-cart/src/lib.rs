@@ -13,8 +13,8 @@ pub mod save;
 pub mod save_file;
 
 pub use cartridge::{
-    inline_assets, is_cartridge, load_cartridge, read_cartridge, Asset, AssetRef, AssetTable, Cartridge, GameInfo,
-    GameInfoOwned, LoadedCartridge, ASSET_URL_PREFIX,
+    inline_assets, is_cartridge, load_cartridge, read_cartridge, Asset, AssetRef, AssetTable, CartPlugin, Cartridge,
+    GameInfo, GameInfoOwned, LoadedCartridge, ASSET_URL_PREFIX,
 };
 pub use save::{migrate_game_state, migrate_game_state_json};
 pub use save_file::{

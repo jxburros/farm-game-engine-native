@@ -69,3 +69,23 @@ let ``malformed data urls stay inline`` () =
     let json = presentation cart
     Assert.Contains("data:image/png;base64,***", json)
     Assert.Contains("data:image/svg+xml,%3Csvg%3E", json)
+
+[<Fact>]
+let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
+    let pack (id: string) =
+        ContentPack(
+            Manifest = PackManifest(Id = id, Name = id, Version = "1.0.0", Permissions = PackPermissions(Hooks = listOf [ "onDayStart"; "onEffect" ])),
+            Plugins = listOf [ PackPlugin(Id = "greeter", Hooks = listOf [ "onEffect"; "onCommand"; "onDayStart" ], Source = "api.on('onDayStart', () => [])") ])
+    let project =
+        Records.withValue (starter ()) "ContentPacks"
+            (box (listOf [ PackInstallation(Pack = pack "alpha"); PackInstallation(Pack = pack "off", Enabled = false); PackInstallation(Pack = pack "beta") ]))
+    let cart = read (CartridgeCompiler.Compile project)
+    Assert.Equal(2, cart.PluginsLength)
+    let first = cart.Plugins(0).Value
+    Assert.Equal("alpha:greeter", first.Id)
+    Assert.Equal("alpha", first.PackId)
+    Assert.Equal("api.on('onDayStart', () => [])", first.Source)
+    // The plugin's order, filtered by the manifest's permissions.
+    Assert.Equal<string>([| "onEffect"; "onDayStart" |], [| for i in 0 .. first.GrantedHooksLength - 1 -> first.GrantedHooks(i) |])
+    Assert.Equal("beta:greeter", cart.Plugins(1).Value.Id)
+    Assert.Equal(0, (read (CartridgeCompiler.Compile(starter ()))).PluginsLength)

@@ -189,6 +189,23 @@ type CartridgeCompiler =
                    let dataOffset = Asset.CreateDataVector(builder, bytes)
                    Asset.CreateAsset(builder, idOffset, mimeOffset, dataOffset) |]
         let assetsOffset = Cartridge.CreateAssetsVector(builder, assetOffsets)
+        // Plugins of the enabled packs in load order, each with the hooks its manifest grants
+        // (the C# `Plugins.PluginSpecsFromProject`, Rust `farm_plugins::plugin_specs_from_project`).
+        let pluginOffsets =
+            [| for install in project.ContentPacks do
+                   if install.Enabled then
+                       let pack = install.Pack
+                       // JSON nulls can reach these lists despite their annotations (as `?? []` in C#).
+                       let orEmpty (items: seq<'T>) = if isNull (box items) then Seq.empty else items
+                       let granted = Collections.Generic.HashSet<string>(orEmpty pack.Manifest.Permissions.Hooks, StringComparer.Ordinal)
+                       for plugin in orEmpty pack.Plugins do
+                               let hooks = orEmpty plugin.Hooks |> Seq.filter granted.Contains |> Seq.map stringOffset |> Array.ofSeq
+                               let hooksOffset = Plugin.CreateGrantedHooksVector(builder, hooks)
+                               let idOffset = stringOffset (pack.Manifest.Id + ":" + plugin.Id)
+                               let packOffset = stringOffset pack.Manifest.Id
+                               let sourceOffset = stringOffset plugin.Source
+                               yield Plugin.CreatePlugin(builder, idOffset, packOffset, sourceOffset, hooksOffset) |]
+        let pluginsOffset = Cartridge.CreatePluginsVector(builder, pluginOffsets)
         let titleOffset = stringOffset title
         let versionOffset = stringOffset version
         let gameIdOffset = stringOffset settings.GameId
@@ -207,6 +224,6 @@ type CartridgeCompiler =
         let presentationOffset = Cartridge.CreatePresentationJsonVector(builder, presentationBytes)
         let cart =
             Cartridge.CreateCartridge(builder, CartridgeCompiler.Format, uint32 project.SchemaVersion, info,
-                                      contentOffset, startOffset, presentationOffset, assetsOffset)
+                                      contentOffset, startOffset, presentationOffset, assetsOffset, pluginsOffset)
         Cartridge.FinishCartridgeBuffer(builder, cart)
         builder.SizedByteArray()

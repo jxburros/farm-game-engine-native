@@ -39,6 +39,18 @@ pub struct AssetRef<'a> {
     pub data: &'a [u8],
 }
 
+/// A sandboxed plugin of an enabled content pack (`farm_plugins::PluginSpec`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CartPlugin {
+    /// `packId:pluginId`.
+    pub id: String,
+    pub pack_id: String,
+    /// The body of `function (api) { … }`.
+    pub source: String,
+    /// The plugin's hooks that the pack manifest grants, in the plugin's order.
+    pub granted_hooks: Vec<String>,
+}
+
 /// A verified cartridge, borrowing its sections from the buffer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cartridge<'a> {
@@ -49,6 +61,8 @@ pub struct Cartridge<'a> {
     pub presentation_json: &'a [u8],
     /// Sorted by id.
     pub assets: Vec<AssetRef<'a>>,
+    /// In load order.
+    pub plugins: Vec<CartPlugin>,
 }
 
 pub fn is_cartridge(bytes: &[u8]) -> bool {
@@ -92,6 +106,23 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
         .unwrap_or_default();
     // The compiler writes them sorted; don't trust it for lookups.
     assets.sort_by(|a, b| a.id.cmp(b.id));
+    let plugins = cart
+        .plugins()
+        .map(|plugins| {
+            plugins
+                .iter()
+                .map(|plugin| CartPlugin {
+                    id: plugin.id().to_owned(),
+                    pack_id: plugin.pack_id().to_owned(),
+                    source: plugin.source().to_owned(),
+                    granted_hooks: plugin
+                        .granted_hooks()
+                        .map(|hooks| hooks.iter().map(str::to_owned).collect())
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(Cartridge {
         info: GameInfo {
             title: info.title(),
@@ -111,6 +142,7 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
         start_json: cart.start_json().bytes(),
         presentation_json: cart.presentation_json().bytes(),
         assets,
+        plugins,
     })
 }
 
@@ -197,6 +229,8 @@ pub struct LoadedCartridge {
     pub start: StartState,
     pub presentation: Presentation,
     pub assets: AssetTable,
+    /// Plugins of the enabled packs, in load order.
+    pub plugins: Vec<CartPlugin>,
 }
 
 /// Verify and parse a cartridge.
@@ -216,6 +250,7 @@ pub fn load_cartridge(bytes: &[u8]) -> Result<LoadedCartridge, String> {
         start,
         presentation,
         assets,
+        plugins: cart.plugins,
     })
 }
 
