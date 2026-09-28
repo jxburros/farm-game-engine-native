@@ -5,10 +5,11 @@
     python3 tools/art/build_art.py --no-render  # reuse cached renders, repack only
     python3 tools/art/build_art.py --samples 8  # faster, noisier preview renders
 
-Writes `src/FarmEngine.Rendering/Assets/builtin/{tiles,objects,characters}.png`
-and `manifest.json`. Raw renders are cached in `tools/art/.cache/` (ignored by
-git). The generated PNGs are committed, so `dotnet build` never needs Python
-or Blender; this script is only for changing the art.
+Writes `assets/builtin-art/{tiles,objects,characters}.png` and `manifest.json`
+(embedded by both `crates/farm-render` and `FarmEngine.Rendering`). Raw renders
+are cached in `tools/art/.cache/` (ignored by git). The generated PNGs are
+committed, so `cargo build` and `dotnet build` never need Python or Blender;
+this script is only for changing the art.
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-DEFAULT_OUT = ROOT / "src" / "FarmEngine.Rendering" / "Assets" / "builtin"
+DEFAULT_OUT = ROOT / "assets" / "builtin-art"
 CACHE = HERE / ".cache"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory (default: the Rendering project's Assets/builtin)")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory (default: assets/builtin-art)")
     parser.add_argument("--no-render", action="store_true", help="skip Blender and reuse the cached renders")
     parser.add_argument("--samples", type=int, default=None, help="Cycles samples per pixel (default 24)")
     parser.add_argument("--clean", action="store_true", help="delete the render cache first")
