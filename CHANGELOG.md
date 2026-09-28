@@ -2,6 +2,16 @@
 
 ## 0.2.0 (unreleased)
 
+- **Rust Play Mode runtime.** Frame timing, gameplay input bindings, minigame
+  scoring, creator-panel values, calendar displays and sound-cue mapping now
+  execute in Rust when Rust Play Mode is selected. Minigame views use mount
+  tokens to reject stale input, and results pass through the command pipeline
+  once. C# remains the fallback when the native library is unavailable.
+- **Rust world snapshots.** The new `farm-render` crate builds read-only play
+  snapshots from Rust state. Differential tests cover all templates, crop
+  maturity/withered state, soil, machines, missing definitions/tiles, moving
+  NPCs and animals. The app still decorates artwork and draws through Skia;
+  a GPU renderer and standalone graphical player are not included yet.
 - **F# project templates.** The starter pack and all four project templates now
   originate in F#. New Project, first launch and game import use the new catalog,
   with the clock supplied by the desktop host. The app no longer depends on

@@ -55,7 +55,6 @@ public sealed class PlaySession : IDisposable
     /// <summary>Lifetime of a floating pop, ms (web <c>POP_LIFETIME_MS</c>).</summary>
     public const double PopLifetimeMs = 900;
 
-    private readonly FixedTimestep _timestep = new();
     private readonly List<(SnapshotPop Pop, double BornAt)> _pops = [];
     private readonly IGameAudio _audio;
     private readonly PluginBridge? _plugins;
@@ -147,7 +146,15 @@ public sealed class PlaySession : IDisposable
     public double ElapsedMs { get; private set; }
 
     /// <summary>Interpolation alpha of the fixed timestep (0..1).</summary>
-    public double Alpha => _timestep.Alpha;
+    public double Alpha { get; private set; }
+
+    internal List<PanelView> PanelViews(bool hostModalOpen) => _engine.PanelViews(hostModalOpen);
+    internal PlayCalendarView CalendarView() => _engine.CalendarView();
+
+    internal PlayMinigame MountMinigame(MinigameRegistry registry, MinigameDef? definition, double? random = null) =>
+        new(this, registry, definition, random ?? Random.Shared.NextDouble());
+
+    internal void RunRuntime(Action call) => Guard(call);
 
     /// <summary>A message effect (or session notice) the host should show.</summary>
     public event EventHandler<ToastMessage>? Toast;
@@ -225,6 +232,10 @@ public sealed class PlaySession : IDisposable
     public FrameToggles Update(double deltaSeconds, bool hostModalOpen = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!double.IsFinite(deltaSeconds))
+        {
+            throw new ArgumentOutOfRangeException(nameof(deltaSeconds), "Frame time must be finite.");
+        }
         ElapsedMs += Math.Max(0, deltaSeconds) * 1000;
 
         // Plugin mutations enter the command log at ONE fixed point per frame.
@@ -238,14 +249,16 @@ public sealed class PlaySession : IDisposable
 
         // Free movement: only CHANGES of the held intent become commands; zero while any
         // modal is open.
-        var vector = hostModalOpen ? new MoveVector(0, 0) : InputBindings.MoveIntent(Input, State);
+        var prepared = _engine.PrepareFrame(Input, deltaSeconds, hostModalOpen);
+        Alpha = prepared.Alpha;
+        var vector = new MoveVector(prepared.Dx, prepared.Dy);
         if (vector != _lastIntent)
         {
             _lastIntent = vector;
             Run(new SetMoveIntentCommand(vector.Dx, vector.Dy));
         }
 
-        var ticks = _timestep.Advance(deltaSeconds);
+        var ticks = prepared.Ticks;
         if (ticks > 0)
         {
             _prevPlayer = (State.Player.X, State.Player.Y, State.Player.SceneId);
@@ -253,7 +266,7 @@ public sealed class PlaySession : IDisposable
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        var frame = InputBindings.PollPlayFrame(Input, State, Content, hostModalOpen);
+        var frame = _engine.PollFrame(Input, hostModalOpen);
         foreach (var command in frame.Commands)
         {
             Run(command);
@@ -306,7 +319,7 @@ public sealed class PlaySession : IDisposable
         var iy = player.Y;
         if (_prevPlayer is { } prev && prev.SceneId == player.SceneId)
         {
-            var alpha = _timestep.Alpha;
+            var alpha = Alpha;
             ix = prev.X + ((player.X - prev.X) * alpha);
             iy = prev.Y + ((player.Y - prev.Y) * alpha);
         }
@@ -318,7 +331,7 @@ public sealed class PlaySession : IDisposable
         var (worldWidth, worldHeight) = WorldSize();
         var camera = Canvas2d.ComputeCamera(pixelX + (TileSize / 2), pixelY + (TileSize / 2), worldWidth, worldHeight, viewWidth, viewHeight);
 
-        var snapshot = ShellSnapshot.BuildShellSnapshot(Content, State, scene, new ShellSnapshotOptions(TileSize, Padding, pixelX, pixelY, camera));
+        var snapshot = _engine.Snapshot(scene, new ShellSnapshotOptions(TileSize, Padding, pixelX, pixelY, camera));
         _pops.RemoveAll(pop => ElapsedMs - pop.BornAt >= PopLifetimeMs);
         if (!ReducedMotion && _pops.Count > 0)
         {
@@ -371,7 +384,7 @@ public sealed class PlaySession : IDisposable
         {
             call();
         }
-        catch (FarmFfiException ex)
+        catch (Exception ex) when (ex is FarmFfiException or ObjectDisposedException)
         {
             Fault = ex;
             Faulted?.Invoke(this, ex);
@@ -381,11 +394,13 @@ public sealed class PlaySession : IDisposable
     /// <summary>React to engine effects (toasts, sounds, juice, camera snaps).</summary>
     private void HandleEffects(List<Effect> effects)
     {
+        var cues = effects.Count == 0 ? [] : _engine.AudioCues(effects);
+        var index = 0;
         foreach (var effect in effects)
         {
             // Observe-only hook for mods (M5).
             Context.Hooks?.Emit(HookNames.OnEffect, new EffectHookPayload(effect.Type));
-            _audio.PlayForEffect(effect);
+            if (cues[index++] is { } cue) _audio.PlayCue(cue);
             switch (effect)
             {
                 case CropHarvestedEffect harvested:

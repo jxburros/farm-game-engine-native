@@ -30,17 +30,14 @@ internal sealed class MinigameOverlay : IDisposable
         _session = session;
         State = minigame;
         Definition = session.Content.Minigames.FirstOrDefault(def => def.Id == minigame.MinigameId);
-        var impl = Minigames.MinigameImplFor(registry, Definition);
-        Session = impl.Mount(new MinigameMountOptions(
-            Definition?.Config ?? new OrderedDictionary<string, System.Text.Json.JsonElement>(),
-            score => _session.RunCommand(new ResolveMinigameCommand(score)),
-            () => _session.RunCommand(new CancelMinigameCommand())));
+        Session = session.MountMinigame(registry, Definition);
 
         var body = new StackPanel { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, Width = BarWidth + 20 };
         body.Children.Add(Ui.Centered(Ui.Wrapped(Session.Prompt)));
         _marker = new Border { Width = 3, Background = new SolidColorBrush(Color.Parse("#FFD94A")), Height = 26 };
-        if (Session is TimingBarSession bar)
+        if (Session.Kind == "timing-bar")
         {
+            var bar = Session.View;
             var canvas = new Canvas { Width = BarWidth, Height = 26, ClipToBounds = true };
             canvas.Children.Add(new Rectangle { Width = BarWidth, Height = 26, Fill = new SolidColorBrush(Color.Parse("#3A4033")), RadiusX = 6, RadiusY = 6 });
             var zone = new Border
@@ -56,15 +53,15 @@ internal sealed class MinigameOverlay : IDisposable
             canvas.Children.Add(_marker);
             body.Children.Add(new Border { Child = canvas, CornerRadius = new CornerRadius(6), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Center });
         }
-        else if (Session is SimpleBattleSession battle)
+        else if (Session.Kind == "simple-battle")
         {
             body.Children.Add(_status);
             body.Children.Add(_log);
             var actions = Ui.HStack(8);
             actions.HorizontalAlignment = HorizontalAlignment.Center;
-            foreach (var choice in SimpleBattleSession.Choices)
+            foreach (var choice in Session.View.Choices)
             {
-                actions.Children.Add(Ui.Button(Ui.Capitalize(choice), () => { battle.Act(choice); Refresh(); }, "tool"));
+                actions.Children.Add(Ui.Button(Ui.Capitalize(choice), () => { Session.Act(choice); Refresh(); }, "tool"));
             }
 
             body.Children.Add(actions);
@@ -76,7 +73,7 @@ internal sealed class MinigameOverlay : IDisposable
         // Press/release semantics (hold-to-catch needs both).
         _primary.AddHandler(InputElement.PointerPressedEvent, (_, _) => Press(), Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _primary.AddHandler(InputElement.PointerReleasedEvent, (_, _) => Release(), Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        if (Session is not SimpleBattleSession)
+        if (Session.Kind != "simple-battle")
         {
             body.Children.Add(_primary);
             body.Children.Add(Ui.Centered(Ui.Text("Space / Enter", "muted", "small")));
@@ -94,7 +91,7 @@ internal sealed class MinigameOverlay : IDisposable
 
     public MinigameDef? Definition { get; }
 
-    public IMinigameSession Session { get; }
+    public PlayMinigame Session { get; }
 
     public Control View { get; }
 
@@ -128,13 +125,15 @@ internal sealed class MinigameOverlay : IDisposable
 
     private void Refresh()
     {
-        if (Session is TimingBarSession bar)
+        if (Session.Kind == "timing-bar")
         {
+            var bar = Session.View;
             Canvas.SetLeft(_marker, Math.Clamp(bar.Position, 0, 1) * (BarWidth - 3));
         }
 
-        if (Session is SimpleBattleSession battle)
+        if (Session.Kind == "simple-battle")
         {
+            var battle = Session.View;
             _status.Text = battle.Status;
             _log.Text = battle.Log;
         }

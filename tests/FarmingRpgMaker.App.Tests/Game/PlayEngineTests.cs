@@ -215,6 +215,8 @@ public sealed class PlayEngineTests(ITestOutputHelper output)
                 Assert.True(csharpOverlay == rustOverlay, $"overlay queries differ after \"{label}\": {FirstDifference(csharpOverlay, rustOverlay)}");
                 // The mirror is exactly the Rust state.
                 Assert.Equal(rustSession.StateHash(), Hash.HashState(rust.Session.State));
+                Assert.Equal(Hash.StableStringify(csharp.Session.BuildSnapshot(640, 416)),
+                    Hash.StableStringify(rust.Session.BuildSnapshot(640, 416)));
             });
 
         Assert.Equal(Hash.StableStringify(csharp.Session.SyncedProject()), Hash.StableStringify(rust.Session.SyncedProject()));

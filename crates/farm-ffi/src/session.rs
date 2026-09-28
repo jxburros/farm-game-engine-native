@@ -11,6 +11,7 @@
 
 use crate::{view_json, FeBytes, FeResult};
 use farm_cart::save_file::{self, SaveTarget};
+use farm_runtime::{host, input, panels, timestep::FixedTimestep};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
@@ -33,6 +34,110 @@ pub struct FeSession {
     host_view: Option<GameState>,
     poisoned: bool,
     last_error: String,
+    runtime: RuntimeState,
+}
+
+#[derive(Debug, Default)]
+struct RuntimeState {
+    timestep: FixedTimestep,
+    generation: u64,
+    minigame: Option<(farm_sim::schema::MinigameSession, host::HostedMinigame)>,
+}
+
+impl RuntimeState {
+    fn sync_minigame(&mut self, state: &GameState) {
+        if self.minigame.as_ref().is_some_and(|(active, _)| state.minigame.as_ref() != Some(active)) {
+            self.minigame = None;
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum RuntimeRequest {
+    PrepareFrame { input: host::InputFrame, seconds: f64, host_modal_open: bool },
+    PollFrame { input: host::InputFrame, host_modal_open: bool },
+    Panels { host_modal_open: bool },
+    Calendar,
+    Snapshot { scene_id: String, options: farm_render::SnapshotOptions },
+    AudioCues { effects: Vec<farm_sim::Effect> },
+    MountMinigame { random: f64 },
+    MinigameInput { generation: u64, input: host::MinigameInput },
+    DisposeMinigame { generation: u64 },
+}
+
+/// Batched runtime operations. Input is polled after simulation ticks so a modal opened
+/// during that tick blocks same-frame actions, just as in the reference shell.
+///
+/// # Safety
+/// `session` comes from [`fe_session_new`]; `request` points to `len` readable bytes;
+/// `out` is a valid output pointer. Calls must be serialized with other session calls.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_runtime_json(
+    session: *mut FeSession,
+    request: *const u8,
+    len: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    write_empty(out);
+    let Some(bytes) = bytes_arg(request, len) else { return FeResult::InvalidArgument };
+    with_session(session, out, |s| {
+        let request: RuntimeRequest = serde_json::from_slice(bytes).map_err(|e| format!("runtime request: {e}"))?;
+        match request {
+            RuntimeRequest::PrepareFrame { input, seconds, host_modal_open } => Ok(view_json::to_json(
+                &host::prepare_frame(&mut s.runtime.timestep, &input, &s.state, seconds, host_modal_open)?,
+            )),
+            RuntimeRequest::PollFrame { input, host_modal_open } => Ok(view_json::to_json(&input::poll_play_frame(
+                &input.tracker(),
+                &s.state,
+                &s.ctx.content,
+                host_modal_open,
+            ))),
+            RuntimeRequest::Panels { host_modal_open } => {
+                let views = panels::render(
+                    s.project.game_panels.iter().flatten(),
+                    &panels::PanelState::from_game_state(&s.state, host_modal_open),
+                );
+                Ok(view_json::to_json(&views))
+            }
+            RuntimeRequest::Calendar => Ok(view_json::to_json(&host::calendar_view(&s.ctx.content, &s.state))),
+            RuntimeRequest::Snapshot { scene_id, options } => {
+                let scene = s
+                    .state
+                    .world
+                    .scenes
+                    .iter()
+                    .find(|scene| scene.id == scene_id)
+                    .ok_or("Snapshot scene not found.")?;
+                Ok(view_json::to_json(&farm_render::snapshot(&s.ctx.content, &s.state, scene, &options)))
+            }
+            RuntimeRequest::AudioCues { effects } => {
+                Ok(view_json::to_json(&effects.iter().map(farm_runtime::audio::sfx_for_effect).collect::<Vec<_>>()))
+            }
+            RuntimeRequest::MountMinigame { random } => {
+                let active = s.state.minigame.as_ref().ok_or("No active minigame.")?;
+                let definition = s.ctx.content.minigames.iter().find(|def| def.id == active.minigame_id);
+                let mounted = host::HostedMinigame::mount(definition, random)?;
+                let view = mounted.view();
+                s.runtime.generation += 1;
+                s.runtime.minigame = Some((active.clone(), mounted));
+                Ok(view_json::to_json(&serde_json::json!({"generation": s.runtime.generation, "view": view})))
+            }
+            RuntimeRequest::MinigameInput { generation, input } => {
+                let (active, mounted) = s.runtime.minigame.as_mut().ok_or("Minigame is not mounted.")?;
+                if generation != s.runtime.generation || s.state.minigame.as_ref() != Some(active) {
+                    return Err("Minigame input belongs to an expired session.".to_owned());
+                }
+                Ok(view_json::to_json(&mounted.apply(input)?))
+            }
+            RuntimeRequest::DisposeMinigame { generation } => {
+                if generation == s.runtime.generation {
+                    s.runtime.minigame = None;
+                }
+                Ok("null".to_owned())
+            }
+        }
+    })
 }
 
 impl std::fmt::Debug for FeSession {
@@ -143,6 +248,7 @@ pub unsafe extern "C" fn fe_session_new(
             host_view: None,
             poisoned: false,
             last_error: String::new(),
+            runtime: RuntimeState::default(),
         })
     }));
     match result {
@@ -222,6 +328,7 @@ pub unsafe extern "C" fn fe_session_apply(
         let mut effects = Vec::new();
         for command in &commands {
             effects.extend(engine::apply_command(&s.ctx, &mut s.state, command));
+            s.runtime.sync_minigame(&s.state);
         }
         Ok(stable_json::stringify(&effects))
     })
@@ -235,6 +342,7 @@ pub unsafe extern "C" fn fe_session_apply(
 pub unsafe extern "C" fn fe_session_tick(session: *mut FeSession, ticks: u32, out: *mut FeBytes) -> FeResult {
     with_session(session, out, |s| {
         let effects = engine::advance_tick(&s.ctx, &mut s.state, f64::from(ticks));
+        s.runtime.sync_minigame(&s.state);
         Ok(stable_json::stringify(&effects))
     })
 }
@@ -376,6 +484,7 @@ pub unsafe extern "C" fn fe_session_set_state(
     };
     with_session(session, out, |s| {
         s.state = serde_json::from_slice(bytes).map_err(|e| format!("state JSON: {e}"))?;
+        s.runtime.sync_minigame(&s.state);
         Ok(String::new())
     })
 }
@@ -513,6 +622,8 @@ pub unsafe extern "C" fn fe_session_load_save(
             return Err(loaded.errors.join("\n"));
         };
         s.state = state;
+        s.runtime.minigame = None;
+        s.runtime.timestep.reset();
         let report = serde_json::json!({
             "warnings": loaded.warnings,
             "quarantined": loaded.quarantined,

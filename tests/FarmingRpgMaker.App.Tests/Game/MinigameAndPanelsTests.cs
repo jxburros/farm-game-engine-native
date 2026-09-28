@@ -22,12 +22,13 @@ public sealed class MinigameAndPanelsTests
         session.RunCommand(new StartMinigameCommand("fishing"));
         host.Frames(1);
         Assert.NotNull(session.State.Minigame);
-        var bar = Assert.IsType<TimingBarSession>(host.Play.Minigame);
+        var bar = Assert.IsType<PlayMinigame>(host.Play.Minigame);
+        Assert.Equal("timing-bar", bar.Kind);
         Assert.Contains("Hook the fish", AllVisibleText(FindByName<Border>(host.Window, "MinigameOverlay")), StringComparison.Ordinal);
 
-        var before = bar.Position;
+        var before = bar.View.Position;
         host.Frames(10);
-        Assert.NotEqual(before, bar.Position);
+        Assert.NotEqual(before, bar.View.Position);
 
         host.Window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
         host.Frames(1);

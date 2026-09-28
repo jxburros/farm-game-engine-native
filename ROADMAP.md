@@ -162,8 +162,17 @@ the most.
   recipe availability, ingredients and facing tile in one batched query.
   The debug drawer's skip day uses Rust's overnight pass. A scripted play
   compares these results with the C# engine after every step.
-- [ ] Port Edit Mode's preview and remaining play-rule lookups, then delete
-  the C# engine projects.
+- [x] Connect Rust runtime logic to Play Mode: fixed timestep, movement and
+  one-shot bindings, all built-in minigames and fallback, creator panels,
+  calendar displays and sound-cue mapping. C# collects raw host events and
+  draws returned views. Minigame results still enter the command log exactly
+  once; expired mounts cannot score a replacement session.
+- [x] `farm-render` builds Play Mode's world snapshots in Rust, including crop
+  maturity, soil, machine status, live NPC movement, animals and atmosphere.
+  Template and scripted-play differential tests compare the entire snapshot
+  with the C# reference. Art decoration and Skia drawing remain managed.
+- [ ] Port Edit Mode's preview, art decoration and the plugin bridge, then
+  remove the C# simulation/runtime fallback and their shared engine types.
 
 **Editor port (phase 5)**: map tools and a broad content workspace are now
 available as native views.
@@ -191,6 +200,9 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
   The graphical shell, plugin sandbox and packaging are still open.
+- [x] Initial `farm-render` crate supplies host-independent world snapshots
+  and is used by the editor's Rust Play Mode. GPU drawing, Rust game UI,
+  audio playback and a graphical standalone player remain open.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).

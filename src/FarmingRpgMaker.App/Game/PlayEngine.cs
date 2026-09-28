@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FarmEngine.Core;
 using FarmEngine.Interop;
+using FarmEngine.Runtime;
+using FarmEngine.Rendering;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Game;
@@ -43,7 +45,17 @@ internal interface IPlayEngine : IDisposable
 
     /// <summary>Creator debug action: advance through the overnight pass.</summary>
     void SkipDay();
+
+    PreparedPlayFrame PrepareFrame(InputManager input, double seconds, bool hostModalOpen);
+    PlayFrameInput PollFrame(InputManager input, bool hostModalOpen);
+    List<PanelView> PanelViews(bool hostModalOpen);
+    PlayCalendarView CalendarView();
+    List<string?> AudioCues(List<Effect> effects);
+    WorldSnapshot Snapshot(Scene scene, ShellSnapshotOptions options);
 }
+
+internal sealed record PreparedPlayFrame(int Ticks, double Alpha, double Dx, double Dy);
+internal sealed record PlayCalendarView(string? SeasonName, double SeasonDays, double DayOfSeason, string TimeText, List<CalendarSeason> Seasons);
 
 /// <summary>One snapshot of the rule queries used by dialogue, shop and crafting views.</summary>
 internal sealed record PlayOverlayView
@@ -140,6 +152,7 @@ internal sealed class CSharpPlayEngine : IPlayEngine
 {
     private readonly EngineContext _context;
     private readonly GameProject _project;
+    private readonly FixedTimestep _timestep = new();
 
     public CSharpPlayEngine(EngineContext context, GameProject project)
     {
@@ -174,6 +187,32 @@ internal sealed class CSharpPlayEngine : IPlayEngine
     public PlayOverlayView OverlayView() => PlayOverlayView.FromCSharp(_context, State);
 
     public void SkipDay() => State = GameTime.PerformSleep(_context, State, new SleepOptions(Collapsed: false)).State;
+
+    public PreparedPlayFrame PrepareFrame(InputManager input, double seconds, bool hostModalOpen)
+    {
+        var intent = hostModalOpen ? new MoveVector(0, 0) : InputBindings.MoveIntent(input, State);
+        var ticks = _timestep.Advance(seconds);
+        return new(ticks, _timestep.Alpha, intent.Dx, intent.Dy);
+    }
+
+    public PlayFrameInput PollFrame(InputManager input, bool hostModalOpen) =>
+        InputBindings.PollPlayFrame(input, State, _context.Content, hostModalOpen);
+
+    public List<PanelView> PanelViews(bool hostModalOpen) =>
+        GamePanels.Render(_project.GamePanels ?? [], PanelState.FromGameState(State, hostModalOpen));
+
+    public PlayCalendarView CalendarView()
+    {
+        var calendar = _context.Content.Settings.Calendar;
+        var season = GameTime.SeasonById(calendar, State.Clock.Season);
+        return new(season?.Name, season?.Days ?? ContentBuiltin.DaysPerSeason,
+            GameTime.DayOfSeason(calendar, State.Clock.Day), GameTime.FormatTimeOfDay(Math.Floor(State.Clock.TimeMinutes)),
+            GameTime.CalendarSeasons(calendar));
+    }
+
+    public List<string?> AudioCues(List<Effect> effects) => effects.Select(Audio.SfxForEffect).ToList();
+
+    public WorldSnapshot Snapshot(Scene scene, ShellSnapshotOptions options) => ShellSnapshot.BuildShellSnapshot(_context.Content, State, scene, options);
 
     public void Dispose()
     {
@@ -251,6 +290,23 @@ internal sealed class RustPlayEngine : IPlayEngine
     }
 
     public void Dispose() => _session.Dispose();
+
+    public PreparedPlayFrame PrepareFrame(InputManager input, double seconds, bool hostModalOpen) =>
+        _session.Runtime<PreparedPlayFrame>(new { type = "prepareFrame", input, seconds, hostModalOpen });
+
+    public PlayFrameInput PollFrame(InputManager input, bool hostModalOpen) =>
+        _session.Runtime<PlayFrameInput>(new { type = "pollFrame", input, hostModalOpen });
+
+    public List<PanelView> PanelViews(bool hostModalOpen) =>
+        _session.Runtime<List<PanelView>>(new { type = "panels", hostModalOpen });
+
+    public PlayCalendarView CalendarView() => _session.Runtime<PlayCalendarView>(new { type = "calendar" });
+
+    public List<string?> AudioCues(List<Effect> effects) =>
+        _session.Runtime<List<string?>>(new { type = "audioCues", effects });
+
+    public WorldSnapshot Snapshot(Scene scene, ShellSnapshotOptions options) =>
+        _session.Runtime<WorldSnapshot>(new { type = "snapshot", sceneId = scene.Id, options });
 
     private void AfterCall()
     {

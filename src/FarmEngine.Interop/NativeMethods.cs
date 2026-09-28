@@ -70,6 +70,9 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "fe_session_overlay_json")]
     public static partial FeResult fe_session_overlay_json(FeSession* session, FeBytes* output);
 
+    [LibraryImport(Library, EntryPoint = "fe_session_runtime_json")]
+    public static partial FeResult fe_session_runtime_json(FeSession* session, byte* request, nuint len, FeBytes* output);
+
     [LibraryImport(Library, EntryPoint = "fe_session_skip_day")]
     public static partial FeResult fe_session_skip_day(FeSession* session, FeBytes* output);
 

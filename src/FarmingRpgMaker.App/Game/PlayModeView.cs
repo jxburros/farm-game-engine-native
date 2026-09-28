@@ -490,14 +490,13 @@ public sealed class PlayModeView : UserControl
     {
         var state = _session.State;
         var content = _session.Content;
-        var calendar = content.Settings.Calendar;
+        var calendar = _session.CalendarView();
         SetText(_money, Ui.Money(state.Player.Money));
-        SetText(_season, GameTime.SeasonById(calendar, state.Clock.Season)?.Name ?? Ui.Capitalize(state.Clock.Season));
-        var seasonDays = GameTime.SeasonById(calendar, state.Clock.Season)?.Days ?? ContentBuiltin.DaysPerSeason;
-        SetText(_day, $"{Ui.Num(GameTime.DayOfSeason(calendar, state.Clock.Day))} / {Ui.Num(seasonDays)}");
+        SetText(_season, calendar.SeasonName ?? Ui.Capitalize(state.Clock.Season));
+        SetText(_day, $"{Ui.Num(calendar.DayOfSeason)} / {Ui.Num(calendar.SeasonDays)}");
         SetText(_year, Ui.Num(state.Clock.Year));
         SetText(_weather, content.Weather.Types.FirstOrDefault(w => w.Id == state.Clock.WeatherId)?.Name ?? "Sunny");
-        SetText(_time, GameTime.FormatTimeOfDay(Math.Floor(state.Clock.TimeMinutes)));
+        SetText(_time, calendar.TimeText);
         _energyGroup.IsVisible = content.Settings.EnergyEnabled;
         var maxEnergy = state.Player.MaxEnergy > 0 ? state.Player.MaxEnergy : content.Settings.MaxEnergy;
         var ratio = maxEnergy > 0 ? state.Player.Energy / maxEnergy : 0;
@@ -620,7 +619,7 @@ public sealed class PlayModeView : UserControl
             return;
         }
 
-        var views = GamePanels.Render(panels, PanelState.FromGameState(_session.State, _panel != HostPanel.None));
+        var views = _session.PanelViews(_panel != HostPanel.None);
         var signature = string.Join("|", views.Select(v => $"{v.Id}:{v.Hidden}:{string.Join(",", v.Entries.Select(e => $"{e.Text}/{e.Enabled}"))}"));
         if (signature == _panelsSignature)
         {
