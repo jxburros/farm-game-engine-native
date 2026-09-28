@@ -1,4 +1,4 @@
-//! The economy cases of `tests/FarmEngine.Core.Tests/Core/M2SystemsTests.cs` (m2-systems.test.ts)
+//! The economy cases of the retired C# `M2SystemsTests.cs` (m2-systems.test.ts)
 //! and the buy-progresses-quests case of `M3SystemsTests.cs`, driven through the `economy` /
 //! `dialogue_system` handlers directly (the engine dispatch is ported separately). States come
 //! from the golden starter farm (100 money, 10 seed-wheat, a hoe, spring day 1).

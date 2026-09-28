@@ -66,6 +66,8 @@ public sealed class PlaceholderProjectCommandHandler : IProjectCommandHandler
 
     public Task ExportProjectJsonAsync(IShellHost shell) => NotYet(shell, "Exporting project JSON");
 
+    public Task ExportGameAsync(IShellHost shell) => NotYet(shell, "Exporting games");
+
     private static Task NotYet(IShellHost shell, string what)
     {
         shell.ShowStatus($"{what} isn't available in this build yet.");

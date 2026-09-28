@@ -2,9 +2,10 @@
 
 The TypeScript engine ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
 is the reference implementation. This folder generates JSON fixtures from it
-into `fixtures/golden/`, shared by the C# tests (`tests/FarmEngine.Core.Tests`),
-the Rust tests (`crates/farm-sim/tests`) and the F# tests, which all check for
-byte-identical stable JSON and state hashes (see `docs/PORTING.md`).
+into `fixtures/golden/`, shared by the Rust tests (`crates/farm-sim/tests`), the
+F# tests (`tests/FarmEngine.Authoring.Tests`) and the C# schema tests
+(`tests/FarmEngine.Schemas.Tests`), which all check for byte-identical stable
+JSON and state hashes (see `docs/PORTING.md`).
 
 ## Regenerate
 

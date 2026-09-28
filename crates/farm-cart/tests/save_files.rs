@@ -189,3 +189,63 @@ fn the_cart_hash_follows_content() {
     assert_eq!(cart_hash(&content), cart_hash(&content.clone()));
     assert_eq!(cart_hash(&content).len(), 16);
 }
+
+#[test]
+fn binary_saves_round_trip_and_carry_a_preview() {
+    use farm_cart::{is_binary_save, load_save_bytes, read_save_preview, write_save_binary, SavePreview};
+    let project = starter_project();
+    let (content, target) = build(&project);
+    let state = state::create_game_state(&project, Some("binary-save"));
+    let mut preview = SavePreview::of_state(&state);
+    preview.farm_name = "Willow Creek".to_owned();
+    preview.play_seconds = 125.5;
+    preview.saved_at = 1_790_000_000;
+    preview.thumbnail_png = vec![0x89, b'P', b'N', b'G'];
+    let bytes = write_save_binary(&state, &target, &preview);
+    assert!(is_binary_save(&bytes));
+    assert_eq!(bytes, write_save_binary(&state, &target, &preview), "writing is deterministic");
+    // zstd keeps saves small: well under the stable JSON size.
+    assert!(bytes.len() * 2 < write_save(&state, &target).len(), "{} bytes", bytes.len());
+
+    let (header, read_preview) = read_save_preview(&bytes).unwrap();
+    assert_eq!(header.game_id, target.game_id);
+    assert_eq!(header.cart_hash, target.cart_hash);
+    assert_eq!(read_preview, preview);
+
+    let loaded = load_save_bytes(&bytes, &target, &content);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    assert_eq!(stable_stringify(loaded.state.as_ref().unwrap()), stable_stringify(&state));
+
+    // The same loader still reads JSON saves.
+    let json = write_save(&state, &target);
+    assert!(load_save_bytes(json.as_bytes(), &target, &content).ok);
+}
+
+#[test]
+fn damaged_or_foreign_binary_saves_are_refused() {
+    use farm_cart::{load_save_bytes, write_save_binary, SavePreview};
+    let project = starter_project();
+    let (content, target) = build(&project);
+    let state = state::create_game_state(&project, Some("binary-save"));
+    let bytes = write_save_binary(&state, &target, &SavePreview::default());
+
+    let other = SaveTarget { game_id: "other.game".to_owned(), ..target.clone() };
+    let refused = load_save_bytes(&bytes, &other, &content);
+    assert!(!refused.ok);
+    assert!(refused.errors[0].starts_with("This save belongs to a different game"), "{:?}", refused.errors);
+
+    let mut truncated = bytes.clone();
+    truncated.truncate(bytes.len() / 2);
+    assert!(!load_save_bytes(&truncated, &target, &content).ok);
+
+    // Corrupt the compressed state (the last bytes of the buffer belong to it).
+    let mut corrupt = bytes.clone();
+    let len = corrupt.len();
+    for byte in &mut corrupt[len - 40..len - 8] {
+        *byte ^= 0x5a;
+    }
+    let damaged = load_save_bytes(&corrupt, &target, &content);
+    assert!(!damaged.ok);
+
+    assert!(!load_save_bytes(&[0xff, 0xfe, 0x00], &target, &content).ok);
+}

@@ -1,5 +1,5 @@
 //! `farm-runtime`: fixed timestep, input bindings, minigame kinds, panel model and audio cues
-//! (port of `FarmEngine.Runtime`). Hosts (the editor's Play Mode, `farm-player`) feed raw
+//! (port of the retired C# `FarmEngine.Runtime`). Hosts (the editor's Play Mode, `farm-player`) feed raw
 //! key and pad events in and get commands out; nothing here touches the OS.
 //!
 //! One module per C# file: [`timestep`] (`FixedTimestep.cs`), [`input`] (`Input.cs`),

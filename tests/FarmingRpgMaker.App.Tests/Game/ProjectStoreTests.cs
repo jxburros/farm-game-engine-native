@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using FarmEngine.Content;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -15,7 +14,7 @@ public sealed class ProjectStoreTests
         using var dir = new TempDir();
         var time = new TestTime(new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero));
         var store = new ProjectStore(dir.Path, time);
-        var project = Templates.CreateNewProject(ProjectTemplates.Starter, "Sunny Acres", "proj-test", 0);
+        var project = FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Starter, "Sunny Acres", "proj-test", 0);
 
         store.Save(project);
 
@@ -36,7 +35,7 @@ public sealed class ProjectStoreTests
     {
         using var dir = new TempDir();
         var store = new ProjectStore(dir.Path);
-        var project = Templates.CreateNewProject(ProjectTemplates.Blank, "First", "proj-a", 0);
+        var project = FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "First", "proj-a", 0);
         store.Save(project);
         store.Save(project with { Name = "Second" });
 
@@ -99,7 +98,7 @@ public sealed class ProjectStoreTests
         Assert.Equal("tiles", fromFixture.Project.Mode);
 
         // An exported game (no editor fields) is layered over a blank project.
-        var exported = JsonNode.Parse(ProjectStore.ToJson(DefaultContent.CreateInitialProject(0)))!.AsObject();
+        var exported = JsonNode.Parse(ProjectStore.ToJson(FarmEngine.Authoring.ProjectCatalog.CreateInitialProject(0)))!.AsObject();
         foreach (var key in new[] { "id", "mode", "selectedTileType", "selectedNPCId", "selectedItemId", "eventFlags", "currentTime", "player" })
         {
             exported.Remove(key);
@@ -119,8 +118,8 @@ public sealed class ProjectStoreTests
     {
         using var dir = new TempDir();
         var store = new ProjectStore(dir.Path);
-        store.Save(Templates.CreateNewProject(ProjectTemplates.Blank, "A", "proj-a", 0));
-        store.Save(Templates.CreateNewProject(ProjectTemplates.Blank, "B", "proj-b", 0));
+        store.Save(FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "A", "proj-a", 0));
+        store.Save(FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "B", "proj-b", 0));
 
         store.Delete("proj-a");
 

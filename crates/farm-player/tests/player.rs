@@ -1,0 +1,349 @@
+//! The graphical player driven headlessly with a fixed frame time: the game shell's flows, saves,
+//! settings, the pause menu, embedded mode, plugins, minigames and gamepads.
+
+mod common;
+
+use common::{click, hold, idle, key_down, key_up, press, Stores, FRAME, SIZE};
+use farm_cart::save_file;
+use farm_player::{
+    DebugAction, GamepadAxis, GamepadButton, InputEvent, Player, PlayerError, PlayerMode, PlayerRequest, ScreenKind,
+};
+use farm_sim::{hash_state, Command};
+use farm_ui::game::{Panel, ToastKind};
+use farm_ui::WidgetId;
+
+fn new_game(stores: &Stores) -> Player {
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    player
+}
+
+fn tick(player: &Player) -> f64 {
+    player.state().unwrap().clock.tick
+}
+
+fn saved_state(stores: &Stores, player: &Player, slot: u32) -> farm_sim::GameState {
+    let bytes = farm_player::SaveStore::read(&stores.saves, slot).unwrap();
+    let target = save_file::SaveTarget::for_project(&common::starter(), player.session().unwrap().content());
+    let loaded = save_file::load_save_bytes(&bytes, &target, player.session().unwrap().content());
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    loaded.state.unwrap()
+}
+
+#[test]
+fn new_game_walk_sleep_autosave_quit_and_continue() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    assert_eq!(player.screen(), ScreenKind::Title);
+    idle(&mut player, 1);
+    // No saves yet: New Game has focus; Enter starts in the first free slot.
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    assert_eq!(player.current_slot(), Some(1));
+
+    let start = player.state().unwrap().player.x;
+    hold(&mut player, "d", 30);
+    idle(&mut player, 3);
+    assert!(player.state().unwrap().player.x > start, "walked right");
+    assert_eq!(player.state().unwrap().player.move_intent.dx, 0.0);
+
+    press(&mut player, "z");
+    assert_eq!(player.state().unwrap().clock.day, 2.0);
+    assert_eq!(stores.saves.filled(), [1], "autosaved on the new day");
+    assert!(player
+        .toast_history()
+        .iter()
+        .any(|(text, kind)| text == "Autosaved (slot 1)" && *kind == ToastKind::Success));
+    let saved = saved_state(&stores, &player, 1);
+    assert_eq!(saved.clock.day, 2.0);
+    let preview = player.slot_previews()[0].clone().unwrap();
+    assert_eq!(preview.farm_name, "My Farming Game");
+    assert_eq!(preview.day, 2.0);
+    assert!(preview.play_seconds >= 0.0 && preview.saved_at > 0);
+    assert!(preview.thumbnail_png.starts_with(b"\x89PNG"), "a thumbnail of the scene");
+
+    // Play on a little, then quit to title without saving.
+    idle(&mut player, 30);
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    click(&mut player, WidgetId::new("pause").with("Quit to title"));
+    assert_eq!(player.screen(), ScreenKind::Confirm);
+    // Cancel has focus; Right, then Enter confirms.
+    press(&mut player, "arrowright");
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Title);
+    assert!(player.state().is_none());
+
+    // Continue (focused now that a save exists) restores the saved game exactly.
+    idle(&mut player, 1);
+    player.step(FRAME, &[key_down("enter")], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    assert_eq!(hash_state(player.state().unwrap()), hash_state(&saved));
+    player.step(FRAME, &[key_up("enter")], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.current_slot(), Some(1));
+}
+
+#[test]
+fn save_slots_hold_previews_and_load_them() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    player.run_command(&Command::Sleep).unwrap();
+    press(&mut player, "escape");
+    click(&mut player, WidgetId::new("pause").with("Save"));
+    assert_eq!(player.screen(), ScreenKind::SaveSlots);
+    click(&mut player, WidgetId::new("slot").with(2u32).with("primary"));
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    assert_eq!(stores.saves.filled(), [1, 2]);
+    assert_eq!(player.current_slot(), Some(2));
+    let previews = player.slot_previews();
+    assert!(previews[2].is_none());
+    let (first, second) = (previews[0].clone().unwrap(), previews[1].clone().unwrap());
+    assert!(second.saved_at > first.saved_at);
+
+    // Saving over another game's slot asks first.
+    click(&mut player, WidgetId::new("pause").with("Save"));
+    click(&mut player, WidgetId::new("slot").with(1u32).with("primary"));
+    assert_eq!(player.screen(), ScreenKind::Confirm);
+    click(&mut player, WidgetId::new("confirm-no"));
+    assert_eq!(player.screen(), ScreenKind::SaveSlots);
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+
+    // Load the first slot from the pause menu.
+    let first_state = saved_state(&stores, &player, 1);
+    click(&mut player, WidgetId::new("pause").with("Load"));
+    assert_eq!(player.screen(), ScreenKind::LoadSlots);
+    click(&mut player, WidgetId::new("slot").with(1u32).with("primary"));
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    assert_eq!(hash_state(player.state().unwrap()), hash_state(&first_state));
+    assert_eq!(player.current_slot(), Some(1));
+
+    // Delete a slot (confirmed).
+    press(&mut player, "escape");
+    click(&mut player, WidgetId::new("pause").with("Load"));
+    click(&mut player, WidgetId::new("slot").with(2u32).with("delete"));
+    click(&mut player, WidgetId::new("confirm-yes"));
+    assert_eq!(stores.saves.filled(), [1]);
+}
+
+#[test]
+fn settings_persist_between_runs() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    press(&mut player, "arrowdown");
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Settings);
+    // Audio tab: lower the master volume with the keyboard.
+    press(&mut player, "tab");
+    idle(&mut player, 1);
+    press(&mut player, "arrowdown");
+    press(&mut player, "arrowleft");
+    press(&mut player, "arrowleft");
+    let master = player.settings().audio.master;
+    assert!((master - 0.6).abs() < 1e-4, "{master}");
+    // Controls: rebind the watering can to K.
+    click(&mut player, WidgetId::new("settings-tab").with("Controls"));
+    click(&mut player, WidgetId::new("rebind").with("q"));
+    press(&mut player, "k");
+    assert_eq!(player.settings().controls.keys(farm_ui::BindAction::Water)[0], "k");
+    // Accessibility: text size up.
+    click(&mut player, WidgetId::new("settings-tab").with("Accessibility"));
+    idle(&mut player, 1);
+    press(&mut player, "arrowdown");
+    press(&mut player, "arrowright");
+    assert_eq!(player.settings().accessibility.text_size, 1.2);
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Title);
+
+    let text = stores.settings.text().unwrap();
+    assert!(text.contains("[audio]") && text.contains("text-size = 1.2"), "{text}");
+    let again = stores.standalone(&common::starter());
+    assert_eq!(again.settings(), player.settings());
+
+    // The new key waters in game.
+    let mut game = new_game(&stores);
+    press(&mut game, "k");
+    let commands = game.session().unwrap().recent_commands();
+    assert!(commands.iter().any(|command| command.contains("watering-can")), "{commands:?}");
+}
+
+#[test]
+fn the_pause_menu_stops_time_and_fullscreen_toggles() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    idle(&mut player, 5);
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    let paused = tick(&player);
+    idle(&mut player, 30);
+    assert_eq!(tick(&player), paused, "time stands still");
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    idle(&mut player, 30);
+    assert!(tick(&player) > paused);
+
+    let output = player.step(FRAME, &[key_down("f11")], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(output.requests, [PlayerRequest::SetFullscreen(true)]);
+    assert!(player.settings().display.fullscreen);
+    assert!(stores.settings.text().unwrap().contains("fullscreen = true"));
+    // Quit from the pause menu asks, then asks the host to close.
+    player.step(FRAME, &[key_up("f11")], SIZE.0, SIZE.1).unwrap();
+    press(&mut player, "escape");
+    click(&mut player, WidgetId::new("pause").with("Quit game"));
+    let rect = player.widget_rect(WidgetId::new("confirm-yes")).unwrap();
+    let (x, y) = (rect.x + 4.0, rect.y + 4.0);
+    player
+        .step(
+            FRAME,
+            &[InputEvent::PointerMove { x, y }, InputEvent::PointerDown { x, y, button: Default::default() }],
+            SIZE.0,
+            SIZE.1,
+        )
+        .unwrap();
+    let output =
+        player.step(FRAME, &[InputEvent::PointerUp { x, y, button: Default::default() }], SIZE.0, SIZE.1).unwrap();
+    assert!(output.requests.contains(&PlayerRequest::Quit));
+}
+
+#[test]
+fn panels_open_from_the_toolbar_and_close_with_their_key() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    click(&mut player, WidgetId::new("hud").with("inventory"));
+    assert_eq!(player.panel(), Some(Panel::Inventory));
+    press(&mut player, "i");
+    assert_eq!(player.panel(), None);
+    press(&mut player, "j");
+    assert_eq!(player.panel(), Some(Panel::Quests));
+    // Escape closes the panel before it opens the menu.
+    press(&mut player, "escape");
+    assert_eq!(player.panel(), None);
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    // The toolbar's Sleep runs the engine command.
+    click(&mut player, WidgetId::new("hud").with("sleep"));
+    assert_eq!(player.state().unwrap().clock.day, 2.0);
+}
+
+#[test]
+fn embedded_mode_starts_in_game_and_serves_the_editor() {
+    let stores = Stores::new();
+    let mut player = Player::from_project(common::starter(), stores.options(PlayerMode::Embedded)).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    let output = player.step(FRAME, &[], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(output.requests, [PlayerRequest::SetTitle("My Farming Game".into())]);
+    player.debug(&DebugAction::AddMoney { amount: 250.0 }).unwrap();
+    let money = player.state().unwrap().player.money;
+    assert_eq!(player.synced_project().unwrap().player.money, money, "keep changes writes the state back");
+    let mut state = player.state().unwrap().clone();
+    state.clock.day = 9.0;
+    player.replace_state(state).unwrap();
+    assert_eq!(player.state().unwrap().clock.day, 9.0);
+    // Sleeping never autosaves in the editor.
+    player.run_command(&Command::Sleep).unwrap();
+    assert!(stores.saves.filled().is_empty());
+    // The pause menu has no save slots or quitting.
+    press(&mut player, "escape");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    assert!(player.widget_rect(WidgetId::new("pause").with("Resume")).is_some());
+    assert!(player.widget_rect(WidgetId::new("pause").with("Save")).is_none());
+    assert!(player.widget_rect(WidgetId::new("pause").with("Quit to title")).is_none());
+    assert!(player.plugin_errors().is_empty());
+
+    // From a cartridge too.
+    let cart = Player::from_cartridge_bytes(&common::cartridge(), stores.options(PlayerMode::Embedded)).unwrap();
+    assert_eq!(cart.screen(), ScreenKind::Playing);
+    assert!(cart.synced_project().is_none(), "a cartridge has no project to write back to");
+    // A title screen has no game for the debug drawer.
+    let mut title = stores.standalone(&common::starter());
+    assert_eq!(title.debug(&DebugAction::FullEnergy), Err(PlayerError::NoGame));
+    assert!(Player::from_cartridge_bytes(b"not a cartridge", stores.options(PlayerMode::Standalone)).is_err());
+}
+
+#[test]
+fn pack_plugins_run_in_the_player() {
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::root().join("fixtures/golden/replays/content-packs-and-plugins.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let project: farm_sim::GameProject = serde_json::from_value(fixture["project"].clone()).unwrap();
+    let stores = Stores::new();
+    let mut player = Player::from_project(project, stores.options(PlayerMode::Embedded)).unwrap();
+    assert!(player.session().unwrap().has_plugins());
+    player.run_command(&Command::Sleep).unwrap();
+    idle(&mut player, 2);
+    assert!(player.plugin_errors().is_empty(), "{:?}", player.plugin_errors());
+    assert!(
+        player.toast_history().iter().any(|(text, _)| text.contains("glowshrooms hum")),
+        "{:?}",
+        player.toast_history()
+    );
+}
+
+#[test]
+fn a_minigame_plays_through_the_overlay() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    idle(&mut player, 2);
+    assert!(player.session().unwrap().minigame_view().is_some());
+    assert!(player.widget_rect(WidgetId::new("minigame-primary")).is_some());
+    // Space presses and releases the timing bar's button: the score enters the command log once.
+    press(&mut player, " ");
+    assert!(player.state().unwrap().minigame.is_none());
+    let resolved = player.session().unwrap().recent_commands().iter().filter(|c| c.contains("resolveMinigame")).count();
+    assert_eq!(resolved, 1);
+
+    // Give up from the overlay.
+    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    idle(&mut player, 2);
+    click(&mut player, WidgetId::new("minigame-give-up"));
+    assert!(player.state().unwrap().minigame.is_none());
+}
+
+#[test]
+fn a_gamepad_plays_the_whole_game() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    let button = |button, pressed| InputEvent::GamepadButton { button, pressed };
+    player.step(FRAME, &[button(GamepadButton::South, true)], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[button(GamepadButton::South, false)], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    let start = player.state().unwrap().player.x;
+    player.step(FRAME, &[InputEvent::GamepadAxis { axis: GamepadAxis::LeftX, value: 1.0 }], SIZE.0, SIZE.1).unwrap();
+    idle(&mut player, 20);
+    player.step(FRAME, &[InputEvent::GamepadAxis { axis: GamepadAxis::LeftX, value: 0.0 }], SIZE.0, SIZE.1).unwrap();
+    assert!(player.state().unwrap().player.x > start);
+    // Select opens the inventory, B closes it; Start pauses, B resumes.
+    player.step(FRAME, &[button(GamepadButton::Select, true)], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[button(GamepadButton::Select, false)], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.panel(), Some(Panel::Inventory));
+    player.step(FRAME, &[button(GamepadButton::East, true)], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[button(GamepadButton::East, false)], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.panel(), None);
+    player.step(FRAME, &[button(GamepadButton::Start, true)], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[button(GamepadButton::Start, false)], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    idle(&mut player, 1);
+    player.step(FRAME, &[button(GamepadButton::East, true)], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[button(GamepadButton::East, false)], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+}
+
+#[test]
+fn a_player_runs_on_another_thread() {
+    let stores = Stores::new();
+    let player = new_game(&stores);
+    let handle = std::thread::spawn(move || {
+        let mut player = player;
+        let output = player.frame(FRAME, &[], 320, 200).unwrap();
+        (output.pixels.width(), player)
+    });
+    let (width, player) = handle.join().unwrap();
+    assert_eq!(width, 320);
+    assert!(player.crash_report().contains("Recent commands"));
+}

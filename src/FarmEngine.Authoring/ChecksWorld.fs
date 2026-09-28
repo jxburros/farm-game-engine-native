@@ -20,6 +20,16 @@ module internal ChecksWorld =
             sink.Error("player.startOutOfBounds", "player.x",
                        sprintf "The player starts at (%g,%g), outside \"%s\" (%g×%g)" p.X p.Y scene.Name scene.Width scene.Height,
                        sceneTarget context p.SceneId 0.0 0.0)
+        let quests (field: string) (ids: List<string> | null) =
+            match ids with
+            | null -> ()
+            | ids ->
+                ids
+                |> Seq.iteri (fun k id ->
+                    if not (context.QuestIds.Contains id) then
+                        sink.Warning("player.unknownQuest", sprintf "player.%s[%d]" field k, sprintf "The player starts with missing quest \"%s\"" id, Some NavigationTarget.Settings))
+        quests "activeQuests" p.ActiveQuests
+        quests "completedQuests" p.CompletedQuests
 
     let private transitions (context: Context) (sink: Sink) =
         context.Project.Scenes
@@ -64,6 +74,19 @@ module internal ChecksWorld =
                     if context.Scenes.ContainsKey npc.SceneId && not (Context.tileInScene context npc.SceneId point.X point.Y) then
                         sink.Error("npc.patrolOutOfBounds", sprintf "%s.patrolPoints[%d].x" path k,
                                    sprintf "NPC \"%s\" waypoint %d is at (%g,%g), outside its scene" npc.Name (k + 1) point.X point.Y, target))
+            match npc.GiftTastes with
+            | null -> ()
+            | tastes ->
+                let tasteLists: (string * List<string> | null) list =
+                    [ "loved", tastes.Loved; "liked", tastes.Liked; "disliked", tastes.Disliked; "hated", tastes.Hated ]
+                for (field, ids) in tasteLists do
+                    match ids with
+                    | null -> ()
+                    | ids ->
+                        ids
+                        |> Seq.iteri (fun k id ->
+                            if not (context.ItemIds.Contains id) then
+                                sink.Warning("npc.giftUnknownItem", sprintf "%s.giftTastes.%s[%d]" path field k, sprintf "NPC \"%s\" has a gift taste for missing item \"%s\"" npc.Name id, target))
             let noWaypoints = (match npc.PatrolPoints with null -> true | points -> points.Count = 0)
             if npc.CanMove && npc.MovePattern = NpcMovePatterns.Patrol && noWaypoints then
                 sink.Warning("npc.patrolWithoutWaypoints", path + ".patrolPoints", sprintf "NPC \"%s\" patrols but has no waypoints" npc.Name, target))
@@ -81,7 +104,21 @@ module internal ChecksWorld =
                     [ project.Events |> Seq.collect (fun e -> fromOutcomes e.Outcomes)
                       project.Actions |> Seq.collect (fun a -> fromOutcomes a.Outcomes)
                       project.Minigames |> Seq.collect (fun m -> m.ResultTiers |> Seq.collect (fun t -> fromOutcomes t.Outcomes)) ])
+        let checkOptions (path: string) (dialogue: Dialogue) (target: NavigationTarget option) =
+            let dangling (known: HashSet<string>) (id: string | null) =
+                match id with
+                | null -> false
+                | id -> id.Length > 0 && not (known.Contains id)
+            dialogue.Options
+            |> Seq.iteri (fun k option ->
+                let opath = sprintf "%s.options[%d]" path k
+                if dangling context.ItemIds option.RequiresItem then
+                    sink.Error("dialogue.optionUnknownItem", opath + ".requiresItem", sprintf "Dialogue \"%s\" requires missing item \"%s\"" dialogue.Id option.RequiresItem, target)
+                // validate-extensibility.ts: a bound action must exist.
+                if dangling context.ActionIds option.ActionId then
+                    sink.Error("dialogue.optionUnknownAction", opath + ".actionId", sprintf "Dialogue \"%s\" performs missing action \"%s\"" dialogue.Id option.ActionId, target))
         let checkText (path: string) (owner: string) (dialogue: Dialogue) (target: NavigationTarget option) =
+            checkOptions path dialogue target
             if System.String.IsNullOrWhiteSpace dialogue.Text then
                 sink.Warning("dialogue.emptyText", path + ".text", sprintf "Dialogue \"%s\" of %s says nothing" dialogue.Id owner, target)
             if dialogue.Options.Count = 0 then
@@ -124,7 +161,9 @@ module internal ChecksWorld =
             if not (context.NpcIds.Contains dialogue.NpcId) then
                 sink.Error("dialogue.npcMissing", path + ".npcId", sprintf "Dialogue \"%s\" belongs to missing NPC \"%s\"" dialogue.Id dialogue.NpcId, None)
             elif not (onNpcs.Contains dialogue.Id) then
-                sink.Warning("dialogue.notOnNpc", path, sprintf "Dialogue \"%s\" is in the project list but not on NPC \"%s\"" dialogue.Id dialogue.NpcId, Some(NavigationTarget.Npc dialogue.NpcId)))
+                sink.Warning("dialogue.notOnNpc", path, sprintf "Dialogue \"%s\" is in the project list but not on NPC \"%s\"" dialogue.Id dialogue.NpcId, Some(NavigationTarget.Npc dialogue.NpcId))
+            // Dialogues on an NPC were checked above; the flat list only adds strays.
+            if not (onNpcs.Contains dialogue.Id) then checkOptions path dialogue None)
         let inProject = HashSet<string>(project.Dialogues |> Seq.map (fun d -> d.Id))
         project.Npcs
         |> Seq.iteri (fun i npc ->
@@ -132,6 +171,38 @@ module internal ChecksWorld =
             |> Seq.iteri (fun d dialogue ->
                 if not (inProject.Contains dialogue.Id) then
                     sink.Warning("dialogue.notInProject", sprintf "npcs[%d].dialogue[%d]" i d, sprintf "Dialogue \"%s\" of %s is missing from the project dialogue list" dialogue.Id npc.Name, Some(NavigationTarget.Npc npc.Id))))
+
+    /// Placed machines and the scene's own NPC and event lists.
+    let private placed (context: Context) (sink: Sink) =
+        let recipes = HashSet<string>(context.Project.Recipes |> Seq.map (fun r -> r.Id))
+        let eventIds = HashSet<string>(context.Project.Events |> Seq.map (fun e -> e.Id))
+        context.Project.Scenes
+        |> Seq.iteri (fun s scene ->
+            let target = Some(NavigationTarget.Scene(scene.Id, 0, 0))
+            scene.Npcs
+            |> Seq.iteri (fun k id ->
+                if not (context.NpcIds.Contains id) then
+                    sink.Warning("scene.unknownNpc", sprintf "scenes[%d].npcs[%d]" s k, sprintf "Scene \"%s\" lists missing NPC \"%s\"" scene.Name id, target))
+            scene.Events
+            |> Seq.iteri (fun k id ->
+                if not (eventIds.Contains id) then
+                    sink.Warning("scene.unknownEvent", sprintf "scenes[%d].events[%d]" s k, sprintf "Scene \"%s\" lists missing event \"%s\"" scene.Name id, target))
+            scene.Tiles
+            |> Seq.iteri (fun y row ->
+                row
+                |> Seq.iteri (fun x tile ->
+                    match tile.Machine with
+                    | null -> ()
+                    | machine ->
+                        let path = sprintf "scenes[%d].tiles[%d][%d].machine" s y x
+                        let at = Some(NavigationTarget.Scene(scene.Id, x, y))
+                        if not (context.MachineTypeIds.Contains machine.TypeId) then
+                            sink.Error("scene.machineUnknownType", path + ".typeId", sprintf "Scene \"%s\" has a placed machine of missing type \"%s\" at (%d,%d)" scene.Name machine.TypeId x y, at)
+                        match machine.Processing with
+                        | null -> ()
+                        | job when not (recipes.Contains job.RecipeId) ->
+                            sink.Warning("scene.machineUnknownRecipe", path + ".processing.recipeId", sprintf "The machine at (%d,%d) in \"%s\" is working on missing recipe \"%s\"" x y scene.Name job.RecipeId, at)
+                        | _ -> ())))
 
     let private mine (context: Context) (sink: Sink) =
         let mine = context.Project.Mine
@@ -198,5 +269,6 @@ module internal ChecksWorld =
         transitions context sink
         npcs context sink
         dialogues context sink
+        placed context sink
         mine context sink
         calendar context sink

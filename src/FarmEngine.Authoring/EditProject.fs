@@ -73,6 +73,42 @@ module internal EditProject =
     let upsertAsset (asset: CustomAsset) (project: GameProject) =
         Proj.update "CustomAssets" (Lists.upsertBy (fun (a: CustomAsset) -> a.Id) asset project.CustomAssets) project
 
+    /// Replace the frames of one clip of one asset; the same project when nothing changed.
+    let private mapClipFrames (assetId: string) (clipName: string) (f: List<ArtFrame> -> List<ArtFrame> option) (project: GameProject) =
+        let mapClip (clip: AnimationClip) =
+            if clip.Name <> clipName then clip
+            else
+                match f clip.Frames with
+                | Some frames -> setField clip "Frames" (box frames)
+                | None -> clip
+        let mapAsset (asset: CustomAsset) =
+            match asset.Animations with
+            | null -> asset
+            | clips when asset.Id = assetId ->
+                match Lists.mapChanged mapClip clips with
+                | Some next -> setField asset "Animations" (box next)
+                | None -> asset
+            | _ -> asset
+        Proj.update "CustomAssets" (Lists.mapChanged mapAsset project.CustomAssets) project
+
+    /// AssetManager frame duration input (`Math.max(1, …)`): one frame, or all frames of the clip.
+    let setFrameTicks (assetId: string) (clipName: string) (frame: int option) (ticks: int) (project: GameProject) =
+        let ticks = float (max 1 ticks)
+        mapClipFrames assetId clipName (fun frames ->
+            let retime index (f: ArtFrame) =
+                if (match frame with Some i -> i = index | None -> true) && f.Ticks <> ticks then setField f "Ticks" (box ticks) else f
+            let next = List<ArtFrame>(frames |> Seq.mapi retime)
+            if Seq.forall2 (fun (a: ArtFrame) b -> obj.ReferenceEquals(a, b)) next frames then None else Some next) project
+
+    /// Duplicate a frame in place: the copy follows the original. Refused at the 1024-frame limit.
+    let duplicateFrame (assetId: string) (clipName: string) (frame: int) (project: GameProject) =
+        mapClipFrames assetId clipName (fun frames ->
+            if frame < 0 || frame >= frames.Count || frames.Count >= 1024 then None
+            else
+                let next = List<ArtFrame>(frames)
+                next.Insert(frame + 1, frames[frame])
+                Some next) project
+
     /// AssetManager "Remove unused art", made safe for art in use: bindings fall back to the default look.
     let removeAsset (assetId: string) (project: GameProject) =
         match Lists.removeBy (fun (a: CustomAsset) -> a.Id) assetId project.CustomAssets with

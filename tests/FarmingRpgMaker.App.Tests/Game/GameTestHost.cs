@@ -34,26 +34,29 @@ internal sealed class TempDir : IDisposable
     }
 }
 
-/// <summary>The real main window + game surface over a temp data dir, with the frame loop off.</summary>
+/// <summary>The real main window + game surface over a temp data dir, with the frame loop off (unless <c>autoRun</c>).</summary>
 internal sealed class GameTestHost : IDisposable
 {
     private readonly TempDir _dir = new();
 
-    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null)
+    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null, bool autoRun = false)
     {
         Workspace = new ProjectWorkspace(
             new ProjectStore(_dir.Path),
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
-        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = false }, dialogs);
+        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false }, dialogs, Launcher);
         var coordinator = new UpdateCoordinator(new FakeUpdateService(), new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
-        Window = new MainWindow(new RecordingUrlLauncher()) { DataContext = ViewModel, Width = width, Height = height };
+        Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };
         Window.Show();
         Pump();
     }
 
     public string DataDirectory => _dir.Path;
+
+    /// <summary>Records links and folders the app asks the OS to open.</summary>
+    public RecordingUrlLauncher Launcher { get; } = new();
 
     public ProjectWorkspace Workspace { get; }
 

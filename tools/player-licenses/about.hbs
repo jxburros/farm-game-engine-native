@@ -1,0 +1,27 @@
+Third-party software in the Farming RPG Maker player
+====================================================
+
+This game runs on farm-player, the Farming RPG Maker game player. The player
+includes the open-source Rust crates listed below. Their licenses follow. The
+source code of each crate is available from crates.io
+(https://crates.io/crates/<name>/<version>).
+
+The player also embeds the Inter typeface (Regular and Bold) under the SIL Open
+Font License 1.1; its license is at the end of this file.
+
+{{#each overview}}
+- {{{name}}} ({{id}})
+{{/each}}
+
+{{#each licenses}}
+--------------------------------------------------------------------------------
+{{{name}}} ({{id}})
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

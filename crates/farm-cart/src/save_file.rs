@@ -12,11 +12,20 @@
 //!   longer exist go to quarantine (`quarantinedItems`) instead of failing the load, and
 //!   quarantined items whose id is back return to the inventory.
 //!
-//! In the compatibility phase the file is JSON (`{"header": {…}, "state": {…}}`); the zstd
-//! FlatBuffers form arrives with phase 7. A bare `GameState` (what the web version writes) also
-//! loads: it has no header, so it is treated as coming from unknown content.
+//! Two envelopes carry the same header and state:
+//!
+//! - the binary save (`schemas/save.fbs`, identifier `FGSV`) the standalone player writes: the
+//!   header, a slot preview (farm name, date, money, play time, thumbnail) readable without
+//!   touching the state, and the state as zstd-compressed stable JSON;
+//! - JSON (`{"header": {…}, "state": {…}}`), for the editor's debug tools and the web version.
+//!
+//! A bare `GameState` (what the web version writes) also loads: it has no header, so it is
+//! treated as coming from unknown content.
 
 use crate::save::{migrate_game_state, MAX_ERRORS};
+use farm_cart_schema::farm_engine::save as fb_save;
+use farm_cart_schema::farm_engine::save::save_file_buffer_has_identifier;
+use farm_cart_schema::flatbuffers::FlatBufferBuilder;
 use farm_sim::js;
 use farm_sim::schema::{GameContent, GameProject, GameState, InventorySlot, Item};
 use farm_sim::{hash_state, stable_json};
@@ -56,6 +65,15 @@ impl SaveTarget {
             .filter(|version| !version.is_empty())
             .unwrap_or(&project.version);
         Self { game_id: game_id.to_owned(), game_version: game_version.to_owned(), cart_hash: cart_hash(content) }
+    }
+
+    /// The target for a loaded cartridge: its game info names the game.
+    pub fn for_cartridge(cartridge: &crate::LoadedCartridge) -> Self {
+        Self {
+            game_id: cartridge.info.game_id.clone(),
+            game_version: cartridge.info.version.clone(),
+            cart_hash: cart_hash(&cartridge.content),
+        }
     }
 }
 
@@ -112,8 +130,8 @@ pub struct LoadedSave {
     pub migrated: bool,
 }
 
-/// Loads a save file (or a bare web `GameState`) for the running game `target` with `content`.
-/// Never panics.
+/// Loads a JSON save file (or a bare web `GameState`) for the running game `target` with
+/// `content`. Never panics.
 pub fn load_save(text: &str, target: &SaveTarget, content: &GameContent) -> LoadedSave {
     let raw: Value = match serde_json::from_str(text) {
         Ok(raw) => raw,
@@ -123,7 +141,29 @@ pub fn load_save(text: &str, target: &SaveTarget, content: &GameContent) -> Load
         Ok(parts) => parts,
         Err(error) => return refused(None, error),
     };
+    load_parts(header, state_raw, target, content)
+}
 
+/// Loads a save in either envelope: a binary `FGSV` save or UTF-8 JSON. Never panics.
+pub fn load_save_bytes(bytes: &[u8], target: &SaveTarget, content: &GameContent) -> LoadedSave {
+    if !is_binary_save(bytes) {
+        return match std::str::from_utf8(bytes) {
+            Ok(text) => load_save(text, target, content),
+            Err(error) => refused(None, format!("Save file is neither a save nor UTF-8 JSON: {error}")),
+        };
+    }
+    let (header, _preview, state_json) = match read_binary(bytes, true) {
+        Ok(parts) => parts,
+        Err((header, error)) => return refused(header, error),
+    };
+    let raw: Value = match serde_json::from_slice(&state_json.unwrap_or_default()) {
+        Ok(raw) => raw,
+        Err(error) => return refused(Some(header), format!("Save state is not valid JSON: {error}")),
+    };
+    load_parts(Some(header), &raw, target, content)
+}
+
+fn load_parts(header: Option<SaveHeader>, state_raw: &Value, target: &SaveTarget, content: &GameContent) -> LoadedSave {
     let mut warnings = Vec::new();
     if let Some(header) = &header {
         if header.format > SAVE_FORMAT {
@@ -185,6 +225,155 @@ pub fn load_save(text: &str, target: &SaveTarget, content: &GameContent) -> Load
         from_version: migration.from_version,
         migrated: migration.migrated,
     }
+}
+
+/// What a save slot shows without loading the game (`SavePreview` in `schemas/save.fbs`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SavePreview {
+    pub farm_name: String,
+    pub day: f64,
+    pub season: String,
+    pub year: f64,
+    pub money: f64,
+    /// Wall-clock seconds played.
+    pub play_seconds: f64,
+    /// Seconds since the Unix epoch when the save was written (0 when unknown).
+    pub saved_at: i64,
+    /// A small PNG of the scene (empty when none).
+    pub thumbnail_png: Vec<u8>,
+}
+
+impl SavePreview {
+    /// The in-game date and money of `state`; the host adds the name, play time, clock time and
+    /// thumbnail it knows.
+    pub fn of_state(state: &GameState) -> Self {
+        Self {
+            day: state.clock.day,
+            season: state.clock.season.clone(),
+            year: state.clock.year,
+            money: state.player.money,
+            ..Self::default()
+        }
+    }
+}
+
+/// Compression byte of a binary save.
+const COMPRESSION_STORED: u8 = 0;
+const COMPRESSION_ZSTD: u8 = 1;
+
+/// Largest decompressed state a save may claim (a guard against decompression bombs).
+const MAX_STATE_BYTES: usize = 256 * 1024 * 1024;
+
+/// Is `bytes` a binary (`FGSV`) save?
+pub fn is_binary_save(bytes: &[u8]) -> bool {
+    bytes.len() >= 8 && save_file_buffer_has_identifier(bytes)
+}
+
+/// Serializes a binary save: header, `preview`, and the state as zstd-compressed stable JSON.
+/// The same state, target and preview always give the same bytes.
+pub fn write_save_binary(state: &GameState, target: &SaveTarget, preview: &SavePreview) -> Vec<u8> {
+    let json = stable_json::stringify(state);
+    let compressed = ruzstd::encoding::compress_to_vec(json.as_bytes(), ruzstd::encoding::CompressionLevel::Fastest);
+    let mut builder = FlatBufferBuilder::with_capacity(compressed.len() + preview.thumbnail_png.len() + 1024);
+    let farm_name = builder.create_string(&preview.farm_name);
+    let season = builder.create_string(&preview.season);
+    let thumbnail = builder.create_vector(&preview.thumbnail_png);
+    let preview_offset = fb_save::SavePreview::create(
+        &mut builder,
+        &fb_save::SavePreviewArgs {
+            farm_name: Some(farm_name),
+            day: preview.day,
+            season: Some(season),
+            year: preview.year,
+            money: preview.money,
+            play_seconds: preview.play_seconds,
+            saved_at: preview.saved_at,
+            thumbnail_png: Some(thumbnail),
+        },
+    );
+    let game_id = builder.create_string(&target.game_id);
+    let game_version = builder.create_string(&target.game_version);
+    let cart_hash = builder.create_string(&target.cart_hash);
+    let state_offset = builder.create_vector(&compressed);
+    let root = fb_save::SaveFile::create(
+        &mut builder,
+        &fb_save::SaveFileArgs {
+            save_format: SAVE_FORMAT,
+            game_id: Some(game_id),
+            game_version: Some(game_version),
+            cart_hash: Some(cart_hash),
+            preview: Some(preview_offset),
+            compression: COMPRESSION_ZSTD,
+            state: Some(state_offset),
+        },
+    );
+    fb_save::finish_save_file_buffer(&mut builder, root);
+    builder.finished_data().to_vec()
+}
+
+/// The header and slot preview of a binary save, without decompressing the state.
+pub fn read_save_preview(bytes: &[u8]) -> Result<(SaveHeader, SavePreview), String> {
+    read_binary(bytes, false).map(|(header, preview, _)| (header, preview)).map_err(|(_, error)| error)
+}
+
+type BinaryParts = (SaveHeader, SavePreview, Option<Vec<u8>>);
+
+fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<SaveHeader>, String)> {
+    if !is_binary_save(bytes) {
+        return Err((None, "Not a Farm Engine save (FGSV identifier missing).".to_owned()));
+    }
+    let file = fb_save::root_as_save_file(bytes).map_err(|error| (None, format!("Save file is damaged: {error}")))?;
+    let header = SaveHeader {
+        format: file.save_format(),
+        game_id: file.game_id().to_owned(),
+        game_version: file.game_version().to_owned(),
+        cart_hash: file.cart_hash().to_owned(),
+    };
+    let preview = file
+        .preview()
+        .map(|p| SavePreview {
+            farm_name: p.farm_name().unwrap_or_default().to_owned(),
+            day: p.day(),
+            season: p.season().unwrap_or_default().to_owned(),
+            year: p.year(),
+            money: p.money(),
+            play_seconds: p.play_seconds(),
+            saved_at: p.saved_at(),
+            thumbnail_png: p.thumbnail_png().map(|t| t.bytes().to_vec()).unwrap_or_default(),
+        })
+        .unwrap_or_default();
+    if header.format > SAVE_FORMAT {
+        return Err((
+            Some(header.clone()),
+            format!(
+                "Save file format {} is newer than this player supports ({SAVE_FORMAT}). Update the game.",
+                header.format
+            ),
+        ));
+    }
+    if !with_state {
+        return Ok((header, preview, None));
+    }
+    let data = file.state().bytes();
+    let state = match file.compression() {
+        COMPRESSION_STORED => data.to_vec(),
+        COMPRESSION_ZSTD => decompress(data).map_err(|error| (Some(header.clone()), error))?,
+        other => return Err((Some(header), format!("Save file uses an unknown compression ({other})."))),
+    };
+    Ok((header, preview, Some(state)))
+}
+
+fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(data)
+        .map_err(|error| format!("Save state could not be decompressed: {error}"))?;
+    let mut out = Vec::new();
+    let mut limited = (&mut decoder).take(MAX_STATE_BYTES as u64 + 1);
+    limited.read_to_end(&mut out).map_err(|error| format!("Save state could not be decompressed: {error}"))?;
+    if out.len() > MAX_STATE_BYTES {
+        return Err("Save state is too large.".to_owned());
+    }
+    Ok(out)
 }
 
 /// Maps a save's inventory onto `content` by stable item id (the save was written against other

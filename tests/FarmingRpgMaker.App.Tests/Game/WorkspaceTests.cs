@@ -4,7 +4,6 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
-using FarmEngine.Core;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -15,10 +14,11 @@ namespace FarmingRpgMaker.App.Tests.Game;
 public sealed class WorkspaceTests
 {
     [Fact]
-    public void DesktopAppDoesNotReferenceTheLegacyContentAssembly()
+    public void DesktopAppDoesNotReferenceTheLegacyCSharpEngine()
     {
-        Assert.DoesNotContain(typeof(ProjectWorkspace).Assembly.GetReferencedAssemblies(),
-            assembly => assembly.Name == "FarmEngine.Content");
+        string[] legacy = ["FarmEngine.Core", "FarmEngine.Runtime", "FarmEngine.Rendering", "FarmEngine.Content"];
+        Assert.DoesNotContain(typeof(ProjectWorkspace).Assembly.GetReferencedAssemblies(), assembly => legacy.Contains(assembly.Name));
+        Assert.DoesNotContain(typeof(FarmEngine.Interop.RustPlayer).Assembly.GetReferencedAssemblies(), assembly => legacy.Contains(assembly.Name));
     }
 
     [AvaloniaFact]
@@ -39,6 +39,8 @@ public sealed class WorkspaceTests
         Assert.Single(host.Workspace.Store.List());
     }
 
+    private static double Day(GameTestHost host) => host.Play.Use(player => player.State())["clock"]!["day"]!.GetValue<double>();
+
     [AvaloniaFact]
     public void Playtest_ExitWithoutKeep_RestoresTheSnapshot()
     {
@@ -46,8 +48,8 @@ public sealed class WorkspaceTests
         var before = ProjectStore.ToJson(host.Workspace.Current!);
 
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
-        host.Play.Session.DebugMutate((s, _) => s with { Player = s.Player with { Money = 999 } });
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
+        host.Play.Use(player => player.Debug(new { type = "addMoney", amount = 899 }));
         host.ViewModel.Mode = EditorMode.Edit;
         Pump();
 
@@ -62,7 +64,7 @@ public sealed class WorkspaceTests
     {
         using var host = new GameTestHost();
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
         Click(host.Window, FindByName<Avalonia.Controls.Primitives.ToggleButton>(host.Window, "KeepChangesButton"));
         Assert.True(host.Play.KeepChanges);
         host.ViewModel.Mode = EditorMode.Edit;
@@ -79,12 +81,13 @@ public sealed class WorkspaceTests
     {
         using var host = new GameTestHost();
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
-        Assert.Equal(2, host.Play.Session.State.Clock.Day);
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
+        Assert.Equal(2, Day(host));
 
         Click(host.Window, FindByName<Button>(host.Window, "RestartButton"));
 
-        Assert.Equal(1, host.Play.Session.State.Clock.Day);
+        Assert.Equal(1, Day(host));
+        Assert.True(host.Play.Surface.FrameCount > 0);
         Assert.Contains("Playtest restarted", host.Play.Toasts.History.Select(t => t.Text));
     }
 
@@ -98,8 +101,9 @@ public sealed class WorkspaceTests
         Assert.Equal("Starter Farm", FindByName<TextBlock>(host.Window, "ProjectInfoName").Text);
         var selector = FindByName<ComboBox>(host.Window, "SceneSelector");
         Assert.True(selector.ItemCount >= 1);
-        Assert.NotNull(edit.Canvas.Snapshot);
-        Assert.True(edit.Canvas.Snapshot!.GridOverlay);
+        // The Rust renderer (farm-render through RustPreview) draws the map.
+        Assert.NotNull(edit.Canvas.Geometry);
+        Assert.Null(edit.Canvas.Error);
 
         var description = edit.DescribeTile(0, 0);
         Assert.StartsWith("(0, 0) · Wall", description, StringComparison.Ordinal);
@@ -111,6 +115,29 @@ public sealed class WorkspaceTests
         Avalonia.Headless.HeadlessWindowExtensions.MouseMove(host.Window, point);
         Pump();
         Assert.StartsWith("(2, 3)", edit.HoverText, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public void EditMode_DrawsTheVisibleMapWithTheRustRenderer_AndRedrawsAfterEdits()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
+        Pump();
+        Assert.Null(edit.Canvas.Error);
+        var before = edit.Canvas.RenderCount;
+        Assert.True(before > 0, "the map was rasterized");
+        var world = edit.Canvas.Geometry!.WorldSize;
+        var region = edit.Canvas.RenderedRegion;
+        Assert.True(region.Width > 0 && region.Width <= Math.Ceiling(world.Width), $"{region} within {world}");
+
+        edit.Brush = "water";
+        var point = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(2, 2).Center, host.Window)!.Value;
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Pump();
+        Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
+        Assert.True(edit.Canvas.RenderCount > before, "an edit redraws the map");
     }
 
     [AvaloniaFact]

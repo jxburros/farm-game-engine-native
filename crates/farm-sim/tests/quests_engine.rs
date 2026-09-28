@@ -1,4 +1,4 @@
-//! Port of `tests/FarmEngine.Core.Tests/Core/QuestsEngineTests.cs` (itself a port of
+//! Port of the retired C# `QuestsEngineTests.cs` (itself a port of
 //! tests/unit/quests.engine.test.ts): quest behavior against the ONE canonical quest engine
 //! (`farm_sim::quests`): no double-start/double-complete, prerequisite gating, target-0
 //! objectives, full-inventory reward messages. The src/lib/quests selectors are one-line filters,

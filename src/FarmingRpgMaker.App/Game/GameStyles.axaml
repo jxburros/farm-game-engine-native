@@ -163,6 +163,21 @@
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="10,8" />
   </Style>
+  <!-- Content forms: nested groups, reference chips, pickers keeping a missing id. -->
+  <Style Selector="Border.form-group">
+    <Setter Property="BorderBrush" Value="#80D4CDBF" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,8" />
+  </Style>
+  <Style Selector="Border.chip">
+    <Setter Property="Background" Value="#1A095C34" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="8,2,2,2" />
+  </Style>
+  <Style Selector="ComboBoxItem.missing">
+    <Setter Property="Foreground" Value="{StaticResource FarmDestructiveBrush}" />
+  </Style>
   <Style Selector="TextBlock.section">
     <Setter Property="FontSize" Value="11.5" />
     <Setter Property="FontWeight" Value="Bold" />

@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
+    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 
   <!--

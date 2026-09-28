@@ -17,6 +17,9 @@ farm-sim = { path = "../farm-sim" }
 farm-cart = { path = "../farm-cart" }
 farm-runtime = { path = "../farm-runtime" }
 farm-render = { path = "../farm-render" }
+# The embeddable player without the desktop window/audio/gamepad layer.
+farm-player = { path = "../farm-player", default-features = false, features = ["audio-out"] }
+farm-ui = { path = "../farm-ui" }
 serde.workspace = true
 serde_json.workspace = true
 

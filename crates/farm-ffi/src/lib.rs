@@ -7,12 +7,16 @@
 //! - panics are caught at the boundary and returned as error results, never unwound into .NET.
 //!
 //! `lib.rs` has the primitives (version, stable hash, buffers); [`session`] has the engine
-//! sessions (create from project JSON, apply commands, tick, read state/hash/views).
+//! sessions (create from project JSON, apply commands, tick, read state/hash/views); [`render`]
+//! has `farm-render` requests and the Edit Mode map preview.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod player;
+pub mod render;
 pub mod session;
 pub mod view_json;
+pub use render::FePreview;
 pub use session::FeSession;
 
 /// A Rust-allocated byte buffer handed to .NET. Free it with [`fe_bytes_free`].

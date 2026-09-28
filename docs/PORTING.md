@@ -1,75 +1,49 @@
-# Porting guide: TypeScript engine → C#
+# Porting guide: TypeScript engine → Rust, F# and C#
 
 This repo is a native port of [`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine)
 (the web version). The TypeScript engine is the **reference implementation**:
-same seed + same command/tick log must produce a state whose
-`StableJson`/`Hash.HashState` output is byte-identical to the TS
-`stableStringify`/`hashState`. Golden replay fixtures generated from the TS
-engine (`tools/golden/`) enforce that in `tests/FarmEngine.Core.Tests`.
+same seed + same command/tick log must produce a state whose stable JSON and
+`hashState` output is byte-identical to the TS `stableStringify`/`hashState`.
+Golden replay fixtures generated from the TS engine (`tools/golden/`) enforce
+that in the Rust tests (`crates/farm-sim/tests`).
 
 Every rule below exists to keep that guarantee. When in doubt, port the TS
 literally and let the golden tests tell you.
 
-> **Where new code goes:** [LANGUAGES.md](LANGUAGES.md) plans a move of the
-> engine to Rust and of project logic to F#. The C# rules below apply to the
-> code as it is today. They also carry over to the Rust port's compatibility
-> phase, where the same JavaScript semantics apply.
+> **History.** The first port was a C# engine (`FarmEngine.Core`, `.Runtime`,
+> `.Rendering`, `.Content`). It was the stepping stone to the Rust core and
+> has been retired; [LANGUAGES.md](LANGUAGES.md) describes the split that
+> replaced it. The JavaScript-semantics rules it followed carry over to Rust
+> until the native-numerics switch (phase 7).
 
 ## Project map
 
-| TypeScript package / folder             | C# project                  | Namespace              |
-|-----------------------------------------|-----------------------------|------------------------|
-| `packages/engine-schemas/src`           | `src/FarmEngine.Schemas`    | `FarmEngine.Schemas`   |
-| (JS semantics helpers — new)            | `src/FarmEngine.Schemas/Json` | `FarmEngine.Json`    |
-| `packages/engine-core/src` (+ subdirs)  | `src/FarmEngine.Core`       | `FarmEngine.Core`      |
-| `packages/content-default/src`          | `src/FarmEngine.Content`    | `FarmEngine.Content`   |
-| `packages/engine-runtime/src`           | `src/FarmEngine.Runtime`    | `FarmEngine.Runtime`   |
-| `packages/renderer-canvas2d/src`        | `src/FarmEngine.Rendering`  | `FarmEngine.Rendering` |
-| `src/` (React editor + play UI)         | `src/FarmingRpgMaker.App`   | `FarmingRpgMaker.App`  |
+| TypeScript package / folder             | Native home                                   |
+|-----------------------------------------|-----------------------------------------------|
+| `packages/engine-schemas/src`           | `crates/farm-sim/src/schema` (Rust), `src/FarmEngine.Schemas` (C# records for the editor), F# migrations and checks in `src/FarmEngine.Authoring` |
+| `packages/engine-core/src` (+ subdirs)  | `crates/farm-sim`                             |
+| `packages/content-default/src`, `src/lib/templates.ts` | `src/FarmEngine.Authoring` (`StarterContent`, `SampleProjects`, `ProjectCatalog`) |
+| `packages/engine-runtime/src`           | `crates/farm-runtime`, plugins in `crates/farm-plugins` |
+| `packages/renderer-canvas2d/src`, `packages/game-shell` | `crates/farm-render`, `crates/farm-ui`, `crates/farm-player` |
+| `src/` (React editor)                   | `src/FarmingRpgMaker.App` (Avalonia) over `src/FarmEngine.Authoring` (F#) |
 
-All of `FarmEngine.Core` uses the single namespace `FarmEngine.Core` (no
-sub-namespaces), and all of `FarmEngine.Schemas` uses `FarmEngine.Schemas`.
+## Files and names (Rust)
 
-## Files and names
-
-- **One TS module → one C# file with one `public static class`** named after
-  the module in PascalCase: `farming/crops.ts` → `Farming/Crops.cs`,
-  `class Crops`. Where two modules share a basename, prefix the folder:
-  `world/movement.ts` → `World/WorldMovement.cs` (`WorldMovement`),
-  `npcs/movement.ts` → `Npcs/NpcMovement.cs` (`NpcMovement`),
-  `farming/actions.ts` → `Farming/FarmingActions.cs` (`FarmingActions`),
-  `quests/quests.ts` → `Quests/Quests.cs` (`Quests`),
-  `world/tiles.ts` → `World/Tiles.cs` (`Tiles`),
-  `world/pathfinding.ts` → `World/Pathfinding.cs` (`Pathfinding`),
-  `events.ts` → `Events.cs` (`GameEvents` — `Events` is too generic),
-  `extensibility.ts` → `Extensibility.cs` (`Extensibility`),
-  `state.ts` → `State.cs` (`EngineState`), `engine.ts` → `Engine.cs` (`Engine`),
-  `hash.ts` → `Hash.cs` (`Hash`), `rng.ts` → `Rng.cs` (`RngMath` static
-  functions + `class Rng`), `replay.ts` → `Replay.cs` (`Replay`),
-  `hooks.ts` → `Hooks.cs` (`HookBus` class + payload records),
-  `commands.ts` → `Commands.cs` (`Command` union), `effects.ts` → `Effects.cs`
-  (`Effect` union).
-  Everything else: `time.ts` → `Time` → **`GameTime`** (avoid clashing with
-  `System.TimeProvider` naming confusion), `energy.ts` → `Energy`,
-  `economy.ts` → `Economy`, `gathering.ts` → `Gathering`,
-  `inventory.ts` → `Inventory`, `tools.ts` → `Tools`, `dialogue.ts` → `DialogueSystem`,
-  `content-builtin.ts` → `ContentBuiltin`, `packs.ts` → `Packs`,
-  `validation.ts` → `Validation`, `skills.ts` → `Skills`,
-  `weather.ts` → `Weather`, `crafting.ts` → `Crafting`, `social.ts` → `Social`,
-  `fishing.ts` → `Fishing`, `animals.ts` → `Animals`, `mines.ts` → `Mines`.
-- **Exported functions → `public static` methods**, PascalCase of the TS name
-  (`handleMove` → `HandleMove`, `createGameState` → `CreateGameState`).
-  Non-exported helpers → `private`/`internal static`. Because every module
-  follows this rule, you can call a function from a module someone else is
-  porting before it exists: `WorldMovement.HandleMove(ctx, state, dir)`.
-- Parameter order and meaning stay exactly as in TS. Optional TS parameters →
-  C# optional parameters with the same default.
-- `export const FOO = …` → `public const` / `public static readonly` named
-  `Foo` in PascalCase (e.g. `TICKS_PER_SECOND` → `Engine.TicksPerSecond`).
-- Keep the TS doc comments (as `///` summaries or `//` comments) — they carry
-  the design rationale.
+- **One TS module → one Rust module** in snake_case, in the same folder
+  structure: `farming/crops.ts` → `farming/crops.rs`, `time.ts` →
+  `game_time.rs`, `dialogue.ts` → `dialogue_system.rs`. Exported functions
+  keep their names in snake_case (`handleMove` → `handle_move`) and their
+  parameter order.
+- Keep the TS doc comments — they carry the design rationale.
+- `export const FOO` → `pub const FOO`.
 
 ## Types (schemas)
+
+The schema exists twice: as Rust types in `farm-sim::schema` (serde, the
+engine's own) and as C# records in `FarmEngine.Schemas` (the editor's data
+model, also used by F#). Both must round-trip the same JSON. The rules for the
+C# records:
+
 
 - A zod object → `public sealed record Xxx` with `{ get; init; }` properties
   in PascalCase. JSON names are camelCase via `JsonDefaults.Options`; add
@@ -110,43 +84,38 @@ sub-namespaces), and all of `FarmEngine.Schemas` uses `FarmEngine.Schemas`.
   `centerCoordinate`, `classicCalendarSeasons`) → static methods on a static
   class named after the schema file (`EventsSchema.EventFiredFlag`, …).
 
-## State updates
+## State and numbers (Rust)
 
-The TS engine is a pure reducer built from object spreads. Port it the same way:
-
-- **Never mutate** an object, list or dictionary reachable from a
-  `GameState`, `GameProject` or `GameContent`. Use `with` expressions
-  (`state with { Player = state.Player with { Money = m } }`) — they are
-  exactly JS spreads — and build new collections
-  (`[.. list, item]`, `list.Select(...).ToList()`,
-  `new OrderedDictionary<string, T>(dict) { [key] = value }`).
-- A local list you just created may be mutated before it is stored.
-- `JSON.parse(JSON.stringify(x))` → `JsonDefaults.DeepClone(x)`.
-- Reducers return `EngineStep(State, Effects)`; ad-hoc `{ a, b }` return
-  objects become small `sealed record`s or named tuples.
+- Numbers are **`f64`** everywhere in the compatibility phase: JS has only
+  doubles. Convert to an integer only to index.
+- `z.record(z.string(), T)` → `IndexMap<String, T>` (JS objects iterate in
+  insertion order). `HashMap`/`HashSet` are banned by `clippy.toml`.
+- `.optional()` → `Option<T>` with `skip_serializing_if`; `.nullable()` keeps
+  the key and writes `null`. Keep absent and `null` apart where TS does.
+- `z.unknown()`/`z.any()` → `serde_json::Value` (`js::truthy`, `js::value`).
+- The engine mutates its own `GameState` in place (`&mut`), but a step must
+  produce exactly the state the TS reducer would; content is immutable.
 
 ## JavaScript semantics (the silent-divergence list)
 
-| TS                                  | C#                                                                   |
-|-------------------------------------|----------------------------------------------------------------------|
-| `Math.round(x)`                     | `Js.Round(x)` (`Math.Round` is banned in Core — it rounds to even)   |
-| `Math.trunc`, `Math.floor`, `Math.ceil`, `Math.min/max/abs` | `Js.Trunc`, `Math.Floor`, `Math.Ceiling`, `Math.Min/Max/Abs` on doubles |
-| `arr.sort(cmp)` (stable)            | `Js.StableSort(arr, cmp)` or LINQ `OrderBy` (stable). `List.Sort` is banned. |
-| default `sort()` / `<` on strings   | `string.CompareOrdinal` / `Js.CompareStrings`                         |
-| `a.localeCompare(b)`                | `Js.LocaleCompare(a, b)`                                              |
-| `` `${n}` `` with a number          | `Js.Num(n)` inside the interpolation                                  |
-| `x \|\| y` on numbers/strings       | respect falsiness: `0`, `NaN`, `""` are falsy (`x != 0 ? x : y`)      |
-| `x ?? y`                            | `x ?? y` (null only)                                                  |
-| `arr[i]` out of range → `undefined` | bounds-check (`i >= 0 && i < list.Count ? list[i] : null`)            |
-| `Object.keys/entries(obj)`          | iterate the `OrderedDictionary` (insertion order)                     |
-| `Number.isInteger(x)`               | `Js.IsInteger(x)`                                                     |
-| `Math.imul`, `>>> 0`                | `unchecked` `uint` arithmetic                                         |
-| `console.error/warn`                | drop, or `System.Diagnostics.Debug.WriteLine`                         |
-| `Math.random`, `Date.now`           | never in Core (analyzer-banned) — seeded `Rng` / `state.Clock`        |
+| TS                                  | Rust                                                                  |
+|-------------------------------------|-----------------------------------------------------------------------|
+| `Math.round(x)`                     | `js::round(x)` (`f64::round` is banned — it rounds half away from zero) |
+| `Math.trunc`, `%`                   | `js::trunc`, `js::modulo`                                             |
+| `arr.sort(cmp)` (stable)            | `sort_by` (stable) or `js::stable_sort`; `sort_unstable*` is banned   |
+| default `sort()` / `<` on strings   | `js::compare_strings` (UTF-16 code units)                             |
+| `` `${n}` `` with a number          | `js::num(n)`; `toFixed` → `js::to_fixed`                              |
+| `x \|\| y` on numbers/strings       | respect falsiness: `0`, `NaN`, `""` are falsy                         |
+| `arr[i]` out of range → `undefined` | `get(i)`                                                              |
+| `Number.isInteger(x)`               | `js::is_integer(x)`                                                   |
+| `Math.imul`, `\|0`, `>>> 0`          | `js::to_int32`, `js::to_uint32`, wrapping arithmetic                  |
+| `Math.random`, `Date.now`           | never in the simulation — the seeded `rng` and `state.clock` (`Instant`/`SystemTime` are banned) |
 
 ## Tests
 
-Port each `*.test.ts` next to the module to
-`tests/FarmEngine.Core.Tests/<Area>/<Name>Tests.cs` (xUnit, `[Fact]` per
-`it(...)`, same test names in PascalCase). Golden parity fixtures live in
-`fixtures/golden/` (shared with the Rust and F# tests) and are generated, never hand-edited.
+Port each `*.test.ts` next to the module to the Rust crate's tests
+(`crates/<crate>/tests/<name>.rs`, one `#[test]` per `it(...)`, same test names
+in snake_case); schema-only tests go to `tests/FarmEngine.Schemas.Tests`. Golden
+parity fixtures live in `fixtures/golden/` (generated, never hand-edited) and the
+shared project fixtures in `fixtures/projects/`; the Rust, F# and C# schema tests
+all read both.

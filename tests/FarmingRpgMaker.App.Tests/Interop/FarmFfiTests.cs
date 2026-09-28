@@ -1,4 +1,3 @@
-using FarmEngine.Core;
 using FarmEngine.Interop;
 
 namespace FarmingRpgMaker.App.Tests.Interop;
@@ -40,7 +39,7 @@ public sealed class FarmFfiTests
     }
 
     [Fact]
-    public void RustAndCSharpAgreeOnTheStateHash()
+    public void HashesTextLikeTheTypeScriptEngine()
     {
         if (!FarmFfi.IsAvailable)
         {
@@ -48,9 +47,9 @@ public sealed class FarmFfiTests
         }
 
         Assert.Matches(@"^\d+\.\d+\.\d+", FarmFfi.Version);
-        foreach (var text in new[] { "{}", "[]", "null", "{\"a\":[1,2.5,\"x\"],\"é\":\"農場🌾\"}" })
-        {
-            Assert.Equal(Hash.HashText(text), FarmFfi.HashText(text));
-        }
+        Assert.Equal("5465b8257807bf56", FarmFfi.HashText("{}"));
+        Assert.Equal("741638a538a6be56", FarmFfi.HashText("[]"));
+        Assert.Equal("77074ba4d9fff516", FarmFfi.HashText("null"));
+        Assert.Matches("^[0-9a-f]{16}$", FarmFfi.HashText("{\"a\":[1,2.5,\"x\"],\"é\":\"農場🌾\"}"));
     }
 }

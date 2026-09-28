@@ -1,0 +1,20 @@
+[package]
+name = "farm-ui"
+description = "In-game UI of Farming RPG Maker games: HUD, dialogue, shop, panels and the game shell, drawn onto farm-render draw lists"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+farm-sim = { path = "../farm-sim" }
+farm-runtime = { path = "../farm-runtime" }
+# Draw lists, text measurement and images; the host rasterizes.
+farm-render = { path = "../farm-render", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

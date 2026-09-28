@@ -1,10 +1,9 @@
-//! JSON for host *views* of the live state (the C# state mirror, hook payloads).
+//! JSON for host *views* (player frame info, debug summaries, hook payloads, snapshots).
 //!
 //! Unlike [`farm_sim::stable_json`], which sorts object keys so equal states hash alike, this
 //! keeps the order the engine holds: struct fields in declaration order and map entries in
-//! insertion order (`serde_json` is built with `preserve_order`). The host deserializes these
-//! into ordered records, so a map it iterates (quests, NPCs, flags) lists its entries in the
-//! same order the C# engine would. Numbers and strings are written like JavaScript's
+//! insertion order (`serde_json` is built with `preserve_order`), so a map the host iterates
+//! lists its entries in engine order. Numbers and strings are written like JavaScript's
 //! `JSON.stringify`, as in stable JSON.
 
 use farm_sim::js;
@@ -17,14 +16,6 @@ pub fn to_json<T: Serialize>(value: &T) -> String {
     let mut out = String::new();
     write(&mut out, &json);
     out
-}
-
-/// Appends `"key":<value in engine order>` to `out`.
-pub fn push_member<T: Serialize>(out: &mut String, key: &str, value: &T) {
-    js::push_quoted(out, key);
-    out.push(':');
-    let json = serde_json::to_value(value).expect("engine types always serialize");
-    write(out, &json);
 }
 
 fn write(out: &mut String, value: &Value) {

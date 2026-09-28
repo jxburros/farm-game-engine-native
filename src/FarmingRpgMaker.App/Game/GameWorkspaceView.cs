@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-using FarmEngine.Runtime;
+using FarmEngine.Interop;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
 
@@ -8,26 +8,28 @@ namespace FarmingRpgMaker.App.Game;
 /// <summary>Knobs for the game surface (tests turn the frame loop off and drive frames).</summary>
 public sealed record GameSurfaceOptions
 {
-    /// <summary>Run the display-rate loop in Play Mode.</summary>
+    /// <summary>Run the frame loop in Play Mode.</summary>
     public bool AutoRun { get; init; } = true;
 
-    /// <summary>Play-mode audio backend (null = silent).</summary>
-    public IAudioBackend? AudioBackend { get; init; }
+    /// <summary>Play the game's sounds (tests turn this off).</summary>
+    public bool Audio { get; init; } = true;
+
+    /// <summary>Options for the Rust player of each playtest (seed, reduced motion, UI scale).</summary>
+    public RustPlayerOptions? Player { get; init; }
 }
 
 /// <summary>
 /// The central game surface (<see cref="IGameSurfaceFactory"/> output): Edit Mode or Play
 /// Mode for the workspace's project, following <see cref="IShellHost.Mode"/>. Owns the
 /// playtest lifecycle like the web App.tsx: entering Play snapshots the project; exiting
-/// restores the snapshot, or keeps the played state ("Keep changes") via
-/// <c>EngineState.ApplyStateToProject</c>.
+/// restores the snapshot, or keeps the played state ("Keep changes") through the Rust player's
+/// <c>applyStateToProject</c>.
 /// </summary>
 public sealed class GameWorkspaceView : UserControl
 {
     private readonly IShellHost _shell;
     private readonly ProjectWorkspace _workspace;
     private readonly GameSurfaceOptions _options;
-    private readonly AudioManager _audio;
     private PlayModeView? _play;
     private FarmEngine.Schemas.GameProject? _snapshot;
 
@@ -36,7 +38,6 @@ public sealed class GameWorkspaceView : UserControl
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         _options = options ?? new GameSurfaceOptions();
-        _audio = new AudioManager(backend: _options.AudioBackend);
         Name = "GameWorkspace";
         EditView = new EditModeView(workspace);
         Content = EditView;
@@ -66,10 +67,17 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         _workspace.FlushPendingSave();
-        PlaySession session;
+        if (_workspace.Current.Scenes.Count == 0)
+        {
+            _shell.ShowStatus("This project has no scenes to play yet.");
+            _shell.Mode = EditorMode.Edit;
+            return;
+        }
+
+        RustPlayer player;
         try
         {
-            session = CreateSession(_workspace.Current);
+            player = CreatePlayer(_workspace.Current);
         }
 #pragma warning disable CA1031 // A broken project must not take the app down; report and stay in Edit Mode.
         catch (Exception ex)
@@ -80,18 +88,9 @@ public sealed class GameWorkspaceView : UserControl
             return;
         }
 
-        if (session.CurrentScene is null)
-        {
-            session.Dispose();
-            _shell.ShowStatus("This project has no scenes to play yet.");
-            _shell.Mode = EditorMode.Edit;
-            return;
-        }
-
         _snapshot = _workspace.Current;
         _workspace.IsPlaytesting = true;
-        _audio.Unlock();
-        _play = new PlayModeView(session, _options.AutoRun);
+        _play = new PlayModeView(player, _options.AutoRun);
         _play.RestartRequested += OnRestartRequested;
         _play.Faulted += OnPlayFaulted;
         Content = _play;
@@ -109,16 +108,16 @@ public sealed class GameWorkspaceView : UserControl
 
         var play = _play;
         // Read the state back only when it is kept: after a fault (Keep changes is then off)
-        // the Rust engine refuses every call.
+        // the Rust player refuses every call.
         FarmEngine.Schemas.GameProject? finalProject = null;
         var unreadable = false;
         if (play.KeepChanges)
         {
             try
             {
-                finalProject = play.Session.SyncedProject();
+                finalProject = play.Use(player => player.SyncedProject());
             }
-            catch (FarmEngine.Interop.FarmFfiException ex)
+            catch (FarmFfiException ex)
             {
                 unreadable = true;
                 System.Diagnostics.Trace.TraceError($"Playtest state could not be read back: {ex}");
@@ -127,7 +126,7 @@ public sealed class GameWorkspaceView : UserControl
 
         play.RestartRequested -= OnRestartRequested;
         play.Faulted -= OnPlayFaulted;
-        play.Session.Dispose();
+        play.Close();
         _play = null;
         _workspace.IsPlaytesting = false;
         Content = EditView;
@@ -170,7 +169,6 @@ public sealed class GameWorkspaceView : UserControl
         PrepareForShutdown();
         _shell.ModeChanged -= OnModeChanged;
         _workspace.ProjectChanged -= OnProjectChanged;
-        _audio.Dispose();
     }
 
     private void OnPlayFaulted(object? sender, Exception exception)
@@ -187,8 +185,8 @@ public sealed class GameWorkspaceView : UserControl
         System.Diagnostics.Trace.TraceError($"Playtest faulted: {exception}");
     }
 
-    private PlaySession CreateSession(FarmEngine.Schemas.GameProject project) =>
-        new(project, new RuntimeGameAudio(_audio));
+    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project) =>
+        RustPlayer.Create(project, (_options.Player ?? new RustPlayerOptions()) with { Audio = _options.Audio });
 
     private void OnRestartRequested(object? sender, EventArgs e)
     {
@@ -197,9 +195,18 @@ public sealed class GameWorkspaceView : UserControl
             return;
         }
 
-        var old = _play.Session;
-        _play.Attach(CreateSession(_snapshot));
-        old.Dispose();
+        RustPlayer player;
+        try
+        {
+            player = CreatePlayer(_snapshot);
+        }
+        catch (FarmFfiException ex)
+        {
+            _play.ShowToast(new ToastMessage($"Could not restart: {ex.Message}", ToastKind.Error));
+            return;
+        }
+
+        _play.Attach(player);
         _play.ShowToast(new ToastMessage("Playtest restarted", ToastKind.Success));
     }
 

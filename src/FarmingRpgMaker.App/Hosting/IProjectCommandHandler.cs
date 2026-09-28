@@ -14,4 +14,7 @@ public interface IProjectCommandHandler
     Task ImportProjectJsonAsync(IShellHost shell);
 
     Task ExportProjectJsonAsync(IShellHost shell);
+
+    /// <summary>File → Export Game…: standalone Windows and Linux builds (docs/EXPORT.md).</summary>
+    Task ExportGameAsync(IShellHost shell);
 }

@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
-using FarmEngine.Content;
 using FarmingRpgMaker.App.Projects;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
 

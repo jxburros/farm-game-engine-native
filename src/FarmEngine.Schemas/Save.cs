@@ -11,7 +11,7 @@ namespace FarmEngine.Schemas;
 // serializable, versioned independently from project and content data.
 //
 // State is plain data: no classes, no functions. All mutation flows through
-// engine commands and ticks (`FarmEngine.Core`).
+// engine commands and ticks (the Rust `farm-sim` engine).
 //
 // v1 — M1 extraction (wall-clock mirror for legacy growth)
 // v2 — M2 game clock: minute-of-day time, day/season/year calendar,

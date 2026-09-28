@@ -1,4 +1,4 @@
-//! Port of `tests/FarmEngine.Core.Tests/Core/InventoryTests.cs`
+//! Port of the retired C# `InventoryTests.cs`
 //! (packages/engine-core/src/inventory.test.ts).
 
 use farm_sim::inventory::{add_item, find_slot, find_tool_slot, remove_item, replace_item, AddItemOptions};

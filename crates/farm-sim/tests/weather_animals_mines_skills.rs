@@ -1,4 +1,4 @@
-//! The weather, animal, mine and skill cases of `tests/FarmEngine.Core.Tests/Core/M4SystemsTests.cs`
+//! The weather, animal, mine and skill cases of the retired C# `M4SystemsTests.cs`
 //! (m4-systems.test.ts), the `onWeatherRoll` reroll cases of `M5SystemsTests.cs`, and the pure
 //! clock cases of `M2SystemsTests.cs` — plus direct-module variants of the C# engine-level tests
 //! so the ported logic is exercised before the engine dispatch lands.

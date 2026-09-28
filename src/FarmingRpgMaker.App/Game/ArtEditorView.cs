@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FarmEngine.Authoring;
-using FarmEngine.Rendering;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -13,12 +12,13 @@ namespace FarmingRpgMaker.App.Game;
 /// <summary>Import, animate and bind creator art through F# project edits.</summary>
 public sealed class ArtEditorView : UserControl
 {
-    private static readonly FilePickerFileType ArtFiles = new("Raster artwork") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.bmp"] };
+    private static readonly FilePickerFileType ArtFiles = new("Artwork") { Patterns = ArtImport.FilePatterns };
     private readonly ProjectWorkspace _workspace;
     private readonly Action<string, VisualRef> _useMapBrush;
     private readonly DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private readonly ListBox _assets = new() { Name = "ArtAssets", MinHeight = 130 };
     private readonly Border _preview = new() { Name = "ArtPreview", Width = 140, Height = 140 };
+    private readonly VisualPreview _art = new();
     private readonly TextBlock _message = Ui.Wrapped("Import an image to start.", "muted", "small");
     private readonly TextBox _assetName = new() { Name = "ArtAssetName" };
     private readonly ComboBox _clips = new() { Name = "ArtClips" };
@@ -39,6 +39,7 @@ public sealed class ArtEditorView : UserControl
     private readonly TextBox _cellColumn = new() { Name = "ArtCellColumn", Text = "0", Width = 55 };
     private readonly TextBox _cellRow = new() { Name = "ArtCellRow", Text = "0", Width = 55 };
     private readonly CheckBox _pixelArt = new() { Name = "ArtPixelArt", Content = "Crisp pixel art" };
+    private readonly TextBox _svgSize = new() { Name = "ArtSvgSize", Width = 70, Watermark = "own" };
     private string? _selectedAssetId;
     private bool _refreshing;
     private double _tick;
@@ -81,10 +82,13 @@ public sealed class ArtEditorView : UserControl
 
         var left = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(Ui.Text("ARTWORK", "section"));
-        left.Children.Add(Ui.Wrapped("Import PNG, JPEG, WebP, GIF or BMP. Animated images become a still; add clips below.", "muted", "small"));
+        left.Children.Add(Ui.Wrapped("Import PNG, JPEG, WebP, GIF, BMP or SVG. Animated images and SVGs become a still PNG; add clips below.", "muted", "small"));
         var import = Ui.Button("Import image", async () => await PickImageAsync(), "accent");
         import.Name = "ImportArtButton";
         left.Children.Add(import);
+        var svgSize = Ui.HStack(6, Ui.Text("SVG size (longest side, px)", "muted", "small"), _svgSize);
+        ToolTip.SetTip(svgSize, "Leave empty to use the SVG's own size.");
+        left.Children.Add(svgSize);
         left.Children.Add(_assets);
         left.Children.Add(_pixelArt);
         _pixelArt.Click += (_, _) => _workspace.Apply(Edits.SetGraphics(new GraphicsSettings { PixelArt = _pixelArt.IsChecked == true }));
@@ -110,6 +114,9 @@ public sealed class ArtEditorView : UserControl
         append.Name = "AppendArtFrameButton";
         var removeClip = Ui.Button("Remove clip", RemoveClip, "tool");
         right.Children.Add(Ui.HStack(8, slice, append, removeClip));
+        var allTicks = Ui.Button("Set every frame to these ticks", SetAllFrameTicks, "tool");
+        allTicks.Name = "ArtAllFrameTicksButton";
+        right.Children.Add(Ui.HStack(8, allTicks, Ui.Text("20 ticks = 1 second", "muted", "small")));
         right.Children.Add(_frames);
         right.Children.Add(Ui.Text("ASSIGN ARTWORK", "section"));
         right.Children.Add(Ui.HStack(8, Ui.Text("Target", "muted", "small"), _target));
@@ -146,6 +153,7 @@ public sealed class ArtEditorView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _previewTimer.Stop();
+        _art.Dispose();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -160,7 +168,15 @@ public sealed class ArtEditorView : UserControl
         if (_workspace.Current is not { } project) return;
         try
         {
-            var asset = ArtImport.FromBytes(project, fileName, bytes);
+            int? svgSide = null;
+            if (!string.IsNullOrWhiteSpace(_svgSize.Text))
+            {
+                if (!int.TryParse(_svgSize.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var side) || side <= 0)
+                    throw new ArgumentException("The SVG size must be a positive whole number of pixels.");
+                svgSide = side;
+            }
+
+            var asset = ArtImport.FromBytes(project, fileName, bytes, svgSide);
             _selectedAssetId = asset.Id;
             _workspace.Apply(Edits.UpsertAsset(asset));
             _message.Text = $"Imported {asset.Name} ({asset.Width}×{asset.Height}).";
@@ -260,8 +276,8 @@ public sealed class ArtEditorView : UserControl
         var project = _workspace.Current;
         if (asset is null || project is null) { _preview.Child = null; return; }
         var visual = new VisualRef { AssetId = asset.Id, Animation = (_clips.SelectedItem as ComboBoxItem)?.Tag as string };
-        var sprite = Graphics.ResolveVisual(project.CustomAssets, visual, _tick);
-        _preview.Child = sprite is null ? null : SpriteImage.Create(sprite, project.Graphics?.PixelArt != false);
+        // The Rust renderer resolves and draws the frame, exactly as the game will show it.
+        _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
     }
 
     private void RefreshFrames()
@@ -273,7 +289,26 @@ public sealed class ArtEditorView : UserControl
         {
             var i = index;
             var frame = clip.Frames[i];
-            var label = Ui.Text($"{i + 1}. {frame.X},{frame.Y} · {frame.Width}×{frame.Height} · {frame.Ticks} ticks", "muted", "small");
+            var label = Ui.Text($"{i + 1}. {frame.X},{frame.Y} · {frame.Width}×{frame.Height}", "muted", "small");
+            var ticks = new TextBox { Name = $"ArtFrameTicks_{i}", Text = Number(frame.Ticks), Width = 52 };
+            ToolTip.SetTip(ticks, $"Frame {i + 1} duration in ticks");
+            var setTicks = Ui.Button("Set", () =>
+            {
+                if (SelectedAsset() is not { } asset) return;
+                try
+                {
+                    _workspace.Apply(Edits.SetFrameTicks(asset.Id, clip.Name, i, Positive(ticks)));
+                }
+                catch (FormatException error) { _message.Text = error.Message; }
+            }, "tool", "small");
+            setTicks.Name = $"ArtFrameTicksSet_{i}";
+            var duplicate = Ui.Button("Copy", () =>
+            {
+                if (SelectedAsset() is { } asset) _workspace.Apply(Edits.DuplicateFrame(asset.Id, clip.Name, i));
+            }, "tool", "small");
+            duplicate.Name = $"ArtFrameDuplicate_{i}";
+            duplicate.IsEnabled = clip.Frames.Count < 1024;
+            ToolTip.SetTip(duplicate, "Duplicate this frame");
             var up = Ui.Button("↑", () =>
             {
                 if (i == 0) return;
@@ -288,7 +323,7 @@ public sealed class ArtEditorView : UserControl
                 if (frames.Count == 0) RemoveClip();
                 else SaveClip(clip with { Frames = frames });
             }, "tool", "small");
-            _frames.Children.Add(Ui.Row(label, up, remove));
+            _frames.Children.Add(Ui.Row(label, ticks, setTicks, duplicate, up, remove));
         }
     }
 
@@ -339,6 +374,17 @@ public sealed class ArtEditorView : UserControl
             frames.Add(new ArtFrame { X = x, Y = y, Width = width, Height = height, Ticks = ticks });
             SaveClip(new AnimationClip { Name = name, Loop = _loop.IsChecked == true, Frames = frames });
             _message.Text = $"Added frame to {name}.";
+        }
+        catch (FormatException error) { _message.Text = error.Message; }
+    }
+
+    private void SetAllFrameTicks()
+    {
+        if (SelectedAsset() is not { } asset || SelectedClip() is not { } clip) return;
+        try
+        {
+            _workspace.Apply(Edits.SetAllFrameTicks(asset.Id, clip.Name, Positive(_frameTicks)));
+            _message.Text = $"Every frame of {clip.Name} now lasts {Positive(_frameTicks)} ticks.";
         }
         catch (FormatException error) { _message.Text = error.Message; }
     }

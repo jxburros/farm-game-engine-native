@@ -98,7 +98,7 @@ pub struct MinigameView {
     pub choices: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum MinigameInput {
     Update { seconds: f64 },

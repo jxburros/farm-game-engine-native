@@ -2,16 +2,89 @@
 
 ## 0.2.0 (unreleased)
 
+- **Play Mode is the real game.** The editor's Play Mode now runs the same Rust
+  player as exported games: the world, HUD, dialogue, shops, crafting,
+  inventory, quests, minigames, toasts and pause menu look and behave exactly
+  as they will for players, including pointer clicks on the HUD. Frames run on
+  a worker thread, so a slow plugin no longer stalls the editor. Restart, Keep
+  changes and the debug drawer (money, energy, skip day, +1 hour, season,
+  items, teleport, flags) work as before. Game sounds now play in Play Mode.
+- **One engine.** The C# simulation, runtime, renderer and content projects,
+  and the Jint plugin host, are gone: the game runs in Rust (`farm-sim`,
+  `farm-runtime`, `farm-render`, `farm-plugins`, `farm-player`) everywhere,
+  and templates come from F#. Their tests moved to the Rust and F# suites or
+  to the new `FarmEngine.Schemas.Tests`; shared fixtures live in
+  `fixtures/projects`. The editor ships the Rust license notices.
+- **Graphical player.** Exported games now open a window with a title screen,
+  three save slots with previews, a pause menu, settings and credits. The game
+  autosaves each morning. Keyboard, mouse and gamepads work everywhere,
+  including menus, and keys are rebindable. Settings cover display, audio,
+  controls and accessibility, and are kept apart from the saves. The world
+  renders at its pixel-art size and scales up crisply; the UI draws at full
+  resolution, and 16:10 screens such as the Steam Deck lay out cleanly. A
+  crash writes a log with the recent commands. `farm-player --screenshot`
+  renders frames to a PNG without a window.
+- **Rust game UI.** The new `farm-ui` crate draws the HUD, dialogue, shop,
+  crafting, inventory, quest log, creator panels, minigames and toasts on
+  `farm-render` draw lists. Every button runs an engine command. The player
+  is also a library, `farm_player::Player`, that the editor embeds for
+  Play Mode.
+- **Nested content forms.** Content entries now edit nested records, lists and
+  references with native controls. Lists add, remove and move rows. Reference
+  fields are searchable pickers that keep a missing id visible as
+  "(missing: id)". Reference lists such as seasons and gift tastes are chips.
+  Event, action and minigame conditions and outcomes pick a type and show
+  only that type's fields, like the web editor. Quest objectives show the
+  targets of their type. Each nested field has a collapsed Edit as JSON box.
+  One save is still one undo step.
+- **F# field metadata.** `References` declares what every schema field holds
+  and lists picker options from the content compiler, built-in items, crops
+  and node types included. `Vocabulary` ports `event-vocabulary.ts` and the
+  per-type fields of `event-forms.tsx`. A test fails when an id-like schema
+  field has no declaration.
+- **More reference checks.** Problems now also reports missing ids in action
+  and minigame conditions and outcomes, inventory-space conditions, transition
+  and tile outcomes, dialogue option items and actions, gift tastes, item
+  crops, placed machines, scene NPC and event lists, the player's quests and
+  recipe skills. Each has a JSON path.
+- **Export settings.** Project Settings edits the export title, executable
+  name, version, author, company, icon (large PNG art only), window size,
+  fullscreen, pixel scale and credits, and shows export problems inline.
+- **SVG import.** The art studio imports SVG files as PNG art at their own
+  size or a chosen size, within the raster limits. Files with scripts,
+  embedded HTML or external links are refused.
+- **Animation tools.** Frames can be duplicated, and durations set for one
+  frame or every frame of a clip, as undoable F# edits.
+- **Export Game.** File → Export Game… builds standalone Windows x64 and Linux
+  x64 games from the open project, with an optional `.zip` or `.tar.gz` for
+  each. The Windows executable gets the game's icon and version info, written
+  from .NET into placeholder resources, with no external tools. Linux games get
+  a `.png` icon and a `.desktop` file. Every game ships the player's license
+  notices. Problems errors stop the export, warnings and unused assets are
+  listed, and two exports of the same project are byte-identical.
+  `farmc export` does the same from the command line. Releases build the
+  player templates (Linux in the Steam Runtime sniper SDK) and ship them with
+  the app. Exported games run the graphical player.
+- **Rust plugin sandbox.** The new `farm-plugins` crate runs content-pack
+  plugins in QuickJS compiled to WebAssembly, one isolated instance per
+  plugin, in the wasmi interpreter (no JIT). Budgets are deterministic fuel
+  instead of wall-clock time, so the same plugins give the same results on
+  every machine. Hardening, strikes, error kinds, mutation validation and the
+  mutation queue match the Jint host it replaces.
 - **Rust Play Mode runtime.** Frame timing, gameplay input bindings, minigame
   scoring, creator-panel values, calendar displays and sound-cue mapping now
   execute in Rust when Rust Play Mode is selected. Minigame views use mount
   tokens to reject stale input, and results pass through the command pipeline
-  once. C# remains the fallback when the native library is unavailable.
+  once.
 - **Rust world snapshots.** The new `farm-render` crate builds read-only play
   snapshots from Rust state. Differential tests cover all templates, crop
   maturity/withered state, soil, machines, missing definitions/tiles, moving
-  NPCs and animals. The app still decorates artwork and draws through Skia;
-  a GPU renderer and standalone graphical player are not included yet.
+  NPCs and animals. A GPU renderer is not included yet.
+- **Rust renderer.** `farm-render` now holds the whole world renderer: Edit
+  Mode snapshots, art decoration, the built-in art pack (moved to
+  `assets/builtin-art/`), draw lists and a CPU rasterizer with embedded Inter
+  fonts. `RustRender` and `RustPreview` expose it to C#; Edit Mode and Play
+  Mode draw with it.
 - **F# project templates.** The starter pack and all four project templates now
   originate in F#. New Project, first launch and game import use the new catalog,
   with the clock supplied by the desktop host. The app no longer depends on
@@ -22,8 +95,8 @@
   resolution. F# authoring no longer references the C# simulation assembly;
   tile construction and layer edits also live in F#. Parity tests compare the
   compiled content with TypeScript goldens and the C# compatibility engine,
-  and run compiled sample cartridges through Rust. C# schema records and the
-  gameplay fallback remain while migration continues.
+  and run compiled sample cartridges through Rust. The C# schema records
+  remain the editor's data model.
 - **F# pack authoring progress.** Dependency ordering, conflict-aware content
   merging, and importing a pack into editable project content now run through
   F#. Differential tests compare the results with the C# compatibility engine.
@@ -34,8 +107,8 @@
 - **Creator content workspace.** Edit Mode now includes native forms for
   NPCs, dialogue, items, crops, quests, events, shops, recipes, nodes,
   machines, wildlife, actions and minigames. Creators can add, edit and delete
-  entries through the F# undoable document. Nested fields are editable as
-  JSON. Project settings and the calendar have their own controls, and the
+  entries through the F# undoable document. Project settings and the calendar
+  have their own controls, and the
   Problems tab links issues to affected entries.
 - **Pack manager.** Creators can review a pack's manifest, dependencies,
   requested permissions and plugin source before installing it. The Mods tab
@@ -44,21 +117,19 @@
 - **Art studio.** Import raster artwork into portable project assets, slice
   sprite sheets into animation clips, append/reorder/remove frames, and bind
   visuals to the player, map brush or content definitions. Removing an asset
-  clears its bindings. SVG import remains to be ported.
+  clears its bindings.
 - **Workshop and interface.** The 13 F# creator patterns can now be used from
   Edit Mode, each as one undo step. Creators can add in-game panels and edit
   their titles, visibility flags and live entries.
 - **Export groundwork.** Projects can store desktop export identity, window,
   icon and target settings without changing the web-compatible schema version.
-  F# supplies a stable game id and reports invalid settings in Problems. The
-  graphical player and export packaging remain future work.
+  F# supplies a stable game id and reports invalid settings in Problems.
 - **Cartridge groundwork.** `farmc compile` now writes a deterministic
   FlatBuffers `game.cart` with game identity and compiled compatibility
   content. Rust verifies and loads it; cartridge sessions use the persistent
-  game id in saves. The graphical player and packaging remain future work.
+  game id in saves.
 - **Headless player.** A standalone Rust executable loads cartridges, runs
   scripted replays, checks deterministic state hashes, and loads/writes saves.
-  The graphical game shell is still being built.
 - **Native map editor.** Edit Mode now exposes layered brush, rectangle and
   area fill, erase, collision, selection and copy/paste tools. Creators can add,
   rename, resize, duplicate and delete scenes, set the start scene and player
@@ -90,8 +161,7 @@
   `farm-sim` crate. It replays all 23 recorded sessions from the web version
   with byte-identical state hashes, and a random 400-command session gives
   the same hash after every step in the Rust and C# engines. The app ships
-  the Rust library (`farm_ffi`) and can run a game in it through
-  `RustSession`; Play Mode still uses the C# engine until the switch-over.
+  the Rust library (`farm_ffi`).
 - **Language migration, phase 1.** A Cargo workspace (`farm-sim`,
   `farm-cart`, `farm-runtime`, `farm-ffi`) with determinism lints, the
   `FarmEngine.Interop` bindings built by `dotnet build`, and the F#
@@ -143,8 +213,7 @@
   lints now run in F# too.
 - **Play Mode runs on the Rust engine.** Playtests use the Rust simulation
   when its library is present (every build from source with a Rust
-  toolchain, and every release). Games play exactly as before; set
-  `FARM_ENGINE=csharp` to use the C# engine.
+  toolchain, and every release). Games play exactly as before.
 - **Fixes:**
   - Hand-written packs whose node types leave out `respawnDays` now hash
     like the web version.

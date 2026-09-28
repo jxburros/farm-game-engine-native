@@ -1,0 +1,229 @@
+{
+  "content/blank.json (as is)": [],
+  "content/blank.json (migrated)": [],
+  "content/cozy-garden.json (as is)": [],
+  "content/cozy-garden.json (migrated)": [],
+  "content/fixture-v1.json (as is)": [],
+  "content/fixture-v1.json (migrated)": [],
+  "content/fixture-v8.json (as is)": [],
+  "content/fixture-v8.json (migrated)": [],
+  "content/lab-calendar.json (as is)": [],
+  "content/lab-calendar.json (migrated)": [],
+  "content/packs-all-disabled.json (as is)": [],
+  "content/packs-all-disabled.json (migrated)": [],
+  "content/packs-de.json (as is)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "content/packs-de.json (migrated)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "content/packs-fr.json (as is)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "content/packs-fr.json (migrated)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "content/packs-nodes.json (as is)": [],
+  "content/packs-nodes.json (migrated)": [],
+  "content/quest-rpg.json (as is)": [],
+  "content/quest-rpg.json (migrated)": [],
+  "content/starter-farm.json (as is)": [],
+  "content/starter-farm.json (migrated)": [],
+  "replays/actions-items-minigames.json (as is)": [],
+  "replays/actions-items-minigames.json (migrated)": [],
+  "replays/animals-ranch.json (as is)": [],
+  "replays/animals-ranch.json (migrated)": [],
+  "replays/blank-idle-collapse.json (as is)": [],
+  "replays/blank-idle-collapse.json (migrated)": [],
+  "replays/calendar-festivals.json (as is)": [],
+  "replays/calendar-festivals.json (migrated)": [],
+  "replays/content-packs-and-plugins.json (as is)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "replays/content-packs-and-plugins.json (migrated)": [
+    "warning|packs|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|rebalance"
+  ],
+  "replays/cozy-garden-slow-day.json (as is)": [],
+  "replays/cozy-garden-slow-day.json (migrated)": [],
+  "replays/crafting-and-machines.json (as is)": [
+    "error|quests|Quest \"Bale Some Hay\" objective targets missing item \"recipe-craft-hay\"|quest-craft-hay"
+  ],
+  "replays/crafting-and-machines.json (migrated)": [
+    "error|quests|Quest \"Bale Some Hay\" objective targets missing item \"recipe-craft-hay\"|quest-craft-hay"
+  ],
+  "replays/dialogue-and-social.json (as is)": [
+    "error|dialogue|Dialogue \"dlg-ann-3\" links to missing dialogue \"dlg-missing\"|npc-ann"
+  ],
+  "replays/dialogue-and-social.json (migrated)": [
+    "error|dialogue|Dialogue \"dlg-ann-3\" links to missing dialogue \"dlg-missing\"|npc-ann"
+  ],
+  "replays/events-showcase.json (as is)": [],
+  "replays/events-showcase.json (migrated)": [],
+  "replays/farming-lifecycle.json (as is)": [],
+  "replays/farming-lifecycle.json (migrated)": [],
+  "replays/fishing-instant.json (as is)": [],
+  "replays/fishing-instant.json (migrated)": [],
+  "replays/fishing-minigame.json (as is)": [],
+  "replays/fishing-minigame.json (migrated)": [],
+  "replays/free-movement.json (as is)": [],
+  "replays/free-movement.json (migrated)": [],
+  "replays/fuzz-thousand-commands.json (as is)": [],
+  "replays/fuzz-thousand-commands.json (migrated)": [],
+  "replays/gathering-and-tools.json (as is)": [],
+  "replays/gathering-and-tools.json (migrated)": [],
+  "replays/legacy-v1-fixture-play.json (as is)": [],
+  "replays/legacy-v1-fixture-play.json (migrated)": [],
+  "replays/mines-descent.json (as is)": [],
+  "replays/mines-descent.json (migrated)": [],
+  "replays/npc-schedules-and-movement.json (as is)": [
+    "warning|scenes|Scene \"Annex\" is unreachable (no transition leads to it)|annex"
+  ],
+  "replays/npc-schedules-and-movement.json (migrated)": [
+    "warning|scenes|Scene \"Annex\" is unreachable (no transition leads to it)|annex"
+  ],
+  "replays/quest-rpg-rebuild-square.json (as is)": [],
+  "replays/quest-rpg-rebuild-square.json (migrated)": [],
+  "replays/replay-three-days.json (as is)": [],
+  "replays/replay-three-days.json (migrated)": [],
+  "replays/shop-economy.json (as is)": [
+    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
+    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
+    "error|shops|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop-picky"
+  ],
+  "replays/shop-economy.json (migrated)": [
+    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
+    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
+    "error|shops|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop-picky"
+  ],
+  "replays/starter-farm-first-week.json (as is)": [],
+  "replays/starter-farm-first-week.json (migrated)": [],
+  "replays/weather-seasons-long-run.json (as is)": [],
+  "replays/weather-seasons-long-run.json (migrated)": [],
+  "migrations/project-v1.json (as is)": [
+    "warning|crops|Scene \"Farm\": Wheat at (0,1) cannot grow in the starting season ()|scene-farm"
+  ],
+  "migrations/project-v1.json (migrated)": [],
+  "migrations/project-v2.json (as is)": [],
+  "migrations/project-v2.json (migrated)": [],
+  "migrations/project-v3.json (as is)": [],
+  "migrations/project-v3.json (migrated)": [],
+  "migrations/project-v4.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrations/project-v4.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrations/project-v5.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrations/project-v5.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrations/project-v6.json (as is)": [],
+  "migrations/project-v6.json (migrated)": [],
+  "migrations/project-v7.json (as is)": [],
+  "migrations/project-v7.json (migrated)": [],
+  "migrations/project-v8.json (as is)": [],
+  "migrations/project-v8.json (migrated)": [],
+  "migrations/errors/future-version (as is)": [],
+  "migrated/project-edge-v1.input.json (migrated)": [
+    "warning|scenes|Scene \"B\" is unreachable (no transition leads to it)|scene-b",
+    "error|events|Event \"Item\" checks missing item \"wheat\"|e-item",
+    "warning|crops|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene-a",
+    "warning|crops|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene-a"
+  ],
+  "migrated/project-edge-v1.stable.json (as is)": [
+    "warning|scenes|Scene \"B\" is unreachable (no transition leads to it)|scene-b",
+    "error|events|Event \"Item\" checks missing item \"wheat\"|e-item",
+    "warning|crops|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene-a",
+    "warning|crops|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene-a"
+  ],
+  "migrated/project-edge-v1.stable.json (migrated)": [
+    "warning|scenes|Scene \"B\" is unreachable (no transition leads to it)|scene-b",
+    "error|events|Event \"Item\" checks missing item \"wheat\"|e-item",
+    "warning|crops|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene-a",
+    "warning|crops|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene-a",
+    "warning|crops|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene-a"
+  ],
+  "migrated/project-v1.stable.json (as is)": [],
+  "migrated/project-v1.stable.json (migrated)": [],
+  "migrated/project-v2.stable.json (as is)": [],
+  "migrated/project-v2.stable.json (migrated)": [],
+  "migrated/project-v3.stable.json (as is)": [],
+  "migrated/project-v3.stable.json (migrated)": [],
+  "migrated/project-v4.stable.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrated/project-v4.stable.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrated/project-v5.stable.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrated/project-v5.stable.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "migrated/project-v6.stable.json (as is)": [],
+  "migrated/project-v6.stable.json (migrated)": [],
+  "migrated/project-v7.stable.json (as is)": [],
+  "migrated/project-v7.stable.json (migrated)": [],
+  "migrated/project-v8.stable.json (as is)": [],
+  "migrated/project-v8.stable.json (migrated)": [],
+  "fixtures/project-v1.json (as is)": [
+    "warning|crops|Scene \"Farm\": Wheat at (0,1) cannot grow in the starting season ()|scene-farm"
+  ],
+  "fixtures/project-v1.json (migrated)": [],
+  "fixtures/project-v2.json (as is)": [],
+  "fixtures/project-v2.json (migrated)": [],
+  "fixtures/project-v3.json (as is)": [],
+  "fixtures/project-v3.json (migrated)": [],
+  "fixtures/project-v4.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "fixtures/project-v4.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "fixtures/project-v5.json (as is)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "fixtures/project-v5.json (migrated)": [
+    "error|shops|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop-x"
+  ],
+  "fixtures/project-v6.json (as is)": [],
+  "fixtures/project-v6.json (migrated)": [],
+  "fixtures/project-v7.json (as is)": [],
+  "fixtures/project-v7.json (migrated)": [],
+  "fixtures/project-v8.json (as is)": [],
+  "fixtures/project-v8.json (migrated)": [],
+  "fixtures/packs-project.json (as is)": [
+    "error|packs|Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled|pack-d",
+    "error|packs|Dependency cycle involving pack 'pack-d'|pack-d",
+    "warning|packs|Pack 'pack-b' targets engine ^9.0.0; this engine is 0.5.0|pack-b",
+    "warning|packs|Pack 'pack-b' redefines item 'pack-a:berry' without declaring it in manifest.overrides — keeping the earlier definition|pack-b"
+  ],
+  "fixtures/packs-project.json (migrated)": [
+    "error|packs|Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled|pack-d",
+    "error|packs|Dependency cycle involving pack 'pack-d'|pack-d",
+    "warning|packs|Pack 'pack-b' targets engine ^9.0.0; this engine is 0.5.0|pack-b",
+    "warning|packs|Pack 'pack-b' redefines item 'pack-a:berry' without declaring it in manifest.overrides — keeping the earlier definition|pack-b"
+  ],
+  "starter": [],
+  "blank": [],
+  "cozy factory": [],
+  "quest factory": [],
+  "template starter": [],
+  "template blank": [],
+  "template cozy": [],
+  "template quest": []
+}

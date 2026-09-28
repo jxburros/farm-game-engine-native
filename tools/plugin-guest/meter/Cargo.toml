@@ -1,0 +1,15 @@
+# Adds instruction metering to the plugin guest (see src/main.rs). Run by
+# tools/plugin-guest/build.sh; not part of the root workspace.
+[package]
+name = "farm-plugin-meter"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[dependencies]
+wasmparser = "=0.259.0"
+wasm-encoder = { version = "=0.259.0", features = ["wasmparser"] }
+
+[workspace]

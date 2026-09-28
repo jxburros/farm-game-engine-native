@@ -10,7 +10,7 @@
 //! TypeScript engine hash identically here. The native-numerics switch (phase 7) replaces
 //! this with integer and fixed-point types.
 //!
-//! Layout mirrors `src/FarmEngine.Core` (docs/PORTING.md): the data shapes live in [`schema`],
+//! Layout mirrors the retired C# `FarmEngine.Core` (docs/PORTING.md): the data shapes live in [`schema`],
 //! the root modules are the engine files, and gameplay systems live in their folders
 //! (`farming`, …).
 #![forbid(unsafe_code)]
@@ -38,6 +38,7 @@ pub mod inventory;
 pub mod js;
 pub mod mines;
 pub mod npcs;
+pub mod overlay;
 pub mod packs;
 pub mod quests;
 pub mod replay;
@@ -46,6 +47,7 @@ pub mod schema;
 pub mod skills;
 pub mod social;
 pub mod stable_json;
+pub mod start;
 pub mod state;
 pub mod tools;
 pub mod weather;
@@ -59,4 +61,5 @@ pub use hash::{hash_state, hash_text, stable_stringify};
 pub use hooks::{HookBus, HookEvent};
 pub use rng::{Rng, RngState};
 pub use schema::{GameContent, GameProject, GameState};
-pub use state::{create_content_from_project, create_game_state};
+pub use start::{Presentation, StartState};
+pub use state::{create_content_from_project, create_game_state, create_game_state_from_start};

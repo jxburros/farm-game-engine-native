@@ -1,0 +1,102 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FarmEngine.Export</RootNamespace>
+    <Description>Export Game: player templates, Windows resources, icons, folders and archives (docs/EXPORT.md).</Description>
+    <WarnOn>3390;$(WarnOn)</WarnOn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);FS3370</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Binary.fs" />
+    <Compile Include="Targets.fs" />
+    <Compile Include="Archives.fs" />
+    <Compile Include="VersionInfo.fs" />
+    <Compile Include="PeResources.fs" />
+    <Compile Include="Icons.fs" />
+    <Compile Include="Templates.fs" />
+    <Compile Include="DesktopEntry.fs" />
+    <Compile Include="Exporter.fs" />
+    <Compile Include="GameExporter.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The editor's own icon is the default game icon, as engines usually do (Godot too). -->
+    <EmbeddedResource Include="../FarmingRpgMaker.App/Assets/app-icon-256.png" LogicalName="default-icon.png" Link="Assets/default-icon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
+    <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
+    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+
+  <!--
+    Player templates for development builds. Export copies a prebuilt farm-player from
+    players/<target>/ next to the app (docs/EXPORT.md "Player templates"). The release workflow
+    builds both templates and passes them in with -p:FarmPlayerTemplatesDir=<dir>; otherwise
+    this builds farm-player for the host with cargo and writes its template.json. The files flow
+    to every project that references this one (the app, farmc, the tests), like farm_ffi does.
+    FarmFfiSkipCargo=true (or FarmPlayerSkipCargo=true) skips the cargo build.
+  -->
+  <PropertyGroup>
+    <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">$(FarmFfiSkipCargo)</FarmPlayerSkipCargo>
+    <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">false</FarmPlayerSkipCargo>
+    <CargoProfile Condition="'$(CargoProfile)' == ''">release</CargoProfile>
+    <FarmPlayerCargoTargetDir>$(MSBuildThisFileDirectory)../../target/</FarmPlayerCargoTargetDir>
+    <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">windows-x64</FarmPlayerHostTarget>
+    <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</FarmPlayerHostTarget>
+    <FarmPlayerExecutableName Condition="'$(FarmPlayerHostTarget)' == 'windows-x64'">farm-player.exe</FarmPlayerExecutableName>
+    <FarmPlayerExecutableName Condition="'$(FarmPlayerExecutableName)' == ''">farm-player</FarmPlayerExecutableName>
+    <FarmPlayerExecutablePath>$(FarmPlayerCargoTargetDir)$(CargoProfile)/$(FarmPlayerExecutableName)</FarmPlayerExecutablePath>
+    <FarmPlayerLicenses>$(MSBuildThisFileDirectory)../../tools/player-licenses/THIRD-PARTY.txt</FarmPlayerLicenses>
+  </PropertyGroup>
+
+  <Target Name="FarmPlayerTemplates" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <FarmPlayerStatusFile>$(IntermediateOutputPath)farm_player.status</FarmPlayerStatusFile>
+      <FarmPlayerTemplateJson>$(IntermediateOutputPath)players/$(FarmPlayerHostTarget)/template.json</FarmPlayerTemplateJson>
+    </PropertyGroup>
+
+    <!-- Prebuilt templates (release builds): copy the folder as it is. -->
+    <ItemGroup Condition="'$(FarmPlayerTemplatesDir)' != ''">
+      <FarmPlayerPrebuilt Include="$(FarmPlayerTemplatesDir)/**/*" />
+      <None Include="@(FarmPlayerPrebuilt)" Link="players/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+
+    <!-- Development: build the host template with cargo. -->
+    <Exec Command="cargo --version" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" ContinueOnError="true"
+          Condition="'$(FarmPlayerTemplatesDir)' == '' And '$(FarmPlayerSkipCargo)' != 'true' And '$(FarmPlayerHostTarget)' != ''">
+      <Output TaskParameter="ExitCode" PropertyName="FarmPlayerCargoProbe" />
+    </Exec>
+    <Message Importance="high" Text="FarmEngine.Export: cargo not found; building without a player template (set FarmPlayerSkipCargo=true to silence this)."
+             Condition="'$(FarmPlayerCargoProbe)' != '' And '$(FarmPlayerCargoProbe)' != '0'" />
+    <Exec Command="cargo build --profile $(CargoProfile) -p farm-player" WorkingDirectory="$(MSBuildThisFileDirectory)../.."
+          Condition="'$(FarmPlayerCargoProbe)' == '0'" />
+    <GetFileHash Files="$(FarmPlayerExecutablePath)" Algorithm="SHA256" HashEncoding="hex"
+                 Condition="'$(FarmPlayerCargoProbe)' == '0' And Exists('$(FarmPlayerExecutablePath)')">
+      <Output TaskParameter="Hash" PropertyName="FarmPlayerSha256" />
+    </GetFileHash>
+    <PropertyGroup>
+      <FarmPlayerStatus Condition="'$(FarmPlayerTemplatesDir)' != ''">prebuilt</FarmPlayerStatus>
+      <FarmPlayerStatus Condition="'$(FarmPlayerStatus)' == '' And '$(FarmPlayerSha256)' != ''">built</FarmPlayerStatus>
+      <FarmPlayerStatus Condition="'$(FarmPlayerStatus)' == ''">skipped</FarmPlayerStatus>
+      <FarmPlayerTemplateText>{ "target": "$(FarmPlayerHostTarget)", "version": "$(Version)", "sha256": "$(FarmPlayerSha256.ToLowerInvariant())" }</FarmPlayerTemplateText>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)players/$(FarmPlayerHostTarget)" Condition="'$(FarmPlayerStatus)' == 'built'" />
+    <WriteLinesToFile File="$(FarmPlayerTemplateJson)" Lines="$(FarmPlayerTemplateText)" Overwrite="true" WriteOnlyWhenDifferent="true" Condition="'$(FarmPlayerStatus)' == 'built'" />
+    <ItemGroup Condition="'$(FarmPlayerStatus)' == 'built'">
+      <None Include="$(FarmPlayerExecutablePath)" Link="players/$(FarmPlayerHostTarget)/$(FarmPlayerExecutableName)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+      <None Include="$(FarmPlayerTemplateJson)" Link="players/$(FarmPlayerHostTarget)/template.json" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+      <None Include="$(FarmPlayerLicenses)" Link="players/$(FarmPlayerHostTarget)/THIRD-PARTY.txt" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+
+    <!-- farm_player.status tells tests whether a host template is expected next to the assembly. -->
+    <WriteLinesToFile File="$(FarmPlayerStatusFile)" Lines="$(FarmPlayerStatus)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(FarmPlayerStatusFile)" Link="farm_player.status" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+  </Target>
+</Project>

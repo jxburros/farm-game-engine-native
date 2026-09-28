@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Project fixtures and the TS migration outputs, shared with the Rust and F# tests. -->
+    <None Include="../../fixtures/projects/**/*.json" Link="Fixtures/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Golden fixtures recorded from the TS reference engine (docs/LANGUAGES.md). -->
+    <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/saves/*.json" Link="Golden/saves/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/hash.json" Link="Golden/hash.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

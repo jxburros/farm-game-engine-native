@@ -45,26 +45,26 @@ pub struct MinigameMountOptions {
     /// The def's `config` record, verbatim.
     pub config: MinigameConfig,
     /// Resolve with a score in [0, 1]. Called at most once.
-    pub on_complete: Box<dyn FnMut(f64)>,
+    pub on_complete: Box<dyn FnMut(f64) + Send>,
     /// Abort without resolving (the host issues `cancelMinigame`).
-    pub on_cancel: Box<dyn FnMut()>,
+    pub on_cancel: Box<dyn FnMut() + Send>,
     /// Cosmetic randomness in [0, 1) (e.g. the timing-bar target placement). The C# default is
     /// `Random.Shared`; the runtime never reads OS randomness, so when this is `None` the
     /// sessions use a fixed 0.5 (a centered target). Hosts that want variety pass their own.
-    pub random: Option<Box<dyn FnMut() -> f64>>,
+    pub random: Option<Box<dyn FnMut() -> f64 + Send>>,
 }
 
 impl MinigameMountOptions {
     pub fn new(
         config: MinigameConfig,
-        on_complete: impl FnMut(f64) + 'static,
-        on_cancel: impl FnMut() + 'static,
+        on_complete: impl FnMut(f64) + Send + 'static,
+        on_cancel: impl FnMut() + Send + 'static,
     ) -> Self {
         Self { config, on_complete: Box::new(on_complete), on_cancel: Box::new(on_cancel), random: None }
     }
 
     /// Sets the cosmetic randomness source.
-    pub fn with_random(mut self, random: impl FnMut() -> f64 + 'static) -> Self {
+    pub fn with_random(mut self, random: impl FnMut() -> f64 + Send + 'static) -> Self {
         self.random = Some(Box::new(random));
         self
     }
@@ -85,8 +85,9 @@ impl fmt::Debug for MinigameMountOptions {
 
 /// A mounted minigame (TS `MinigameHandle` plus its UI state; C# `IMinigameSession` and the
 /// shared `MinigameSessionBase` members). [`dispose`](Self::dispose) ends the session: no
-/// completion can be reported afterwards.
-pub trait MinigameSession: Any {
+/// completion can be reported afterwards. Sessions are `Send` so a running game can move between
+/// threads (the editor steps it off its UI thread).
+pub trait MinigameSession: Any + Send {
     /// The registry kind this session implements.
     fn kind(&self) -> &str;
     /// Instruction text for the player.
@@ -679,13 +680,12 @@ mod tests {
     use super::custom_game::{HoldToCatchSession, SimpleBattleSession};
     use super::*;
     use farm_sim::js;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
-    fn options(config: MinigameConfig) -> (MinigameMountOptions, Rc<RefCell<Vec<f64>>>) {
-        let scores = Rc::new(RefCell::new(Vec::new()));
-        let sink = Rc::clone(&scores);
-        (MinigameMountOptions::new(config, move |score| sink.borrow_mut().push(score), || {}), scores)
+    fn options(config: MinigameConfig) -> (MinigameMountOptions, Arc<Mutex<Vec<f64>>>) {
+        let scores = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&scores);
+        (MinigameMountOptions::new(config, move |score| sink.lock().unwrap().push(score), || {}), scores)
     }
 
     #[test]
@@ -711,7 +711,7 @@ mod tests {
         session.update(0.5);
         session.release();
         // Held 500 ms for a 250 ms target: 1 - |500 - 250| / 250 = 0.
-        assert_eq!(*scores.borrow(), [0.0]);
+        assert_eq!(*scores.lock().unwrap(), [0.0]);
     }
 
     #[test]
@@ -728,7 +728,7 @@ mod tests {
         assert_eq!(battle.log(), "Crab is preparing a heavy attack. Guard next turn!");
         battle.press(); // attack: enemy 10, heavy hit 10 -> hp -4
         assert_eq!(battle.status(), "You: 0 health · 3 magic | Crab: 10 health");
-        assert_eq!(*scores.borrow(), [0.0]);
+        assert_eq!(*scores.lock().unwrap(), [0.0]);
         assert!(battle.is_done());
     }
 }

@@ -11,14 +11,19 @@ members = [
     "crates/farm-cart-schema",
     "crates/farm-runtime",
     "crates/farm-render",
+    "crates/farm-ui",
     "crates/farm-ffi",
     "crates/farm-player",
+    "crates/farm-plugins",
 ]
+# The plugin guest builds only for wasm32-wasip1 (tools/plugin-guest/build.sh); its output is
+# checked in under crates/farm-plugins/guest.
+exclude = ["crates/farm-plugin-guest"]
 
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/jxburros/farm-game-engine-native"
 publish = false
@@ -52,3 +57,10 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# farm-plugins runs plugins in wasmi, whose optimized builds dispatch every wasm instruction
+# with a tail call and rely on LLVM turning it into a jump. Debug assertions put code after
+# those calls, so each instruction would grow the native stack until a long-running plugin
+# crashed the host. Keep them off for wasmi in every profile (release has them off already).
+[profile.dev.package.wasmi]
+debug-assertions = false

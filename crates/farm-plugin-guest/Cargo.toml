@@ -1,0 +1,32 @@
+# The guest half of the plugin sandbox: QuickJS compiled to WebAssembly. It is
+# not a member of the root workspace (it only builds for wasm32-wasip1 and needs
+# the wasi-sdk C toolchain). `tools/plugin-guest/build.sh` builds it and copies
+# the result to `crates/farm-plugins/guest/farm_plugin_guest.wasm`, which is
+# checked in, so building the engine never needs this crate.
+[package]
+name = "farm-plugin-guest"
+description = "QuickJS plugin sandbox guest for farm-plugins (wasm32-wasip1)"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+# quickjs-ng 0.16.2, with pre-generated bindings for wasm32-wasip1.
+rquickjs-sys = { version = "=0.14.0", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+
+# Its own workspace: never picked up by the root `cargo` commands.
+[workspace]

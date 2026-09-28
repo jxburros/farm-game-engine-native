@@ -11,6 +11,7 @@ use crate::schema::{
     MineProgress, MoveIntent, NpcState, PlayerState, ProjectSettings, QuestObjectiveProgress, QuestProgress,
     WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
 };
+use crate::start::StartState;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -73,8 +74,13 @@ pub fn create_content_from_project(project: &GameProject) -> GameContent {
 ///
 /// `seed` is TS `options.seed`.
 pub fn create_game_state(project: &GameProject, seed: Option<&str>) -> GameState {
+    create_game_state_from_start(&StartState::from_project(project), seed)
+}
+
+/// [`create_game_state`] from the new-game inputs a cartridge carries (see [`crate::start`]).
+pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> GameState {
     let mut quests = IndexMap::new();
-    for quest in &project.quests {
+    for quest in &start.quests {
         let mut objectives = IndexMap::new();
         for objective in &quest.objectives {
             objectives.insert(
@@ -86,57 +92,57 @@ pub fn create_game_state(project: &GameProject, seed: Option<&str>) -> GameState
     }
 
     let mut npcs = IndexMap::new();
-    for npc in &project.npcs {
+    for npc in &start.npcs {
         npcs.insert(
             npc.id.clone(),
             NpcState { x: npc.x, y: npc.y, scene_id: npc.scene_id.clone(), ..NpcState::default() },
         );
     }
 
-    let resolved_settings = resolve_settings(&project.settings);
-    let max_energy = project.player.max_energy.unwrap_or(resolved_settings.max_energy);
+    let resolved_settings = resolve_settings(&start.settings);
+    let max_energy = start.player.max_energy.unwrap_or(resolved_settings.max_energy);
     let engine_seed = match seed {
         Some(seed) => seed.to_owned(),
-        None => format!("{}:{}", project.id, js::num(project.game_start_time)),
+        None => format!("{}:{}", start.id, js::num(start.game_start_time)),
     };
 
     let flags: IndexMap<String, Value> =
-        project.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect();
+        start.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect();
 
     let state = GameState {
         meta: GameStateMeta {
             save_version: CURRENT_SAVE_VERSION,
             engine_seed: engine_seed.clone(),
-            packs: packs::stamp_packs(&project.content_packs),
+            packs: start.packs.clone(),
         },
         clock: ClockState {
             tick: 0.0,
             // TS `project.currentTimeMinutes ?? dayStartMinute` / `currentYear ?? 1`: both are
             // required (non-nullable) project fields here, so the fallbacks never apply.
-            time_minutes: project.current_time_minutes,
-            day: project.current_day,
-            season: project.current_season.clone(),
-            year: project.current_year,
-            weather_id: project.current_weather_id.clone().unwrap_or_else(|| "sun".to_owned()),
+            time_minutes: start.current_time_minutes,
+            day: start.current_day,
+            season: start.current_season.clone(),
+            year: start.current_year,
+            weather_id: start.current_weather_id.clone().unwrap_or_else(|| "sun".to_owned()),
         },
-        world: WorldState { scenes: project.scenes.clone() },
+        world: WorldState { scenes: start.scenes.clone() },
         player: PlayerState {
             // Projects may store tile indices (legacy/authored) or fractional free-movement
             // positions; tile indices land on the tile center.
-            x: center_coordinate(project.player.x),
-            y: center_coordinate(project.player.y),
+            x: center_coordinate(start.player.x),
+            y: center_coordinate(start.player.y),
             move_intent: MoveIntent { dx: 0.0, dy: 0.0 },
-            direction: project.player.direction.clone(),
-            scene_id: project.player.scene_id.clone(),
-            inventory: project.player.inventory.clone(),
-            max_inventory_size: project.player.max_inventory_size,
-            money: project.player.money,
-            energy: project.player.energy.unwrap_or(max_energy),
+            direction: start.player.direction.clone(),
+            scene_id: start.player.scene_id.clone(),
+            inventory: start.player.inventory.clone(),
+            max_inventory_size: start.player.max_inventory_size,
+            money: start.player.money,
+            energy: start.player.energy.unwrap_or(max_energy),
             max_energy,
-            skills: project.player.skills.clone().unwrap_or_default(),
-            active_quests: project.player.active_quests.clone(),
-            completed_quests: project.player.completed_quests.clone(),
-            equipped_tool: project.player.equipped_tool.clone(),
+            skills: start.player.skills.clone().unwrap_or_default(),
+            active_quests: start.player.active_quests.clone(),
+            completed_quests: start.player.completed_quests.clone(),
+            equipped_tool: start.player.equipped_tool.clone(),
         },
         npcs,
         quests,
@@ -144,22 +150,17 @@ pub fn create_game_state(project: &GameProject, seed: Option<&str>) -> GameState
         shop: None,
         minigame: None,
         shop_purchases_today: IndexMap::new(),
-        social: project.social_state.clone().unwrap_or_default(),
-        animals: project.animals.clone(),
-        mine: MineProgress { deepest_floor: project.mine_deepest_floor.unwrap_or(0.0), current_floor: 0.0 },
+        social: start.social_state.clone().unwrap_or_default(),
+        animals: start.animals.clone(),
+        mine: MineProgress { deepest_floor: start.mine_deepest_floor.unwrap_or(0.0), current_floor: 0.0 },
         flags,
-        quarantined_items: project.quarantined_items.clone().unwrap_or_default(),
-        rng: project.rng_state.clone().unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
+        quarantined_items: start.quarantined_items.clone().unwrap_or_default(),
+        rng: start.rng_state.clone().unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
     };
 
     // Items from missing/disabled packs are quarantined, not dropped; they come back when the
     // pack does.
-    let enabled_packs: IndexSet<String> = project
-        .content_packs
-        .iter()
-        .filter(|install| install.enabled)
-        .map(|install| install.pack.manifest.id.clone())
-        .collect();
+    let enabled_packs: IndexSet<String> = start.packs.iter().map(|pack| pack.id.clone()).collect();
     packs::reconcile_pack_items(state, &enabled_packs)
 }
 

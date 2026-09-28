@@ -6,8 +6,6 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FarmEngine.Authoring;
-using FarmEngine.Core;
-using FarmEngine.Rendering;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -21,10 +19,22 @@ public sealed partial class EditModeView : UserControl
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
+    /// <summary>Palette chip colors per tile type (the renderer's fallback colors).</summary>
+    private static readonly IReadOnlyDictionary<string, string> TileSwatches = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["grass"] = "#5b9a4a",
+        ["soil"] = "#7a6545",
+        ["water"] = "#3075b0",
+        ["path"] = "#b5a48d",
+        ["wall"] = "#5e5a68",
+        ["door"] = "#8a6a3f",
+        ["floor"] = "#b5a48d",
+    };
+
     public const string PortingNotice = "Map, content, settings, art, mods, workshop and interface panels are editable here. Some advanced fields still use JSON.";
 
     private readonly ProjectWorkspace _workspace;
-    private readonly GameCanvas _canvas = new() { Name = "EditCanvas", ZoomMode = CanvasZoomMode.Fixed, Cursor = new Cursor(StandardCursorType.Hand) };
+    private readonly MapCanvas _canvas = new() { Name = "EditCanvas", Cursor = new Cursor(StandardCursorType.Hand) };
     private readonly ScrollViewer _scroller;
     private readonly Border _hover = new() { Name = "HoverHighlight", BorderThickness = new Thickness(2), IsHitTestVisible = false, IsVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     private readonly ComboBox _sceneSelector = new() { Name = "SceneSelector", MinWidth = 200 };
@@ -34,8 +44,7 @@ public sealed partial class EditModeView : UserControl
     private readonly WrapPanel _palette = new() { Name = "TilePalette" };
     private readonly Button _undo;
     private readonly Button _redo;
-    private GameProject? _projectForContent;
-    private GameContent? _content;
+    private GameProject? _projectForCanvas;
     private string? _sceneId;
     private string? _brush;
     private string? _strokeId;
@@ -259,7 +268,7 @@ public sealed partial class EditModeView : UserControl
     /// <summary>The scene shown (defaults to the player's scene).</summary>
     public string? SceneId => _sceneId;
 
-    public GameCanvas Canvas => _canvas;
+    public MapCanvas Canvas => _canvas;
 
     /// <summary>Selected brush tile type (null = inspect only).</summary>
     public string? Brush
@@ -475,14 +484,14 @@ public sealed partial class EditModeView : UserControl
         _redo.IsEnabled = _workspace.CanRedo;
         if (project is null)
         {
-            _canvas.Snapshot = null;
+            _canvas.Geometry = null;
             return;
         }
 
-        if (!ReferenceEquals(project, _projectForContent))
+        if (!ReferenceEquals(project, _projectForCanvas))
         {
-            _projectForContent = project;
-            _content = ProjectContent.Compile(project);
+            _projectForCanvas = project;
+            _canvas.SetProject(project);
         }
 
         var scene = CurrentScene();
@@ -490,16 +499,15 @@ public sealed partial class EditModeView : UserControl
         RefreshSceneSelector(project);
         RefreshInfo(project);
         RefreshEditorPanels(project, scene);
-        if (scene is null || _content is null)
+        if (scene is null)
         {
-            _canvas.Snapshot = null;
+            _canvas.Geometry = null;
             return;
         }
 
         // Zoom re-lays the map at a whole-pixel tile size (instead of scaling the canvas) so
-        // the 1px grid seams stay exactly one pixel at every zoom level.
-        var snapshot = ShellSnapshot.BuildEditorSnapshot(project, _content, scene, Math.Max(8, Math.Round(TileSize * _zoom)), Math.Round(12 * _zoom));
-        _canvas.Snapshot = Graphics.ApplyGraphics(snapshot, GraphicsSource.FromProject(project), scene, 0, false);
+        // the 1px grid seams stay exactly one pixel at every zoom level. The Rust renderer draws it.
+        _canvas.Geometry = new MapGeometry(scene.Id, (int)scene.Width, (int)scene.Height, Math.Max(8, Math.Round(TileSize * _zoom)), Math.Round(12 * _zoom));
         _zoomText.Text = $"{Math.Round(_zoom * 100)}%";
     }
 
@@ -576,7 +584,7 @@ public sealed partial class EditModeView : UserControl
                 CornerRadius = new CornerRadius(4),
                 BorderThickness = new Thickness(1),
                 BorderBrush = new SolidColorBrush(Color.Parse("#40000000")),
-                Background = type is null ? Brushes.Transparent : new SolidColorBrush(PlayOverlays.ToColor(Canvas2d.TileColors[type])),
+                Background = type is null ? Brushes.Transparent : new SolidColorBrush(Color.Parse(TileSwatches[type])),
             };
             if (type is null)
             {
@@ -665,9 +673,9 @@ public sealed partial class EditModeView : UserControl
 
     private void FitToView()
     {
-        var snapshot = _canvas.Snapshot;
+        var geometry = _canvas.Geometry;
         var viewport = _scroller.Bounds.Size;
-        if (snapshot is null || viewport.Width <= 0 || viewport.Height <= 0)
+        if (geometry is null || viewport.Width <= 0 || viewport.Height <= 0)
         {
             _fitPending = true;
             return;
@@ -675,8 +683,8 @@ public sealed partial class EditModeView : UserControl
 
         _fitPending = false;
         // World size at 100%: 12px padding each side, 28px tiles with 1px seams.
-        var width = 24 + (snapshot.Width * (TileSize + 1)) - 1;
-        var height = 24 + (snapshot.Height * (TileSize + 1)) - 1;
+        var width = 24 + (geometry.Width * (TileSize + 1)) - 1;
+        var height = 24 + (geometry.Height * (TileSize + 1)) - 1;
         var zoom = Math.Min((viewport.Width - 28) / width, (viewport.Height - 28) / height);
         SetZoom(Math.Floor(zoom * 20) / 20);
     }

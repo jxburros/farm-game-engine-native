@@ -35,7 +35,7 @@ public static class FarmFfi
         }
     }
 
-    /// <summary>FNV-1a state hash of <paramref name="text"/> computed by Rust (parity check with <c>Hash.HashText</c>).</summary>
+    /// <summary>FNV-1a state hash (<c>hashText</c>) of <paramref name="text"/>, computed by Rust.</summary>
     public static string HashText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

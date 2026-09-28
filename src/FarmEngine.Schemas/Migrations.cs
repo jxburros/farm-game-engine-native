@@ -13,7 +13,7 @@ namespace FarmEngine.Schemas;
 // Every migration is a pure `(vN) => vN+1` function over plain JSON data.
 // They never touch wall-clock time, RNG or the DOM, so the same input always
 // yields the same output. Fixtures for every released version live in
-// tests/FarmEngine.Core.Tests/Fixtures/ and are replayed through this pipeline
+// fixtures/projects/ and are replayed through this pipeline
 // in CI.
 //
 // C# notes: the TS works on `Record<string, any>`; here the raw data is a

@@ -18,20 +18,24 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- farm_ffi (the Rust engine, renderer and player) is built from crates inside farm-player's
+         dependency graph, so the player's notices cover it (tools/player-licenses). -->
+    <None Include="../../tools/player-licenses/THIRD-PARTY.txt" Link="licenses/THIRD-PARTY-rust.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Skia" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Svg.Skia" />
     <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FarmingRpgMaker.Updates/FarmingRpgMaker.Updates.csproj" />
-    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
-    <ProjectReference Include="../FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
-    <ProjectReference Include="../FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
     <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
+    <ProjectReference Include="../FarmEngine.Export/FarmEngine.Export.fsproj" />
     <ProjectReference Include="../FarmEngine.Interop/FarmEngine.Interop.csproj" />
   </ItemGroup>
   <ItemGroup>

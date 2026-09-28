@@ -181,7 +181,7 @@ let ``graphics, interface, calendar, mine and packs`` () =
     let mine = Records.withValues (Defaults.mineEnabled project true) [ ("EntranceSceneId", box "scene-ghost") ]
     let mined = has "mine.entranceSceneMissing" (project |> apply (SetMine mine))
     Assert.Equal("settings", mined.TargetKind)
-    let pack = FarmEngine.Content.DefaultContent.CreateContentDefaultPack()
+    let pack = ProjectCatalog.CreateContentDefaultPack()
     let old = Records.withValue pack "Manifest" (box (Records.withValues pack.Manifest [ ("Id", box "old-pack"); ("EngineCompatibility", box ">=99.0.0") ]))
     let packed = has "pack.incompatible" (blank () |> apply (InstallPack old))
     Assert.Equal("pack", packed.TargetKind)
@@ -204,3 +204,83 @@ let ``reserved hotkeys and C# friendly members`` () =
     Assert.Equal(4, tile.TargetY)
     let nowhere: Problem = { tile with Target = None }
     Assert.Null nowhere.TargetId
+
+[<Fact>]
+let ``actions and minigame tiers check the same references as events`` () =
+    let project = starter ()
+    let conditions: EventCondition list =
+        [ HasItemCondition(ItemId = "ghost-item", Quantity = 1.0)
+          InventorySpaceCondition(ItemId = "ghost-room", Quantity = 1.0)
+          QuestStatusCondition(QuestId = "ghost-quest", Status = "completed") ]
+    let outcomes =
+        [ EventOutcome(Type = "giveItem", ItemId = "ghost-item")
+          EventOutcome(Type = "startQuest", QuestId = "ghost-quest")
+          EventOutcome(Type = "spawnNPC", NpcId = "ghost-npc")
+          EventOutcome(Type = "warpPlayer", SceneId = "ghost-scene")
+          EventOutcome(Type = "lockTransition", SceneId = "ghost-scene", X = 0.0, Y = 0.0) ]
+    let action = Records.withValues (Defaults.newAction project) [ ("Conditions", box (listOf conditions)); ("Outcomes", box (listOf outcomes)) ]
+    let broken = project |> apply (UpsertAction action)
+    let index = broken.Actions.Count - 1
+    let at (code: string) = (has code broken).Path
+    let paths code = Problems.collect broken |> List.filter (fun p -> p.Code = code) |> List.map (fun p -> p.Path)
+    Assert.Equal<string list>([ sprintf "actions[%d].conditions[0].itemId" index; sprintf "actions[%d].conditions[1].itemId" index ], paths "action.conditionUnknownItem")
+    Assert.Equal(sprintf "actions[%d].conditions[2].questId" index, at "action.conditionUnknownQuest")
+    Assert.Equal(sprintf "actions[%d].outcomes[0].itemId" index, at "action.outcomeUnknownItem")
+    Assert.Equal(sprintf "actions[%d].outcomes[1].questId" index, at "action.outcomeUnknownQuest")
+    Assert.Equal(sprintf "actions[%d].outcomes[2].npcId" index, at "action.outcomeUnknownNpc")
+    Assert.Equal(2, (paths "action.outcomeUnknownScene").Length)
+    Assert.True((has "action.outcomeUnknownItem" broken).IsError)
+    // Event outcomes keep their content lints (no double report), but gain the new checks.
+    let event = Records.withValues (Defaults.newEvent project) [ ("Conditions", box (listOf conditions)); ("Outcomes", box (listOf outcomes)) ]
+    let brokenEvent = project |> apply (UpsertEvent event)
+    lacks "event.outcomeUnknownItem" brokenEvent
+    lacks "event.conditionUnknownQuest" brokenEvent
+    has "event.conditionUnknownItem" brokenEvent |> ignore
+    has "event.outcomeUnknownScene" brokenEvent |> ignore
+    let tier = MinigameResultTier(MinScore = 0.0, Outcomes = listOf [ EventOutcome(Type = "takeItem", ItemId = "ghost-item") ])
+    let minigame = Records.withValue (Defaults.newMinigame project) "ResultTiers" (box (listOf [ tier ]))
+    let tiered = project |> apply (UpsertMinigame minigame)
+    Assert.Equal(sprintf "minigames[%d].resultTiers[0].outcomes[0].itemId" (tiered.Minigames.Count - 1), (has "minigame.outcomeUnknownItem" tiered).Path)
+
+[<Fact>]
+let ``dialogue options, gift tastes and item crops name things that exist`` () =
+    let project = starter ()
+    let farmer = npc project "npc-farmer"
+    let greeting = farmer.Dialogue.[0]
+    let option = DialogueOption(Text = "Trade?", RequiresItem = "ghost-item", ActionId = "ghost-action")
+    let dialogue = Records.withValue greeting "Options" (box (appended option greeting.Options))
+    let broken = project |> apply (UpsertDialogue dialogue)
+    let index = greeting.Options.Count
+    Assert.Equal(sprintf "npcs[0].dialogue[0].options[%d].requiresItem" index, (has "dialogue.optionUnknownItem" broken).Path)
+    let action = has "dialogue.optionUnknownAction" broken
+    Assert.Equal(sprintf "npcs[0].dialogue[0].options[%d].actionId" index, action.Path)
+    Assert.Equal("npc", action.TargetKind)
+    let tastes = GiftTastes(Loved = listOf [ project.Items.[0].Id; "ghost-gift" ])
+    let fussy = project |> apply (UpsertNpc(Records.withValue farmer "GiftTastes" (box tastes)))
+    let gift = has "npc.giftUnknownItem" fussy
+    Assert.Equal("npcs[0].giftTastes.loved[1]", gift.Path)
+    Assert.True gift.IsWarning
+    let odd = Records.withValue (Defaults.newItem project) "CropType" (box "ghost-crop")
+    let crop = has "item.unknownCrop" (project |> apply (UpsertItem odd))
+    Assert.EndsWith(".cropType", crop.Path)
+
+[<Fact>]
+let ``placed machines, scene lists, player quests and recipe skills are checked`` () =
+    let project = starter ()
+    let farmScene = farm project
+    let tiles = farmScene.Tiles |> Seq.map (fun row -> listOf row) |> listOf
+    tiles.[2].[3] <- Records.withValue tiles.[2].[3] "Machine" (box (TileMachine(TypeId = "machine-ghost", Processing = MachineProcessing(RecipeId = "recipe-ghost", CompletesAtMinute = 0.0))))
+    let scene = Records.withValues farmScene [ ("Tiles", box tiles); ("Npcs", box (listOf [ "npc-ghost" ])); ("Events", box (listOf [ "event-ghost" ])) ]
+    let scenes = project.Scenes |> Seq.map (fun s -> if s.Id = scene.Id then scene else s) |> listOf
+    let broken = Records.withValue project "Scenes" (box scenes)
+    let machine = has "scene.machineUnknownType" broken
+    Assert.EndsWith("tiles[2][3].machine.typeId", machine.Path)
+    Assert.Equal(("scene", 3, 2), (machine.TargetKind, machine.TargetX, machine.TargetY))
+    has "scene.machineUnknownRecipe" broken |> ignore
+    has "scene.unknownNpc" broken |> ignore
+    has "scene.unknownEvent" broken |> ignore
+    let player = Records.withValue project.Player "ActiveQuests" (box (listOf [ "quest-ghost" ]))
+    Assert.Equal("player.activeQuests[0]", (has "player.unknownQuest" (Records.withValue project "Player" (box player))).Path)
+    let unlock = RecipeUnlock(Skill = RecipeSkillRequirement(Skill = "juggling", Level = 1.0))
+    let recipe = Records.withValue (Defaults.newRecipe project) "Unlock" (box unlock)
+    Assert.EndsWith(".unlock.skill.skill", (has "recipe.unknownSkill" (project |> apply (UpsertRecipe recipe))).Path)

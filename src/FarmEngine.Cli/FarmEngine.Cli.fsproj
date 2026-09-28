@@ -9,5 +9,6 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
     <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
+    <ProjectReference Include="../FarmEngine.Export/FarmEngine.Export.fsproj" />
   </ItemGroup>
 </Project>

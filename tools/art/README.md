@@ -1,8 +1,7 @@
 # Built-in art pipeline
 
-Generates the pixel-art pack that `FarmEngine.Rendering` embeds and uses for
-every project that binds no art of its own (creator art always wins). The
-output lives in `src/FarmEngine.Rendering/Assets/builtin/`:
+Generates the pixel-art pack that `crates/farm-render` embeds and uses for every project that binds no art of
+its own (creator art always wins). The output lives in `assets/builtin-art/`:
 
 | File | What |
 |---|---|

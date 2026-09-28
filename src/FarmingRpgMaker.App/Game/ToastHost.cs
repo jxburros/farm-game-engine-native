@@ -4,6 +4,16 @@ using Avalonia.Threading;
 
 namespace FarmingRpgMaker.App.Game;
 
+/// <summary>Severity of a toast (web <c>toast.success/error/info</c>).</summary>
+public enum ToastKind
+{
+    Info,
+    Success,
+    Error,
+}
+
+public sealed record ToastMessage(string Text, ToastKind Kind);
+
 /// <summary>Stacked toasts (web sonner <c>&lt;Toaster /&gt;</c>): success/error/info, auto-dismissed.</summary>
 public sealed class ToastHost : StackPanel
 {

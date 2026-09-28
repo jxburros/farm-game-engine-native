@@ -12,13 +12,12 @@ use farm_sim::schema::{GamePanel, GamePanelEntry, InventorySlot, ShopSession};
 use farm_sim::{content_builtin, js, state, GameState};
 use indexmap::IndexMap;
 use serde_json::Value;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-fn recorder() -> (Rc<RefCell<Vec<f64>>>, impl FnMut(f64) + 'static) {
-    let complete = Rc::new(RefCell::new(Vec::new()));
-    let sink = Rc::clone(&complete);
-    (complete, move |score| sink.borrow_mut().push(score))
+fn recorder() -> (Arc<Mutex<Vec<f64>>>, impl FnMut(f64) + Send + 'static) {
+    let complete = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&complete);
+    (complete, move |score| sink.lock().unwrap().push(score))
 }
 
 fn config(key: &str, value: f64) -> MinigameConfig {
@@ -42,7 +41,7 @@ fn battle_resolves_once_and_cleans_up_its_ui() {
     let battle = session.as_any_mut().downcast_mut::<SimpleBattleSession>().expect("a SimpleBattleSession");
     battle.act("magic");
     battle.act("magic");
-    assert_eq!(*complete.borrow(), [1.0]);
+    assert_eq!(*complete.lock().unwrap(), [1.0]);
     session.dispose();
     assert!(session.is_done());
 }
@@ -60,7 +59,7 @@ fn fishing_keyboard_hold_reports_score_and_cannot_resolve_twice() {
     session.update(1.2);
     session.release();
     session.release();
-    assert_eq!(*complete.borrow(), [1.0]);
+    assert_eq!(*complete.lock().unwrap(), [1.0]);
     session.dispose();
     assert!(session.is_done());
 }
@@ -71,9 +70,9 @@ fn entry(kind: &str, label: &str, value: &str) -> GamePanelEntry {
 
 #[test]
 fn game_panels_update_counters_respect_flags_and_block_actions_during_modal_interactions() {
-    let ran = Rc::new(RefCell::new(Vec::<String>::new()));
+    let ran = Arc::new(Mutex::new(Vec::<String>::new()));
     let flags: IndexMap<String, Value> = [("known".to_owned(), Value::Bool(false))].into_iter().collect();
-    let state = Rc::new(RefCell::new(PanelState {
+    let state = Arc::new(Mutex::new(PanelState {
         money: 3.0,
         energy: 100.0,
         day: 1.0,
@@ -87,15 +86,15 @@ fn game_panels_update_counters_respect_flags_and_block_actions_during_modal_inte
         visible_flag: Some("known".to_owned()),
         entries: vec![entry("money", "Gold", ""), entry("action", "Cast", "rain")],
     }];
-    let (read, sink) = (Rc::clone(&state), Rc::clone(&ran));
+    let (read, sink) = (Arc::clone(&state), Arc::clone(&ran));
     let mut handle =
-        panels::mount(panels, move || read.borrow().clone(), move |id| sink.borrow_mut().push(id.to_owned()));
+        panels::mount(panels, move || read.lock().unwrap().clone(), move |id| sink.lock().unwrap().push(id.to_owned()));
     handle.update();
     assert!(handle.views()[0].hidden);
     assert_eq!(handle.views().len(), 1);
 
     {
-        let mut state = state.borrow_mut();
+        let mut state = state.lock().unwrap();
         state.flags.insert("known".to_owned(), Value::Bool(true));
         state.money = 9.0;
     }
@@ -103,15 +102,15 @@ fn game_panels_update_counters_respect_flags_and_block_actions_during_modal_inte
     assert!(!handle.views()[0].hidden);
     assert!(handle.views()[0].entries.iter().any(|e| e.text == "Gold: 9"));
     assert!(handle.click("rain"));
-    assert_eq!(*ran.borrow(), ["rain"]);
+    assert_eq!(*ran.lock().unwrap(), ["rain"]);
 
-    state.borrow_mut().blocked = true;
+    state.lock().unwrap().blocked = true;
     handle.update();
     let actions: Vec<_> = handle.views()[0].entries.iter().filter(|e| e.kind == "action").collect();
     assert_eq!(actions.len(), 1);
     assert!(!actions[0].enabled);
     assert!(!handle.click("rain"));
-    assert_eq!(ran.borrow().len(), 1);
+    assert_eq!(ran.lock().unwrap().len(), 1);
 
     handle.dispose();
     assert!(handle.views().is_empty());
