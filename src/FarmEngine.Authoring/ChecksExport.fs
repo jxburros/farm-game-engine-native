@@ -19,6 +19,11 @@ module internal ChecksExport =
             && (part |> Seq.forall (fun c -> (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c = '-'))
         not (String.IsNullOrWhiteSpace id) && id.Split('.').Length >= 2 && (id.Split('.') |> Array.forall validPart)
 
+    /// Artwork that can be the exported game's icon: a PNG of at least 256×256 pixels.
+    let suitableIcon (asset: CustomAsset) =
+        asset.DataUrl.StartsWith("data:image/png;", StringComparison.OrdinalIgnoreCase)
+        && asset.Width.HasValue && asset.Height.HasValue && asset.Width.Value >= 256.0 && asset.Height.Value >= 256.0
+
     let run (project: GameProject) (sink: Sink) =
         match project.Export with
         | null -> ()
@@ -49,6 +54,6 @@ module internal ChecksExport =
             | id ->
                 match project.CustomAssets |> Seq.tryFind (fun asset -> asset.Id = id) with
                 | None -> error "icon" "icon" "Export icon asset was not found."
-                | Some asset when not (asset.DataUrl.StartsWith("data:image/png;", StringComparison.OrdinalIgnoreCase)) || not asset.Width.HasValue || not asset.Height.HasValue || asset.Width.Value < 256.0 || asset.Height.Value < 256.0 ->
+                | Some asset when not (suitableIcon asset) ->
                     error "icon" "icon" "Export icon must be PNG artwork at least 256×256 pixels."
                 | Some _ -> ()

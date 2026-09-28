@@ -26,6 +26,8 @@
     <Compile Include="EditProject.fs" />
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
+    <Compile Include="References.fs" />
+    <Compile Include="Vocabulary.fs" />
     <Compile Include="Problem.fs" />
     <Compile Include="SchemaChecks.fs" />
     <Compile Include="ContentLints.fs" />
