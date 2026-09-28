@@ -17,6 +17,7 @@
     <Compile Include="PackMergeTests.fs" />
     <Compile Include="PackRulesTests.fs" />
     <Compile Include="ContentCompilerTests.fs" />
+    <Compile Include="ProjectCatalogTests.fs" />
     <Compile Include="DefaultsTests.fs" />
     <Compile Include="ProblemsTests.fs" />
     <Compile Include="PatternsTests.fs" />

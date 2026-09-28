@@ -23,7 +23,7 @@ public sealed class ProjectCommandTests
 
         public List<(string Title, IReadOnlyList<string> Errors)> Errors { get; } = [];
 
-        public Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<TemplateInfo> templates)
+        public Task<NewProjectChoice?> ChooseNewProjectAsync(IShellHost shell, IReadOnlyList<FarmEngine.Authoring.ProjectTemplateInfo> templates)
         {
             Assert.Equal(["starter", "cozy", "quest", "blank"], templates.Select(t => t.Id));
             return Task.FromResult(NewChoice);

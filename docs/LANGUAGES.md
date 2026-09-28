@@ -327,6 +327,13 @@ needs (with a Rust toolchain installed).
 migration) move to `FarmEngine.Authoring.Content`. Render interpolation
 (`GameHelpers.MovementSpeed`) moves to `farm-render`.
 
+The default pack and template factories are now implemented by F#
+`StarterContent`, `SampleProjects` and the C#-friendly `ProjectCatalog` API.
+Factories require an explicit timestamp; the desktop host reads its clock.
+The app no longer references `FarmEngine.Content`. The legacy assembly stays
+in the solution as a differential-test reference. Legacy tile migration is
+already covered by the F# migration pipeline; rendering still awaits its Rust port.
+
 ### `FarmEngine.Runtime` → Rust `farm-runtime` / `farm-plugins`
 
 | File | Goes to |

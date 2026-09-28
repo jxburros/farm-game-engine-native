@@ -1,6 +1,5 @@
 using Avalonia.Threading;
 using FarmEngine.Authoring;
-using FarmEngine.Content;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Projects;
@@ -110,7 +109,7 @@ public sealed class ProjectWorkspace
             errors.Add($"{id}: {string.Join("; ", loaded.Errors)}");
         }
 
-        Open(CreateProject(ProjectTemplates.Starter, "Starter Farm"));
+        Open(CreateProject("starter", "Starter Farm"));
         return errors;
     }
 
@@ -118,7 +117,7 @@ public sealed class ProjectWorkspace
     public GameProject CreateProject(string template, string name)
     {
         var id = Store.NewId();
-        return Templates.CreateNewProject(template, string.IsNullOrWhiteSpace(name) ? "Untitled Game" : name.Trim(), id);
+        return ProjectCatalog.CreateNewProject(template, string.IsNullOrWhiteSpace(name) ? "Untitled Game" : name.Trim(), id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     /// <summary>Makes <paramref name="project"/> current (saving it) and remembers it for next launch.</summary>

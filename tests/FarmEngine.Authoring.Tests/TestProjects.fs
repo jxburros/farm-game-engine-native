@@ -4,17 +4,16 @@ module FarmEngine.Authoring.Tests.TestProjects
 open System.Collections.Generic
 open Xunit
 open FarmEngine.Authoring
-open FarmEngine.Content
 open FarmEngine.Schemas
 
 /// The starter farm with wall-clock fields pinned.
-let starter () = DefaultContent.CreateInitialProject(0.0)
+let starter () = ProjectCatalog.CreateInitialProject(0.0)
 
-let blank () = DefaultContent.CreateBlankProject(0.0)
+let blank () = ProjectCatalog.CreateBlankProject(0.0)
 
 /// Every "New Project" template, by id.
 let templates () : (string * GameProject) list =
-    ProjectTemplates.All |> List.ofSeq |> List.map (fun id -> id, Templates.CreateProjectForTemplate(id, 0.0))
+    ProjectCatalog.All |> List.ofSeq |> List.map (fun id -> id, ProjectCatalog.CreateProjectForTemplate(id, 0.0))
 
 let scene (project: GameProject) (sceneId: string) : Scene =
     project.Scenes |> Seq.find (fun s -> s.Id = sceneId)

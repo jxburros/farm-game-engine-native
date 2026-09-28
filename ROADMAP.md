@@ -131,6 +131,11 @@ the most.
 - [x] Remove `FarmEngine.Authoring`'s dependency on the C# simulation project:
   map construction and layer edits use F# authoring helpers, and the assembly
   dependency is guarded by a test. C# schema records remain a compatibility bridge.
+- [x] Port the Farm Essentials starter pack, blank project, Cozy Garden and
+  Quest RPG factories to F#. New Project, first launch and imported-game
+  defaults use the F# catalog. Time is supplied by the desktop host. The app
+  no longer references `FarmEngine.Content`; its C# factories remain only as
+  test references while the full schema migration continues.
 - [ ] Add indexed content tables and `save.fbs` to the cartridge format.
 - [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
   compiler and `farmc compile`; Rust verifies and loads the cartridge, and

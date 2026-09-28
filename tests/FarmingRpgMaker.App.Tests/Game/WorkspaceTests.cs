@@ -14,6 +14,13 @@ namespace FarmingRpgMaker.App.Tests.Game;
 
 public sealed class WorkspaceTests
 {
+    [Fact]
+    public void DesktopAppDoesNotReferenceTheLegacyContentAssembly()
+    {
+        Assert.DoesNotContain(typeof(ProjectWorkspace).Assembly.GetReferencedAssemblies(),
+            assembly => assembly.Name == "FarmEngine.Content");
+    }
+
     [AvaloniaFact]
     public void FirstLaunch_CreatesAndOpensTheStarterFarm_AndRemembersIt()
     {

@@ -86,7 +86,7 @@ public sealed class RustSessionTests
     [InlineData(ProjectTemplates.Quest)]
     public void FSharpCartridgeContentAndRustPlayMatchEveryTemplate(string template)
     {
-        var project = Templates.CreateProjectForTemplate(template, 0);
+        var project = ProjectCatalog.CreateProjectForTemplate(template, 0);
         var bytes = CartridgeCompiler.Compile(project);
         var cart = Cartridge.GetRootAsCartridge(new ByteBuffer(bytes));
         var content = JsonSerializer.Deserialize<GameContent>(cart.GetContentJsonArray(), JsonDefaults.Options)!;

@@ -2,13 +2,18 @@
 
 ## 0.2.0 (unreleased)
 
+- **F# project templates.** The starter pack and all four project templates now
+  originate in F#. New Project, first launch and game import use the new catalog,
+  with the clock supplied by the desktop host. The app no longer depends on
+  `FarmEngine.Content`. Full project and cartridge comparisons preserve the
+  existing samples, and fresh projects have independent maps and defaults.
 - **F# content compiler.** Cartridge exports and editor content previews now
   use the F# built-in catalog, pack namespacing, compatibility checks and locale
   resolution. F# authoring no longer references the C# simulation assembly;
   tile construction and layer edits also live in F#. Parity tests compare the
   compiled content with TypeScript goldens and the C# compatibility engine,
-  and run compiled sample cartridges through Rust. C# schema records, sample
-  project factories and the gameplay fallback remain while migration continues.
+  and run compiled sample cartridges through Rust. C# schema records and the
+  gameplay fallback remain while migration continues.
 - **F# pack authoring progress.** Dependency ordering, conflict-aware content
   merging, and importing a pack into editable project content now run through
   F#. Differential tests compare the results with the C# compatibility engine.
