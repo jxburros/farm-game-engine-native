@@ -122,6 +122,15 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      # The desktop player links ALSA (cpal) and libudev (gilrs); the SDK normally has both.
+      - name: System packages
+        shell: bash
+        run: |
+          if ! pkg-config --exists alsa libudev; then
+            apt-get update
+            apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+          fi
+
       - name: Build farm-player
         shell: bash
         run: |

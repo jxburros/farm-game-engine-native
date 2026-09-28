@@ -30,6 +30,15 @@ cargo about generate \
   --output-file "$generated" \
   "$here/about.hbs"
 
+# Fonts embedded by farm-render (not crates, so cargo-about doesn't see them).
+{
+  printf '%s\n' "--------------------------------------------------------------------------------"
+  printf '%s\n\n' "SIL Open Font License 1.1 (OFL-1.1)"
+  printf '%s\n' "Used by:"
+  printf '%s\n\n' "- Inter 3.19 (Regular, Bold), embedded by farm-render"
+  cat "$root/assets/fonts/OFL.txt"
+} >> "$generated"
+
 # Stable line endings and no trailing spaces, whatever the crates packaged.
 sed -e 's/\r$//' -e 's/[[:space:]]*$//' "$generated" | cat -s > "$generated.clean"
 mv "$generated.clean" "$generated"

@@ -1,10 +1,35 @@
-//! Standalone headless player: loads the same `game.cart` as the editor's Rust session,
-//! replays commands, checks an expected hash and writes a portable save. The graphical
-//! shell will use this cartridge and simulation path when it is added.
+//! `farm-player`: the Farming RPG Maker game player.
+//!
+//! - [`Player`] is the embeddable graphical player: a [`session::PlaySession`], the in-game UI
+//!   (`farm-ui`), the game shell (title, save slots, pause menu, settings, credits), saves and
+//!   settings stores, and rendering, driven by one [`Player::frame`] call per frame. It is
+//!   platform independent (no window, clock or OS access) and `Send`; the editor's Play Mode
+//!   embeds it through farm-ffi.
+//! - [`desktop`] (feature `desktop`, on by default) is the exported game: a window, gamepads,
+//!   audio, user folders and crash logs around a `Player`.
+//! - [`run_cartridge`] is the headless path: load a cartridge, replay commands, check a hash,
+//!   write a save (`--headless`).
 #![forbid(unsafe_code)]
 
+pub mod audio;
+#[cfg(feature = "desktop")]
+pub mod desktop;
+pub mod input;
+pub mod player;
 pub mod plugins;
+pub mod render;
+pub mod saves;
+pub mod script;
 pub mod session;
+
+pub use audio::{Mixer, SoundRequest};
+pub use farm_ui::{GamepadButton, Settings};
+pub use input::{FrameInput, GamepadAxis, InputEvent, InputRouter, PointerButton};
+pub use player::{FrameOutput, Player, PlayerError, PlayerMode, PlayerOptions, PlayerRequest, ScreenKind, StepOutput};
+pub use saves::{
+    FsSaveStore, FsSettingsStore, MemorySaveStore, MemorySettingsStore, SaveStore, SettingsStore, SLOT_COUNT,
+};
+pub use session::{DebugAction, PlaySession};
 
 use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::effects::Effect;

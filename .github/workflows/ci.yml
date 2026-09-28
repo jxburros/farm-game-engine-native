@@ -38,6 +38,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # The desktop player links ALSA (cpal) and libudev (gilrs); winit loads xkbcommon-x11 at
+      # run time; xvfb runs the window smoke test.
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 xvfb
+
       - name: Format
         run: cargo fmt --all --check
 
@@ -47,8 +55,10 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render)
-        run: cargo check -p farm-sim -p farm-cart -p farm-runtime -p farm-render --target wasm32-unknown-unknown
+      - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render, farm-ui, farm-player lib)
+        run: |
+          cargo check -p farm-sim -p farm-cart -p farm-runtime -p farm-render -p farm-ui --target wasm32-unknown-unknown
+          cargo check -p farm-player --lib --no-default-features --target wasm32-unknown-unknown
 
       - name: Install cargo-about
         if: runner.os == 'Linux'
@@ -77,6 +87,12 @@ jobs:
           toolchain: "1.94"
 
       - uses: Swatinem/rust-cache@v2
+
+      # FarmEngine.Export builds the desktop player template (ALSA for cpal, libudev for gilrs).
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -210,6 +226,15 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # The desktop player links ALSA (cpal) and libudev (gilrs); the SDK normally has both.
+      - name: System packages
+        shell: bash
+        run: |
+          if ! pkg-config --exists alsa libudev; then
+            apt-get update
+            apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+          fi
 
       - name: Build and run farm-player
         shell: bash
