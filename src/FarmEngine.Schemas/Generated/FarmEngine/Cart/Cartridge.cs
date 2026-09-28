@@ -51,6 +51,8 @@ public struct Cartridge : IFlatbufferObject
   public FarmEngine.Cart.Asset? Assets(int j) { int o = __p.__offset(18); return o != 0 ? (FarmEngine.Cart.Asset?)(new FarmEngine.Cart.Asset()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
   public int AssetsLength { get { int o = __p.__offset(18); return o != 0 ? __p.__vector_len(o) : 0; } }
   public FarmEngine.Cart.Asset? AssetsByKey(string key) { int o = __p.__offset(18); return o != 0 ? FarmEngine.Cart.Asset.__lookup_by_key(__p.__vector(o), key, __p.bb) : null; }
+  public FarmEngine.Cart.Plugin? Plugins(int j) { int o = __p.__offset(20); return o != 0 ? (FarmEngine.Cart.Plugin?)(new FarmEngine.Cart.Plugin()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
+  public int PluginsLength { get { int o = __p.__offset(20); return o != 0 ? __p.__vector_len(o) : 0; } }
 
   public static Offset<FarmEngine.Cart.Cartridge> CreateCartridge(FlatBufferBuilder builder,
       uint cart_format = 0,
@@ -59,8 +61,10 @@ public struct Cartridge : IFlatbufferObject
       VectorOffset content_jsonOffset = default(VectorOffset),
       VectorOffset start_jsonOffset = default(VectorOffset),
       VectorOffset presentation_jsonOffset = default(VectorOffset),
-      VectorOffset assetsOffset = default(VectorOffset)) {
-    builder.StartTable(8);
+      VectorOffset assetsOffset = default(VectorOffset),
+      VectorOffset pluginsOffset = default(VectorOffset)) {
+    builder.StartTable(9);
+    Cartridge.AddPlugins(builder, pluginsOffset);
     Cartridge.AddAssets(builder, assetsOffset);
     Cartridge.AddPresentationJson(builder, presentation_jsonOffset);
     Cartridge.AddStartJson(builder, start_jsonOffset);
@@ -71,7 +75,7 @@ public struct Cartridge : IFlatbufferObject
     return Cartridge.EndCartridge(builder);
   }
 
-  public static void StartCartridge(FlatBufferBuilder builder) { builder.StartTable(8); }
+  public static void StartCartridge(FlatBufferBuilder builder) { builder.StartTable(9); }
   public static void AddCartFormat(FlatBufferBuilder builder, uint cartFormat) { builder.AddUint(0, cartFormat, 0); }
   public static void AddProjectSchemaVersion(FlatBufferBuilder builder, uint projectSchemaVersion) { builder.AddUint(1, projectSchemaVersion, 0); }
   public static void AddInfo(FlatBufferBuilder builder, Offset<FarmEngine.Cart.GameInfo> infoOffset) { builder.AddOffset(2, infoOffset.Value, 0); }
@@ -99,6 +103,12 @@ public struct Cartridge : IFlatbufferObject
   public static VectorOffset CreateAssetsVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<FarmEngine.Cart.Asset>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
   public static VectorOffset CreateAssetsVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<FarmEngine.Cart.Asset>>(dataPtr, sizeInBytes); return builder.EndVector(); }
   public static void StartAssetsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
+  public static void AddPlugins(FlatBufferBuilder builder, VectorOffset pluginsOffset) { builder.AddOffset(8, pluginsOffset.Value, 0); }
+  public static VectorOffset CreatePluginsVector(FlatBufferBuilder builder, Offset<FarmEngine.Cart.Plugin>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
+  public static VectorOffset CreatePluginsVectorBlock(FlatBufferBuilder builder, Offset<FarmEngine.Cart.Plugin>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreatePluginsVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<FarmEngine.Cart.Plugin>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreatePluginsVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<FarmEngine.Cart.Plugin>>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartPluginsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<FarmEngine.Cart.Cartridge> EndCartridge(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 8);  // info
@@ -124,6 +134,7 @@ static public class CartridgeVerify
       && verifier.VerifyVectorOfData(tablePos, 14 /*StartJson*/, 1 /*byte*/, true)
       && verifier.VerifyVectorOfData(tablePos, 16 /*PresentationJson*/, 1 /*byte*/, true)
       && verifier.VerifyVectorOfTables(tablePos, 18 /*Assets*/, FarmEngine.Cart.AssetVerify.Verify, false)
+      && verifier.VerifyVectorOfTables(tablePos, 20 /*Plugins*/, FarmEngine.Cart.PluginVerify.Verify, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }

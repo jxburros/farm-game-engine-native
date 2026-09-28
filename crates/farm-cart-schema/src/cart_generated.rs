@@ -440,6 +440,157 @@ impl core::fmt::Debug for Asset<'_> {
       ds.finish()
   }
 }
+pub enum PluginOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Plugin<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Plugin<'a> {
+  type Inner = Plugin<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Plugin<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_PACK_ID: flatbuffers::VOffsetT = 6;
+  pub const VT_SOURCE: flatbuffers::VOffsetT = 8;
+  pub const VT_GRANTED_HOOKS: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Plugin { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PluginArgs<'args>
+  ) -> flatbuffers::WIPOffset<Plugin<'bldr>> {
+    let mut builder = PluginBuilder::new(_fbb);
+    if let Some(x) = args.granted_hooks { builder.add_granted_hooks(x); }
+    if let Some(x) = args.source { builder.add_source(x); }
+    if let Some(x) = args.pack_id { builder.add_pack_id(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Plugin::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn pack_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Plugin::VT_PACK_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn source(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Plugin::VT_SOURCE, None).unwrap()}
+  }
+  #[inline]
+  pub fn granted_hooks(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Plugin::VT_GRANTED_HOOKS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Plugin<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pack_id", Self::VT_PACK_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("source", Self::VT_SOURCE, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("granted_hooks", Self::VT_GRANTED_HOOKS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PluginArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub pack_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub source: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub granted_hooks: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for PluginArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PluginArgs {
+      id: None, // required field
+      pack_id: None, // required field
+      source: None, // required field
+      granted_hooks: None,
+    }
+  }
+}
+
+pub struct PluginBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PluginBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Plugin::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_pack_id(&mut self, pack_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Plugin::VT_PACK_ID, pack_id);
+  }
+  #[inline]
+  pub fn add_source(&mut self, source: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Plugin::VT_SOURCE, source);
+  }
+  #[inline]
+  pub fn add_granted_hooks(&mut self, granted_hooks: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Plugin::VT_GRANTED_HOOKS, granted_hooks);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PluginBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PluginBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Plugin<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Plugin::VT_ID,"id");
+    self.fbb_.required(o, Plugin::VT_PACK_ID,"pack_id");
+    self.fbb_.required(o, Plugin::VT_SOURCE,"source");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Plugin<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Plugin");
+      ds.field("id", &self.id());
+      ds.field("pack_id", &self.pack_id());
+      ds.field("source", &self.source());
+      ds.field("granted_hooks", &self.granted_hooks());
+      ds.finish()
+  }
+}
 pub enum CartridgeOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -463,6 +614,7 @@ impl<'a> Cartridge<'a> {
   pub const VT_START_JSON: flatbuffers::VOffsetT = 14;
   pub const VT_PRESENTATION_JSON: flatbuffers::VOffsetT = 16;
   pub const VT_ASSETS: flatbuffers::VOffsetT = 18;
+  pub const VT_PLUGINS: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -474,6 +626,7 @@ impl<'a> Cartridge<'a> {
     args: &'args CartridgeArgs<'args>
   ) -> flatbuffers::WIPOffset<Cartridge<'bldr>> {
     let mut builder = CartridgeBuilder::new(_fbb);
+    if let Some(x) = args.plugins { builder.add_plugins(x); }
     if let Some(x) = args.assets { builder.add_assets(x); }
     if let Some(x) = args.presentation_json { builder.add_presentation_json(x); }
     if let Some(x) = args.start_json { builder.add_start_json(x); }
@@ -534,6 +687,13 @@ impl<'a> Cartridge<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Asset>>>>(Cartridge::VT_ASSETS, None)}
   }
+  #[inline]
+  pub fn plugins(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Plugin<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Plugin>>>>(Cartridge::VT_PLUGINS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Cartridge<'_> {
@@ -550,6 +710,7 @@ impl flatbuffers::Verifiable for Cartridge<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("start_json", Self::VT_START_JSON, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("presentation_json", Self::VT_PRESENTATION_JSON, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Asset>>>>("assets", Self::VT_ASSETS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Plugin>>>>("plugins", Self::VT_PLUGINS, false)?
      .finish();
     Ok(())
   }
@@ -562,6 +723,7 @@ pub struct CartridgeArgs<'a> {
     pub start_json: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub presentation_json: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub assets: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Asset<'a>>>>>,
+    pub plugins: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Plugin<'a>>>>>,
 }
 impl<'a> Default for CartridgeArgs<'a> {
   #[inline]
@@ -574,6 +736,7 @@ impl<'a> Default for CartridgeArgs<'a> {
       start_json: None, // required field
       presentation_json: None, // required field
       assets: None,
+      plugins: None,
     }
   }
 }
@@ -612,6 +775,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CartridgeBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Cartridge::VT_ASSETS, assets);
   }
   #[inline]
+  pub fn add_plugins(&mut self, plugins: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Plugin<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Cartridge::VT_PLUGINS, plugins);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CartridgeBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     CartridgeBuilder {
@@ -640,6 +807,7 @@ impl core::fmt::Debug for Cartridge<'_> {
       ds.field("start_json", &self.start_json());
       ds.field("presentation_json", &self.presentation_json());
       ds.field("assets", &self.assets());
+      ds.field("plugins", &self.plugins());
       ds.finish()
   }
 }

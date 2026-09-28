@@ -11,6 +11,7 @@ publish.workspace = true
 farm-cart = { path = "../farm-cart" }
 farm-sim = { path = "../farm-sim" }
 farm-runtime = { path = "../farm-runtime" }
+farm-plugins = { path = "../farm-plugins" }
 serde.workspace = true
 serde_json.workspace = true
 

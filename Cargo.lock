@@ -120,6 +120,7 @@ version = "0.2.0"
 dependencies = [
  "embed-resource",
  "farm-cart",
+ "farm-plugins",
  "farm-runtime",
  "farm-sim",
  "serde",
