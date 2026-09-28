@@ -1,22 +1,33 @@
 using FarmEngine.Authoring;
 using FarmingRpgMaker.App.Hosting;
+using FarmingRpgMaker.App.Services;
+using FarmingRpgMaker.App.ViewModels;
 
 namespace FarmingRpgMaker.App.Projects;
 
 /// <summary>
 /// File-menu project commands (web ProjectManager): New (templates/samples), Open (project
-/// list with delete), Import/Export Project JSON through the platform file pickers.
+/// list with delete), Import/Export Project JSON through the platform file pickers, and
+/// Export Game.
 /// </summary>
 public sealed class ProjectCommandHandler : IProjectCommandHandler
 {
     private readonly ProjectWorkspace _workspace;
     private readonly IProjectDialogs _dialogs;
+    private readonly IUrlLauncher _launcher;
 
-    public ProjectCommandHandler(ProjectWorkspace workspace, IProjectDialogs? dialogs = null)
+    public ProjectCommandHandler(ProjectWorkspace workspace, IProjectDialogs? dialogs = null, IUrlLauncher? launcher = null)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         _dialogs = dialogs ?? new AvaloniaProjectDialogs();
+        _launcher = launcher ?? new ShellUrlLauncher();
     }
+
+    /// <summary>
+    /// Where Export Game finds player templates; null for
+    /// <see cref="FarmEngine.Export.GameExporter.DefaultTemplatesFolder"/> (<c>players/</c> next to the app).
+    /// </summary>
+    public string? PlayerTemplatesFolder { get; set; }
 
     public async Task NewProjectAsync(IShellHost shell)
     {
@@ -94,6 +105,29 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         if (saved is not null)
         {
             shell.ShowStatus($"Exported \"{project.Name}\" to {saved}.");
+        }
+    }
+
+    public async Task ExportGameAsync(IShellHost shell)
+    {
+        ArgumentNullException.ThrowIfNull(shell);
+        if (_workspace.Current is null)
+        {
+            shell.ShowStatus("There is no project to export.");
+            return;
+        }
+
+        // Export the edited project, not a running playtest (Keep changes is honoured first).
+        LeavePlayMode(shell);
+        var viewModel = new ExportGameViewModel(
+            _workspace,
+            start => _dialogs.PickFolderAsync(shell, "Export the game to", start),
+            _launcher,
+            PlayerTemplatesFolder);
+        await _dialogs.ShowExportGameAsync(shell, viewModel).ConfigureAwait(true);
+        if (viewModel.Report is { } report)
+        {
+            shell.ShowStatus(report.Ok ? $"{viewModel.StatusText} Files are in {report.OutputFolder}." : viewModel.StatusText);
         }
     }
 

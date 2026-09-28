@@ -74,6 +74,7 @@ exit criteria for each phase.
 5. [ ] Editor port on the new stack (the list above)
 6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
    Windows and Linux, then an optional web demo target
+   (**started:** the `farm-plugins` sandbox)
 7. [ ] Native numerics (v9): one engine for web and native
 
 ## Remaining work
@@ -147,7 +148,9 @@ the most.
   presentation and play state with the project path.
 - [x] Add optional export identity/window/target settings to the project,
   with a stable generated game id and F# Problems validation. The cartridge
-  compiler consumes them; Export Game still needs the graphical player and packaging.
+  compiler and Export Game consume them.
+- [ ] Editor controls for the export settings (title, executable name,
+  version, company, icon). Export uses the defaults until then.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).
@@ -204,14 +207,33 @@ available as native views.
 - [ ] Dedicated nested editors and cross-reference pickers for each content
   type; SVG import and more animation tools.
 
-**Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
+**Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmi),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
-  The graphical shell, plugin sandbox and packaging are still open.
+  The graphical shell and packaging are still open.
+- [x] `farm-plugins`: the plugin sandbox in Rust. QuickJS is compiled to
+  WebAssembly (checked in; `tools/plugin-guest/build.sh` rebuilds it) and
+  each plugin gets its own instance in wasmi, a pure-Rust interpreter with no
+  JIT. Budgets are deterministic fuel, not wall-clock time: an infinite loop
+  stops after about 40 ms in release builds. Strikes, errors, mutation
+  validation and the command queue work like the Jint host, and every C# and
+  web plugin test is ported. `PluginRuntime` feeds a step's hook events to
+  plugins and hands mutations back as commands.
+- [ ] Use `farm-plugins` from `farm-player` and, through `farm-ffi`, from
+  Play Mode; then retire the Jint host.
 - [x] `farm-render` supplies world snapshots, draw lists and a CPU
   rasterizer that also builds for WebAssembly. GPU drawing, Rust game UI,
   audio playback and a graphical standalone player remain open.
+- [x] Export Game packaging (`FarmEngine.Export`, File → Export Game…,
+  `farmc export`): Problems gate, deterministic cartridge, renamed player
+  template, Windows icon and version info patched from .NET, Linux `.png` and
+  `.desktop`, license notices, reproducible `.zip`/`.tar.gz`. Releases build
+  both templates (Linux in Steam Runtime sniper) and ship them in `players/`.
+  The exported player is still the headless one until the graphical shell lands.
+- [ ] Ship only used assets: the cartridge's asset table still holds every
+  project asset. Export reports unused ones as warnings; the compiler should
+  leave them out of `presentation.customAssets`.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).
@@ -228,16 +250,19 @@ next to it. Windows and Linux (including Steam Deck) come first. A web demo
 build for itch.io pages is optional and comes after them, and macOS comes
 later. The web version's single-file HTML export is not ported.
 
-It ships in phase 6, but earlier phases make decisions it depends on (the
-cartridge's game info, saves that survive game updates, a deterministic
-compiler). [docs/EXPORT.md](docs/EXPORT.md) has the design and the list.
+Packaging works now: **File → Export Game…** and `farmc export` build the
+Windows and Linux folders and archives from the prebuilt templates. The games
+it makes still run the headless player until the graphical shell (phase 6)
+replaces it; export itself doesn't change when that happens.
+[docs/EXPORT.md](docs/EXPORT.md) has the design, what is done and what is left.
 
 ## Later
 
 - **Localization** of the editor UI (`src/lib/i18n.ts`).
 - **Code signing** for the Windows installer (see `docs/RELEASING.md`).
-- **Out-of-process plugin host.** Jint runs in-process today; a separate
-  worker process would fully contain hostile plugins.
+- **Out-of-process plugin host.** Jint runs in-process today. The
+  `farm-plugins` sandbox gives each plugin its own WebAssembly instance, which
+  contains hostile plugins without a separate process, once the app uses it.
 - **macOS/Linux builds** of the editor. Avalonia and Velopack already support
   them; this needs packaging and CI jobs. (Exported *games* get Linux builds
   in phase 6, whatever the editor runs on.)

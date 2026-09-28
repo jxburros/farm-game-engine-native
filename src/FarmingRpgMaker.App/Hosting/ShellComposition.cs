@@ -1,5 +1,6 @@
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Projects;
+using FarmingRpgMaker.App.Services;
 
 namespace FarmingRpgMaker.App.Hosting;
 
@@ -29,9 +30,9 @@ public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IP
         Create(ProjectWorkspace.CreateDefault(dataDirectory), options);
 
     /// <summary>Wires a surface factory and project commands over <paramref name="workspace"/>.</summary>
-    public static ShellComposition Create(ProjectWorkspace workspace, GameSurfaceOptions? options = null, IProjectDialogs? dialogs = null)
+    public static ShellComposition Create(ProjectWorkspace workspace, GameSurfaceOptions? options = null, IProjectDialogs? dialogs = null, IUrlLauncher? launcher = null)
     {
         dialogs ??= new AvaloniaProjectDialogs();
-        return new ShellComposition(new GameSurfaceFactory(workspace, options, dialogs), new ProjectCommandHandler(workspace, dialogs), workspace);
+        return new ShellComposition(new GameSurfaceFactory(workspace, options, dialogs), new ProjectCommandHandler(workspace, dialogs, launcher), workspace);
     }
 }

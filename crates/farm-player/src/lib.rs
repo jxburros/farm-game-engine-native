@@ -3,6 +3,8 @@
 //! shell will use this cartridge and simulation path when it is added.
 #![forbid(unsafe_code)]
 
+pub mod session;
+
 use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::effects::Effect;
 use farm_sim::replay::{self, ReplayInput};

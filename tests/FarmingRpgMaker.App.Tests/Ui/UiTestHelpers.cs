@@ -80,5 +80,9 @@ internal sealed class RecordingUrlLauncher : IUrlLauncher
 {
     public List<string> Opened { get; } = [];
 
+    public List<string> OpenedFolders { get; } = [];
+
     public void Open(string url) => Opened.Add(url);
+
+    public void OpenFolder(string path) => OpenedFolders.Add(path);
 }

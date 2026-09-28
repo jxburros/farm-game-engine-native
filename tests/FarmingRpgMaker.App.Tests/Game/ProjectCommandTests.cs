@@ -45,6 +45,10 @@ public sealed class ProjectCommandTests
             Errors.Add((title, errors));
             return Task.CompletedTask;
         }
+
+        public Task<string?> PickFolderAsync(IShellHost shell, string title, string? startFolder) => Task.FromResult<string?>(null);
+
+        public Task ShowExportGameAsync(IShellHost shell, FarmingRpgMaker.App.ViewModels.ExportGameViewModel viewModel) => Task.CompletedTask;
     }
 
     [AvaloniaFact]

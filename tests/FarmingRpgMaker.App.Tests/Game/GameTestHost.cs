@@ -45,15 +45,18 @@ internal sealed class GameTestHost : IDisposable
             new ProjectStore(_dir.Path),
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
-        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = false }, dialogs);
+        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = false }, dialogs, Launcher);
         var coordinator = new UpdateCoordinator(new FakeUpdateService(), new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
-        Window = new MainWindow(new RecordingUrlLauncher()) { DataContext = ViewModel, Width = width, Height = height };
+        Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };
         Window.Show();
         Pump();
     }
 
     public string DataDirectory => _dir.Path;
+
+    /// <summary>Records links and folders the app asks the OS to open.</summary>
+    public RecordingUrlLauncher Launcher { get; } = new();
 
     public ProjectWorkspace Workspace { get; }
 

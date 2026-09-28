@@ -1,0 +1,9 @@
+# Only applies when cargo runs inside crates/farm-plugin-guest (tools/plugin-guest/build.sh).
+[build]
+target = "wasm32-wasip1"
+
+[target.wasm32-wasip1]
+# Put the 1 MiB shadow stack first in linear memory, so an overflow walks below
+# address 0 and traps instead of overwriting the heap (the host counts the trap
+# as a budget strike). QuickJS's own stack check is compiled out under WASI.
+rustflags = ["-C", "link-arg=--stack-first", "-C", "link-arg=-zstack-size=1048576"]

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Regenerates THIRD-PARTY.txt: the license notices for the Rust crates in farm-player.
+# Every player template ships this file, and Export Game copies it to
+# licenses/THIRD-PARTY.txt in each exported game (docs/EXPORT.md).
+#
+# Needs cargo-about (cargo install cargo-about --locked --features cli).
+# Run it after changing farm-player's dependencies and commit the result.
+#
+#   tools/player-licenses/generate.sh           # rewrite THIRD-PARTY.txt
+#   tools/player-licenses/generate.sh --check   # fail if THIRD-PARTY.txt is out of date (CI)
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+output="$here/THIRD-PARTY.txt"
+
+if ! command -v cargo-about >/dev/null 2>&1; then
+  echo "cargo-about is not installed: cargo install cargo-about --locked --features cli" >&2
+  exit 1
+fi
+
+generated="$(mktemp)"
+trap 'rm -f "$generated"' EXIT
+
+cargo about generate \
+  --locked \
+  --fail \
+  --manifest-path "$root/crates/farm-player/Cargo.toml" \
+  --config "$here/about.toml" \
+  --output-file "$generated" \
+  "$here/about.hbs"
+
+# Stable line endings and no trailing spaces, whatever the crates packaged.
+sed -e 's/\r$//' -e 's/[[:space:]]*$//' "$generated" | cat -s > "$generated.clean"
+mv "$generated.clean" "$generated"
+
+if [[ "${1:-}" == "--check" ]]; then
+  if ! diff -u "$output" "$generated"; then
+    echo "tools/player-licenses/THIRD-PARTY.txt is out of date; run tools/player-licenses/generate.sh" >&2
+    exit 1
+  fi
+  echo "THIRD-PARTY.txt is up to date."
+else
+  cp "$generated" "$output"
+  echo "Wrote $output"
+fi

@@ -9,6 +9,9 @@
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="11.3.22" />
     <PackageVersion Include="Avalonia.Headless.XUnit" Version="11.3.22" />
     <PackageVersion Include="Avalonia.Skia" Version="11.3.22" />
+    <!-- Keep in step with the SkiaSharp that Avalonia.Skia depends on. -->
+    <PackageVersion Include="SkiaSharp" Version="2.88.9" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
     <PackageVersion Include="Velopack" Version="1.2.158" />
     <PackageVersion Include="Jint" Version="4.16.3" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />

@@ -68,9 +68,15 @@ Assets attached to the GitHub Release (Velopack's default `win` channel):
 | `FarmingRpgMaker-X.Y.Z-delta.nupkg`    | Delta from the previous release (small download). Only when a previous release exists. |
 | `releases.win.json`, `assets.win.json` | Update feed read by the app.                                         |
 | `RELEASES`                             | Legacy (Squirrel-compatible) feed.                                   |
+| `player-windows-x64.zip`, `player-linux-x64.tar.gz` | Export Game player templates for this version (docs/EXPORT.md). The installer already ships them in `players/`. |
 
-The same files are kept as a workflow artifact (`velopack-releases-X.Y.Z`,
+The Velopack files are kept as a workflow artifact (`velopack-releases-X.Y.Z`,
 30 days) for debugging.
+
+The player templates are built first, in their own jobs: `windows-x64` on the
+Windows runner (with the placeholder icon and version resources) and
+`linux-x64` in the Steam Runtime 3 "sniper" SDK container. Their
+`template.json` carries the release version, which must equal the app's.
 
 ### Versions in builds
 

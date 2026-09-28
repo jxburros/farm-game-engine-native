@@ -1,0 +1,26 @@
+[package]
+name = "farm-plugins"
+description = "Plugin sandbox: QuickJS compiled to WebAssembly, run in wasmi with fuel and memory budgets (port of Plugins.cs)"
+version.workspace = true
+edition.workspace = true
+# wasmi 2 needs Rust 1.86.
+rust-version = "1.86"
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+farm-sim = { path = "../farm-sim" }
+serde.workspace = true
+serde_json.workspace = true
+# Pure-Rust interpreter: no JIT (works where JITs are forbidden), fast instantiation. No `wat`
+# (text format) and no memory64; `validate` checks the guest when it loads; `deterministic`
+# canonicalizes NaNs. Its optimized builds must not have debug assertions (see the root
+# Cargo.toml). The guest runs from guest/farm_plugin_guest.wasm, checked in.
+wasmi = { version = "2.0.0", default-features = false, features = ["std", "stable", "validate", "auto-dispatch", "deterministic"] }
+
+[dev-dependencies]
+sha2 = "0.10"
+
+[lints]
+workspace = true

@@ -8,6 +8,12 @@ public sealed record WorkspaceSettings
 {
     /// <summary>Project reopened on launch.</summary>
     public string? LastProjectId { get; init; }
+
+    /// <summary>Output folder of the last Export Game.</summary>
+    public string? LastExportFolder { get; init; }
+
+    /// <summary>Whether Export Game last wrote zip / tar.gz archives (default on).</summary>
+    public bool? ExportArchives { get; init; }
 }
 
 /// <summary>

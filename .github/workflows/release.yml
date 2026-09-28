@@ -3,6 +3,12 @@ name: Release
 # Builds FarmingRpgMaker.exe, packs it with Velopack (Setup.exe, portable zip,
 # full + delta nupkg, releases.win.json) and publishes a GitHub Release that the
 # in-app Update Center reads. See docs/RELEASING.md.
+#
+# Export Game player templates (docs/EXPORT.md) are built first: farm-player for
+# windows-x64 on Windows (with the placeholder icon/version resources) and for
+# linux-x64 in the Steam Runtime 3 "sniper" SDK (old glibc, runs on Steam Deck).
+# Both ship inside the app under players/ and are attached to the release as
+# player-windows-x64.zip and player-linux-x64.tar.gz.
 
 on:
   push:
@@ -29,23 +35,14 @@ env:
   PACK_ID: FarmingRpgMaker
 
 jobs:
-  release:
-    name: Build, pack & publish
-    runs-on: windows-latest
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history + tags: release notes from tag annotations / git log
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      # FarmEngine.Interop builds crates/farm-ffi (farm_ffi.dll ships in the installer).
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.94"
-
       - name: Determine version
         id: version
         shell: pwsh
@@ -65,19 +62,149 @@ jobs:
           "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
           Write-Host "Releasing $version (prerelease: $prerelease)"
 
+  player-windows:
+    name: Player template (windows-x64)
+    needs: version
+    runs-on: windows-latest
+    env:
+      # Small templates: no debug info in the executable.
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94"
+
+      # build.rs compiles the placeholder icon and version resources with rc.exe.
+      - name: Build farm-player
+        run: cargo build --release --locked -p farm-player
+
+      - name: Stage template
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: tools/player-templates/package.sh windows-x64 "$VERSION" target/release/farm-player.exe players
+
+      - name: Check the placeholder resources
+        shell: pwsh
+        run: |
+          $info = (Get-Item players/windows-x64/farm-player.exe).VersionInfo
+          if (-not "$($info.ProductName)".StartsWith('farm-player template')) { throw "farm-player.exe has no placeholder version info" }
+
+      - name: Archive template
+        shell: pwsh
+        run: Compress-Archive -Path players/windows-x64 -DestinationPath player-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player-windows-x64
+          path: player-windows-x64.zip
+          retention-days: 7
+
+  player-linux:
+    name: Player template (linux-x64, Steam Runtime sniper)
+    needs: version
+    runs-on: ubuntu-latest
+    # Steam Runtime 3 "sniper" (Debian 11, glibc 2.31): the binary runs on older
+    # distributions and on Steam Deck (docs/EXPORT.md).
+    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build farm-player
+        shell: bash
+        run: |
+          cargo build --release --locked -p farm-player
+          ldd --version | head -n 1
+
+      - name: Stage template
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tools/player-templates/package.sh linux-x64 "$VERSION" target/release/farm-player players
+          players/linux-x64/farm-player --help
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='1980-01-01 00:00Z' \
+            -czf player-linux-x64.tar.gz -C players linux-x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player-linux-x64
+          path: player-linux-x64.tar.gz
+          retention-days: 7
+
+  release:
+    name: Build, pack & publish
+    needs: [version, player-windows, player-linux]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags: release notes from tag annotations / git log
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # FarmEngine.Interop builds crates/farm-ffi (farm_ffi.dll ships in the installer).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94"
+
+      - name: Download player templates
+        uses: actions/download-artifact@v4
+        with:
+          pattern: player-*
+          path: player-templates
+          merge-multiple: true
+
+      - name: Unpack player templates
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force players | Out-Null
+          Expand-Archive player-templates/player-windows-x64.zip -DestinationPath players
+          tar -xzf player-templates/player-linux-x64.tar.gz -C players
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($target in 'windows-x64', 'linux-x64') {
+            $manifest = Get-Content "players/$target/template.json" -Raw | ConvertFrom-Json
+            if ($manifest.version -ne $env:VERSION) { throw "$target template is version $($manifest.version), expected $env:VERSION" }
+          }
+          Get-ChildItem -Recurse players | Format-Table FullName, Length
+
       - name: Test
         run: dotnet test -c Release
 
+      # FarmPlayerTemplatesDir ships the release templates in players/ (the installer includes them).
       - name: Publish app
+        shell: pwsh
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: dotnet publish src/FarmingRpgMaker.App -c Release -r win-x64 --self-contained "-p:Version=$env:VERSION" -o publish
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $templates = (Resolve-Path players).Path
+          dotnet publish src/FarmingRpgMaker.App -c Release -r win-x64 --self-contained "-p:Version=$env:VERSION" "-p:FarmPlayerTemplatesDir=$templates" -o publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($file in 'players/windows-x64/farm-player.exe', 'players/windows-x64/template.json', 'players/linux-x64/farm-player', 'players/linux-x64/THIRD-PARTY.txt') {
+            if (-not (Test-Path "publish/$file")) { throw "publish/$file is missing" }
+          }
 
       - name: Write release notes
         shell: pwsh
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           $notes = ''
 
@@ -126,7 +253,7 @@ jobs:
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           $vpkArgs = @('download', 'github', '--repoUrl', "https://github.com/${{ github.repository }}", '--token', $env:GITHUB_TOKEN, '--outputDir', 'Releases')
           if ($env:PRERELEASE -eq 'true') { $vpkArgs += '--pre' }
@@ -139,7 +266,7 @@ jobs:
       - name: Pack with Velopack
         shell: pwsh
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
           WINDOWS_SIGN_PARAMS: ${{ secrets.WINDOWS_SIGN_PARAMS }}
         run: |
           $vpkArgs = @(
@@ -169,9 +296,9 @@ jobs:
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
-          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           $vpkArgs = @(
             'upload', 'github',
@@ -188,11 +315,20 @@ jobs:
           vpk @vpkArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Attach player templates
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release upload $env:TAG player-templates/player-windows-x64.zip player-templates/player-linux-x64.tar.gz --clobber --repo "${{ github.repository }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Keep build output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: velopack-releases-${{ steps.version.outputs.version }}
+          name: velopack-releases-${{ needs.version.outputs.version }}
           path: |
             Releases
             release-notes.md

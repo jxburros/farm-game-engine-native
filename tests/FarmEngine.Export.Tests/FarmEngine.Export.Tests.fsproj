@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Same as FarmEngine.Authoring.Tests: nullness checking makes some F# 10 compilers slow on tests. -->
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Support.fs" />
+    <Compile Include="ArchiveTests.fs" />
+    <Compile Include="VersionInfoTests.fs" />
+    <Compile Include="PeResourcesTests.fs" />
+    <Compile Include="IconTests.fs" />
+    <Compile Include="TemplateTests.fs" />
+    <Compile Include="AssetUsageTests.fs" />
+    <Compile Include="ExporterTests.fs" />
+    <Compile Include="EndToEndTests.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures/pe/player-fixture.exe" Link="Fixtures/player-fixture.exe" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../FarmEngine.Core.Tests/Fixtures/project-v8.json" Link="Fixtures/project-v8.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/cartridges/*" Link="Fixtures/cartridges/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FarmEngine.Export/FarmEngine.Export.fsproj" />
+    <ProjectReference Include="../../src/FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
+    <ProjectReference Include="../../src/FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
+    <ProjectReference Include="../../src/FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+  </ItemGroup>
+</Project>
