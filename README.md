@@ -156,7 +156,7 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
 | `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
-| `crates/farm-render` (Rust) | Read-only play world snapshots; native Skia host still draws them | `packages/game-shell/src/snapshot.ts`, native `ShellSnapshot` |
+| `crates/farm-render` (Rust) | World snapshots, art decoration, draw lists, a CPU rasterizer and fonts; the app still draws with Skia | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts`, native `FarmEngine.Rendering` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
 [docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust

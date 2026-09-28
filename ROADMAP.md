@@ -174,8 +174,14 @@ the most.
   maturity, soil, machine status, live NPC movement, animals and atmosphere.
   Template and scripted-play differential tests compare the entire snapshot
   with the C# reference. Art decoration and Skia drawing remain managed.
-- [ ] Port Edit Mode's preview, art decoration and the plugin bridge, then
-  remove the C# simulation/runtime fallback and their shared engine types.
+- [x] `farm-render` ports all of `FarmEngine.Rendering`: typed snapshots,
+  Edit Mode snapshots, art decoration, the built-in art pack, draw lists, a
+  CPU rasterizer and embedded fonts. Differential tests match the decorated
+  Edit Mode snapshots exactly and the raster within a small pixel tolerance.
+  `RustPreview` renders an Edit Mode viewport.
+- [ ] Switch Edit Mode's map and Play Mode's drawing to `farm-render`, port the
+  plugin bridge, then remove the C# simulation/runtime fallback and their
+  shared engine types.
 
 **Editor port (phase 5)**: map tools and a broad content workspace are now
 available as native views.
@@ -203,8 +209,8 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
   The graphical shell, plugin sandbox and packaging are still open.
-- [x] Initial `farm-render` crate supplies host-independent world snapshots
-  and is used by the editor's Rust Play Mode. GPU drawing, Rust game UI,
+- [x] `farm-render` supplies world snapshots, draw lists and a CPU
+  rasterizer that also builds for WebAssembly. GPU drawing, Rust game UI,
   audio playback and a graphical standalone player remain open.
 
 **Audit follow-ups**

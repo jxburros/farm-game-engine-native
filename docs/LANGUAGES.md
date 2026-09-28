@@ -177,6 +177,10 @@ what an exported game contains.
   randomness is supplied by the host and never consumes simulation RNG.
   `farm-render` snapshots currently cross this same compatibility boundary;
   C# still adds artwork bindings, interpolation/camera and transient pops.
+- **Render requests.** `fe_render_json` returns Rust-decorated Edit Mode
+  snapshots and PNG rasters of any snapshot. The `fe_preview_*` handle keeps a
+  project and its image caches, and rasterizes one scene viewport per call into
+  premultiplied RGBA. `RustRender` and `RustPreview` wrap them in C#.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
   next call on that session.
@@ -368,8 +372,16 @@ The renderer splits into **what to draw** (one implementation, Rust) and
 
 | File | Goes to |
 |---|---|
-| `WorldSnapshot.cs`, `ShellSnapshot.cs`, `Graphics.cs` (art binding resolution, animation frames), `Canvas2d.cs` (tile colors, constants), `CssColor.cs` | `farm-render::drawlist`: builds a draw list (layered, y-sorted sprite and tile quads with atlas regions and tints) from state or a preview |
-| `SkiaWorldRenderer.cs`, `ImageStore.cs` | Play: `farm-render::wgpu`. Edit Mode: a thin C# `SkiaDrawListExecutor` that replays the same draw list with SkiaSharp, so Avalonia can draw selection and brush overlays on top. |
+| `WorldSnapshot.cs`, `ShellSnapshot.cs` | `farm-render::snapshot` (typed structs, same JSON) and `farm-render::shell` (`shell_snapshot`, `editor_snapshot`). Done. |
+| `Graphics.cs`, `BuiltinArt.cs` | `farm-render::graphics` (`resolve_visual`, `apply_graphics`, `GraphicsSource` on the cartridge `Presentation`) and `farm-render::builtin_art`. The art pack lives in `assets/builtin-art/`, shared with the C# project. Done. |
+| `Atmosphere.cs`, `Canvas2d.cs`, `CssColor.cs` | `farm-render::{atmosphere, canvas2d, css_color}`. Done. |
+| `SkiaWorldRenderer.cs` | `farm-render::world` builds the draw list (`farm-render::draw`) with the same passes and geometry. `farm-render::raster` rasterizes it on the CPU with tiny-skia (feature `raster`, also on wasm32). Done. Later: `farm-render::wgpu` for play, and optionally a thin C# `SkiaDrawListExecutor` for Edit Mode. |
+| `ImageStore.cs` | `farm-render::images`: decodes `data:` URLs and `builtin://` sheets (PNG, JPEG, GIF, WebP, BMP), refuses images over 8192 px a side, caches failures, bounded LRU, and a resolver hook for cartridge `asset:` URLs. Done. |
+| (new) | `farm-render::text`: embedded Inter Regular and Bold, measurement, word wrap and ellipsis for `farm-ui`. |
+
+The C# project stays until the app switches over. Differential tests compare
+decorated Edit Mode snapshots exactly and the Rust raster with the Skia one
+pixel by pixel, and golden images in `fixtures/render/` pin the Rust output.
 
 The wgpu backend adds the farming-specific visuals the Skia renderer can't
 do cheaply: day/night lighting, season palette swaps (the same art in autumn

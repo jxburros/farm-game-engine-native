@@ -12,6 +12,11 @@
   maturity/withered state, soil, machines, missing definitions/tiles, moving
   NPCs and animals. The app still decorates artwork and draws through Skia;
   a GPU renderer and standalone graphical player are not included yet.
+- **Rust renderer.** `farm-render` now holds the whole world renderer: Edit
+  Mode snapshots, art decoration, the built-in art pack (moved to
+  `assets/builtin-art/`), draw lists and a CPU rasterizer with embedded Inter
+  fonts. `RustRender` and `RustPreview` expose it to C#. Differential tests
+  compare it with the Skia renderer; the app still draws with Skia for now.
 - **F# project templates.** The starter pack and all four project templates now
   originate in F#. New Project, first launch and game import use the new catalog,
   with the clock supplied by the desktop host. The app no longer depends on
