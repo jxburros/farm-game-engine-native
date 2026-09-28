@@ -115,7 +115,7 @@ jobs:
         run: |
           dotnet run --project src/FarmEngine.Cli -c Release --no-build -- \
             export fixtures/projects/project-v8.json --target linux-x64 --out export-smoke
-          game=$(find export-smoke/linux-x64 -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          game=$(find export-smoke/linux-x64 -mindepth 1 -maxdepth 1 -type d -print -quit)
           name=$(basename "$game")
           ls -l "$game" "$game/licenses"
           test -x "$game/$name"
@@ -240,7 +240,7 @@ jobs:
         shell: bash
         run: |
           cargo build --release --locked -p farm-player
-          ldd --version | head -n 1
+          ldd --version | sed -n 1p
           target/release/farm-player --headless --cart fixtures/golden/cartridges/project-v8.cart \
             --replay fixtures/golden/cartridges/twenty-ticks.json
           tools/player-templates/package.sh linux-x64 "0.0.0-ci" target/release/farm-player players

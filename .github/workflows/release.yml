@@ -135,7 +135,7 @@ jobs:
         shell: bash
         run: |
           cargo build --release --locked -p farm-player
-          ldd --version | head -n 1
+          ldd --version | sed -n 1p
 
       - name: Stage template
         shell: bash
