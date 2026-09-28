@@ -24,14 +24,6 @@ public struct Cartridge : IFlatbufferObject
   public uint CartFormat { get { int o = __p.__offset(4); return o != 0 ? __p.bb.GetUint(o + __p.bb_pos) : (uint)0; } }
   public uint ProjectSchemaVersion { get { int o = __p.__offset(6); return o != 0 ? __p.bb.GetUint(o + __p.bb_pos) : (uint)0; } }
   public FarmEngine.Cart.GameInfo? Info { get { int o = __p.__offset(8); return o != 0 ? (FarmEngine.Cart.GameInfo?)(new FarmEngine.Cart.GameInfo()).__assign(__p.__indirect(o + __p.bb_pos), __p.bb) : null; } }
-  public byte ProjectJson(int j) { int o = __p.__offset(10); return o != 0 ? __p.bb.Get(__p.__vector(o) + j * 1) : (byte)0; }
-  public int ProjectJsonLength { get { int o = __p.__offset(10); return o != 0 ? __p.__vector_len(o) : 0; } }
-#if ENABLE_SPAN_T
-  public Span<byte> GetProjectJsonBytes() { return __p.__vector_as_span<byte>(10, 1); }
-#else
-  public ArraySegment<byte>? GetProjectJsonBytes() { return __p.__vector_as_arraysegment(10); }
-#endif
-  public byte[] GetProjectJsonArray() { return __p.__vector_as_array<byte>(10); }
   public byte ContentJson(int j) { int o = __p.__offset(12); return o != 0 ? __p.bb.Get(__p.__vector(o) + j * 1) : (byte)0; }
   public int ContentJsonLength { get { int o = __p.__offset(12); return o != 0 ? __p.__vector_len(o) : 0; } }
 #if ENABLE_SPAN_T
@@ -40,43 +32,79 @@ public struct Cartridge : IFlatbufferObject
   public ArraySegment<byte>? GetContentJsonBytes() { return __p.__vector_as_arraysegment(12); }
 #endif
   public byte[] GetContentJsonArray() { return __p.__vector_as_array<byte>(12); }
+  public byte StartJson(int j) { int o = __p.__offset(14); return o != 0 ? __p.bb.Get(__p.__vector(o) + j * 1) : (byte)0; }
+  public int StartJsonLength { get { int o = __p.__offset(14); return o != 0 ? __p.__vector_len(o) : 0; } }
+#if ENABLE_SPAN_T
+  public Span<byte> GetStartJsonBytes() { return __p.__vector_as_span<byte>(14, 1); }
+#else
+  public ArraySegment<byte>? GetStartJsonBytes() { return __p.__vector_as_arraysegment(14); }
+#endif
+  public byte[] GetStartJsonArray() { return __p.__vector_as_array<byte>(14); }
+  public byte PresentationJson(int j) { int o = __p.__offset(16); return o != 0 ? __p.bb.Get(__p.__vector(o) + j * 1) : (byte)0; }
+  public int PresentationJsonLength { get { int o = __p.__offset(16); return o != 0 ? __p.__vector_len(o) : 0; } }
+#if ENABLE_SPAN_T
+  public Span<byte> GetPresentationJsonBytes() { return __p.__vector_as_span<byte>(16, 1); }
+#else
+  public ArraySegment<byte>? GetPresentationJsonBytes() { return __p.__vector_as_arraysegment(16); }
+#endif
+  public byte[] GetPresentationJsonArray() { return __p.__vector_as_array<byte>(16); }
+  public FarmEngine.Cart.Asset? Assets(int j) { int o = __p.__offset(18); return o != 0 ? (FarmEngine.Cart.Asset?)(new FarmEngine.Cart.Asset()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
+  public int AssetsLength { get { int o = __p.__offset(18); return o != 0 ? __p.__vector_len(o) : 0; } }
+  public FarmEngine.Cart.Asset? AssetsByKey(string key) { int o = __p.__offset(18); return o != 0 ? FarmEngine.Cart.Asset.__lookup_by_key(__p.__vector(o), key, __p.bb) : null; }
 
   public static Offset<FarmEngine.Cart.Cartridge> CreateCartridge(FlatBufferBuilder builder,
       uint cart_format = 0,
       uint project_schema_version = 0,
       Offset<FarmEngine.Cart.GameInfo> infoOffset = default(Offset<FarmEngine.Cart.GameInfo>),
-      VectorOffset project_jsonOffset = default(VectorOffset),
-      VectorOffset content_jsonOffset = default(VectorOffset)) {
-    builder.StartTable(5);
+      VectorOffset content_jsonOffset = default(VectorOffset),
+      VectorOffset start_jsonOffset = default(VectorOffset),
+      VectorOffset presentation_jsonOffset = default(VectorOffset),
+      VectorOffset assetsOffset = default(VectorOffset)) {
+    builder.StartTable(8);
+    Cartridge.AddAssets(builder, assetsOffset);
+    Cartridge.AddPresentationJson(builder, presentation_jsonOffset);
+    Cartridge.AddStartJson(builder, start_jsonOffset);
     Cartridge.AddContentJson(builder, content_jsonOffset);
-    Cartridge.AddProjectJson(builder, project_jsonOffset);
     Cartridge.AddInfo(builder, infoOffset);
     Cartridge.AddProjectSchemaVersion(builder, project_schema_version);
     Cartridge.AddCartFormat(builder, cart_format);
     return Cartridge.EndCartridge(builder);
   }
 
-  public static void StartCartridge(FlatBufferBuilder builder) { builder.StartTable(5); }
+  public static void StartCartridge(FlatBufferBuilder builder) { builder.StartTable(8); }
   public static void AddCartFormat(FlatBufferBuilder builder, uint cartFormat) { builder.AddUint(0, cartFormat, 0); }
   public static void AddProjectSchemaVersion(FlatBufferBuilder builder, uint projectSchemaVersion) { builder.AddUint(1, projectSchemaVersion, 0); }
   public static void AddInfo(FlatBufferBuilder builder, Offset<FarmEngine.Cart.GameInfo> infoOffset) { builder.AddOffset(2, infoOffset.Value, 0); }
-  public static void AddProjectJson(FlatBufferBuilder builder, VectorOffset projectJsonOffset) { builder.AddOffset(3, projectJsonOffset.Value, 0); }
-  public static VectorOffset CreateProjectJsonVector(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); for (int i = data.Length - 1; i >= 0; i--) builder.AddByte(data[i]); return builder.EndVector(); }
-  public static VectorOffset CreateProjectJsonVectorBlock(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); builder.Add(data); return builder.EndVector(); }
-  public static VectorOffset CreateProjectJsonVectorBlock(FlatBufferBuilder builder, ArraySegment<byte> data) { builder.StartVector(1, data.Count, 1); builder.Add(data); return builder.EndVector(); }
-  public static VectorOffset CreateProjectJsonVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<byte>(dataPtr, sizeInBytes); return builder.EndVector(); }
-  public static void StartProjectJsonVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(1, numElems, 1); }
   public static void AddContentJson(FlatBufferBuilder builder, VectorOffset contentJsonOffset) { builder.AddOffset(4, contentJsonOffset.Value, 0); }
   public static VectorOffset CreateContentJsonVector(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); for (int i = data.Length - 1; i >= 0; i--) builder.AddByte(data[i]); return builder.EndVector(); }
   public static VectorOffset CreateContentJsonVectorBlock(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); builder.Add(data); return builder.EndVector(); }
   public static VectorOffset CreateContentJsonVectorBlock(FlatBufferBuilder builder, ArraySegment<byte> data) { builder.StartVector(1, data.Count, 1); builder.Add(data); return builder.EndVector(); }
   public static VectorOffset CreateContentJsonVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<byte>(dataPtr, sizeInBytes); return builder.EndVector(); }
   public static void StartContentJsonVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(1, numElems, 1); }
+  public static void AddStartJson(FlatBufferBuilder builder, VectorOffset startJsonOffset) { builder.AddOffset(5, startJsonOffset.Value, 0); }
+  public static VectorOffset CreateStartJsonVector(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); for (int i = data.Length - 1; i >= 0; i--) builder.AddByte(data[i]); return builder.EndVector(); }
+  public static VectorOffset CreateStartJsonVectorBlock(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateStartJsonVectorBlock(FlatBufferBuilder builder, ArraySegment<byte> data) { builder.StartVector(1, data.Count, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateStartJsonVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<byte>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartStartJsonVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(1, numElems, 1); }
+  public static void AddPresentationJson(FlatBufferBuilder builder, VectorOffset presentationJsonOffset) { builder.AddOffset(6, presentationJsonOffset.Value, 0); }
+  public static VectorOffset CreatePresentationJsonVector(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); for (int i = data.Length - 1; i >= 0; i--) builder.AddByte(data[i]); return builder.EndVector(); }
+  public static VectorOffset CreatePresentationJsonVectorBlock(FlatBufferBuilder builder, byte[] data) { builder.StartVector(1, data.Length, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreatePresentationJsonVectorBlock(FlatBufferBuilder builder, ArraySegment<byte> data) { builder.StartVector(1, data.Count, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreatePresentationJsonVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<byte>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartPresentationJsonVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(1, numElems, 1); }
+  public static void AddAssets(FlatBufferBuilder builder, VectorOffset assetsOffset) { builder.AddOffset(7, assetsOffset.Value, 0); }
+  public static VectorOffset CreateAssetsVector(FlatBufferBuilder builder, Offset<FarmEngine.Cart.Asset>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
+  public static VectorOffset CreateAssetsVectorBlock(FlatBufferBuilder builder, Offset<FarmEngine.Cart.Asset>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateAssetsVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<FarmEngine.Cart.Asset>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateAssetsVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<FarmEngine.Cart.Asset>>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartAssetsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<FarmEngine.Cart.Cartridge> EndCartridge(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 8);  // info
-    builder.Required(o, 10);  // project_json
     builder.Required(o, 12);  // content_json
+    builder.Required(o, 14);  // start_json
+    builder.Required(o, 16);  // presentation_json
     return new Offset<FarmEngine.Cart.Cartridge>(o);
   }
   public static void FinishCartridgeBuffer(FlatBufferBuilder builder, Offset<FarmEngine.Cart.Cartridge> offset) { builder.Finish(offset.Value, "FGCT"); }
@@ -92,8 +120,10 @@ static public class CartridgeVerify
       && verifier.VerifyField(tablePos, 4 /*CartFormat*/, 4 /*uint*/, 4, false)
       && verifier.VerifyField(tablePos, 6 /*ProjectSchemaVersion*/, 4 /*uint*/, 4, false)
       && verifier.VerifyTable(tablePos, 8 /*Info*/, FarmEngine.Cart.GameInfoVerify.Verify, true)
-      && verifier.VerifyVectorOfData(tablePos, 10 /*ProjectJson*/, 1 /*byte*/, true)
       && verifier.VerifyVectorOfData(tablePos, 12 /*ContentJson*/, 1 /*byte*/, true)
+      && verifier.VerifyVectorOfData(tablePos, 14 /*StartJson*/, 1 /*byte*/, true)
+      && verifier.VerifyVectorOfData(tablePos, 16 /*PresentationJson*/, 1 /*byte*/, true)
+      && verifier.VerifyVectorOfTables(tablePos, 18 /*Assets*/, FarmEngine.Cart.AssetVerify.Verify, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }

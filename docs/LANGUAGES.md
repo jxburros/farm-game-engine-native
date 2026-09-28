@@ -112,20 +112,24 @@ what an exported game contains.
 - **Compatibility phase:** until the v9 cutover (phase 7), the cartridge keeps
   today's `GameContent` shape and `double` values, so golden hashes still
   match the TypeScript engine.
-- **Format 1 transition:** `cart.fbs` currently wraps game info plus project
-  and compiled content JSON. F# now resolves the authored built-in catalog,
-  pack namespacing, load order, overrides and locale strings without calling
-  the C# simulation assembly. `farmc compile` and Rust loading are in place;
-  the Rust session still reads the project for initial state. The indexed
-  content tables and project-free player load path remain to be ported.
+- **Format 2 (current):** `cart.fbs` carries game info, the compiled content,
+  the new-game start state (`StartState`) and presentation data
+  (`Presentation`) as compatibility JSON, plus an asset table that holds every
+  embedded file once (JSON refers to it as `asset:<id>`). The player never
+  reads project JSON. F# resolves the built-in catalog, pack namespacing, load
+  order, overrides and locale strings. Content keeps its string ids until
+  phase 7: interning them into indexed tables only helps once the simulation
+  uses interned indices. See [schemas/README.md](../schemas/README.md).
 
 ### Saves (Rust only)
 
 - The player's machine persists saves, so **Rust owns the save format and
   save migrations** (from `Save.cs` and `SaveMigrations.cs`). **F# owns
   project migrations** (from `Migrations.cs`). The creator persists projects.
-- The format is FlatBuffers too (`schemas/save.fbs`) with a version header,
-  compressed with zstd.
+- The format is FlatBuffers too (`schemas/save.fbs`): a version header, a
+  slot preview the title screen reads without loading the game, and the state
+  compressed with zstd (pure-Rust `ruzstd`, so it also builds for wasm). JSON
+  saves with the same header remain readable.
 - **Saves outlive the cartridge that wrote them.** A player's save from
   version 1.0 of a game has to load in 1.1. So saves refer to content by its
   stable string id, never by the cartridge's interned indices, and the header

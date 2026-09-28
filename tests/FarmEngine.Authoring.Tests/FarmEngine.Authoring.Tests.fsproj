@@ -25,6 +25,7 @@
     <Compile Include="BrokenProjects.fs" />
     <Compile Include="ValidationParityTests.fs" />
     <Compile Include="ValidationTests.fs" />
+    <Compile Include="CartridgeTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

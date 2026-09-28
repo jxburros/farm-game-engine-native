@@ -6,7 +6,6 @@
 use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::effects::Effect;
 use farm_sim::replay::{self, ReplayInput};
-use farm_sim::schema::{GameContent, GameProject};
 use farm_sim::{hash, quests, state, EngineContext};
 use serde::{Deserialize, Serialize};
 
@@ -35,34 +34,28 @@ pub struct HeadlessReport {
 #[derive(Debug, Clone)]
 pub struct HeadlessRun {
     pub report: HeadlessReport,
+    /// The final state as a JSON save (debugging, the web version).
     pub save_json: String,
+    /// The final state as a binary `FGSV` save (what the player writes to its save slots).
+    pub save_binary: Vec<u8>,
 }
 
 /// Run a compiled cartridge with optional replay and incoming save. A bad cartridge, save,
 /// replay or hash expectation is an error; the caller decides how to report it.
-pub fn run_cartridge(bytes: &[u8], replay: &ReplayFile, load_save: Option<&str>) -> Result<HeadlessRun, String> {
-    let cart = farm_cart::read_cartridge(bytes)?;
-    let project: GameProject =
-        serde_json::from_slice(cart.project_json).map_err(|error| format!("Cartridge project: {error}"))?;
-    let content: GameContent =
-        serde_json::from_slice(cart.content_json).map_err(|error| format!("Cartridge content: {error}"))?;
-    let mut target = SaveTarget::for_project(&project, &content);
-    if cart.info.game_id != target.game_id || cart.info.version != target.game_version {
-        return Err("Cartridge game identity differs from its project data.".to_owned());
-    }
-    target.game_id = cart.info.game_id.to_owned();
-    target.game_version = cart.info.version.to_owned();
-    let content_hash = hash::hash_state(&content);
-    let ctx = EngineContext::new(content);
+pub fn run_cartridge(bytes: &[u8], replay: &ReplayFile, load_save: Option<&[u8]>) -> Result<HeadlessRun, String> {
+    let cart = farm_cart::load_cartridge(bytes)?;
+    let target = SaveTarget::for_cartridge(&cart);
+    let content_hash = hash::hash_state(&cart.content);
+    let ctx = EngineContext::new(cart.content);
 
     let (mut game_state, warnings) = if let Some(save) = load_save {
-        let loaded = save_file::load_save(save, &target, &ctx.content);
+        let loaded = save_file::load_save_bytes(save, &target, &ctx.content);
         if !loaded.ok {
             return Err(loaded.errors.join("\n"));
         }
         (loaded.state.ok_or("Save loaded without a game state.")?, loaded.warnings)
     } else {
-        let mut initial = state::create_game_state(&project, replay.seed.as_deref());
+        let mut initial = state::create_game_state_from_start(&cart.start, replay.seed.as_deref());
         if replay.auto_start_quests {
             quests::auto_start_quests(&ctx, &mut initial);
         }
@@ -76,6 +69,9 @@ pub fn run_cartridge(bytes: &[u8], replay: &ReplayFile, load_save: Option<&str>)
         }
     }
     let save_json = save_file::write_save(&game_state, &target);
+    let mut preview = save_file::SavePreview::of_state(&game_state);
+    preview.farm_name = cart.info.title.clone();
+    let save_binary = save_file::write_save_binary(&game_state, &target, &preview);
     Ok(HeadlessRun {
         report: HeadlessReport {
             game_id: target.game_id,
@@ -86,6 +82,7 @@ pub fn run_cartridge(bytes: &[u8], replay: &ReplayFile, load_save: Option<&str>)
             warnings,
         },
         save_json,
+        save_binary,
     })
 }
 
@@ -103,8 +100,11 @@ mod tests {
         assert_eq!(first.report.state_hash, second.report.state_hash);
         assert_eq!(first.save_json, second.save_json);
         assert_eq!(first.report.game_id, "local.project-1");
-        let loaded = run_cartridge(CART, &ReplayFile::default(), Some(&first.save_json)).unwrap();
+        let loaded = run_cartridge(CART, &ReplayFile::default(), Some(first.save_json.as_bytes())).unwrap();
         assert_eq!(first.report.state_hash, loaded.report.state_hash);
+        assert_eq!(first.save_binary, second.save_binary);
+        let binary = run_cartridge(CART, &ReplayFile::default(), Some(&first.save_binary)).unwrap();
+        assert_eq!(first.report.state_hash, binary.report.state_hash);
     }
 
     #[test]
@@ -113,6 +113,8 @@ mod tests {
         assert!(run_cartridge(CART, &replay, None).unwrap_err().contains("Replay hash mismatch"));
         let save = run_cartridge(CART, &ReplayFile::default(), None).unwrap().save_json;
         let wrong = save.replace("local.project-1", "another.game");
-        assert!(run_cartridge(CART, &ReplayFile::default(), Some(&wrong)).unwrap_err().contains("different game"));
+        assert!(run_cartridge(CART, &ReplayFile::default(), Some(wrong.as_bytes()))
+            .unwrap_err()
+            .contains("different game"));
     }
 }

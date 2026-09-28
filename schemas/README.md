@@ -1,24 +1,52 @@
-# Cartridge schema
+# Cartridge and save schemas
 
-`cart.fbs` defines format 1 of `game.cart`. The generated C# and Rust readers
-are committed so building the editor or player does not need `flatc`. When the
-schema changes, use `flatc` **25.2.10** and regenerate both languages:
+`cart.fbs` defines format 2 of `game.cart`; `save.fbs` defines the binary save
+file the player writes. The generated readers are committed so building the
+editor or player does not need `flatc`. When a schema changes, use `flatc`
+**25.2.10** and regenerate:
 
 ```sh
 flatc --csharp -o src/FarmEngine.Schemas/Generated schemas/cart.fbs
 flatc --rust -o crates/farm-cart-schema/src schemas/cart.fbs
+flatc --rust -o crates/farm-cart-schema/src schemas/save.fbs
 ```
 
-The generated Rust accessors live in `farm-cart-schema`, which alone allows
-their verified pointer traversal. `farm-cart` and `farm-sim` forbid unsafe
-code. New fields are appended to the tables; a breaking layout change also
-bumps `CART_FORMAT` in `farm-cart` and the F# compiler.
+Only Rust reads saves, so `save.fbs` has no C# code. The generated Rust
+accessors live in `farm-cart-schema`, which alone allows their verified
+pointer traversal. `farm-cart` and `farm-sim` forbid unsafe code. New fields
+are appended to the tables; a breaking layout change also bumps `CART_FORMAT`
+in `farm-cart` and `CartridgeCompiler.Format` in F# (or `SAVE_FORMAT` for
+saves).
 
-The first cartridge embeds project and compiled content as UTF-8 JSON. This
-preserves the v8 engine's JavaScript number behavior while content families
-move into binary tables. It is reproducible for a given project and editor
-version. The cross-language golden is regenerated with:
+## Cartridge format 2
+
+The player never reads project JSON. The F# compiler splits a project into
+three sections:
+
+| Section | Rust type | What it is |
+|---|---|---|
+| `content_json` | `GameContent` | The compiled content (built-in catalog, packs, locale strings) |
+| `start_json` | `farm_sim::StartState` | Everything a new game starts from: scenes, player, clock, flags, NPC positions, quest progress |
+| `presentation_json` | `farm_sim::Presentation` | Art bindings, custom assets, graphics settings, creator panels |
+
+The sections are JSON so the v8 engine keeps its JavaScript number behavior.
+Every base64 `data:` URL inside them moves to the `assets` table and is
+replaced by `asset:<id>`, where the id is a hash of the file. The same file is
+stored once. Content keeps its string ids: interning them into indexed tables
+only pays off once the simulation uses interned indices, which is part of the
+native-numerics cutover (phase 7 of `docs/LANGUAGES.md`).
+
+The same project and editor version always give the same bytes. The
+cross-language golden is regenerated with:
 
 ```sh
 dotnet run --project src/FarmEngine.Cli -- compile tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --out fixtures/golden/cartridges/project-v8.cart
 ```
+
+## Saves
+
+A save file has a header (save format, game id, game version, cartridge
+hash), a slot preview (farm name, date, money, play time, saved-at time and a
+thumbnail) and the `GameState` as zstd-compressed stable JSON. The title
+screen reads previews without decompressing states. `farm-cart` also reads
+JSON saves with the same header and bare web `GameState`s.

@@ -9,8 +9,8 @@ desktop export packaging are still ahead.
 
 ```sh
 cargo run -p farm-player -- --headless --cart game.cart
-cargo run -p farm-player -- --headless --cart game.cart --replay replay.json --save save.json
-cargo run -p farm-player -- --headless --cart game.cart --load save.json
+cargo run -p farm-player -- --headless --cart game.cart --replay replay.json --save slot1.sav
+cargo run -p farm-player -- --headless --cart game.cart --load slot1.sav
 ```
 
 `--cart` defaults to `game.cart` beside the executable, matching the planned
@@ -29,6 +29,7 @@ export layout. A replay file has this shape:
 ```
 
 The player exits with an error for a malformed cartridge, an incompatible
-save or a replay hash mismatch. `--save` writes the existing portable Rust
-save format. The checked-in cartridge and replay in
+save or a replay hash mismatch. `--save` writes a binary save
+(`schemas/save.fbs`); a path ending in `.json` writes the JSON form instead.
+`--load` reads either, and bare web `GameState` JSON too. The checked-in cartridge and replay in
 `fixtures/golden/cartridges` are exercised by Rust tests on Windows and Linux.

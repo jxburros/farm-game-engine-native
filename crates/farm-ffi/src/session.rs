@@ -15,8 +15,9 @@ use farm_runtime::{host, input, panels, timestep::FixedTimestep};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
-use farm_sim::schema::{Dialogue, DialogueOption, GameContent, GameProject, GameState, ShopDefinition};
+use farm_sim::schema::{Dialogue, DialogueOption, GameProject, GameState, ShopDefinition};
 use farm_sim::world::world_movement;
+use farm_sim::Presentation;
 use farm_sim::{crafting, dialogue_system, economy, engine, game_time, hash, quests, social, stable_json, state};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -26,7 +27,10 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 pub struct FeSession {
     ctx: EngineContext,
     state: GameState,
-    project: GameProject,
+    /// The editor project the session started from; `None` for a cartridge, which carries no
+    /// project (its `presentation` has what the runtime views need).
+    project: Option<GameProject>,
+    presentation: Presentation,
     /// Which game this session's saves belong to (header of [`fe_session_save`]).
     target: SaveTarget,
     /// The state as the host last received it through [`fe_session_state_changes`], so the next
@@ -95,7 +99,7 @@ pub unsafe extern "C" fn fe_session_runtime_json(
             ))),
             RuntimeRequest::Panels { host_modal_open } => {
                 let views = panels::render(
-                    s.project.game_panels.iter().flatten(),
+                    s.presentation.game_panels.iter(),
                     &panels::PanelState::from_game_state(&s.state, host_modal_open),
                 );
                 Ok(view_json::to_json(&views))
@@ -211,39 +215,30 @@ pub unsafe extern "C" fn fe_session_new(
         Err(_) => return FeResult::InvalidArgument,
     };
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<FeSession, String> {
-        let (project, content, identity): (GameProject, GameContent, Option<(String, String)>) =
-            if farm_cart::is_cartridge(project_bytes) {
-                let cart = farm_cart::read_cartridge(project_bytes)?;
-                let project: GameProject =
-                    serde_json::from_slice(cart.project_json).map_err(|e| format!("cartridge project: {e}"))?;
-                let content: GameContent =
-                    serde_json::from_slice(cart.content_json).map_err(|e| format!("cartridge content: {e}"))?;
-                let expected = SaveTarget::for_project(&project, &content);
-                if cart.info.game_id != expected.game_id || cart.info.version != expected.game_version {
-                    return Err("Cartridge game identity differs from its project data.".to_owned());
-                }
-                (project, content, Some((cart.info.game_id.to_owned(), cart.info.version.to_owned())))
-            } else {
-                let project: GameProject =
-                    serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
-                let content = state::create_content_from_project(&project);
-                (project, content, None)
-            };
+        let seed = if seed_text.is_empty() { None } else { Some(seed_text) };
+        let (project, presentation, content, mut game_state, target) = if farm_cart::is_cartridge(project_bytes) {
+            let cart = farm_cart::load_cartridge(project_bytes)?;
+            let target = SaveTarget::for_cartridge(&cart);
+            let game_state = state::create_game_state_from_start(&cart.start, seed);
+            (None, cart.presentation, cart.content, game_state, target)
+        } else {
+            let project: GameProject =
+                serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
+            let content = state::create_content_from_project(&project);
+            let game_state = state::create_game_state(&project, seed);
+            let target = SaveTarget::for_project(&project, &content);
+            let presentation = Presentation::from_project(&project);
+            (Some(project), presentation, content, game_state, target)
+        };
         let ctx = EngineContext::with_hooks(content, HookBus::new());
-        let mut game_state =
-            state::create_game_state(&project, if seed_text.is_empty() { None } else { Some(seed_text) });
         if auto_start_quests {
             quests::auto_start_quests(&ctx, &mut game_state);
-        }
-        let mut target = SaveTarget::for_project(&project, &ctx.content);
-        if let Some((game_id, version)) = identity {
-            target.game_id = game_id;
-            target.game_version = version;
         }
         Ok(FeSession {
             ctx,
             state: game_state,
             project,
+            presentation,
             target,
             host_view: None,
             poisoned: false,
@@ -371,7 +366,10 @@ pub unsafe extern "C" fn fe_session_hash(session: *mut FeSession, out: *mut FeBy
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| Ok(stable_json::stringify(&state::apply_state_to_project(&s.project, &s.state))))
+    with_session(session, out, |s| {
+        let project = s.project.as_ref().ok_or("A cartridge session has no editor project to write back to.")?;
+        Ok(stable_json::stringify(&state::apply_state_to_project(project, &s.state)))
+    })
 }
 
 /// One batched read of the rule-derived data the play overlays need. This keeps dialogue

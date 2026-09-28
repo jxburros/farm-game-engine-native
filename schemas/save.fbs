@@ -1,0 +1,33 @@
+namespace FarmEngine.Save;
+
+// Fields may be appended, never reordered. save_format changes on a breaking revision.
+
+// What a save slot shows without decompressing the state.
+table SavePreview {
+  farm_name:string;
+  day:double;
+  season:string;
+  year:double;
+  money:double;
+  // Wall-clock time played, in seconds.
+  play_seconds:double;
+  // Seconds since the Unix epoch when the save was written (0 when unknown).
+  saved_at:long;
+  // A small PNG of the scene when the save was written.
+  thumbnail_png:[ubyte];
+}
+
+table SaveFile {
+  save_format:uint;
+  game_id:string (required);
+  game_version:string (required);
+  cart_hash:string (required);
+  preview:SavePreview;
+  // 0: stored, 1: zstd.
+  compression:ubyte;
+  // The GameState as stable JSON (compatibility phase), compressed as `compression` says.
+  state:[ubyte] (required);
+}
+
+root_type SaveFile;
+file_identifier "FGSV";

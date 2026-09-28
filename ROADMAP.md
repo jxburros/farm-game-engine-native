@@ -136,12 +136,15 @@ the most.
   defaults use the F# catalog. Time is supplied by the desktop host. The app
   no longer references `FarmEngine.Content`; its C# factories remain only as
   test references while the full schema migration continues.
-- [ ] Add indexed content tables and `save.fbs` to the cartridge format.
-- [x] `cart.fbs` format 1 with `GameInfo`, a deterministic F# compatibility
-  compiler and `farmc compile`; Rust verifies and loads the cartridge, and
-  cross-language tests compare its content and play state. Compiled content
-  now comes from F# and is stored as JSON while indexed binary tables are
-  developed. Initial state still comes from the embedded project JSON.
+- [x] Cartridge format 2: compiled content, the new-game start state and
+  presentation data as separate sections, and an asset table that stores each
+  embedded file once. The player no longer reads project JSON. Binary saves
+  (`save.fbs`) carry a slot preview and a zstd-compressed state; JSON saves
+  still load. Content keeps string ids until phase 7, when interned indexed
+  tables start to pay off.
+- [x] `farmc compile` writes a deterministic cartridge; Rust verifies and
+  loads it, and cross-language tests compare its content, start state,
+  presentation and play state with the project path.
 - [x] Add optional export identity/window/target settings to the project,
   with a stable generated game id and F# Problems validation. The cartridge
   compiler consumes them; Export Game still needs the graphical player and packaging.

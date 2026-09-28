@@ -46,7 +46,9 @@ public sealed class RustSessionTests
         var buffer = new ByteBuffer(bytes);
         Assert.True(Cartridge.CartridgeBufferHasIdentifier(buffer));
         var cart = Cartridge.GetRootAsCartridge(buffer);
-        Assert.Equal(1u, cart.CartFormat);
+        Assert.Equal(2u, cart.CartFormat);
+        Assert.NotEmpty(cart.GetStartJsonArray());
+        Assert.NotEmpty(cart.GetPresentationJsonArray());
         Assert.Equal("local.test-farm", cart.Info!.Value.GameId);
         Assert.Equal("3.1.0", cart.Info.Value.Version);
         Assert.NotEmpty(cart.GetContentJsonArray());
@@ -61,6 +63,8 @@ public sealed class RustSessionTests
         fromCart.Apply(new SleepCommand());
         fromProject.Apply(new SleepCommand());
         Assert.Equal(fromProject.StateHash(), fromCart.StateHash());
+        // A cartridge carries no editor project, so there is nothing to write play state back to.
+        Assert.Throws<FarmFfiException>(() => fromCart.SyncedProject());
         Assert.Throws<FarmFfiException>(() => RustSession.CreateCartridge([0, 0, 0, 0, (byte)'F', (byte)'G', (byte)'C', (byte)'T']));
     }
 

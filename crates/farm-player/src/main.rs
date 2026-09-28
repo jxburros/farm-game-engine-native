@@ -13,7 +13,8 @@ struct Options {
 }
 
 fn usage() -> &'static str {
-    "Usage: farm-player --headless [--cart game.cart] [--replay replay.json] [--load save.json] [--save save.json]"
+    "Usage: farm-player --headless [--cart game.cart] [--replay replay.json] [--load save] [--save save]\n\
+     A save path ending in .json writes a JSON save; any other name writes a binary save. --load reads either."
 }
 
 fn parse_args() -> Result<Options, String> {
@@ -60,12 +61,14 @@ fn run(options: Options) -> Result<(), String> {
         None => ReplayFile::default(),
     };
     let incoming_save = match options.load {
-        Some(path) => Some(fs::read_to_string(&path).map_err(|error| format!("Read {}: {error}", path.display()))?),
+        Some(path) => Some(fs::read(&path).map_err(|error| format!("Read {}: {error}", path.display()))?),
         None => None,
     };
     let result = run_cartridge(&cart, &replay, incoming_save.as_deref())?;
     if let Some(path) = options.save {
-        fs::write(&path, result.save_json).map_err(|error| format!("Write {}: {error}", path.display()))?;
+        let json = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+        let bytes = if json { result.save_json.into_bytes() } else { result.save_binary };
+        fs::write(&path, bytes).map_err(|error| format!("Write {}: {error}", path.display()))?;
     }
     println!("{}", serde_json::to_string(&result.report).map_err(|error| error.to_string())?);
     Ok(())

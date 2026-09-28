@@ -15,14 +15,29 @@ table GameInfo {
   credits:string;
 }
 
-// Compatibility cartridge: JSON content keeps the v8 JavaScript numeric semantics while
-// the F# compiler moves each content family into indexed binary tables in later revisions.
+// An embedded file (image, later audio), stored once and referenced from the JSON sections
+// as the string "asset:<id>". Ids are content hashes, so the same bytes always get the same id.
+table Asset {
+  id:string (required, key);
+  mime:string (required);
+  data:[ubyte] (required);
+}
+
+// Format 2. The player never reads project JSON: the compiler splits a project into the
+// compiled content, the inputs of a new game (start) and what the renderer and game panels
+// need (presentation). The JSON sections keep the v8 JavaScript number behaviour until the
+// native-numerics cutover; `data:` URLs inside them are moved to `assets`.
 table Cartridge {
   cart_format:uint;
   project_schema_version:uint;
   info:GameInfo (required);
-  project_json:[ubyte] (required);
+  // Format 1 carried the whole project here.
+  project_json:[ubyte] (deprecated);
   content_json:[ubyte] (required);
+  start_json:[ubyte] (required);
+  presentation_json:[ubyte] (required);
+  // Sorted by id.
+  assets:[Asset];
 }
 
 root_type Cartridge;
