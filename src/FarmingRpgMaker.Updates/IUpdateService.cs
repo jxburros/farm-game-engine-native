@@ -7,7 +7,7 @@ namespace FarmingRpgMaker.Updates;
 /// </summary>
 public interface IUpdateService
 {
-    /// <summary>Version of the running app (SemVer, e.g. <c>0.1.0</c> or <c>0.1.0-dev</c>).</summary>
+    /// <summary>Version of the running app (SemVer, e.g. <c>0.2.0</c> or <c>0.2.0-dev</c>).</summary>
     string CurrentVersion { get; }
 
     /// <summary>

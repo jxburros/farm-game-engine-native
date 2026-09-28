@@ -80,7 +80,7 @@ Windows runner (with the placeholder icon and version resources) and
 
 ### Versions in builds
 
-`Directory.Build.props` defaults the version to `0.1.0-dev`. The release
+`Directory.Build.props` defaults the version to `0.2.0-dev`. The release
 workflow passes `-p:Version=X.Y.Z`, which stamps both `FarmingRpgMaker.exe` and
 `FarmingRpgMaker.Updates.dll`; `vpk pack --packVersion` uses the same value.
 

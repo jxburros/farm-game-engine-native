@@ -10,7 +10,7 @@
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Overridden by CI from the git tag (vX.Y.Z → X.Y.Z). -->
-    <Version Condition="'$(Version)' == ''">0.1.0-dev</Version>
+    <Version Condition="'$(Version)' == ''">0.2.0-dev</Version>
     <Authors>Farming RPG Maker contributors</Authors>
     <Product>Farming RPG Maker</Product>
   </PropertyGroup>

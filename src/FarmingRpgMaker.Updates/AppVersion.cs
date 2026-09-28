@@ -4,7 +4,7 @@ namespace FarmingRpgMaker.Updates;
 
 /// <summary>
 /// Version stamped into the build (<c>-p:Version=X.Y.Z</c> in the release workflow,
-/// <c>0.1.0-dev</c> locally). <c>-p:Version</c> is a global MSBuild property, so this
+/// <c>0.2.0-dev</c> locally). <c>-p:Version</c> is a global MSBuild property, so this
 /// library carries the same version as the app executable.
 /// </summary>
 public static class AppVersion
