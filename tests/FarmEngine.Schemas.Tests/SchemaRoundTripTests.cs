@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
 
-namespace FarmEngine.Core.Tests.Schemas;
+namespace FarmEngine.Schemas.Tests;
 
 public class SchemaRoundTripTests
 {

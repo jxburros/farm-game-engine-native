@@ -1,4 +1,4 @@
-//! Port of `tests/FarmEngine.Core.Tests/Core/M9CalendarTests.cs` (engine-core/src/m9-calendar.test.ts):
+//! Port of the retired C# `M9CalendarTests.cs` (engine-core/src/m9-calendar.test.ts):
 //! M9 calendar tests — creator-configurable seasons + festival days.
 //!
 //! The C# built its engine from `EngineTests.MakeProject()`; here states come from the

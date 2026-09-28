@@ -18,7 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/pe/player-fixture.exe" Link="Fixtures/player-fixture.exe" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../FarmEngine.Core.Tests/Fixtures/project-v8.json" Link="Fixtures/project-v8.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/projects/project-v8.json" Link="Fixtures/project-v8.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/golden/cartridges/*" Link="Fixtures/cartridges/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

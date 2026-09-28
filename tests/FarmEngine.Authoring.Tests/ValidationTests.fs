@@ -11,8 +11,6 @@ open System.Text.Json.Nodes
 open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Net
-open FarmEngine.Content
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 open FarmEngine.Authoring.Tests.TestProjects
@@ -117,10 +115,10 @@ let ``migrates a fixture to the current schema version and validates`` (name: st
 
 /// `EngineTests.MakeProject`: a small healthy project.
 let private makeProject () : GameProject =
-    let scene = Tiles.CreateEmptyScene("scene-test", "Test Farm", 6.0, 6.0)
-    scene.Tiles.[2].[3] <- Tiles.SetTileLayer(scene.Tiles.[2].[3], "soil")
-    scene.Tiles.[4].[4] <- Tiles.SetTileLayer(scene.Tiles.[4].[4], "wall")
-    let items = ContentBuiltin.CreateDefaultItems()
+    let scene = AuthoringTiles.CreateEmptyScene("scene-test", "Test Farm", 6.0, 6.0)
+    scene.Tiles.[2].[3] <- AuthoringTiles.SetTileLayer(scene.Tiles.[2].[3], "soil")
+    scene.Tiles.[4].[4] <- AuthoringTiles.SetTileLayer(scene.Tiles.[4].[4], "wall")
+    let items = Builtin.items ()
     let slot id quantity = InventorySlot(Item = (items |> Seq.find (fun i -> i.Id = id)), Quantity = quantity)
     let dialogue =
         listOf
@@ -242,7 +240,7 @@ let ``catches dangling references across content families`` () =
 [<Fact>]
 let ``flags unreachable scenes as warnings`` () =
     let project = makeProject ()
-    project.Scenes.Add(Tiles.CreateEmptyScene("scene-island", "Island", 4.0, 4.0))
+    project.Scenes.Add(AuthoringTiles.CreateEmptyScene("scene-island", "Island", 4.0, 4.0))
     let problems = ContentLints.validateProjectContent project
     Assert.Contains(problems, fun p -> p.Severity = Severity.Warning && p.Message.Contains "Island")
 
@@ -269,7 +267,7 @@ let templateFactories () : seq<obj[]> = [ [| box "cozy" |]; [| box "quest" |] ]
 [<Theory>]
 [<MemberData(nameof templateFactories)>]
 let ``template validates and has zero content problems`` (name: string) =
-    let project = if name = "cozy" then Templates.CreateCozyFarmProject() else Templates.CreateQuestRpgProject()
+    let project = if name = "cozy" then ProjectCatalog.CreateCozyFarmProject(0.0) else ProjectCatalog.CreateQuestRpgProject(0.0)
     let result = ProjectMigrations.migrateProject (JsonSerializer.SerializeToNode(project, JsonDefaults.Options))
     Assert.True(result.Ok, String.Join("; ", result.Errors))
     Assert.Empty(ContentLints.validateProjectContent project)

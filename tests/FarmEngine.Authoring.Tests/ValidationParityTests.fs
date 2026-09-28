@@ -1,22 +1,24 @@
-/// Differential tests: the F# `SchemaChecks` and `ContentLints` against the C# `SchemaValidation`
-/// and `Validation` they port. Same list, same order (or the same exception) on every golden
-/// project, the migrated goldens, the sample and template projects and a generated set of broken
-/// projects that trigger every check (`BrokenProjects`).
+/// Differential tests: the F# `SchemaChecks` against the C# `SchemaValidation` it ports (both
+/// kept: the editor's Schemas layer still validates with the C#). Same list, same order (or the
+/// same exception) on every golden project, the migrated goldens, the sample and template projects
+/// and a generated set of broken projects that trigger every check (`BrokenProjects`), where the
+/// F# `ContentLints` must also reach the check each case was written for. The `ContentLints`
+/// findings on the golden, fixture and sample projects are pinned to the ones the retired C#
+/// `Validation` reported (`fixtures/projects/content-lints.json`).
 module FarmEngine.Authoring.Tests.ValidationParityTests
 
 open System
 open System.IO
+open System.Text.Encodings.Web
 open System.Text.Json
 open System.Text.Json.Nodes
 open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Net
-open FarmEngine.Content
 open FarmEngine.Json
 open FarmEngine.Schemas
 
 type private CsSchema = FarmEngine.Schemas.SchemaValidation
-type private CsContent = FarmEngine.Core.Validation
 type private CsMigrations = FarmEngine.Schemas.Migrations
 
 // ── Comparing ────────────────────────────────────────────────────────────────
@@ -32,27 +34,13 @@ let private assertSame (label: string) (expected: Result<string list, string>) (
     if expected <> actual then
         failwithf "%s: C# and F# differ\nC#: %A\nF#: %A" label expected actual
 
-let private severityName (severity: Severity) =
-    match severity with
-    | Severity.Error -> "error"
-    | Severity.Warning -> "warning"
-    | Severity.Info -> "info"
-
-let private csContent (project: GameProject) =
-    [ for p in CsContent.ValidateProjectContent project -> sprintf "%s|%s|%s|%A" p.Severity p.Category p.Message (Option.ofObj p.Subject) ]
-
-let private fsContent (project: GameProject) =
-    [ for l in ContentLints.validateProjectContent project -> sprintf "%s|%s|%s|%A" (severityName l.Severity) l.Category l.Message l.Subject ]
-
-/// The three project validators agree; returns how many findings they produced.
+/// The two project validators agree; returns how many findings they produced.
 let private compareProject (label: string) (project: GameProject) =
     let validate = attempt (fun () -> List.ofSeq (CsSchema.ValidateProject project))
     assertSame (label + " / ValidateProject") validate (attempt (fun () -> SchemaChecks.validateProject project))
     let lint = attempt (fun () -> List.ofSeq (CsSchema.LintProject project))
     assertSame (label + " / LintProject") lint (attempt (fun () -> SchemaChecks.lintProject project))
-    let content = attempt (fun () -> csContent project)
-    assertSame (label + " / ValidateProjectContent") content (attempt (fun () -> fsContent project))
-    [ validate; lint; content ] |> List.sumBy (function Ok xs -> xs.Length | Error _ -> 1)
+    [ validate; lint ] |> List.sumBy (function Ok xs -> xs.Length | Error _ -> 1)
 
 /// Both F# exported-game validators agree with the C# (`exact`: also the pure one, which reads
 /// nulls and NaN as they are where the C# round trip normalizes or throws).
@@ -96,9 +84,9 @@ let private jsonSources () : (string * (unit -> JsonNode)) list =
 let private codeSources () : (string * (unit -> GameProject)) list =
     [ yield "starter", TestProjects.starter
       yield "blank", TestProjects.blank
-      yield "cozy factory", (fun () -> Templates.CreateCozyFarmProject(0.0))
-      yield "quest factory", (fun () -> Templates.CreateQuestRpgProject(0.0))
-      for id, _ in TestProjects.templates () -> "template " + id, (fun () -> Templates.CreateProjectForTemplate(id, 0.0)) ]
+      yield "cozy factory", (fun () -> ProjectCatalog.CreateCozyFarmProject(0.0))
+      yield "quest factory", (fun () -> ProjectCatalog.CreateQuestRpgProject(0.0))
+      for id, _ in TestProjects.templates () -> "template " + id, (fun () -> ProjectCatalog.CreateProjectForTemplate(id, 0.0)) ]
 
 let private deserialize<'T> (node: JsonNode) : 'T option =
     match attempt (fun () -> node.Deserialize<'T>(JsonDefaults.Options)) with
@@ -183,6 +171,53 @@ let ``F# and C# validators agree on sample and template projects`` (name: string
     let json = JsonSerializer.SerializeToNode(project, JsonDefaults.Options).AsObject()
     for form, game in exportedForms json do
         compareExported (sprintf "%s (%s)" name form) game
+
+// ── Content lints: the recorded findings ─────────────────────────────────────
+
+/// The C# `Validation` findings, as the F# `ContentLints` matched them finding for finding when
+/// the C# engine was retired. After an intended lint change, rerun this test with
+/// FARM_RECORD_CONTENT_LINTS=1 to rewrite the file, and review its diff.
+let private contentLintsFile = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "fixtures", "projects", "content-lints.json")
+
+let private severityName (severity: Severity) =
+    match severity with
+    | Severity.Error -> "error"
+    | Severity.Warning -> "warning"
+    | Severity.Info -> "info"
+
+let private lintLines (project: GameProject) : string list =
+    match attempt (fun () -> ContentLints.validateProjectContent project) with
+    | Ok lints -> [ for l in lints -> sprintf "%s|%s|%s|%s" (severityName l.Severity) l.Category l.Message (defaultArg l.Subject "") ]
+    | Error message -> [ "throws|" + message ]
+
+/// Findings per project: every golden and fixture as is and migrated, and every code-built sample.
+let private contentLintFindings () : (string * string list) list =
+    [ for name, load in jsonSources () do
+          let raw = load ()
+          match deserialize<GameProject> raw with
+          | Some project -> yield name + " (as is)", lintLines project
+          | None -> ()
+          match migrated raw |> Option.bind (fun json -> deserialize<GameProject> json) with
+          | Some project -> yield name + " (migrated)", lintLines project
+          | None -> ()
+      for name, build in codeSources () -> name, lintLines (build ()) ]
+
+[<Fact>]
+let ``content lints report the recorded findings on golden, fixture and sample projects`` () =
+    let actual = contentLintFindings ()
+    if Environment.GetEnvironmentVariable "FARM_RECORD_CONTENT_LINTS" = "1" then
+        let json = JsonObject()
+        for name, lines in actual do
+            json[name] <- JsonArray([| for line in lines -> JsonValue.Create line :> JsonNode |])
+        let options = JsonSerializerOptions(WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
+        File.WriteAllText(contentLintsFile, json.ToJsonString options + "\n")
+    else
+        let recorded = (readJson (Path.Combine(baseDir, "Fixtures", "content-lints.json"))).AsObject()
+        Assert.Equal<string list>([ for KeyValue(name, _) in recorded -> name ], actual |> List.map fst)
+        for name, lines in actual do
+            Assert.True(
+                ([ for line in recorded[name].AsArray() -> line.GetValue<string>() ] = lines),
+                sprintf "%s: recorded\n%s\nactual\n%s" name (recorded[name].ToJsonString()) (String.concat "\n" lines))
 
 // ── Broken projects ──────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
 
-namespace FarmEngine.Core.Tests.Schemas;
+namespace FarmEngine.Schemas.Tests;
 
 /// <summary>
 /// Shared fixture helpers. <c>Fixtures/migrated/*.stable.json</c> are the TS

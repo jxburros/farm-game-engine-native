@@ -1,7 +1,7 @@
 using FarmEngine.Json;
 using FarmEngine.Schemas;
 
-namespace FarmEngine.Core.Tests.Schemas;
+namespace FarmEngine.Schemas.Tests;
 
 /// <summary>Port of packages/engine-schemas/src/crafting.test.ts.</summary>
 public class CraftingSchemaTests

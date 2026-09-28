@@ -5,7 +5,7 @@ This repo is a native port of [`jxburros/farm-game-engine`](https://github.com/j
 same seed + same command/tick log must produce a state whose
 `StableJson`/`Hash.HashState` output is byte-identical to the TS
 `stableStringify`/`hashState`. Golden replay fixtures generated from the TS
-engine (`tools/golden/`) enforce that in `tests/FarmEngine.Core.Tests`.
+engine (`tools/golden/`) enforce that in the Rust tests (`crates/farm-sim/tests`).
 
 Every rule below exists to keep that guarantee. When in doubt, port the TS
 literally and let the golden tests tell you.
@@ -146,7 +146,9 @@ The TS engine is a pure reducer built from object spreads. Port it the same way:
 
 ## Tests
 
-Port each `*.test.ts` next to the module to
-`tests/FarmEngine.Core.Tests/<Area>/<Name>Tests.cs` (xUnit, `[Fact]` per
-`it(...)`, same test names in PascalCase). Golden parity fixtures live in
-`fixtures/golden/` (shared with the Rust and F# tests) and are generated, never hand-edited.
+Port each `*.test.ts` next to the module to the Rust crate's tests
+(`crates/<crate>/tests/<name>.rs`, one `#[test]` per `it(...)`, same test names
+in snake_case); schema-only tests go to `tests/FarmEngine.Schemas.Tests`. Golden
+parity fixtures live in `fixtures/golden/` (generated, never hand-edited) and the
+shared project fixtures in `fixtures/projects/`; the Rust, F# and C# schema tests
+all read both.

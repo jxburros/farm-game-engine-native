@@ -59,7 +59,7 @@ let ``project migration matches TypeScript`` (name: string) =
     let result = ProjectMigrations.migrateProject (node (fixture.GetProperty "input"))
     assertResult name (fixture.GetProperty "result") result
     assertSameStable name (fixture.GetProperty("stable").GetString() |> string) (stable result.Data)
-    Assert.Equal(fixture.GetProperty("hash").GetString(), FarmEngine.Core.Hash.HashState result.Data)
+    Assert.Equal(fixture.GetProperty("hash").GetString(), TestProjects.hashState result.Data)
 
 [<Theory>]
 [<MemberData(nameof projectFixtures)>]
@@ -87,7 +87,7 @@ let ``the stable JSON writer reproduces the golden stable text`` () =
         let data = JsonInterop.ofElement (fixture.GetProperty("result").GetProperty "data")
         Assert.Equal(fixture.GetProperty("stable").GetString(), Json.stableStringify data)
 
-/// Hand-built edge cases recorded from TS for the C# port (tests/FarmEngine.Core.Tests/Fixtures/migrated).
+/// Hand-built edge cases recorded from TS for the C# port (fixtures/projects/migrated).
 [<Theory>]
 [<InlineData("project-edge-v1.input.json", "project", "project-edge-v1.stable.json")>]
 [<InlineData("project-edge-v1.input.json", "exported", "exported-edge-v1.stable.json")>]
