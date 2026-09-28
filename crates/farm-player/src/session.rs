@@ -182,15 +182,20 @@ impl PlaySession {
     /// A new game: the start state (with its default seed unless `seed` is given) with
     /// auto-start quests begun, as hosts do at game start.
     pub fn new_game(content: GameContent, start: &StartState, seed: Option<&str>) -> Self {
-        let mut game_state = state::create_game_state_from_start(start, seed);
-        let ctx = EngineContext::new(content);
-        quests::auto_start_quests(&ctx, &mut game_state);
-        Self::new(ctx.content, game_state)
+        let game_state = state::create_game_state_from_start(start, seed);
+        let mut session = Self::new(content, game_state);
+        // Hook events of the auto-start stay on the bus until plugins attach (see
+        // [`Self::set_plugins`]), as the web and C# bridges listen before the game starts.
+        quests::auto_start_quests(&session.ctx, &mut session.state);
+        session.sync_minigame();
+        session
     }
 
-    /// Attach the plugin sandbox (its listeners see every later step).
+    /// Attach the plugin sandbox. Hook events not yet delivered (those of a new game's
+    /// auto-started quests) go to it first; then it sees every later step.
     pub fn set_plugins(&mut self, plugins: Option<Box<dyn SessionPlugins>>) {
         self.plugins = plugins;
+        self.dispatch_hooks(&[]);
     }
 
     pub fn has_plugins(&self) -> bool {
