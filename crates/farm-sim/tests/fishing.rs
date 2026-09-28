@@ -1,4 +1,4 @@
-//! The fishing case of `tests/FarmEngine.Core.Tests/Core/M4SystemsTests.cs` (m4-systems.test.ts)
+//! The fishing case of the retired C# `M4SystemsTests.cs` (m4-systems.test.ts)
 //! plus direct coverage of `resolve_fishing`'s branches. The starter farm carries the built-in
 //! pond table (carp/perch/catfish, 15% junk).
 

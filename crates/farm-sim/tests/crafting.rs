@@ -1,4 +1,4 @@
-//! The crafting & station cases of `tests/FarmEngine.Core.Tests/Core/M4SystemsTests.cs`
+//! The crafting & station cases of the retired C# `M4SystemsTests.cs`
 //! (m4-systems.test.ts), driven through the `crafting` handlers directly. The starter farm already
 //! carries the built-in recipes and machine types (plus a Kitchen providing 'cooking').
 

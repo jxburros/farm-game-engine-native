@@ -44,7 +44,7 @@ The same project and editor version always give the same bytes. The
 cross-language golden is regenerated with:
 
 ```sh
-dotnet run --project src/FarmEngine.Cli -- compile tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --out fixtures/golden/cartridges/project-v8.cart
+dotnet run --project src/FarmEngine.Cli -- compile fixtures/projects/project-v8.json --out fixtures/golden/cartridges/project-v8.cart
 ```
 
 ## Saves

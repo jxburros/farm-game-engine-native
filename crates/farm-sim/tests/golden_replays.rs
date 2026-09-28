@@ -1,4 +1,4 @@
-//! Rust twin of `tests/FarmEngine.Core.Tests/GoldenParityTests.cs::ReplayMatchesTypeScript`.
+//! Rust twin of the retired C# `GoldenParityTests.cs::ReplayMatchesTypeScript`.
 //!
 //! Every fixture under `fixtures/golden/replays` was recorded from the TypeScript reference
 //! engine; the Rust port must reproduce each state hash, effect list and final state byte for

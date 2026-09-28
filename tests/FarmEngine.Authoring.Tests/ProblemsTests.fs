@@ -181,7 +181,7 @@ let ``graphics, interface, calendar, mine and packs`` () =
     let mine = Records.withValues (Defaults.mineEnabled project true) [ ("EntranceSceneId", box "scene-ghost") ]
     let mined = has "mine.entranceSceneMissing" (project |> apply (SetMine mine))
     Assert.Equal("settings", mined.TargetKind)
-    let pack = FarmEngine.Content.DefaultContent.CreateContentDefaultPack()
+    let pack = ProjectCatalog.CreateContentDefaultPack()
     let old = Records.withValue pack "Manifest" (box (Records.withValues pack.Manifest [ ("Id", box "old-pack"); ("EngineCompatibility", box ">=99.0.0") ]))
     let packed = has "pack.incompatible" (blank () |> apply (InstallPack old))
     Assert.Equal("pack", packed.TargetKind)

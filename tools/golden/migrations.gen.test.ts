@@ -1,11 +1,11 @@
 /**
- * Generator for tests/FarmEngine.Core.Tests/Fixtures/migrated/ — the TS
+ * Generator for fixtures/projects/migrated/ — the TS
  * reference outputs the C# migration port (Migrations.cs, SaveMigrations.cs)
  * must reproduce byte-for-byte via StableJson.
  *
  * Usage (from a farm-game-engine checkout with node_modules):
  *   cp <native>/tools/golden/migrations.gen.test.ts tests/unit/
- *   MIGRATIONS_OUT=<native>/tests/FarmEngine.Core.Tests/Fixtures/migrated \
+ *   MIGRATIONS_OUT=<native>/fixtures/projects/migrated \
  *     npx vitest run tests/unit/migrations.gen.test.ts
  *   rm tests/unit/migrations.gen.test.ts
  *

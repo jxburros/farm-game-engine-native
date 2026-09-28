@@ -1,4 +1,4 @@
-//! Port of `tests/FarmEngine.Core.Tests/Runtime/PluginsTests.cs` and the web
+//! Port of the retired C# `PluginsTests.cs` and the web
 //! `packages/engine-runtime/src/plugins.test.ts`, plus the WebAssembly sandbox's own
 //! guarantees (hardening, budgets, determinism).
 

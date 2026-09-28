@@ -3,7 +3,6 @@ module FarmEngine.Authoring.Tests.ProjectEditTests
 open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Tests.TestProjects
-open FarmEngine.Content
 open FarmEngine.Json
 open FarmEngine.Schemas
 
@@ -81,7 +80,7 @@ let ``assets bind and unbind everywhere`` () =
 [<Fact>]
 let ``packs install once, toggle, reorder, remove and import`` () =
     let project = blank ()
-    let pack = DefaultContent.CreateContentDefaultPack()
+    let pack = ProjectCatalog.CreateContentDefaultPack()
     let other = Records.withValue pack "Manifest" (box (Records.withValues pack.Manifest [ ("Id", box "other-pack"); ("Name", box "Other") ]))
     let installed = project |> apply (Batch("install", [ InstallPack pack; InstallPack other ]))
     Assert.Equal(2, installed.ContentPacks.Count)

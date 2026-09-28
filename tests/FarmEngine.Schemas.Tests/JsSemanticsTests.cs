@@ -1,6 +1,6 @@
 using FarmEngine.Json;
 
-namespace FarmEngine.Core.Tests;
+namespace FarmEngine.Schemas.Tests;
 
 public class JsSemanticsTests
 {

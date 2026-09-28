@@ -1,4 +1,4 @@
-//! Port of `tests/FarmEngine.Core.Tests/Core/EngineTests.cs` (engine.test.ts): the engine reducer
+//! Port of the retired C# `EngineTests.cs` (engine.test.ts): the engine reducer
 //! end to end. Most cases drive the whole simulation (movement, tools, crops, dialogue, sleep),
 //! so they are `#[ignore]`d until those module ports merge; the cases at the end exercise the
 //! reducer itself (`apply_command` dispatch, the `onCommand` hook, the per-tick clock).

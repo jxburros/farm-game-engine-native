@@ -3,7 +3,6 @@ module FarmEngine.Authoring.Tests.PackRulesTests
 open System.Text.Json
 open Xunit
 open FarmEngine.Authoring
-open FarmEngine.Core
 open FarmEngine.Json
 open FarmEngine.Schemas
 open FarmEngine.Authoring.Tests.TestProjects
@@ -40,7 +39,6 @@ let ``namespace rewrites nested references while retaining absolute and base ref
     let original = pack ()
     let before = StableJson.Stringify original
     let actual = PackRules.namespacePack original
-    Assert.Equal(StableJson.Stringify(Packs.NamespacePack original), StableJson.Stringify actual)
     Assert.Equal("orchard:fruit", actual.Content.Items[0].Id)
     Assert.Equal("orchard:tree", actual.Content.Items[0].CropType)
     Assert.Equal("orchard:hello", actual.Content.Npcs[0].Dialogue[0].Options[0].NextDialogueId)
@@ -67,9 +65,9 @@ let ``localization respects load order disabled packs missing locales and empty 
     let installs = listOf [PackInstallation(Pack = second); PackInstallation(Pack = first)]
     let content, _ = PackMerge.mergeIntoContent (ContentCompiler.baseContent(blank ())) installs
     let before = StableJson.Stringify content
-    for locale in [null; ""; "en"; "fr"; "missing"] do
-        Assert.Equal(StableJson.Stringify(Packs.ApplyLocaleStrings(content, installs, locale)),
-            StableJson.Stringify(PackMerge.applyLocaleStrings content installs locale))
+    // No locale, or one no enabled pack translates: the content itself.
+    for locale in [null; ""; "en"; "missing"] do
+        Assert.Same(content, PackMerge.applyLocaleStrings content installs locale)
     let translated = PackMerge.applyLocaleStrings content installs "fr"
     Assert.Equal("", (translated.Items |> Seq.find (fun i -> i.Id = "orchard:fruit")).Name)
     Assert.Equal("Alice", translated.Npcs[0].Name)

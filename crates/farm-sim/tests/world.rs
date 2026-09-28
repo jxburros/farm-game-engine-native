@@ -1,5 +1,5 @@
 //! Port of the movement, pathfinding and NPC cases of
-//! `tests/FarmEngine.Core.Tests/Core/FreeMovementTests.cs`, `M3SystemsTests.cs` and the
+//! the retired C# `FreeMovementTests.cs`, `M3SystemsTests.cs` and the
 //! movement section of `EngineTests.cs`, plus the tile helpers they build on.
 //!
 //! Fixture geometry (`make_project`, the C# `EngineTests.MakeProject`): 6×6 scene, player starts

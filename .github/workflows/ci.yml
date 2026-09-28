@@ -114,7 +114,7 @@ jobs:
       - name: Export a sample game and run it (linux-x64)
         run: |
           dotnet run --project src/FarmEngine.Cli -c Release --no-build -- \
-            export tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --target linux-x64 --out export-smoke
+            export fixtures/projects/project-v8.json --target linux-x64 --out export-smoke
           game=$(find export-smoke/linux-x64 -mindepth 1 -maxdepth 1 -type d | head -n 1)
           name=$(basename "$game")
           ls -l "$game" "$game/licenses"
@@ -179,11 +179,11 @@ jobs:
       - name: Export a sample game and run it (windows-x64)
         shell: pwsh
         run: |
-          dotnet run --project src/FarmEngine.Cli -c Release --no-build -- export tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --target windows-x64 --out export-smoke
+          dotnet run --project src/FarmEngine.Cli -c Release --no-build -- export fixtures/projects/project-v8.json --target windows-x64 --out export-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $game = Get-ChildItem export-smoke/windows-x64 -Directory | Select-Object -First 1
           $exe = Join-Path $game.FullName "$($game.Name).exe"
-          $title = (Get-Content tests/FarmEngine.Core.Tests/Fixtures/project-v8.json -Raw | ConvertFrom-Json).name
+          $title = (Get-Content fixtures/projects/project-v8.json -Raw | ConvertFrom-Json).name
           $info = (Get-Item $exe).VersionInfo
           Write-Host "$($info.ProductName) $($info.ProductVersion) / $($info.FileDescription) / $($info.OriginalFilename)"
           if ($info.ProductName -ne $title -or $info.FileDescription -ne $title) { throw "Version info was not written: '$($info.ProductName)'" }
