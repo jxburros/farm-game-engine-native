@@ -98,8 +98,9 @@ public sealed class WorkspaceTests
         Assert.Equal("Starter Farm", FindByName<TextBlock>(host.Window, "ProjectInfoName").Text);
         var selector = FindByName<ComboBox>(host.Window, "SceneSelector");
         Assert.True(selector.ItemCount >= 1);
-        Assert.NotNull(edit.Canvas.Snapshot);
-        Assert.True(edit.Canvas.Snapshot!.GridOverlay);
+        // The Rust renderer (farm-render through RustPreview) draws the map.
+        Assert.NotNull(edit.Canvas.Geometry);
+        Assert.Null(edit.Canvas.Error);
 
         var description = edit.DescribeTile(0, 0);
         Assert.StartsWith("(0, 0) · Wall", description, StringComparison.Ordinal);
@@ -111,6 +112,29 @@ public sealed class WorkspaceTests
         Avalonia.Headless.HeadlessWindowExtensions.MouseMove(host.Window, point);
         Pump();
         Assert.StartsWith("(2, 3)", edit.HoverText, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public void EditMode_DrawsTheVisibleMapWithTheRustRenderer_AndRedrawsAfterEdits()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
+        Pump();
+        Assert.Null(edit.Canvas.Error);
+        var before = edit.Canvas.RenderCount;
+        Assert.True(before > 0, "the map was rasterized");
+        var world = edit.Canvas.Geometry!.WorldSize;
+        var region = edit.Canvas.RenderedRegion;
+        Assert.True(region.Width > 0 && region.Width <= Math.Ceiling(world.Width), $"{region} within {world}");
+
+        edit.Brush = "water";
+        var point = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(2, 2).Center, host.Window)!.Value;
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Pump();
+        Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
+        Assert.True(edit.Canvas.RenderCount > before, "an edit redraws the map");
     }
 
     [AvaloniaFact]

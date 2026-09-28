@@ -239,9 +239,8 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
   `.desktop`, license notices, reproducible `.zip`/`.tar.gz`. Releases build
   both templates (Linux in Steam Runtime sniper) and ship them in `players/`.
   The exported player is still the headless one until the graphical shell lands.
-- [ ] Ship only used assets: the cartridge's asset table still holds every
-  project asset. Export reports unused ones as warnings; the compiler should
-  leave them out of `presentation.customAssets`.
+- [x] Ship only used assets: the compiler leaves unused custom assets out of
+  the cartridge, and Export lists them as warnings.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).
