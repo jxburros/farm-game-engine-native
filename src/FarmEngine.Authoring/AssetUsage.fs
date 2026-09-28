@@ -1,4 +1,4 @@
-namespace FarmEngine.Export
+namespace FarmEngine.Authoring
 
 open System
 open System.Collections.Generic
@@ -7,7 +7,8 @@ open System.Text.Json.Nodes
 open FarmEngine.Json
 open FarmEngine.Schemas
 
-/// Which custom assets the game uses (docs/EXPORT.md "Only used assets ship").
+/// Which custom assets the game uses (docs/EXPORT.md "Only used assets ship"). The cartridge
+/// compiler leaves the others out, and Export Game lists them as warnings.
 module AssetUsage =
     /// Every string value in a JSON tree.
     let rec private strings (found: HashSet<string>) (node: JsonNode | null) =
@@ -25,7 +26,8 @@ module AssetUsage =
     /// project outside the asset list names its id or its data URL (visual bindings, legacy
     /// custom images, crop art, pack content, the export icon), when it is the tile art for a
     /// tile type the project mentions, or when a used asset's animation frames draw from it.
-    /// The editor's brush selection does not count. A coincidental match only hides a warning.
+    /// The editor's brush selection does not count. A coincidental match only keeps an asset
+    /// (and hides its warning); a used asset is never left out.
     let unused (project: GameProject) : CustomAsset list =
         let node =
             match JsonSerializer.SerializeToNode(project, JsonDefaults.Options) with
@@ -62,3 +64,8 @@ module AssetUsage =
                                 | true, other when not (used.Contains other.Id) -> pending.Enqueue other
                                 | _ -> ()
         project.CustomAssets |> Seq.filter (fun asset -> not (used.Contains asset.Id)) |> List.ofSeq
+
+    /// The assets the game uses, in project order.
+    let used (project: GameProject) : CustomAsset list =
+        let unusedIds = HashSet<string>(unused project |> Seq.map (fun asset -> asset.Id), StringComparer.Ordinal)
+        project.CustomAssets |> Seq.filter (fun asset -> not (unusedIds.Contains asset.Id)) |> List.ofSeq
