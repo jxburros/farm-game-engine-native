@@ -163,6 +163,16 @@ public sealed class ArtEditorView : UserControl
     private CustomAsset? SelectedAsset() => _workspace.Current?.CustomAssets.FirstOrDefault(asset => asset.Id == _selectedAssetId);
     private AnimationClip? SelectedClip() => SelectedAsset()?.Animations?.FirstOrDefault(clip => clip.Name == (_clips.SelectedItem as ComboBoxItem)?.Tag as string);
 
+    /// <summary>The asset being edited, or null.</summary>
+    public string? SelectedAssetId => _selectedAssetId;
+
+    /// <summary>Opens an asset by id (Problems "Go to").</summary>
+    public void SelectAsset(string assetId)
+    {
+        _selectedAssetId = assetId;
+        Refresh();
+    }
+
     public void ImportBytes(string fileName, byte[] bytes)
     {
         if (_workspace.Current is not { } project) return;

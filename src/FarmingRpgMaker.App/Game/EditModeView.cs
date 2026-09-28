@@ -211,6 +211,12 @@ public sealed partial class EditModeView : UserControl
                 mods.SelectPack(packId);
                 return;
             }
+            if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
+            {
+                tabs.SelectedIndex = 5;
+                art.SelectAsset(assetId);
+                return;
+            }
 
             var category = problem.TargetKind switch
             {
@@ -381,6 +387,11 @@ public sealed partial class EditModeView : UserControl
         if (npc is not null)
         {
             parts.Add($"NPC {npc.Name}");
+        }
+
+        foreach (var animal in _workspace.Current?.Animals.Where(a => a.SceneId == scene.Id && Math.Floor(a.X) == x && Math.Floor(a.Y) == y) ?? [])
+        {
+            parts.Add($"animal {animal.Name}");
         }
 
         return string.Join(" · ", parts);
