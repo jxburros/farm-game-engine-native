@@ -7,9 +7,7 @@ use farm_runtime::minigames::{
 use farm_sim::js;
 use farm_sim::schema::MinigameDef;
 use serde_json::Value;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 fn def(kind: &str) -> MinigameDef {
     MinigameDef { id: "x".to_owned(), name: "X".to_owned(), kind: kind.to_owned(), ..MinigameDef::default() }
@@ -56,10 +54,10 @@ fn mount(
     implementation: &Arc<dyn MinigameImpl>,
     config: MinigameConfig,
     random: f64,
-) -> (Box<dyn MinigameSession>, Rc<RefCell<Vec<f64>>>) {
-    let scores = Rc::new(RefCell::new(Vec::new()));
-    let sink = Rc::clone(&scores);
-    let options = MinigameMountOptions::new(config, move |score| sink.borrow_mut().push(score), || {})
+) -> (Box<dyn MinigameSession>, Arc<Mutex<Vec<f64>>>) {
+    let scores = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&scores);
+    let options = MinigameMountOptions::new(config, move |score| sink.lock().unwrap().push(score), || {})
         .with_random(move || random);
     (implementation.mount(options), scores)
 }
@@ -83,7 +81,7 @@ fn timing_bar_scores_one_inside_the_zone_and_falls_off_linearly_outside() {
     assert_close(0.5, session.as_any().downcast_ref::<TimingBarSession>().unwrap().position());
     session.press();
     session.press(); // at most once
-    assert_eq!(*scores.borrow(), [1.0]);
+    assert_eq!(*scores.lock().unwrap(), [1.0]);
     assert!(session.is_done());
 }
 
@@ -99,8 +97,8 @@ fn timing_bar_miss_scores_by_distance_and_sweeps_back() {
     bar.update(1.8); // triangle wave: 1.8 → 0.2
     assert_close(0.2, bar.position());
     bar.stop();
-    assert_eq!(scores.borrow().len(), 1);
-    assert_close(0.7, scores.borrow()[0]);
+    assert_eq!(scores.lock().unwrap().len(), 1);
+    assert_close(0.7, scores.lock().unwrap()[0]);
 }
 
 #[test]
@@ -123,7 +121,7 @@ fn fallback_scores_a_neutral_half_once() {
     assert_eq!(session.button_text(), "Go!");
     session.press();
     session.press();
-    assert_eq!(*scores.borrow(), [0.5]);
+    assert_eq!(*scores.lock().unwrap(), [0.5]);
 }
 
 #[test]
@@ -131,22 +129,22 @@ fn disposed_sessions_never_complete() {
     let (mut session, scores) = mount(&minigames::fallback(), MinigameConfig::new(), 0.5);
     session.dispose();
     session.press();
-    assert!(scores.borrow().is_empty());
+    assert!(scores.lock().unwrap().is_empty());
 }
 
 #[test]
 fn cancel_reports_once_without_a_score() {
-    let cancelled = Rc::new(RefCell::new(0));
-    let scores = Rc::new(RefCell::new(Vec::<f64>::new()));
-    let (cancel_sink, score_sink) = (Rc::clone(&cancelled), Rc::clone(&scores));
+    let cancelled = Arc::new(Mutex::new(0));
+    let scores = Arc::new(Mutex::new(Vec::<f64>::new()));
+    let (cancel_sink, score_sink) = (Arc::clone(&cancelled), Arc::clone(&scores));
     let mut session = minigames::timing_bar().mount(MinigameMountOptions::new(
         MinigameConfig::new(),
-        move |score| score_sink.borrow_mut().push(score),
-        move || *cancel_sink.borrow_mut() += 1,
+        move |score| score_sink.lock().unwrap().push(score),
+        move || *cancel_sink.lock().unwrap() += 1,
     ));
     session.cancel();
     session.cancel();
     session.press();
-    assert_eq!(*cancelled.borrow(), 1);
-    assert!(scores.borrow().is_empty());
+    assert_eq!(*cancelled.lock().unwrap(), 1);
+    assert!(scores.lock().unwrap().is_empty());
 }

@@ -38,6 +38,7 @@ pub mod inventory;
 pub mod js;
 pub mod mines;
 pub mod npcs;
+pub mod overlay;
 pub mod packs;
 pub mod quests;
 pub mod replay;

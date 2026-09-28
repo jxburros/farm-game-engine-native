@@ -5,8 +5,7 @@ use farm_runtime::host::MinigameInput;
 use farm_sim::hooks::HookEvent;
 use farm_sim::schema::{GameProject, MinigameDef, PluginMutation};
 use farm_sim::{hash_state, state, Command, StartState};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 const FRAME: f64 = 1.0 / 60.0;
 
@@ -23,6 +22,15 @@ fn session_for(project: &GameProject) -> PlaySession {
 
 fn frames(session: &mut PlaySession, count: usize) -> Vec<FrameToggles> {
     (0..count).map(|_| session.update(FRAME, false)).collect()
+}
+
+#[test]
+fn sessions_can_move_between_threads() {
+    fn assert_send<T: Send>() {}
+    assert_send::<PlaySession>();
+    let session = session_for(&starter());
+    let hash = std::thread::spawn(move || hash_state(session.state())).join().unwrap();
+    assert_eq!(hash, hash_state(session_for(&starter()).state()));
 }
 
 #[test]
@@ -126,14 +134,14 @@ fn escape_cancels_a_minigame() {
 /// Records what it saw and answers every `onDayStart` with a gift of money.
 #[derive(Default)]
 struct FakePlugins {
-    seen: Rc<RefCell<Vec<String>>>,
+    seen: Arc<Mutex<Vec<String>>>,
     queued: Vec<Command>,
 }
 
 impl SessionPlugins for FakePlugins {
     fn dispatch(&mut self, events: &[HookEvent]) {
         for event in events {
-            self.seen.borrow_mut().push(event.hook().to_owned());
+            self.seen.lock().unwrap().push(event.hook().to_owned());
             if event.hook() == "onDayStart" {
                 self.queued.push(Command::PluginMutation {
                     plugin_id: "pack:gift".into(),
@@ -154,14 +162,14 @@ impl SessionPlugins for FakePlugins {
 #[test]
 fn plugin_mutations_enter_the_command_log_at_the_next_frame() {
     let mut session = session_for(&starter());
-    let seen = Rc::new(RefCell::new(Vec::new()));
+    let seen = Arc::new(Mutex::new(Vec::new()));
     session.set_plugins(Some(Box::new(FakePlugins { seen: seen.clone(), queued: Vec::new() })));
     let money = session.state().player.money;
     session.run_command(&Command::Sleep);
-    assert!(seen.borrow().iter().any(|hook| hook == "onDayStart"), "{:?}", seen.borrow());
+    assert!(seen.lock().unwrap().iter().any(|hook| hook == "onDayStart"), "{:?}", seen.lock().unwrap());
     // Engine hooks come first, then one onEffect per effect.
-    let first_effect = seen.borrow().iter().position(|hook| hook == "onEffect").unwrap();
-    assert!(seen.borrow()[..first_effect].iter().all(|hook| hook != "onEffect"));
+    let first_effect = seen.lock().unwrap().iter().position(|hook| hook == "onEffect").unwrap();
+    assert!(seen.lock().unwrap()[..first_effect].iter().all(|hook| hook != "onEffect"));
     assert_eq!(session.state().player.money, money, "not applied mid-step");
     session.update(0.0, false);
     assert_eq!(session.state().player.money, money + 25.0);

@@ -216,8 +216,9 @@ impl HookEvent {
 
 /// The synchronous `onWeatherRoll` listener (hooks.ts: a listener may return `{ weatherId }` to
 /// override the roll). The plugin host answers for every subscribed plugin, in subscription
-/// order; the caller keeps the last override naming a known weather type.
-pub trait WeatherRollListener {
+/// order; the caller keeps the last override naming a known weather type. `Send`, so a running
+/// game can move between threads (an editor steps it off its UI thread).
+pub trait WeatherRollListener: Send {
     /// Override weather ids, one per responding listener, in subscription order.
     fn on_weather_roll(&mut self, payload: &WeatherRollHookPayload) -> Vec<String>;
 }

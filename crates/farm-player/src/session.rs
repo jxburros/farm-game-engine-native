@@ -86,8 +86,9 @@ impl FrameToggles {
     }
 }
 
-/// The plugin sandbox as the session sees it (implemented over `farm-plugins`).
-pub trait SessionPlugins {
+/// The plugin sandbox as the session sees it (implemented over `farm-plugins`). `Send`, so a
+/// session can run on a background thread (the editor steps frames off its UI thread).
+pub trait SessionPlugins: Send {
     /// The hook events of one engine step, in order.
     fn dispatch(&mut self, events: &[HookEvent]);
     /// Plugin mutations to run now, as `pluginMutation` commands, in arrival order.
@@ -133,7 +134,7 @@ struct MountedMinigame {
     reported: bool,
 }
 
-/// One running game. Single-threaded; the host owns it.
+/// One running game. `Send` but not shared: one thread at a time drives it.
 pub struct PlaySession {
     ctx: EngineContext,
     state: GameState,
@@ -150,7 +151,12 @@ pub struct PlaySession {
     reduced_motion: bool,
     /// Cosmetic randomness for minigames (never the simulation RNG).
     cosmetic: u64,
+    /// The last commands run, as JSON with their tick (crash reports).
+    recent: std::collections::VecDeque<String>,
 }
+
+/// Commands kept for crash reports.
+pub const RECENT_COMMANDS: usize = 64;
 
 impl std::fmt::Debug for PlaySession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -163,14 +169,16 @@ impl std::fmt::Debug for PlaySession {
 }
 
 impl PlaySession {
-    /// A session over `content` starting at `state` (a new game or a loaded save).
+    /// A session over `content` starting at `state` (a new game or a loaded save). A save written
+    /// mid-walk carries a held intent; the first frame releases it (no key is held yet).
     pub fn new(content: GameContent, state: GameState) -> Self {
+        let held = MoveVector::new(state.player.move_intent.dx, state.player.move_intent.dy);
         Self {
             ctx: EngineContext::with_hooks(content, HookBus::new()),
             state,
             timestep: FixedTimestep::new(),
             input: InputManager::new(),
-            last_intent: MoveVector::default(),
+            last_intent: held,
             prev_player: None,
             pops: Vec::new(),
             elapsed_ms: 0.0,
@@ -180,6 +188,7 @@ impl PlaySession {
             plugins: None,
             reduced_motion: false,
             cosmetic: 0x9E37_79B9_7F4A_7C15,
+            recent: std::collections::VecDeque::new(),
         }
     }
 
@@ -252,6 +261,12 @@ impl PlaySession {
         self.input.key_up(key);
     }
 
+    /// The last commands run (oldest first), with the tick they ran at: what a crash report
+    /// needs to replay the moments before a crash from the last save.
+    pub fn recent_commands(&self) -> Vec<String> {
+        self.recent.iter().cloned().collect()
+    }
+
     /// Wall-clock time fed in so far, in ms (drives pops).
     pub fn elapsed_ms(&self) -> f64 {
         self.elapsed_ms
@@ -291,6 +306,11 @@ impl PlaySession {
 
     /// Run one command from the UI and react to its effects.
     pub fn run_command(&mut self, command: &Command) {
+        if self.recent.len() >= RECENT_COMMANDS {
+            self.recent.pop_front();
+        }
+        let json = serde_json::to_string(command).unwrap_or_default();
+        self.recent.push_back(format!("tick {}: {json}", farm_sim::js::num(self.state.clock.tick)));
         let effects = engine::apply_command(&self.ctx, &mut self.state, command);
         self.after_step(effects);
     }
