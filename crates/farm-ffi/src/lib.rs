@@ -12,6 +12,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod player;
 pub mod render;
 pub mod session;
 pub mod view_json;

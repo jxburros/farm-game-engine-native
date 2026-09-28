@@ -580,9 +580,11 @@ name = "farm-ffi"
 version = "0.2.0"
 dependencies = [
  "farm-cart",
+ "farm-player",
  "farm-render",
  "farm-runtime",
  "farm-sim",
+ "farm-ui",
  "serde",
  "serde_json",
 ]
