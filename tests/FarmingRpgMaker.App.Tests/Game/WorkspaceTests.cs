@@ -4,7 +4,6 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
-using FarmEngine.Core;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -15,10 +14,11 @@ namespace FarmingRpgMaker.App.Tests.Game;
 public sealed class WorkspaceTests
 {
     [Fact]
-    public void DesktopAppDoesNotReferenceTheLegacyContentAssembly()
+    public void DesktopAppDoesNotReferenceTheLegacyCSharpEngine()
     {
-        Assert.DoesNotContain(typeof(ProjectWorkspace).Assembly.GetReferencedAssemblies(),
-            assembly => assembly.Name == "FarmEngine.Content");
+        string[] legacy = ["FarmEngine.Core", "FarmEngine.Runtime", "FarmEngine.Rendering", "FarmEngine.Content"];
+        Assert.DoesNotContain(typeof(ProjectWorkspace).Assembly.GetReferencedAssemblies(), assembly => legacy.Contains(assembly.Name));
+        Assert.DoesNotContain(typeof(FarmEngine.Interop.RustPlayer).Assembly.GetReferencedAssemblies(), assembly => legacy.Contains(assembly.Name));
     }
 
     [AvaloniaFact]
@@ -39,6 +39,8 @@ public sealed class WorkspaceTests
         Assert.Single(host.Workspace.Store.List());
     }
 
+    private static double Day(GameTestHost host) => host.Play.Use(player => player.State())["clock"]!["day"]!.GetValue<double>();
+
     [AvaloniaFact]
     public void Playtest_ExitWithoutKeep_RestoresTheSnapshot()
     {
@@ -46,8 +48,8 @@ public sealed class WorkspaceTests
         var before = ProjectStore.ToJson(host.Workspace.Current!);
 
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
-        host.Play.Session.DebugMutate((s, _) => s with { Player = s.Player with { Money = 999 } });
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
+        host.Play.Use(player => player.Debug(new { type = "addMoney", amount = 899 }));
         host.ViewModel.Mode = EditorMode.Edit;
         Pump();
 
@@ -62,7 +64,7 @@ public sealed class WorkspaceTests
     {
         using var host = new GameTestHost();
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
         Click(host.Window, FindByName<Avalonia.Controls.Primitives.ToggleButton>(host.Window, "KeepChangesButton"));
         Assert.True(host.Play.KeepChanges);
         host.ViewModel.Mode = EditorMode.Edit;
@@ -79,12 +81,13 @@ public sealed class WorkspaceTests
     {
         using var host = new GameTestHost();
         host.EnterPlay();
-        host.Play.Session.RunCommand(new SleepCommand());
-        Assert.Equal(2, host.Play.Session.State.Clock.Day);
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
+        Assert.Equal(2, Day(host));
 
         Click(host.Window, FindByName<Button>(host.Window, "RestartButton"));
 
-        Assert.Equal(1, host.Play.Session.State.Clock.Day);
+        Assert.Equal(1, Day(host));
+        Assert.True(host.Play.Surface.FrameCount > 0);
         Assert.Contains("Playtest restarted", host.Play.Toasts.History.Select(t => t.Text));
     }
 

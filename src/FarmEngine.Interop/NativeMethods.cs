@@ -67,11 +67,6 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "fe_session_project_json")]
     public static partial FeResult fe_session_project_json(FeSession* session, FeBytes* output);
 
-    [LibraryImport(Library, EntryPoint = "fe_session_overlay_json")]
-    public static partial FeResult fe_session_overlay_json(FeSession* session, FeBytes* output);
-
-    [LibraryImport(Library, EntryPoint = "fe_session_runtime_json")]
-    public static partial FeResult fe_session_runtime_json(FeSession* session, byte* request, nuint len, FeBytes* output);
 
     [LibraryImport(Library, EntryPoint = "fe_session_skip_day")]
     public static partial FeResult fe_session_skip_day(FeSession* session, FeBytes* output);
@@ -81,9 +76,6 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fe_session_set_state")]
     public static partial FeResult fe_session_set_state(FeSession* session, byte* stateJson, nuint len, FeBytes* output);
-
-    [LibraryImport(Library, EntryPoint = "fe_session_state_changes")]
-    public static partial FeResult fe_session_state_changes(FeSession* session, [MarshalAs(UnmanagedType.U1)] bool full, FeBytes* output);
 
     [LibraryImport(Library, EntryPoint = "fe_session_save")]
     public static partial FeResult fe_session_save(FeSession* session, FeBytes* output);
@@ -118,4 +110,38 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fe_preview_free")]
     public static partial void fe_preview_free(FePreview* preview);
+
+    // ---- crates/farm-ffi/src/player.rs ------------------------------------------------------
+
+    /// <summary>Opaque embedded player handle (<c>FePlayer*</c>).</summary>
+    public struct FePlayer
+    {
+    }
+
+    [LibraryImport(Library, EntryPoint = "fe_player_new")]
+    public static partial FeResult fe_player_new(byte* game, nuint len, byte* options, nuint optionsLen, FePlayer** output, FeBytes* error);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_frame")]
+    public static partial FeResult fe_player_frame(FePlayer* player, byte* request, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_debug")]
+    public static partial FeResult fe_player_debug(FePlayer* player, byte* action, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_commands")]
+    public static partial FeResult fe_player_commands(FePlayer* player, byte* commands, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_state_json")]
+    public static partial FeResult fe_player_state_json(FePlayer* player, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_hash")]
+    public static partial FeResult fe_player_hash(FePlayer* player, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_synced_project")]
+    public static partial FeResult fe_player_synced_project(FePlayer* player, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_query_json")]
+    public static partial FeResult fe_player_query_json(FePlayer* player, byte* query, nuint len, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_player_free")]
+    public static partial void fe_player_free(FePlayer* player);
 }

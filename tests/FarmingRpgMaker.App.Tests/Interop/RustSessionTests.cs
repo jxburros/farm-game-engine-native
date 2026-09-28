@@ -1,8 +1,6 @@
 using System.Text.Json;
 using FarmEngine.Authoring;
 using FarmEngine.Cart;
-using FarmEngine.Content;
-using FarmEngine.Core;
 using FarmEngine.Interop;
 using FarmEngine.Json;
 using FarmEngine.Schemas;
@@ -11,27 +9,29 @@ using Google.FlatBuffers;
 namespace FarmingRpgMaker.App.Tests.Interop;
 
 /// <summary>
-/// The Rust engine and the C# engine must agree. These run when the Rust library was built
-/// (see <see cref="FarmFfiTests.LibraryLoadsWhenTheBuildProducedIt"/>).
+/// The headless Rust session (<c>fe_session_*</c>) and the F# cartridge compiler. The Rust tests
+/// check the engine against the TypeScript goldens; these check the .NET side of the boundary.
+/// They run when the Rust library was built (see <see cref="FarmFfiTests.LibraryLoadsWhenTheBuildProducedIt"/>).
 /// </summary>
 public sealed class RustSessionTests
 {
-    private static GameProject Starter() => DefaultContent.CreateInitialProject(0);
+    private static GameProject Starter() => ProjectCatalog.CreateInitialProject(0);
 
     [Fact]
-    public void CreatedStateHashesLikeTheCSharpEngine()
+    public void CreatedStateHashesLikeTheTypeScriptGolden()
     {
         if (!FarmFfi.IsAvailable)
         {
             return;
         }
 
-        var project = Starter();
-        using var session = RustSession.Create(project, "parity");
-        var expected = Hash.HashState(EngineState.CreateGameState(project, "parity"));
-        Assert.Equal(expected, session.StateHash());
-        Assert.Equal(Hash.StableStringify(EngineState.CreateGameState(project, "parity")), session.StateJson());
-        Assert.Equal(expected, Hash.HashState(session.State()));
+        // The content golden records hashState(createGameState(project, "content:starter-farm")).
+        using var golden = JsonDocument.Parse(File.ReadAllText(RepoFile("fixtures", "golden", "content", "starter-farm.json")));
+        var project = JsonDefaults.Deserialize<GameProject>(golden.RootElement.GetProperty("project").GetRawText())!;
+        using var session = RustSession.Create(project, "content:starter-farm");
+        Assert.Equal(golden.RootElement.GetProperty("stateHash").GetString(), session.StateHash());
+        Assert.Equal(FarmFfi.HashText(session.StateJson()), session.StateHash());
+        Assert.Equal(project.Player.SceneId, (string?)session.State()["player"]!["sceneId"]);
     }
 
     [Fact]
@@ -60,27 +60,13 @@ public sealed class RustSessionTests
         using var saved = JsonDocument.Parse(fromCart.Save());
         Assert.Equal("local.test-farm", saved.RootElement.GetProperty("header").GetProperty("gameId").GetString());
         Assert.Equal("3.1.0", saved.RootElement.GetProperty("header").GetProperty("gameVersion").GetString());
-        fromCart.Apply(new SleepCommand());
-        fromProject.Apply(new SleepCommand());
+        Assert.NotEmpty(fromCart.Apply("""[{"type":"sleep"}]"""));
+        fromProject.Apply(new { type = "sleep" });
         Assert.Equal(fromProject.StateHash(), fromCart.StateHash());
         // A cartridge carries no editor project, so there is nothing to write play state back to.
         Assert.Throws<FarmFfiException>(() => fromCart.SyncedProject());
+        Assert.Equal(2, fromProject.SyncedProject().CurrentDay);
         Assert.Throws<FarmFfiException>(() => RustSession.CreateCartridge([0, 0, 0, 0, (byte)'F', (byte)'G', (byte)'C', (byte)'T']));
-    }
-
-    [Fact]
-    public void AutoStartedQuestsMatchTheCSharpEngine()
-    {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
-        var project = Starter();
-        var ctx = new EngineContext(EngineState.CreateContentFromProject(project));
-        var expected = Quests.AutoStartQuests(ctx, EngineState.CreateGameState(project, "parity"));
-        using var session = RustSession.Create(project, "parity", autoStartQuests: true);
-        Assert.Equal(Hash.HashState(expected), session.StateHash());
     }
 
     [Theory]
@@ -88,25 +74,31 @@ public sealed class RustSessionTests
     [InlineData(ProjectTemplates.Blank)]
     [InlineData(ProjectTemplates.Cozy)]
     [InlineData(ProjectTemplates.Quest)]
-    public void FSharpCartridgeContentAndRustPlayMatchEveryTemplate(string template)
+    public void CartridgesPlayLikeTheirProjectsForEveryTemplate(string template)
     {
         var project = ProjectCatalog.CreateProjectForTemplate(template, 0);
         var bytes = CartridgeCompiler.Compile(project);
         var cart = Cartridge.GetRootAsCartridge(new ByteBuffer(bytes));
         var content = JsonSerializer.Deserialize<GameContent>(cart.GetContentJsonArray(), JsonDefaults.Options)!;
-        Assert.Equal(Hash.StableStringify(EngineState.CreateContentFromProject(project)), Hash.StableStringify(content));
-        Assert.Equal(Hash.StableStringify(ProjectContent.Compile(project)), Hash.StableStringify(content));
+        Assert.Equal(StableJson.Stringify(ProjectContent.Compile(project)), StableJson.Stringify(content));
         Assert.Equal(bytes, CartridgeCompiler.Compile(project));
         if (!FarmFfi.IsAvailable) return;
 
         using var compiled = RustSession.CreateCartridge(bytes, "compiled-template");
         using var reference = RustSession.Create(project, "compiled-template");
         Assert.Equal(reference.StateHash(), compiled.StateHash());
-        Command[] commands = [new MoveCommand("down"), new UseToolCommand("hoe"), new InteractCommand(), new CloseDialogueCommand(), new SleepCommand()];
+        string[] commands =
+        [
+            """{"type":"move","dir":"down"}""",
+            """{"type":"useTool","tool":"hoe"}""",
+            """{"type":"interact"}""",
+            """{"type":"closeDialogue"}""",
+            """{"type":"sleep"}""",
+        ];
         foreach (var command in commands)
         {
-            reference.Apply(command);
-            compiled.Apply(command);
+            reference.Apply($"[{command}]");
+            compiled.Apply($"[{command}]");
             reference.Tick(30);
             compiled.Tick(30);
             Assert.Equal(reference.StateHash(), compiled.StateHash());
@@ -125,7 +117,7 @@ public sealed class RustSessionTests
         using var session = RustSession.Create(project, "save");
         var before = session.StateHash();
         var save = session.Save();
-        session.Apply(new SleepCommand());
+        session.Apply(new { type = "sleep" });
         Assert.NotEqual(before, session.StateHash());
 
         var report = session.LoadSave(save);
@@ -139,6 +131,14 @@ public sealed class RustSessionTests
         var ex = Assert.Throws<FarmFfiException>(() => session.LoadSave(other.Save()));
         Assert.Contains("different game", ex.Message, StringComparison.Ordinal);
         Assert.Equal(before, session.StateHash());
+
+        // Creator tools replace the state as it is.
+        var state = session.State();
+        state["player"]!["money"] = 4321;
+        session.SetState(state.ToJsonString());
+        Assert.Equal(4321, (double)session.State()["player"]!["money"]!);
+        Assert.Throws<FarmFfiException>(() => session.SetState("""{"player": 5}"""));
+        Assert.Equal(4321, (double)session.State()["player"]!["money"]!);
     }
 
     [Fact]
@@ -149,49 +149,59 @@ public sealed class RustSessionTests
             return;
         }
 
-        // A project whose scenes are not a list cannot be a GameProject on either side.
+        // A project whose scenes are not a list cannot be a GameProject.
         var broken = JsonDocument.Parse("""{"scenes": 5}""").RootElement;
         var ex = Assert.Throws<FarmFfiException>(() => RustSession.Create(JsonSerializer.Deserialize<GameProject>("{}", JsonDefaults.Options)! with { Extra = new Dictionary<string, JsonElement> { ["scenes"] = broken.GetProperty("scenes") } }));
         Assert.Contains("fe_session_new failed", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Differential test (docs/LANGUAGES.md, phase 2): the same seeded random command stream
-    /// through both engines, hashes compared after every step.
-    /// </summary>
+    /// <summary>A seeded random command stream replays to the same hash (the session is deterministic).</summary>
     [Fact]
-    public void RandomCommandStreamsHashIdentically()
+    public void RandomCommandStreamsReplayIdentically()
     {
         if (!FarmFfi.IsAvailable)
         {
             return;
         }
 
-        var project = Starter();
-        var ctx = new EngineContext(EngineState.CreateContentFromProject(project));
-        var state = Quests.AutoStartQuests(ctx, EngineState.CreateGameState(project, "fuzz"));
-        using var session = RustSession.Create(project, "fuzz", autoStartQuests: true);
-        var random = new Random(12345);
-        string[] dirs = ["up", "down", "left", "right"];
-        string[] tools = ["hoe", "watering-can", "axe", "pickaxe", "scythe"];
-        for (var step = 0; step < 400; step++)
+        string Run()
         {
-            Command command = random.Next(8) switch
+            using var session = RustSession.Create(Starter(), "fuzz", autoStartQuests: true);
+            var random = new Random(12345);
+            string[] dirs = ["up", "down", "left", "right"];
+            string[] tools = ["hoe", "watering-can", "axe", "pickaxe", "scythe"];
+            for (var step = 0; step < 200; step++)
             {
-                0 => new SetMoveIntentCommand(random.Next(-1, 2), random.Next(-1, 2)),
-                1 => new MoveCommand(dirs[random.Next(dirs.Length)]),
-                2 => new UseToolCommand(tools[random.Next(tools.Length)]),
-                3 => new InteractCommand(),
-                4 => new SleepCommand(),
-                5 => new ChooseDialogueOptionCommand(random.Next(3)),
-                _ => new CloseDialogueCommand(),
-            };
-            var ticks = random.Next(0, 40);
-            state = Engine.ApplyCommand(ctx, state, command).State;
-            state = Engine.AdvanceTick(ctx, state, ticks).State;
-            session.Apply(command);
-            session.Tick((uint)ticks);
-            Assert.True(Hash.HashState(state) == session.StateHash(), $"diverged at step {step} after {command.Type}");
+                object command = random.Next(8) switch
+                {
+                    0 => new { type = "setMoveIntent", dx = random.Next(-1, 2), dy = random.Next(-1, 2) },
+                    1 => new { type = "move", dir = dirs[random.Next(dirs.Length)] },
+                    2 => new { type = "useTool", tool = tools[random.Next(tools.Length)] },
+                    3 => new { type = "interact" },
+                    4 => new { type = "sleep" },
+                    5 => new { type = "chooseDialogueOption", index = random.Next(3) },
+                    _ => new { type = "closeDialogue" },
+                };
+                session.Apply(command);
+                session.Tick((uint)random.Next(0, 40));
+            }
+
+            return session.StateHash();
         }
+
+        Assert.Equal(Run(), Run());
+    }
+
+    internal static string RepoFile(params string[] parts)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "FarmingRpgMaker.sln")))
+            {
+                return Path.Combine([dir.FullName, .. parts]);
+            }
+        }
+
+        throw new InvalidOperationException("Repository root not found.");
     }
 }

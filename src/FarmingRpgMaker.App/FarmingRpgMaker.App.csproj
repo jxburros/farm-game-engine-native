@@ -28,9 +28,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FarmingRpgMaker.Updates/FarmingRpgMaker.Updates.csproj" />
-    <ProjectReference Include="../FarmEngine.Core/FarmEngine.Core.csproj" />
-    <ProjectReference Include="../FarmEngine.Runtime/FarmEngine.Runtime.csproj" />
-    <ProjectReference Include="../FarmEngine.Rendering/FarmEngine.Rendering.csproj" />
     <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
     <ProjectReference Include="../FarmEngine.Export/FarmEngine.Export.fsproj" />

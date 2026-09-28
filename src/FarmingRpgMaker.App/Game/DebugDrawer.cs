@@ -1,67 +1,69 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
-using FarmEngine.Core;
-using FarmEngine.Json;
-using FarmEngine.Schemas;
+using FarmEngine.Interop;
 
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>
-/// Playtest debug drawer (web DebugDrawer, M3): money, energy, skip day, +1 hour, season,
-/// items, teleport, flags. These mutations bypass the command pipeline ON PURPOSE (creator
-/// tooling, not gameplay) through <see cref="PlaySession.DebugMutate"/>.
+/// Playtest debug drawer: money, energy, skip day, +1 hour, season, items, teleport, flags.
+/// These bypass the command log ON PURPOSE (creator tooling, not gameplay) through
+/// <see cref="RustPlayer.Debug"/>.
 /// </summary>
 internal static class DebugDrawer
 {
-    public static Control Build(PlaySession session, Action<ToastMessage> toast, Action onClose)
+    public static Control Build(PlayModeView view, PlayerSummary summary, Action onClose)
     {
-        void Mutate(Func<GameState, EngineContext, GameState> transform, string message)
+        void Act(object action, string message)
         {
-            session.DebugMutate(transform);
-            toast(new ToastMessage(message, ToastKind.Success));
+            try
+            {
+                view.Use(player => player.Debug(action));
+                view.ShowToast(new ToastMessage(message, ToastKind.Success));
+            }
+            catch (FarmFfiException ex)
+            {
+                view.ShowToast(new ToastMessage(ex.Message, ToastKind.Error));
+            }
+
+            view.RebuildDebug();
         }
 
         var stack = new StackPanel { Spacing = 10 };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(Ui.Text("Playtest Debug", "h2"));
         var close = Ui.Button(Ui.Icon("IconClose", 12), onClose, "subtle");
+        close.Name = "DebugCloseButton";
         close.Padding = new Thickness(6);
         Grid.SetColumn(close, 1);
         header.Children.Add(close);
         stack.Children.Add(header);
 
         var quick = new UniformGrid { Columns = 2 };
-        void Quick(string label, Func<GameState, EngineContext, GameState> transform, string message)
+        void Quick(string name, string label, object action, string message)
         {
-            var button = Ui.Button(label, () => Mutate(transform, message), "tool");
+            var button = Ui.Button(label, () => Act(action, message), "tool");
+            button.Name = name;
             button.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.Margin = new Thickness(0, 0, 4, 4);
             quick.Children.Add(button);
         }
 
-        Quick("+$500", (s, _) => s with { Player = s.Player with { Money = s.Player.Money + 500 } }, "+$500");
-        Quick("Full energy", (s, _) => s with { Player = s.Player with { Energy = s.Player.MaxEnergy } }, "Energy restored");
-        var skipDay = Ui.Button("Skip day", () =>
-        {
-            session.DebugSkipDay();
-            toast(new ToastMessage("Advanced one day", ToastKind.Success));
-        }, "tool");
-        skipDay.HorizontalAlignment = HorizontalAlignment.Stretch;
-        skipDay.Margin = new Thickness(0, 0, 4, 4);
-        quick.Children.Add(skipDay);
-        Quick("+1 hour", (s, _) => s with { Clock = s.Clock with { TimeMinutes = s.Clock.TimeMinutes + 60 } }, "+1 hour");
+        Quick("DebugAddMoney", "+$500", new { type = "addMoney", amount = 500 }, "+$500");
+        Quick("DebugFullEnergy", "Full energy", new { type = "fullEnergy" }, "Energy restored");
+        Quick("DebugSkipDay", "Skip day", new { type = "skipDay" }, "Advanced one day");
+        Quick("DebugAddHour", "+1 hour", new { type = "addMinutes", minutes = 60 }, "+1 hour");
         stack.Children.Add(quick);
 
         stack.Children.Add(Ui.Text("SEASON", "section"));
-        var seasons = new WrapPanel();
-        foreach (var season in session.CalendarView().Seasons)
+        var seasons = new WrapPanel { Name = "DebugSeasons" };
+        foreach (var season in summary.Seasons)
         {
-            var id = season.Id;
-            var button = Ui.Button(season.Name.Length > 3 ? season.Name[..3] : season.Name, () => Mutate((s, _) => s with { Clock = s.Clock with { Season = id } }, $"Season: {season.Name}"), "tool", "small");
+            var button = Ui.Button(season.Name.Length > 3 ? season.Name[..3] : season.Name, () => Act(new { type = "setSeason", season = season.Id }, $"Season: {season.Name}"), "tool", "small");
             button.Margin = new Thickness(0, 0, 4, 4);
-            if (session.State.Clock.Season == id)
+            if (summary.Season == season.Id)
             {
                 button.Classes.Add("accent");
             }
@@ -73,35 +75,26 @@ internal static class DebugDrawer
 
         stack.Children.Add(Ui.Text("GIVE 5 OF FIRST SEED / MATERIAL", "section"));
         var give = new UniformGrid { Columns = 2 };
-        void Give(string label, string type, string message)
+        void Give(string name, string label, string type, string message)
         {
-            var button = Ui.Button(label, () => Mutate((s, ctx) => GiveFirst(s, ctx, type), message), "tool");
+            var button = Ui.Button(label, () => Act(new { type = "giveFirst", itemType = type }, message), "tool");
+            button.Name = name;
             button.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.Margin = new Thickness(0, 0, 4, 0);
             give.Children.Add(button);
         }
 
-        Give("Seeds ×5", "seed", "Seeds granted");
-        Give("Materials ×5", "material", "Materials granted");
+        Give("DebugGiveSeeds", "Seeds ×5", "seed", "Seeds granted");
+        Give("DebugGiveMaterials", "Materials ×5", "material", "Materials granted");
         stack.Children.Add(give);
 
         stack.Children.Add(Ui.Text("TELEPORT", "section"));
-        var scenes = new WrapPanel();
-        foreach (var scene in session.State.World.Scenes)
+        var scenes = new WrapPanel { Name = "DebugScenes" };
+        foreach (var scene in summary.Scenes)
         {
-            var target = scene;
-            var button = Ui.Button(scene.Name, () => Mutate((s, _) => s with
-            {
-                Player = s.Player with
-                {
-                    SceneId = target.Id,
-                    // Free movement: land on the center tile's center.
-                    X = Math.Floor(target.Width / 2) + 0.5,
-                    Y = Math.Floor(target.Height / 2) + 0.5,
-                },
-            }, $"Teleported to {target.Name}"), "tool", "small");
+            var button = Ui.Button(scene.Name, () => Act(new { type = "teleport", sceneId = scene.Id }, $"Teleported to {scene.Name}"), "tool", "small");
             button.Margin = new Thickness(0, 0, 4, 4);
-            if (session.State.Player.SceneId == scene.Id)
+            if (summary.SceneId == scene.Id)
             {
                 button.Classes.Add("accent");
             }
@@ -112,7 +105,7 @@ internal static class DebugDrawer
         stack.Children.Add(scenes);
 
         stack.Children.Add(Ui.Text("SET FLAG", "section"));
-        var flagBox = new TextBox { Watermark = "flag-name", MinWidth = 150, FontSize = 12.5 };
+        var flagBox = new TextBox { Name = "DebugFlagName", Watermark = "flag-name", MinWidth = 150, FontSize = 12.5 };
         var set = Ui.Button("Set", () =>
         {
             var flag = flagBox.Text?.Trim();
@@ -121,9 +114,9 @@ internal static class DebugDrawer
                 return;
             }
 
-            Mutate((s, _) => s with { Flags = new OrderedDictionary<string, System.Text.Json.JsonElement>(s.Flags) { [flag] = Js.Value(true) } }, $"Flag \"{flag}\" set");
-            flagBox.Text = "";
+            Act(new { type = "setFlag", flag }, $"Flag \"{flag}\" set");
         }, "accent", "small");
+        set.Name = "DebugSetFlag";
         var flagRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         flagRow.Children.Add(flagBox);
         set.Margin = new Thickness(6, 0, 0, 0);
@@ -131,10 +124,11 @@ internal static class DebugDrawer
         flagRow.Children.Add(set);
         stack.Children.Add(flagRow);
 
-        var state = session.State;
-        stack.Children.Add(Ui.Wrapped(
-            $"Tick {Js.Num(state.Clock.Tick)} · {state.Player.SceneId} ({state.Player.X:0.00}, {state.Player.Y:0.00}) · seed {state.Meta.EngineSeed}",
-            "muted", "small"));
+        var status = Ui.Wrapped(
+            string.Create(CultureInfo.InvariantCulture, $"Day {summary.Day:0} · {summary.TimeText} · tick {summary.Tick:0} · {summary.SceneId} ({summary.X:0.00}, {summary.Y:0.00}) · ${summary.Money:0} · seed {summary.Seed}"),
+            "muted", "small");
+        status.Name = "DebugStatus";
+        stack.Children.Add(status);
 
         return new Border
         {
@@ -145,20 +139,5 @@ internal static class DebugDrawer
             VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(12),
         }.WithClasses("debug");
-    }
-
-    private static GameState GiveFirst(GameState state, EngineContext ctx, string type)
-    {
-        var item = ctx.Content.Items.FirstOrDefault(i => i.Type == type);
-        if (item is null)
-        {
-            return state;
-        }
-
-        var hasSlot = state.Player.Inventory.Any(s => s.Item.Id == item.Id);
-        var inventory = hasSlot
-            ? state.Player.Inventory.Select(s => s.Item.Id == item.Id ? s with { Quantity = s.Quantity + 5 } : s).ToList()
-            : [.. state.Player.Inventory, new InventorySlot { Item = item, Quantity = 5 }];
-        return state with { Player = state.Player with { Inventory = inventory } };
     }
 }

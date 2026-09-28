@@ -17,10 +17,10 @@ public sealed class GameScreenshotTests
     private static readonly string? OutputDir = Environment.GetEnvironmentVariable("FRM_SCREENSHOT_DIR");
 
     /// <summary>Holds a movement key until the player passes <paramref name="until"/> (max 3 s).</summary>
-    private static void Walk(GameTestHost host, PhysicalKey key, Func<PlaySession, bool> until)
+    private static void Walk(GameTestHost host, PhysicalKey key, Func<Snapshot, bool> until)
     {
         host.Window.KeyPressQwerty(key, RawInputModifiers.None);
-        for (var i = 0; i < 180 && !until(host.Play.Session); i++)
+        for (var i = 0; i < 180 && !until(Snapshot.Of(host)); i++)
         {
             host.Play.AdvanceFrame(1.0 / 60);
         }
@@ -41,19 +41,19 @@ public sealed class GameScreenshotTests
     private static void WorkTile(GameTestHost host, int x, params PhysicalKey[] keys)
     {
         // Back onto the path row below the field first (sleeping moves the player home).
-        if (host.Play.Session.State.Player.Y > 9.55)
+        if (Snapshot.Of(host).Player.Y > 9.55)
         {
-            Walk(host, PhysicalKey.W, s => s.State.Player.Y <= 9.55);
+            Walk(host, PhysicalKey.W, s => s.Player.Y <= 9.55);
         }
 
         var target = x + 0.5;
-        if (host.Play.Session.State.Player.X > target)
+        if (Snapshot.Of(host).Player.X > target)
         {
-            Walk(host, PhysicalKey.A, s => s.State.Player.X <= target + 0.05);
+            Walk(host, PhysicalKey.A, s => s.Player.X <= target + 0.05);
         }
         else
         {
-            Walk(host, PhysicalKey.D, s => s.State.Player.X >= target - 0.05);
+            Walk(host, PhysicalKey.D, s => s.Player.X >= target - 0.05);
         }
 
         Tap(host, PhysicalKey.W); // face the field (row 8)
@@ -62,7 +62,7 @@ public sealed class GameScreenshotTests
             Tap(host, key);
         }
 
-        Walk(host, PhysicalKey.S, s => s.State.Player.Y >= 9.45);
+        Walk(host, PhysicalKey.S, s => s.Player.Y >= 9.45);
     }
 
     [AvaloniaFact]
@@ -88,11 +88,11 @@ public sealed class GameScreenshotTests
         }
 
         WorkTile(host, 11, PhysicalKey.E, PhysicalKey.Q);
-        Walk(host, PhysicalKey.D, s => s.State.Player.X >= 12.3);
+        Walk(host, PhysicalKey.D, s => s.Player.X >= 12.3);
         host.Frames(20);
 
-        var field = host.Play.Session.State.World.Scenes[0].Tiles[8];
-        Assert.True(field.Count(t => t.Crop is not null) >= 5, "the row should be planted");
+        var field = Snapshot.Of(host).State["world"]!["scenes"]![0]!["tiles"]![8]!.AsArray();
+        Assert.True(field.Count(t => t!["crop"] is not null) >= 5, "the row should be planted");
         Save(host, "play-mode.png");
     }
 
@@ -104,14 +104,14 @@ public sealed class GameScreenshotTests
         host.Frames(2);
 
         // Walk to the Old Farmer (3, 6) and talk to him.
-        Walk(host, PhysicalKey.W, s => s.State.Player.Y <= 7.55);
-        Walk(host, PhysicalKey.A, s => s.State.Player.X <= 3.55);
-        Walk(host, PhysicalKey.W, s => s.State.Player.Y <= 7.45);
+        Walk(host, PhysicalKey.W, s => s.Player.Y <= 7.55);
+        Walk(host, PhysicalKey.A, s => s.Player.X <= 3.55);
+        Walk(host, PhysicalKey.W, s => s.Player.Y <= 7.45);
         Tap(host, PhysicalKey.E);
         host.Frames(3);
 
-        var player = host.Play.Session.State.Player;
-        Assert.True(host.Play.Session.State.Dialogue?.NpcId == "npc-farmer", $"player at ({player.X}, {player.Y}) facing {player.Direction}");
+        var snapshot = Snapshot.Of(host);
+        Assert.True((string?)snapshot.State["dialogue"]?["npcId"] == "npc-farmer", $"player at ({snapshot.Player.X}, {snapshot.Player.Y})");
         Save(host, "play-dialogue.png");
     }
 
@@ -126,6 +126,14 @@ public sealed class GameScreenshotTests
         Pump();
         Assert.StartsWith("(12, 3)", edit.HoverText, StringComparison.Ordinal);
         Save(host, "edit-mode.png");
+    }
+
+    /// <summary>The live state read back from the Rust player.</summary>
+    private sealed record Snapshot(System.Text.Json.Nodes.JsonObject State)
+    {
+        public (double X, double Y) Player => (State["player"]!["x"]!.GetValue<double>(), State["player"]!["y"]!.GetValue<double>());
+
+        public static Snapshot Of(GameTestHost host) => new(host.Play.Use(player => player.State()));
     }
 
     private static void Save(GameTestHost host, string fileName)

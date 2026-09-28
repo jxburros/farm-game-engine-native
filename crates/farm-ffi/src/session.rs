@@ -1,7 +1,8 @@
 //! Engine sessions over the C ABI (docs/LANGUAGES.md "FFI: .NET → Rust").
 //!
-//! Compatibility phase: sessions accept web-compatible project JSON or the F# FlatBuffers
-//! cartridge. Commands and effects cross as JSON arrays, and views are stable JSON. The call
+//! A headless game for tools (the editor's Play Mode uses the graphical player in
+//! [`crate::player`] instead): sessions accept web-compatible project JSON or the F# FlatBuffers
+//! cartridge. Commands and effects cross as JSON arrays, and state is stable JSON. The call
 //! shape stays coarse, handle-based and batched; Rust allocates results and .NET frees them
 //! with `fe_bytes_free`.
 //!
@@ -11,134 +12,23 @@
 
 use crate::{view_json, FeBytes, FeResult};
 use farm_cart::save_file::{self, SaveTarget};
-use farm_runtime::{host, input, panels, timestep::FixedTimestep};
 use farm_sim::commands::Command;
 use farm_sim::engine_types::EngineContext;
 use farm_sim::hooks::HookBus;
 use farm_sim::schema::{GameProject, GameState};
-use farm_sim::Presentation;
-use farm_sim::{engine, game_time, hash, overlay, quests, stable_json, state};
+use farm_sim::{engine, game_time, hash, quests, stable_json, state};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// An opaque engine session: immutable content plus the live state.
 pub struct FeSession {
     ctx: EngineContext,
     state: GameState,
-    /// The editor project the session started from; `None` for a cartridge, which carries no
-    /// project (its `presentation` has what the runtime views need).
+    /// The editor project the session started from; `None` for a cartridge.
     project: Option<GameProject>,
-    presentation: Presentation,
     /// Which game this session's saves belong to (header of [`fe_session_save`]).
     target: SaveTarget,
-    /// The state as the host last received it through [`fe_session_state_changes`], so the next
-    /// call sends only the sections that changed since. `None` until the first call.
-    host_view: Option<GameState>,
     poisoned: bool,
     last_error: String,
-    runtime: RuntimeState,
-}
-
-#[derive(Debug, Default)]
-struct RuntimeState {
-    timestep: FixedTimestep,
-    generation: u64,
-    minigame: Option<(farm_sim::schema::MinigameSession, host::HostedMinigame)>,
-}
-
-impl RuntimeState {
-    fn sync_minigame(&mut self, state: &GameState) {
-        if self.minigame.as_ref().is_some_and(|(active, _)| state.minigame.as_ref() != Some(active)) {
-            self.minigame = None;
-        }
-    }
-}
-
-#[derive(serde::Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum RuntimeRequest {
-    PrepareFrame { input: host::InputFrame, seconds: f64, host_modal_open: bool },
-    PollFrame { input: host::InputFrame, host_modal_open: bool },
-    Panels { host_modal_open: bool },
-    Calendar,
-    Snapshot { scene_id: String, options: farm_render::SnapshotOptions },
-    AudioCues { effects: Vec<farm_sim::Effect> },
-    MountMinigame { random: f64 },
-    MinigameInput { generation: u64, input: host::MinigameInput },
-    DisposeMinigame { generation: u64 },
-}
-
-/// Batched runtime operations. Input is polled after simulation ticks so a modal opened
-/// during that tick blocks same-frame actions, just as in the reference shell.
-///
-/// # Safety
-/// `session` comes from [`fe_session_new`]; `request` points to `len` readable bytes;
-/// `out` is a valid output pointer. Calls must be serialized with other session calls.
-#[no_mangle]
-pub unsafe extern "C" fn fe_session_runtime_json(
-    session: *mut FeSession,
-    request: *const u8,
-    len: usize,
-    out: *mut FeBytes,
-) -> FeResult {
-    write_empty(out);
-    let Some(bytes) = bytes_arg(request, len) else { return FeResult::InvalidArgument };
-    with_session(session, out, |s| {
-        let request: RuntimeRequest = serde_json::from_slice(bytes).map_err(|e| format!("runtime request: {e}"))?;
-        match request {
-            RuntimeRequest::PrepareFrame { input, seconds, host_modal_open } => Ok(view_json::to_json(
-                &host::prepare_frame(&mut s.runtime.timestep, &input, &s.state, seconds, host_modal_open)?,
-            )),
-            RuntimeRequest::PollFrame { input, host_modal_open } => Ok(view_json::to_json(&input::poll_play_frame(
-                &input.tracker(),
-                &s.state,
-                &s.ctx.content,
-                host_modal_open,
-            ))),
-            RuntimeRequest::Panels { host_modal_open } => {
-                let views = panels::render(
-                    s.presentation.game_panels.iter(),
-                    &panels::PanelState::from_game_state(&s.state, host_modal_open),
-                );
-                Ok(view_json::to_json(&views))
-            }
-            RuntimeRequest::Calendar => Ok(view_json::to_json(&host::calendar_view(&s.ctx.content, &s.state))),
-            RuntimeRequest::Snapshot { scene_id, options } => {
-                let scene = s
-                    .state
-                    .world
-                    .scenes
-                    .iter()
-                    .find(|scene| scene.id == scene_id)
-                    .ok_or("Snapshot scene not found.")?;
-                Ok(view_json::to_json(&farm_render::shell_snapshot(&s.ctx.content, &s.state, scene, &options)))
-            }
-            RuntimeRequest::AudioCues { effects } => {
-                Ok(view_json::to_json(&effects.iter().map(farm_runtime::audio::sfx_for_effect).collect::<Vec<_>>()))
-            }
-            RuntimeRequest::MountMinigame { random } => {
-                let active = s.state.minigame.as_ref().ok_or("No active minigame.")?;
-                let definition = s.ctx.content.minigames.iter().find(|def| def.id == active.minigame_id);
-                let mounted = host::HostedMinigame::mount(definition, random)?;
-                let view = mounted.view();
-                s.runtime.generation += 1;
-                s.runtime.minigame = Some((active.clone(), mounted));
-                Ok(view_json::to_json(&serde_json::json!({"generation": s.runtime.generation, "view": view})))
-            }
-            RuntimeRequest::MinigameInput { generation, input } => {
-                let (active, mounted) = s.runtime.minigame.as_mut().ok_or("Minigame is not mounted.")?;
-                if generation != s.runtime.generation || s.state.minigame.as_ref() != Some(active) {
-                    return Err("Minigame input belongs to an expired session.".to_owned());
-                }
-                Ok(view_json::to_json(&mounted.apply(input)?))
-            }
-            RuntimeRequest::DisposeMinigame { generation } => {
-                if generation == s.runtime.generation {
-                    s.runtime.minigame = None;
-                }
-                Ok("null".to_owned())
-            }
-        }
-    })
 }
 
 impl std::fmt::Debug for FeSession {
@@ -213,35 +103,24 @@ pub unsafe extern "C" fn fe_session_new(
     };
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<FeSession, String> {
         let seed = if seed_text.is_empty() { None } else { Some(seed_text) };
-        let (project, presentation, content, mut game_state, target) = if farm_cart::is_cartridge(project_bytes) {
+        let (project, content, mut game_state, target) = if farm_cart::is_cartridge(project_bytes) {
             let cart = farm_cart::load_cartridge(project_bytes)?;
             let target = SaveTarget::for_cartridge(&cart);
             let game_state = state::create_game_state_from_start(&cart.start, seed);
-            (None, cart.presentation, cart.content, game_state, target)
+            (None, cart.content, game_state, target)
         } else {
             let project: GameProject =
                 serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
             let content = state::create_content_from_project(&project);
             let game_state = state::create_game_state(&project, seed);
             let target = SaveTarget::for_project(&project, &content);
-            let presentation = Presentation::from_project(&project);
-            (Some(project), presentation, content, game_state, target)
+            (Some(project), content, game_state, target)
         };
         let ctx = EngineContext::with_hooks(content, HookBus::new());
         if auto_start_quests {
             quests::auto_start_quests(&ctx, &mut game_state);
         }
-        Ok(FeSession {
-            ctx,
-            state: game_state,
-            project,
-            presentation,
-            target,
-            host_view: None,
-            poisoned: false,
-            last_error: String::new(),
-            runtime: RuntimeState::default(),
-        })
+        Ok(FeSession { ctx, state: game_state, project, target, poisoned: false, last_error: String::new() })
     }));
     match result {
         Ok(Ok(session)) => {
@@ -320,7 +199,6 @@ pub unsafe extern "C" fn fe_session_apply(
         let mut effects = Vec::new();
         for command in &commands {
             effects.extend(engine::apply_command(&s.ctx, &mut s.state, command));
-            s.runtime.sync_minigame(&s.state);
         }
         Ok(stable_json::stringify(&effects))
     })
@@ -334,7 +212,6 @@ pub unsafe extern "C" fn fe_session_apply(
 pub unsafe extern "C" fn fe_session_tick(session: *mut FeSession, ticks: u32, out: *mut FeBytes) -> FeResult {
     with_session(session, out, |s| {
         let effects = engine::advance_tick(&s.ctx, &mut s.state, f64::from(ticks));
-        s.runtime.sync_minigame(&s.state);
         Ok(stable_json::stringify(&effects))
     })
 }
@@ -367,15 +244,6 @@ pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *
         let project = s.project.as_ref().ok_or("A cartridge session has no editor project to write back to.")?;
         Ok(stable_json::stringify(&state::apply_state_to_project(project, &s.state)))
     })
-}
-
-/// Read-only overlay queries as one JSON object. No live state is copied or changed.
-///
-/// # Safety
-/// `session` from [`fe_session_new`]; `out` is valid.
-#[no_mangle]
-pub unsafe extern "C" fn fe_session_overlay_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| Ok(view_json::to_json(&overlay::overlay_view(&s.ctx, &s.state))))
 }
 
 /// Creator debug action: run the same overnight pass as a sleep command without requiring
@@ -423,106 +291,8 @@ pub unsafe extern "C" fn fe_session_set_state(
     };
     with_session(session, out, |s| {
         s.state = serde_json::from_slice(bytes).map_err(|e| format!("state JSON: {e}"))?;
-        s.runtime.sync_minigame(&s.state);
         Ok(String::new())
     })
-}
-
-/// Calls `$apply!` with every top-level `GameState` field and its JSON key, in declaration
-/// order. The `state_changes_cover_every_section` test fails when a field is missing here.
-macro_rules! state_sections {
-    ($apply:ident) => {
-        $apply! {
-            meta => "meta",
-            clock => "clock",
-            world => "world",
-            player => "player",
-            npcs => "npcs",
-            quests => "quests",
-            dialogue => "dialogue",
-            shop => "shop",
-            minigame => "minigame",
-            shop_purchases_today => "shopPurchasesToday",
-            social => "social",
-            animals => "animals",
-            mine => "mine",
-            flags => "flags",
-            quarantined_items => "quarantinedItems",
-            rng => "rng",
-        }
-    };
-}
-
-/// The top-level `GameState` sections that changed since the previous call, as one JSON object
-/// (`{"clock":{…},"player":{…}}`; `{}` when nothing changed). Each section is compared by value
-/// with what the host was sent last time, so an unchanged section costs a comparison and no
-/// serialization. `full` sends every section (the host's first read, or when it lost track).
-/// Values are in engine order ([`view_json`]): this feeds the host's live mirror of the state.
-///
-/// # Safety
-/// `session` from [`fe_session_new`]; `out` is valid.
-#[no_mangle]
-pub unsafe extern "C" fn fe_session_state_changes(session: *mut FeSession, full: bool, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| {
-        if full {
-            s.host_view = None;
-        }
-        Ok(state_changes(&mut s.host_view, &s.state))
-    })
-}
-
-/// Writes the sections of `state` that differ from `view` (all of them when `view` is `None`)
-/// and brings `view` up to date.
-fn state_changes(view: &mut Option<GameState>, state: &GameState) -> String {
-    let mut out = String::from("{");
-    let mut first = true;
-    let mut member = |out: &mut String, key: &str, value: &dyn erased::Section| {
-        if !first {
-            out.push(',');
-        }
-        first = false;
-        value.push_member(out, key);
-    };
-    match view {
-        None => {
-            macro_rules! all {
-                ($($field:ident => $key:literal),* $(,)?) => {$(
-                    member(&mut out, $key, &state.$field);
-                )*};
-            }
-            state_sections!(all);
-            *view = Some(state.clone());
-        }
-        Some(seen) => {
-            macro_rules! changed {
-                ($($field:ident => $key:literal),* $(,)?) => {$(
-                    if seen.$field != state.$field {
-                        member(&mut out, $key, &state.$field);
-                        seen.$field.clone_from(&state.$field);
-                    }
-                )*};
-            }
-            state_sections!(changed);
-        }
-    }
-    out.push('}');
-    out
-}
-
-mod erased {
-    use crate::view_json;
-    use serde::Serialize;
-
-    /// A serializable state section behind `dyn` (so one closure writes every section type).
-    pub trait Section {
-        fn push_member(&self, out: &mut String, key: &str);
-    }
-
-    impl<T: Serialize> Section for T {
-        fn push_member(&self, out: &mut String, key: &str) {
-            view_json::push_member(out, key, self);
-        }
-    }
 }
 
 /// A save file for the live state: `{"header": {…}, "state": {…}}` as stable JSON (see
@@ -561,8 +331,6 @@ pub unsafe extern "C" fn fe_session_load_save(
             return Err(loaded.errors.join("\n"));
         };
         s.state = state;
-        s.runtime.minigame = None;
-        s.runtime.timestep.reset();
         let report = serde_json::json!({
             "warnings": loaded.warnings,
             "quarantined": loaded.quarantined,
@@ -708,55 +476,6 @@ mod tests {
         let (_, message) = call(|out| unsafe { fe_session_last_error(session, out) });
         assert!(message.starts_with("state JSON"), "{message}");
         assert_eq!(call(|out| unsafe { fe_session_state_json(session, out) }).1, after);
-        unsafe { fe_session_free(session) };
-    }
-
-    #[test]
-    fn state_changes_cover_every_section() {
-        let session = new_session("changes");
-        let changes = |full: bool| {
-            let (result, text) = call(|out| unsafe { fe_session_state_changes(session, full, out) });
-            assert_eq!(result, FeResult::Ok);
-            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text).unwrap()
-        };
-
-        // The first read sends every section, in declaration order, equal to the whole state.
-        let first = changes(false);
-        let (_, state) = call(|out| unsafe { fe_session_state_json(session, out) });
-        let whole: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&state).unwrap();
-        let mut keys: Vec<&String> = first.keys().collect();
-        let mut expected: Vec<&String> = whole.keys().collect();
-        keys.sort();
-        expected.sort();
-        assert_eq!(keys, expected);
-        assert_eq!(
-            stable_json::stringify_value(&serde_json::Value::Object(first.clone())),
-            stable_json::stringify_value(&serde_json::Value::Object(whole))
-        );
-
-        // Nothing happened: nothing to send.
-        assert!(changes(false).is_empty());
-
-        // A tick moves the clock but leaves the metadata alone.
-        assert_eq!(call(|out| unsafe { fe_session_tick(session, 3, out) }).0, FeResult::Ok);
-        let after_tick = changes(false);
-        assert!(after_tick.contains_key("clock"), "{after_tick:?}");
-        assert!(!after_tick.contains_key("meta"), "{after_tick:?}");
-        assert!(changes(false).is_empty());
-
-        // A replaced state shows up like any other change; `full` resends everything.
-        let (_, state) = call(|out| unsafe { fe_session_state_json(session, out) });
-        let mut value: serde_json::Value = serde_json::from_str(&state).unwrap();
-        value["player"]["money"] = serde_json::json!(7);
-        let edited = value.to_string();
-        assert_eq!(
-            call(|out| unsafe { fe_session_set_state(session, edited.as_ptr(), edited.len(), out) }).0,
-            FeResult::Ok
-        );
-        let after_set = changes(false);
-        assert_eq!(after_set.keys().collect::<Vec<_>>(), vec!["player"]);
-        assert_eq!(after_set["player"]["money"], serde_json::json!(7));
-        assert_eq!(changes(true).len(), first.len());
         unsafe { fe_session_free(session) };
     }
 
