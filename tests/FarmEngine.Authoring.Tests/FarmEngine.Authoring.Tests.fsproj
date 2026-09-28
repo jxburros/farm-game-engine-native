@@ -27,6 +27,7 @@
     <Compile Include="ValidationParityTests.fs" />
     <Compile Include="ValidationTests.fs" />
     <Compile Include="CartridgeTests.fs" />
+    <Compile Include="SnapshotTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
@@ -35,6 +36,7 @@
     <None Include="../../fixtures/golden/cartridges/*.cart" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/golden/replays/*.json" Link="Golden/replays/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/projects/*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/authoring/*.json" Link="Snapshots/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
