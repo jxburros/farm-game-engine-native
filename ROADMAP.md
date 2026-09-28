@@ -162,8 +162,14 @@ the most.
   recipe availability, ingredients and facing tile in one batched query.
   The debug drawer's skip day uses Rust's overnight pass. A scripted play
   compares these results with the C# engine after every step.
-- [ ] Port Edit Mode's preview and remaining play-rule lookups, then delete
-  the C# engine projects.
+- [x] Port Edit Mode's preview and Play Mode's snapshot/animation preparation
+  to `farm-render`, with batched FFI calls. Edit previews consume F#-compiled
+  content. The Skia backend remains in C# and executes the returned snapshot.
+- [x] Wire the Rust calendar and creator panel view models into the HUD,
+  debug season picker and interface panels (including host modal blocking).
+- [ ] Port the remaining input/minigame/audio/plugin host integration and
+  play-rule lookups, then delete the C# engine projects. C# fallbacks remain
+  available while these dependencies exist.
 
 **Editor port (phase 5)**: map tools and a broad content workspace are now
 available as native views.
@@ -188,6 +194,11 @@ available as native views.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
+- [x] Shared `farm-render` snapshot types, play/editor snapshot builders and
+  authored graphics resolution, used by the desktop app. Cross-language tests
+  compare every scene at the initial/final states of all 23 recorded sessions,
+  custom artwork/animation boundaries, and a scripted plugin playthrough.
+  GPU drawing, built-in art selection and the standalone window remain open.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
   The graphical shell, plugin sandbox and packaging are still open.

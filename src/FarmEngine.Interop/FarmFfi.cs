@@ -1,5 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using FarmEngine.Json;
+using FarmEngine.Schemas;
 
 namespace FarmEngine.Interop;
 
@@ -51,6 +54,34 @@ public static class FarmFfi
                 {
                     Check(result, nameof(HashText));
                     return Encoding.ASCII.GetString(output.Ptr, (int)output.Len);
+                }
+                finally
+                {
+                    NativeMethods.fe_bytes_free(output);
+                }
+            }
+        }
+    }
+
+    /// <summary>Build an editor preview in Rust using content compiled by F#.</summary>
+    public static string EditorSnapshotJson(GameProject project, GameContent content, string sceneId, double tileSize, double padding)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(content);
+        EnsureAvailable();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new { project, content, sceneId, tileSize, padding }, JsonDefaults.Options);
+        unsafe
+        {
+            fixed (byte* input = bytes)
+            {
+                NativeMethods.FeBytes output;
+                var result = NativeMethods.fe_preview_snapshot_json(input, (nuint)bytes.Length, &output);
+                try
+                {
+                    var text = output.Ptr == null ? "" : Encoding.UTF8.GetString(output.Ptr, (int)output.Len);
+                    if (result != NativeMethods.FeResult.Ok)
+                        throw new FarmFfiException($"Editor snapshot failed: {result}. {text}");
+                    return text;
                 }
                 finally
                 {

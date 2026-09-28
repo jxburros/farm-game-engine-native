@@ -2,6 +2,16 @@
 
 ## 0.2.0 (unreleased)
 
+- **Rust render preparation.** Play Mode and Edit Mode now build world
+  snapshots and select authored animation frames in `farm-render`. This includes
+  crop maturity, soil, weather, scheduled NPC positions, animal facing, tile
+  layers, growth clips and legacy sprite sheets. Avalonia/Skia still draws the
+  returned snapshots. The C# implementation remains the no-Rust fallback and
+  parity reference.
+- **Rust runtime views.** The HUD calendar, debug season picker and creator
+  panels now read the running Rust session. Calendar fallbacks, panel visibility,
+  item totals and modal action blocking use the shared Rust runtime.
+
 - **F# project templates.** The starter pack and all four project templates now
   originate in F#. New Project, first launch and game import use the new catalog,
   with the clock supplied by the desktop host. The app no longer depends on

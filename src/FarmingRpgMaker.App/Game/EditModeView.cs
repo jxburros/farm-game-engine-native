@@ -6,7 +6,9 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FarmEngine.Authoring;
-using FarmEngine.Core;
+using FarmEngine.Interop;
+using FarmEngine.Json;
+using System.Text.Json;
 using FarmEngine.Rendering;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
@@ -498,8 +500,18 @@ public sealed partial class EditModeView : UserControl
 
         // Zoom re-lays the map at a whole-pixel tile size (instead of scaling the canvas) so
         // the 1px grid seams stay exactly one pixel at every zoom level.
-        var snapshot = ShellSnapshot.BuildEditorSnapshot(project, _content, scene, Math.Max(8, Math.Round(TileSize * _zoom)), Math.Round(12 * _zoom));
-        _canvas.Snapshot = Graphics.ApplyGraphics(snapshot, GraphicsSource.FromProject(project), scene, 0, false);
+        var tileSize = Math.Max(8, Math.Round(TileSize * _zoom));
+        var padding = Math.Round(12 * _zoom);
+        if (FarmFfi.IsAvailable)
+        {
+            _canvas.Snapshot = JsonSerializer.Deserialize<WorldSnapshot>(
+                FarmFfi.EditorSnapshotJson(project, _content, scene.Id, tileSize, padding), JsonDefaults.Options);
+        }
+        else
+        {
+            var snapshot = ShellSnapshot.BuildEditorSnapshot(project, _content, scene, tileSize, padding);
+            _canvas.Snapshot = Graphics.ApplyGraphics(snapshot, GraphicsSource.FromProject(project), scene, 0, false);
+        }
         _zoomText.Text = $"{Math.Round(_zoom * 100)}%";
     }
 

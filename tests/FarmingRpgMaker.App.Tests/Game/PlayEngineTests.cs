@@ -213,6 +213,9 @@ public sealed class PlayEngineTests(ITestOutputHelper output)
                 var csharpOverlay = Hash.StableStringify(csharp.Session.OverlayView());
                 var rustOverlay = Hash.StableStringify(rust.Session.OverlayView());
                 Assert.True(csharpOverlay == rustOverlay, $"overlay queries differ after \"{label}\": {FirstDifference(csharpOverlay, rustOverlay)}");
+                foreach (var modal in new[] { false, true })
+                    Assert.Equal(Hash.StableStringify(csharp.Session.RuntimeView(modal)), Hash.StableStringify(rust.Session.RuntimeView(modal)));
+                Assert.Equal(Hash.StableStringify(csharp.Session.BuildSnapshot(320, 240)), Hash.StableStringify(rust.Session.BuildSnapshot(320, 240)));
                 // The mirror is exactly the Rust state.
                 Assert.Equal(rustSession.StateHash(), Hash.HashState(rust.Session.State));
             });

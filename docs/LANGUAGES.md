@@ -161,6 +161,14 @@ what an exported game contains.
   compare by reference keep working. `fe_session_set_state` is the debug
   drawer's write path. Set `FARM_ENGINE=csharp` to play on the C# engine
   instead.
+- **Rendering and runtime views (phase 4, interim).** `farm-render` builds the
+  play snapshot and resolves authored art through `fe_session_snapshot_json`.
+  Edit Mode calls `fe_preview_snapshot_json` with the project and F#-compiled
+  content; it does not create a simulation session. `fe_session_runtime_json`
+  supplies calendar and creator panel views, including host-modal blocking.
+  These are read-only JSON views for the existing C# Skia/Avalonia executors.
+  Interpolation, built-in sprite selection, drawing and OS integration remain
+  in C# until the Rust graphical backend and player are ready.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
   next call on that session.

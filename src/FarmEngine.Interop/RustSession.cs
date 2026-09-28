@@ -136,6 +136,31 @@ public sealed class RustSession : IDisposable
         }
     }
 
+    /// <summary>Read-only, decorated world snapshot built by farm-render from the live state.</summary>
+    public string SnapshotJson(object options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(options, JsonDefaults.Options);
+        unsafe
+        {
+            fixed (byte* ptr = bytes)
+            {
+                NativeMethods.FeBytes output;
+                return Check(NativeMethods.fe_session_snapshot_json(_handle, ptr, (nuint)bytes.Length, &output), output, nameof(SnapshotJson));
+            }
+        }
+    }
+
+    /// <summary>HUD and creator panel views evaluated by the Rust runtime.</summary>
+    public string RuntimeJson(bool hostModalOpen = false)
+    {
+        unsafe
+        {
+            NativeMethods.FeBytes output;
+            return Check(NativeMethods.fe_session_runtime_json(_handle, hostModalOpen, &output), output, nameof(RuntimeJson));
+        }
+    }
+
     /// <summary>Creator debug action: run the overnight pass without a bed check.</summary>
     public void SkipDay()
     {

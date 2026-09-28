@@ -13,3 +13,4 @@ pub mod input;
 pub mod minigames;
 pub mod panels;
 pub mod timestep;
+pub mod views;

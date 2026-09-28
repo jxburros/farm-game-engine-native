@@ -38,6 +38,7 @@ name = "farm-ffi"
 version = "0.2.0"
 dependencies = [
  "farm-cart",
+ "farm-render",
  "farm-runtime",
  "farm-sim",
  "serde",
@@ -49,6 +50,15 @@ name = "farm-player"
 version = "0.2.0"
 dependencies = [
  "farm-cart",
+ "farm-sim",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "farm-render"
+version = "0.2.0"
+dependencies = [
  "farm-sim",
  "serde",
  "serde_json",
