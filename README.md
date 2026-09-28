@@ -34,6 +34,11 @@ migrations. Building from source needs a Rust toolchain as well as .NET;
 without one, `dotnet build` still works, the Rust library is left out and
 Play Mode falls back to the C# engine.
 
+World snapshot preparation and authored animation selection now run in Rust
+(`farm-render`) for Play Mode and editor previews. The HUD calendar and creator
+panels also use Rust view models. C# still owns Avalonia/Skia drawing and the
+remaining host integrations; the standalone graphical player is unfinished.
+
 Content compilation, built-in authored definitions, pack composition and
 localization now run in F#. Editor content previews and cartridge exports use
 the same compiler. The authoring project no longer depends on the C# simulation
@@ -149,6 +154,7 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
 | `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
+| `crates/farm-render` (Rust) | Play/editor snapshots and authored animation resolution; Skia still executes the snapshots | `packages/game-shell/src/snapshot.ts`, `packages/renderer-canvas2d/src/graphics.ts` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
 [docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust

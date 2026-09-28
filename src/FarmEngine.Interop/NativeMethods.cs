@@ -46,6 +46,9 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "fe_hash_text")]
     public static partial FeResult fe_hash_text(byte* text, nuint len, FeBytes* output);
 
+    [LibraryImport(Library, EntryPoint = "fe_preview_snapshot_json")]
+    public static partial FeResult fe_preview_snapshot_json(byte* request, nuint len, FeBytes* output);
+
     [LibraryImport(Library, EntryPoint = "fe_session_new")]
     public static partial FeResult fe_session_new(byte* projectJson, nuint len, byte* seed, nuint seedLen, [MarshalAs(UnmanagedType.U1)] bool autoStartQuests, FeSession** output, FeBytes* error);
 
@@ -69,6 +72,12 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fe_session_overlay_json")]
     public static partial FeResult fe_session_overlay_json(FeSession* session, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_runtime_json")]
+    public static partial FeResult fe_session_runtime_json(FeSession* session, [MarshalAs(UnmanagedType.U1)] bool hostModalOpen, FeBytes* output);
+
+    [LibraryImport(Library, EntryPoint = "fe_session_snapshot_json")]
+    public static partial FeResult fe_session_snapshot_json(FeSession* session, byte* options, nuint len, FeBytes* output);
 
     [LibraryImport(Library, EntryPoint = "fe_session_skip_day")]
     public static partial FeResult fe_session_skip_day(FeSession* session, FeBytes* output);

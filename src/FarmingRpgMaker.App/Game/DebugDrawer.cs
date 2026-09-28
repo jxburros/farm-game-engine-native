@@ -56,7 +56,7 @@ internal static class DebugDrawer
 
         stack.Children.Add(Ui.Text("SEASON", "section"));
         var seasons = new WrapPanel();
-        foreach (var season in GameTime.CalendarSeasons(session.Content.Settings.Calendar))
+        foreach (var season in session.RuntimeView().CalendarSeasons)
         {
             var id = season.Id;
             var button = Ui.Button(season.Name.Length > 3 ? season.Name[..3] : season.Name, () => Mutate((s, _) => s with { Clock = s.Clock with { Season = id } }, $"Season: {season.Name}"), "tool", "small");

@@ -11,6 +11,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod preview;
 pub mod session;
 pub mod view_json;
 pub use session::FeSession;

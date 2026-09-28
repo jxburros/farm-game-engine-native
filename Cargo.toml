@@ -10,6 +10,7 @@ members = [
     "crates/farm-cart",
     "crates/farm-cart-schema",
     "crates/farm-runtime",
+    "crates/farm-render",
     "crates/farm-ffi",
     "crates/farm-player",
 ]

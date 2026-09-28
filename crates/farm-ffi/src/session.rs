@@ -331,6 +331,67 @@ pub unsafe extern "C" fn fe_session_overlay_json(session: *mut FeSession, out: *
     with_session(session, out, |s| Ok(view_json::to_json(&overlay_view(s))))
 }
 
+/// Read the HUD calendar and creator panel models without changing the session.
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_runtime_json(
+    session: *mut FeSession,
+    host_modal_open: bool,
+    out: *mut FeBytes,
+) -> FeResult {
+    with_session(session, out, |s| {
+        Ok(view_json::to_json(&farm_runtime::views::runtime_view(
+            &s.project,
+            &s.ctx.content,
+            &s.state,
+            host_modal_open,
+        )))
+    })
+}
+
+/// Builds a fully decorated world snapshot from the live Rust state. The host supplies
+/// interpolation/camera options, then executes the result on its graphics backend.
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `options` points to `len` bytes; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_snapshot_json(
+    session: *mut FeSession,
+    options: *const u8,
+    len: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    let Some(bytes) = bytes_arg(options, len) else {
+        write_empty(out);
+        return FeResult::InvalidArgument;
+    };
+    with_session(session, out, |s| {
+        let options: farm_render::shell::SnapshotOptions = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        let scene = s
+            .state
+            .world
+            .scenes
+            .iter()
+            .find(|scene| scene.id == s.state.player.scene_id)
+            .or_else(|| s.state.world.scenes.first())
+            .ok_or("The game has no scenes.")?;
+        let mut snapshot = farm_render::shell::build_play(&s.ctx.content, &s.state, scene, &options);
+        let moving = snapshot.player.entity.moving;
+        farm_render::graphics::apply_graphics(
+            &mut snapshot,
+            &s.project,
+            &s.ctx.content,
+            Some(&s.state),
+            scene,
+            s.state.clock.tick,
+            moving,
+        );
+        Ok(view_json::to_json(&snapshot))
+    })
+}
+
 /// Creator debug action: run the same overnight pass as a sleep command without requiring
 /// the player to be at a bed. Effects are intentionally discarded, as in the debug drawer.
 /// Hook events remain available through [`fe_session_hook_events`].

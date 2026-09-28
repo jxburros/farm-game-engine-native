@@ -27,6 +27,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/replays/*.json" Link="RenderGoldens/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../FarmEngine.Core.Tests/Fixtures/project-v1.json" Link="Fixtures/project-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../FarmEngine.Core.Tests/Fixtures/demo-mod.json" Link="Fixtures/demo-mod.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -130,6 +130,8 @@ public sealed class PlaySession : IDisposable
     /// <summary>Dialogue, shop and crafting availability computed by the running engine.</summary>
     internal PlayOverlayView OverlayView() => _engine.OverlayView();
 
+    internal PlayRuntimeView RuntimeView(bool hostModalOpen = false) => _engine.RuntimeView(hostModalOpen);
+
     public InputManager Input { get; } = new();
 
     /// <summary>Most plugin errors kept (oldest dropped first).</summary>
@@ -300,7 +302,7 @@ public sealed class PlaySession : IDisposable
     /// </summary>
     public WorldSnapshot BuildSnapshot(double viewWidth, double viewHeight)
     {
-        var scene = CurrentScene ?? throw new InvalidOperationException("The game has no scenes.");
+        _ = CurrentScene ?? throw new InvalidOperationException("The game has no scenes.");
         var player = State.Player;
         var ix = player.X;
         var iy = player.Y;
@@ -318,7 +320,7 @@ public sealed class PlaySession : IDisposable
         var (worldWidth, worldHeight) = WorldSize();
         var camera = Canvas2d.ComputeCamera(pixelX + (TileSize / 2), pixelY + (TileSize / 2), worldWidth, worldHeight, viewWidth, viewHeight);
 
-        var snapshot = ShellSnapshot.BuildShellSnapshot(Content, State, scene, new ShellSnapshotOptions(TileSize, Padding, pixelX, pixelY, camera));
+        var snapshot = _engine.Snapshot(new ShellSnapshotOptions(TileSize, Padding, pixelX, pixelY, camera));
         _pops.RemoveAll(pop => ElapsedMs - pop.BornAt >= PopLifetimeMs);
         if (!ReducedMotion && _pops.Count > 0)
         {
@@ -332,12 +334,7 @@ public sealed class PlaySession : IDisposable
             }).ToList();
         }
 
-        var moving = player.MoveIntent.Dx != 0 || player.MoveIntent.Dy != 0;
-        snapshot.Player.Moving = moving;
-        // Clock-driven atmosphere (time of day, weather, season) and the tick that animates
-        // water and walk cycles come straight from state; rendering never writes it back.
-        snapshot.Tick = State.Clock.Tick;
-        return Graphics.ApplyGraphics(snapshot, GraphicsSource.FromState(Project, Content, State), scene, State.Clock.Tick, moving);
+        return snapshot;
     }
 
     public void Dispose()

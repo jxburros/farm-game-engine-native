@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FarmEngine.Core;
 using FarmEngine.Interop;
+using FarmEngine.Rendering;
+using FarmEngine.Runtime;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Game;
@@ -40,6 +42,10 @@ internal interface IPlayEngine : IDisposable
 
     /// <summary>Rule-derived values for the currently displayed play overlays.</summary>
     PlayOverlayView OverlayView();
+
+    WorldSnapshot Snapshot(ShellSnapshotOptions options);
+
+    PlayRuntimeView RuntimeView(bool hostModalOpen);
 
     /// <summary>Creator debug action: advance through the overnight pass.</summary>
     void SkipDay();
@@ -85,6 +91,32 @@ internal sealed record PlayOverlayView
             Facing = new GridPoint { X = facing.X, Y = facing.Y },
             Craftable = context.Content.Recipes.ToDictionary(recipe => recipe.Id, recipe => Crafting.CraftableStatus(context, state, recipe)),
             HasIngredients = context.Content.Recipes.ToDictionary(recipe => recipe.Id, recipe => Crafting.HasIngredients(state, recipe)),
+        };
+    }
+}
+
+/// <summary>Plain view data; the selected engine evaluates the calendar and panel rules.</summary>
+internal sealed record PlayRuntimeView
+{
+    public string? SeasonName { get; init; }
+    public double SeasonDays { get; init; }
+    public double DayOfSeason { get; init; }
+    public string TimeLabel { get; init; } = "";
+    public List<CalendarSeason> CalendarSeasons { get; init; } = [];
+    public List<PanelView> Panels { get; init; } = [];
+
+    public static PlayRuntimeView FromCSharp(GameProject project, GameContent content, GameState state, bool hostModalOpen)
+    {
+        var calendar = content.Settings.Calendar;
+        var season = GameTime.SeasonById(calendar, state.Clock.Season);
+        return new()
+        {
+            SeasonName = season?.Name,
+            SeasonDays = season?.Days ?? ContentBuiltin.DaysPerSeason,
+            DayOfSeason = GameTime.DayOfSeason(calendar, state.Clock.Day),
+            TimeLabel = GameTime.FormatTimeOfDay(Math.Floor(state.Clock.TimeMinutes)),
+            CalendarSeasons = GameTime.CalendarSeasons(calendar).ToList(),
+            Panels = GamePanels.Render(project.GamePanels ?? [], PanelState.FromGameState(state, hostModalOpen)),
         };
     }
 }
@@ -173,6 +205,17 @@ internal sealed class CSharpPlayEngine : IPlayEngine
 
     public PlayOverlayView OverlayView() => PlayOverlayView.FromCSharp(_context, State);
 
+    public PlayRuntimeView RuntimeView(bool hostModalOpen) => PlayRuntimeView.FromCSharp(_project, _context.Content, State, hostModalOpen);
+
+    public WorldSnapshot Snapshot(ShellSnapshotOptions options)
+    {
+        var scene = State.World.Scenes.FirstOrDefault(scene => scene.Id == State.Player.SceneId)
+            ?? State.World.Scenes.First();
+        var moving = State.Player.MoveIntent.Dx != 0 || State.Player.MoveIntent.Dy != 0;
+        var snapshot = ShellSnapshot.BuildShellSnapshot(_context.Content, State, scene, options);
+        return Graphics.ApplyGraphics(snapshot, GraphicsSource.FromState(_project, _context.Content, State), scene, State.Clock.Tick, moving);
+    }
+
     public void SkipDay() => State = GameTime.PerformSleep(_context, State, new SleepOptions(Collapsed: false)).State;
 
     public void Dispose()
@@ -243,6 +286,12 @@ internal sealed class RustPlayEngine : IPlayEngine
     public GameProject SyncedProject() => _session.SyncedProject();
 
     public PlayOverlayView OverlayView() => JsonSerializer.Deserialize<PlayOverlayView>(_session.OverlayJson(), FarmEngine.Json.JsonDefaults.Options)!;
+
+    public PlayRuntimeView RuntimeView(bool hostModalOpen) =>
+        JsonSerializer.Deserialize<PlayRuntimeView>(_session.RuntimeJson(hostModalOpen), FarmEngine.Json.JsonDefaults.Options)!;
+
+    public WorldSnapshot Snapshot(ShellSnapshotOptions options) =>
+        JsonSerializer.Deserialize<WorldSnapshot>(_session.SnapshotJson(options), FarmEngine.Json.JsonDefaults.Options)!;
 
     public void SkipDay()
     {

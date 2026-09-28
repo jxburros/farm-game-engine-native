@@ -7,6 +7,7 @@ use farm_sim::js;
 use farm_sim::schema::{game_panel_entry_kinds as kinds, GamePanel, GamePanelEntry, InventorySlot};
 use farm_sim::{GameProject, GameState};
 use indexmap::IndexMap;
+use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
 
@@ -50,7 +51,8 @@ impl PanelState {
 }
 
 /// One rendered panel entry. Text is always plain text; game content is never markup.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PanelEntryView {
     /// One of [`game_panel_entry_kinds`](farm_sim::schema::game_panel_entry_kinds).
     pub kind: String,
@@ -62,7 +64,8 @@ pub struct PanelEntryView {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PanelView {
     pub id: String,
     pub title: String,
