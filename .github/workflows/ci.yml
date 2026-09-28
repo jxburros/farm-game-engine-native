@@ -50,6 +50,17 @@ jobs:
       - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime)
         run: cargo check -p farm-sim -p farm-cart -p farm-runtime --target wasm32-unknown-unknown
 
+      - name: Install cargo-about
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.2
+
+      # Player templates ship tools/player-licenses/THIRD-PARTY.txt (docs/EXPORT.md).
+      - name: Player license notices are current
+        if: runner.os == 'Linux'
+        run: tools/player-licenses/generate.sh --check
+
   build-and-test:
     name: Build & test (Linux)
     runs-on: ubuntu-latest
@@ -82,6 +93,22 @@ jobs:
 
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --results-directory TestResults
+
+      # farmc finds the linux-x64 template the build put in its players/ folder.
+      - name: Export a sample game and run it (linux-x64)
+        run: |
+          dotnet run --project src/FarmEngine.Cli -c Release --no-build -- \
+            export tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --target linux-x64 --out export-smoke
+          game=$(find export-smoke/linux-x64 -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          name=$(basename "$game")
+          ls -l "$game" "$game/licenses"
+          test -x "$game/$name"
+          cmp "$game/game.cart" fixtures/golden/cartridges/project-v8.cart
+          tar -tvzf "export-smoke/$name-linux-x64.tar.gz"
+          "$game/$name" --headless --replay fixtures/golden/cartridges/twenty-ticks.json | tee exported.json
+          target/release/farm-player --headless --cart fixtures/golden/cartridges/project-v8.cart \
+            --replay fixtures/golden/cartridges/twenty-ticks.json > reference.json
+          diff exported.json reference.json
 
       - name: Upload test results
         if: failure()
@@ -128,12 +155,74 @@ jobs:
         run: |
           if (-not (Test-Path publish/FarmingRpgMaker.exe)) { throw "publish/FarmingRpgMaker.exe is missing" }
           if (-not (Test-Path publish/farm_ffi.dll)) { throw "publish/farm_ffi.dll (Rust engine library) is missing" }
+          if (-not (Test-Path publish/players/windows-x64/farm-player.exe)) { throw "publish/players/windows-x64 (Export Game player template) is missing" }
           $info = (Get-Item publish/FarmingRpgMaker.exe).VersionInfo
           Write-Host "FarmingRpgMaker.exe $($info.ProductVersion) ($([math]::Round((Get-ChildItem publish -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB total)"
+
+      # Patches the real template's icon and version resources, then runs the game.
+      - name: Export a sample game and run it (windows-x64)
+        shell: pwsh
+        run: |
+          dotnet run --project src/FarmEngine.Cli -c Release --no-build -- export tests/FarmEngine.Core.Tests/Fixtures/project-v8.json --target windows-x64 --out export-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $game = Get-ChildItem export-smoke/windows-x64 -Directory | Select-Object -First 1
+          $exe = Join-Path $game.FullName "$($game.Name).exe"
+          $title = (Get-Content tests/FarmEngine.Core.Tests/Fixtures/project-v8.json -Raw | ConvertFrom-Json).name
+          $info = (Get-Item $exe).VersionInfo
+          Write-Host "$($info.ProductName) $($info.ProductVersion) / $($info.FileDescription) / $($info.OriginalFilename)"
+          if ($info.ProductName -ne $title -or $info.FileDescription -ne $title) { throw "Version info was not written: '$($info.ProductName)'" }
+          if ($info.OriginalFilename -ne "$($game.Name).exe") { throw "OriginalFilename is '$($info.OriginalFilename)'" }
+          try {
+            Add-Type -AssemblyName System.Drawing
+            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+            Write-Host "Icon: $($icon.Width)x$($icon.Height)"
+          } catch {
+            Write-Host "::warning::Could not read the exported icon: $_"
+          }
+          $exported = & $exe --headless --replay fixtures/golden/cartridges/twenty-ticks.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $reference = & target/release/farm-player.exe --headless --cart fixtures/golden/cartridges/project-v8.cart --replay fixtures/golden/cartridges/twenty-ticks.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host $exported
+          if ("$exported" -ne "$reference") { throw "The exported game reported $exported, the template $reference" }
 
       - name: Upload portable build
         uses: actions/upload-artifact@v4
         with:
           name: FarmingRpgMaker-win-x64-${{ github.sha }}
           path: publish
+          retention-days: 7
+
+  player-linux:
+    name: Player template (linux-x64, Steam Runtime sniper)
+    runs-on: ubuntu-latest
+    # The release builds the Linux template here (docs/EXPORT.md): Steam Runtime 3
+    # "sniper", Debian 11 with glibc 2.31, so games run on older distributions and Steam Deck.
+    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build and run farm-player
+        shell: bash
+        run: |
+          cargo build --release --locked -p farm-player
+          ldd --version | head -n 1
+          target/release/farm-player --headless --cart fixtures/golden/cartridges/project-v8.cart \
+            --replay fixtures/golden/cartridges/twenty-ticks.json
+          tools/player-templates/package.sh linux-x64 "0.0.0-ci" target/release/farm-player players
+
+      - name: Upload template
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-linux-x64-${{ github.sha }}
+          path: players
           retention-days: 7
