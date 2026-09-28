@@ -1,6 +1,6 @@
 [package]
 name = "farm-render"
-description = "Read-only world snapshots for native game renderers"
+description = "World snapshots, draw lists and a CPU rasterizer for Farming RPG Maker games"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,10 +8,32 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+default = ["raster"]
+# CPU rasterizer: executes a `DrawList` into a `tiny_skia::Pixmap` (and encodes PNG).
+raster = ["dep:tiny-skia"]
+
 [dependencies]
 farm-sim = { path = "../farm-sim" }
-serde.workspace = true
+serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
+base64 = "0.22"
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+tiny-skia = { version = "0.12", optional = true }
 
 [lints]
 workspace = true
+
+# These tests draw pixels.
+[[test]]
+name = "world"
+required-features = ["raster"]
+
+[[test]]
+name = "golden"
+required-features = ["raster"]
+
+[[test]]
+name = "bench"
+required-features = ["raster"]

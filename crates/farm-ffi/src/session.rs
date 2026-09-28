@@ -113,7 +113,7 @@ pub unsafe extern "C" fn fe_session_runtime_json(
                     .iter()
                     .find(|scene| scene.id == scene_id)
                     .ok_or("Snapshot scene not found.")?;
-                Ok(view_json::to_json(&farm_render::snapshot(&s.ctx.content, &s.state, scene, &options)))
+                Ok(view_json::to_json(&farm_render::shell_snapshot(&s.ctx.content, &s.state, scene, &options)))
             }
             RuntimeRequest::AudioCues { effects } => {
                 Ok(view_json::to_json(&effects.iter().map(farm_runtime::audio::sfx_for_effect).collect::<Vec<_>>()))
