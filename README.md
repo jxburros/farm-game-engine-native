@@ -107,6 +107,30 @@ choose **Door**, click its departure tile, choose a destination and save it;
 
 Projects are saved in `%APPDATA%\FarmingRpgMaker\projects\`.
 
+## Export Game
+
+**File → Export Game…** turns the open project into standalone games for
+Windows x64 and Linux x64 (including Steam Deck). Pick the targets and an
+output folder, and export writes one folder per target and, if you like, a
+`.zip` or `.tar.gz`:
+
+```
+WillowCreek-windows-x64.zip   WillowCreek/WillowCreek.exe, game.cart, licenses/
+WillowCreek-linux-x64.tar.gz  WillowCreek/WillowCreek, game.cart, .png, .desktop, licenses/
+```
+
+The Windows `.exe` gets the game's icon and version info. Problems errors
+stop the export; warnings are listed in the report. Export needs no compiler:
+it uses the player templates that ship with the app. The same export runs
+from the command line, for example in CI:
+
+```sh
+dotnet run --project src/FarmEngine.Cli -- export my-game.json --target windows-x64 --target linux-x64 --out dist
+```
+
+Exported games still run the headless player until the graphical game shell
+is finished. See [docs/EXPORT.md](docs/EXPORT.md).
+
 ## Build from source
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and a
@@ -120,16 +144,21 @@ dotnet run --project src/FarmingRpgMaker.App
 cargo test --workspace   # Rust engine tests, including the golden replays
 ```
 
-The F# command-line compiler can turn a validated project into a format 1
-cartridge for the Rust session:
+The F# command-line compiler can turn a validated project into a cartridge
+for the Rust session:
 
 ```sh
 dotnet run --project src/FarmEngine.Cli -- compile my-project.json --out game.cart
 ```
 
 The Rust `farm-player` can load a cartridge and run a headless replay for
-validation; see [docs/PLAYER.md](docs/PLAYER.md). Its graphical shell and
-export packaging are still in progress.
+validation; see [docs/PLAYER.md](docs/PLAYER.md). Its graphical shell is
+still in progress.
+
+The build also puts a player template for your platform (Windows or Linux
+x64) in `players/` next to the app and `farmc`, so Export Game works from a
+source build. Export tests need no extra tools; rebuilding the PE test
+fixture needs mingw-w64 (see `tests/FarmEngine.Export.Tests/Fixtures/pe/build.sh`).
 
 Everything builds and tests on Windows, macOS and Linux. The
 [CI workflow](.github/workflows/ci.yml) also publishes a self-contained
@@ -149,12 +178,13 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `FarmEngine.Interop` | P/Invoke bindings to the Rust library (`RustSession`) | — |
 | `FarmEngine.Authoring` (F#) | Project edits, undo/redo, migrations, validation, Problems, content/compiler, sample templates | `src/components/*` decisions, `packages/engine-schemas`, `packages/content-default`, `src/lib/templates.ts` |
 | `FarmEngine.Authoring.Net` (F#) | JSON I/O for the F# core (`System.Text.Json` edge) | — |
-| `FarmEngine.Cli` (F#) | `farmc compile` command-line cartridge builder | — |
+| `FarmEngine.Export` (F#) | Export Game: player templates, Windows icon/version patching, folders and archives | — |
+| `FarmEngine.Cli` (F#) | `farmc compile` and `farmc export` | — |
 | `crates/farm-sim` (Rust) | Deterministic simulation, golden-verified | `packages/engine-core` |
 | `crates/farm-ffi` (Rust) | C ABI the app loads | — |
 | `crates/farm-cart` (Rust) | Save migrations/files and verified cartridge reader | `packages/engine-schemas/src/save.ts` |
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
-| `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command | — |
+| `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command; the Export Game template | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
 | `crates/farm-render` (Rust) | Read-only play world snapshots; native Skia host still draws them | `packages/game-shell/src/snapshot.ts`, native `ShellSnapshot` |
 
@@ -169,8 +199,11 @@ Linux games built on the native player.
 Push a version tag (`v0.2.0`, or `v0.3.0-beta.1` for a pre-release). The
 [release workflow](.github/workflows/release.yml) then:
 
-1. builds, tests and packages the app with Velopack;
-2. publishes the installer, portable zip and delta-update packages as a
+1. builds the Export Game player templates for Windows and Linux;
+2. builds, tests and packages the app with Velopack, with the templates in
+   its `players/` folder;
+3. publishes the installer, portable zip, delta-update packages and the
+   templates (`player-windows-x64.zip`, `player-linux-x64.tar.gz`) as a
    GitHub Release.
 
 Installed apps find the release in their Update Center. See

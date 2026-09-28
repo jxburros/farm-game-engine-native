@@ -252,6 +252,7 @@ fixtures/golden/                 # shared by Rust and F# tests (moved from tests
 src/
   FarmEngine.Authoring/          # F#, Fable-safe core (see below)
   FarmEngine.Authoring.Net/      # F#, .NET-only: JSON I/O, files, cartridge writer
+  FarmEngine.Export/             # F#, .NET-only: Export Game (templates, PE resources, archives)
   FarmEngine.Lab/                # F#: balancing lab, farmc CLI
   FarmEngine.Interop/            # C#: generated bindings + SafeHandle wrappers; builds farm-ffi
   FarmingRpgMaker.Updates/       # C#, unchanged

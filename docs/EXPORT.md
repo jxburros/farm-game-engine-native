@@ -1,11 +1,14 @@
 # Export Game
 
-**Status:** export settings, validation, a format 1 cartridge compiler and a
-headless Rust player are available (September 2026); no graphical desktop
-export yet. Export is built in phase 6
-of [LANGUAGES.md](LANGUAGES.md#phases), on the Rust player. This document
-covers what an exported game is. It also lists what the earlier phases must
-get right so that export works when it arrives.
+**Status:** Export Game works (September 2026). **File → Export Game…** in the
+editor and `farmc export` build the Windows and Linux folders and archives
+described below. See [What is implemented](#what-is-implemented). The games
+still run the headless player: the graphical shell, title screen and
+controller support are phase 6 work
+([LANGUAGES.md](LANGUAGES.md#phases)). When that shell lands in `farm-player`,
+exported games get it with no change to export. This document covers what an
+exported game is, how export builds it, and what the earlier phases must get
+right.
 
 ## The goal
 
@@ -36,12 +39,13 @@ player template for the target ─────────┘    (renamed exe, i
 ```
 
 - **Player templates.** On every release, CI builds `farm-player` for each
-  target and publishes the builds as release assets (`player-windows-x64`,
-  `player-linux-x64`, `player-web`). The installer ships the Windows and Linux
-  templates, so export works offline. The web template downloads on first use,
-  through the same GitHub Releases client as the Update Center. A template's
-  version must match the editor's version exactly. The editor refuses a
-  template that doesn't match.
+  target and publishes the builds as release assets (`player-windows-x64.zip`,
+  `player-linux-x64.tar.gz`, and later `player-web`). The installer ships the
+  Windows and Linux templates, so export works offline. The web template will
+  download on first use, through the same GitHub Releases client as the Update
+  Center. A template's version must match the editor's version exactly. The
+  editor refuses a template that doesn't match. See
+  [Player templates](#player-templates).
 - **No toolchain on the creator's machine.** Export never compiles Rust or
   .NET code. It copies files, patches metadata and writes files. That means an
   editor on Windows can export the Linux build, and the other way around.
@@ -53,17 +57,47 @@ player template for the target ─────────┘    (renamed exe, i
   that for development.
 - **Headless export.** `farmc export <project> --target windows-x64 --out dist/`
   does exactly what the menu command does, so creators can build their game in
-  CI.
+  CI:
+
+  ```sh
+  farmc export my-game.json --target windows-x64 --target linux-x64 --out dist
+  farmc export my-game.json --out dist --no-archive --templates path/to/players
+  ```
+
+  Without `--target` it exports the project's saved targets. It prints the
+  report and exits with 1 when anything failed.
 - **Reproducible.** The same project exported by the same editor version gives
-  a byte-identical `game.cart`. The cartridge holds no timestamps, and archive
-  entries use a fixed timestamp.
+  a byte-identical `game.cart`. The cartridge holds no timestamps. Archives
+  sort their entries, use one fixed timestamp (1980-01-01), no owner names and
+  a fixed gzip header, so two exports on the same machine are byte-identical.
+  Icons are the exception across machines: Skia and zlib may pick CPU-specific
+  code paths, so icon bytes (and the files holding them) can differ between
+  machines. The cartridge never does.
 - **Errors block export.** Export runs the Problems pipeline first. Any error
   stops it. Warnings are listed in the export report.
-- **Only used assets ship.** The compiler embeds the assets that content
-  references. Unused assets are reported as a warning, so a game doesn't ship
-  the creator's scratch art.
+- **Only used assets ship.** The compiler should embed only the assets that
+  content references. Export already reports unused assets as warnings (an
+  asset is used when anything in the project outside the asset list names its
+  id or data URL, when it is the art of a tile type in use, or when a used
+  asset's frames draw from it). The cartridge still embeds every asset for
+  now; the report says so, and [ROADMAP.md](../ROADMAP.md) tracks the fix.
 
 ### Output layout
+
+Each target gets its own folder under the output folder, and an archive next
+to it:
+
+```
+dist/
+  windows-x64/WillowCreek/        the Windows game folder (below)
+  linux-x64/WillowCreek/          the Linux game folder (below)
+  WillowCreek-windows-x64.zip     entries under WillowCreek/
+  WillowCreek-linux-x64.tar.gz    entries under WillowCreek/
+```
+
+Export refuses to write into a game folder that holds files it wouldn't
+write (a creator's notes, say), so a mistyped output folder loses nothing.
+Exporting again over its own earlier output replaces it.
 
 Windows:
 
@@ -101,9 +135,79 @@ with no external tools. Linux executables carry no icon. The `.png` and
 `.desktop` files are there for desktop launchers, and Steam uses its own store
 art.
 
-`licenses/THIRD-PARTY.txt` lists the Rust crates in the player. It is
-generated with [cargo-about](https://github.com/EmbarkStudios/cargo-about)
-when the template is built.
+`licenses/THIRD-PARTY.txt` lists the Rust crates in the player with their
+license texts. [cargo-about](https://github.com/EmbarkStudios/cargo-about)
+generates it (`tools/player-licenses/generate.sh`, checked in; CI fails when
+it is stale). Every template ships it and export copies it.
+
+The `.desktop` file starts the game from the folder it sits in
+(`Exec=sh -c "exec \\"\\$(dirname \\"\\$0\\")/WillowCreek\\"" %k`), which works in
+launchers that pass the file's location. Its `Icon=WillowCreek` works once the
+game is installed with its `.png`. The file passes `desktop-file-validate`.
+
+### Player templates
+
+A template is a folder per target with the player, its manifest and the
+license notices:
+
+```
+players/windows-x64/farm-player.exe   players/linux-x64/farm-player
+players/windows-x64/template.json     players/linux-x64/template.json
+players/windows-x64/THIRD-PARTY.txt   players/linux-x64/THIRD-PARTY.txt
+```
+
+`template.json` is `{ "target": "linux-x64", "version": "0.2.0", "sha256": "…" }`.
+Export refuses a template for another target, another editor version, or with
+an executable that doesn't match the checksum. A missing template fails that
+target only; the other targets still export.
+
+Export looks in `--templates` (farmc) or `ProjectCommandHandler.PlayerTemplatesFolder`
+(the app), then `FARM_PLAYER_TEMPLATES`, then `players/` next to the running
+executable. The release workflow builds both templates (the Linux one in the
+Steam Runtime "sniper" SDK container), ships them in the app's `players/`
+folder through `-p:FarmPlayerTemplatesDir`, and attaches them to the release
+as `player-windows-x64.zip` and `player-linux-x64.tar.gz`
+(`tools/player-templates/package.sh` stages them). Development builds get the
+host template from the `FarmPlayerTemplates` target in
+`src/FarmEngine.Export/FarmEngine.Export.fsproj`, which runs
+`cargo build -p farm-player` and writes `template.json` with the build's
+version. The app, farmc and the tests all get it in their output.
+
+### Windows icon and version info
+
+Export rewrites the icon and `VERSIONINFO` without a resource compiler, and
+without moving anything in the file:
+
+1. **Placeholders in the template.** On Windows targets, `crates/farm-player/build.rs`
+   compiles a resource script with `embed-resource` (`rc.exe` on MSVC,
+   `windres` on GNU). It holds icon group 1 with four PNG icon slots (16, 32,
+   48 and 256 pixels) and a `VERSIONINFO` with nine 200-character strings.
+   Each icon slot is a 1×1 PNG padded with zeros to `n×n×4 + n + 1024` bytes,
+   room for any 8-bit RGBA PNG of that size. That reserves about 281 KB.
+2. **Patch in place.** `PeResources` (F#) parses the PE headers and the
+   `.rsrc` tree (type → name → language → data entry). The room for each
+   resource is the gap to the next resource structure or the section end. It
+   writes Skia's PNGs into the icon slots, updates the icon group entries
+   (size, 32 bits, byte count), writes a fresh `VS_VERSIONINFO` (`VersionInfo`)
+   into the version slot, shrinks each data entry's size, zeroes the rest of
+   the slot, and recomputes the PE checksum.
+3. **Clear failures.** A template without the slots, data larger than its slot
+   (a very long title, say) or a file that isn't a PE gives one sentence in
+   the report, never a broken executable.
+
+The version info has `ProductName` and `FileDescription` (the title; Task
+Manager shows the description), `FileVersion`/`ProductVersion` (the version
+string, and its leading numbers in the fixed info), `CompanyName` and
+`LegalCopyright` (the company, else the author), `InternalName`,
+`OriginalFilename` and a "Made with Farming RPG Maker" comment. The icon is the
+export `icon` asset scaled into a square, or the editor's icon when none is set.
+
+The tests patch `tests/FarmEngine.Export.Tests/Fixtures/pe/player-fixture.exe`,
+a 56 KB program built by mingw's gcc and windres with the same layout and
+smaller slots (`build.sh` next to it rebuilds it), and read everything back.
+`wrestool`/`icotool`, `objdump -p` and Python's `pefile` read the patched files
+correctly, and pefile agrees with the checksum. CI exports a game on the Windows
+runner and checks its version info with PowerShell.
 
 ## Export settings
 
@@ -121,13 +225,15 @@ F# Problems pipeline validates the block and blocks export on errors.
 | `version` | `1.2.0` | Shown on the title screen, written to the exe's version info, and stored in saves. |
 | `gameId` | `com.example.willowcreek` | Names the save folder. It is generated once and **never** changes, even when the game is renamed. |
 | `author`, `company` | | Version info and credits. |
-| `icon` | an asset id | PNG, at least 256×256. Export builds the `.ico`. |
+| `icon` | an asset id | PNG, at least 256×256. Export renders the 16–256 pixel icons from it. |
 | `window` | `{ width, height, fullscreen }` | Default window size and whether the game starts fullscreen. |
 | `pixelScale` | `integer` or `fit` | Integer scaling keeps pixel art crisp and letterboxes the rest. |
 | `credits` | text | Shown on the credits screen. |
 | `targets` | `["windows-x64", "linux-x64"]` | The targets the creator exported last time. |
 
-Validation lives in F# `ChecksExport`, called by `Problems.collect`.
+Validation lives in F# `ChecksExport`, called by `Problems.collect`. The editor
+has no controls for these fields yet (Export Game records `targets`); until it
+does, export uses the defaults or values set in the project JSON.
 
 ## What the player must include (phase 6)
 
@@ -182,6 +288,45 @@ expensive to change after games have shipped:
 | **3. F# authoring** | A clear new-game start state (see [open questions](#open-questions)). |
 | **6. Player** | Linux templates are built in an old-glibc container ([Steam Runtime 3 "sniper"](https://gitlab.steamos.cloud/steamrt/sniper/sdk)) so they run on older distributions and on Steam Deck. |
 
+## What is implemented
+
+| Piece | Where |
+|---|---|
+| Orchestration, report, C# entry points | `src/FarmEngine.Export` (F#): `Exporter.run`, `GameExporter.Export` |
+| Menu command and dialog | `ProjectCommandHandler.ExportGameAsync`, `ExportGameViewModel`, `ExportGameWindow` |
+| CLI | `farmc export` in `src/FarmEngine.Cli` |
+| Placeholder resources | `crates/farm-player/build.rs` |
+| Templates | `FarmPlayerTemplates` MSBuild target, `tools/player-templates/package.sh`, release workflow |
+| License notices | `tools/player-licenses` |
+
+The F# API:
+
+- `Exporter.run : ExportOptions -> GameProject -> ExportReport` runs everything.
+  `ExportOptions` has `Targets`, `OutputFolder`, `TemplatesFolder`,
+  `CreateArchives` and `EditorVersion`. It never throws for project, template or
+  file problems; they are in the report.
+- `Exporter.identity`, `Exporter.check` (Problems errors and warnings plus
+  unused assets), `Exporter.package` (one target's files in memory) and
+  `Exporter.format` (the report as text).
+- `PeResources.read/patch/readIcons/readVersion/checksum`, `VersionInfo.build/parse`,
+  `Icons.render`, `Templates.find`, `AssetUsage.unused`, `DesktopEntry.create`,
+  `Archives.zip/tar/gzip/tarGz`.
+
+From C#: `GameExporter.Export(project, targets, outputFolder, createArchives, templatesFolder)`,
+`GameExporter.Summarize(project)` (title, executable, version, game id, last
+targets, Problems counts), `GameExporter.TryRememberTargets(project, targets, out edit)`
+(the undoable edit that records `export.targets`), `GameExporter.Targets`,
+`GameExporter.EditorVersion`, `GameExporter.DefaultTemplatesFolder` and
+`GameExporter.Format(report)`.
+
+The report has, per target: the folder, the archive, each file with its size,
+warnings and errors. At the top: the title, version, game id, the cartridge
+size and SHA-256, errors that stopped the export and project warnings.
+
+The dialog remembers the output folder and the archive choice in the app's
+`settings.json`, and records the chosen targets in the project. Its **Open
+folder** links go through `IUrlLauncher.OpenFolder`.
+
 ## Tests
 
 - CI exports every sample game for each target. It then runs the exported
@@ -195,6 +340,16 @@ expensive to change after games have shipped:
   loads after content is added to and removed from that game.
 - **Reproducible export:** exporting a fixture project twice gives identical
   bytes.
+
+Implemented now: `tests/FarmEngine.Export.Tests` covers the folder layout per
+target, Problems errors blocking export, warnings and unused assets, identical
+archives and folders from two exports, the tar execute bit, the `.desktop`
+text, icon sizes, the PE patch round trip on the fixture (and its failures),
+template version and checksum refusal, a missing template failing one target,
+and an end-to-end export for the host target whose player runs headless and
+reports the right game id, version and hash. `FarmingRpgMaker.App.Tests` drives
+the dialog. CI exports `project-v8.json` on Linux and Windows and runs the
+exported game against the checked-in replay.
 
 ## Notes for creators
 

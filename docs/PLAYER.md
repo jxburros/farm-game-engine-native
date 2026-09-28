@@ -4,8 +4,9 @@
 `game.cart`. It currently runs headless: it verifies the cartridge, creates
 the initial state or loads a compatible save, applies a replay log, and
 prints a JSON report with the game id, version, content and state hashes,
-effects and save warnings. The graphical game shell, controller support and
-desktop export packaging are still ahead.
+effects and save warnings. The graphical game shell and controller support
+are still ahead. Export Game ships this player, renamed, next to the game's
+`game.cart` ([EXPORT.md](EXPORT.md)).
 
 ```sh
 cargo run -p farm-player -- --headless --cart game.cart

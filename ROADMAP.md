@@ -147,7 +147,9 @@ the most.
   presentation and play state with the project path.
 - [x] Add optional export identity/window/target settings to the project,
   with a stable generated game id and F# Problems validation. The cartridge
-  compiler consumes them; Export Game still needs the graphical player and packaging.
+  compiler and Export Game consume them.
+- [ ] Editor controls for the export settings (title, executable name,
+  version, company, icon). Export uses the defaults until then.
 - [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
   the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
   Fable-safe today).
@@ -206,6 +208,15 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Initial `farm-render` crate supplies host-independent world snapshots
   and is used by the editor's Rust Play Mode. GPU drawing, Rust game UI,
   audio playback and a graphical standalone player remain open.
+- [x] Export Game packaging (`FarmEngine.Export`, File → Export Game…,
+  `farmc export`): Problems gate, deterministic cartridge, renamed player
+  template, Windows icon and version info patched from .NET, Linux `.png` and
+  `.desktop`, license notices, reproducible `.zip`/`.tar.gz`. Releases build
+  both templates (Linux in Steam Runtime sniper) and ship them in `players/`.
+  The exported player is still the headless one until the graphical shell lands.
+- [ ] Ship only used assets: the cartridge's asset table still holds every
+  project asset. Export reports unused ones as warnings; the compiler should
+  leave them out of `presentation.customAssets`.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).
@@ -222,9 +233,11 @@ next to it. Windows and Linux (including Steam Deck) come first. A web demo
 build for itch.io pages is optional and comes after them, and macOS comes
 later. The web version's single-file HTML export is not ported.
 
-It ships in phase 6, but earlier phases make decisions it depends on (the
-cartridge's game info, saves that survive game updates, a deterministic
-compiler). [docs/EXPORT.md](docs/EXPORT.md) has the design and the list.
+Packaging works now: **File → Export Game…** and `farmc export` build the
+Windows and Linux folders and archives from the prebuilt templates. The games
+it makes still run the headless player until the graphical shell (phase 6)
+replaces it; export itself doesn't change when that happens.
+[docs/EXPORT.md](docs/EXPORT.md) has the design, what is done and what is left.
 
 ## Later
 

@@ -2,6 +2,17 @@
 
 ## 0.2.0 (unreleased)
 
+- **Export Game.** File → Export Game… builds standalone Windows x64 and Linux
+  x64 games from the open project, with an optional `.zip` or `.tar.gz` for
+  each. The Windows executable gets the game's icon and version info, written
+  from .NET into placeholder resources, with no external tools. Linux games get
+  a `.png` icon and a `.desktop` file. Every game ships the player's license
+  notices. Problems errors stop the export, warnings and unused assets are
+  listed, and two exports of the same project are byte-identical.
+  `farmc export` does the same from the command line. Releases build the
+  player templates (Linux in the Steam Runtime sniper SDK) and ship them with
+  the app. Exported games run the headless player until the graphical shell
+  is ready.
 - **Rust Play Mode runtime.** Frame timing, gameplay input bindings, minigame
   scoring, creator-panel values, calendar displays and sound-cue mapping now
   execute in Rust when Rust Play Mode is selected. Minigame views use mount
