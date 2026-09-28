@@ -50,6 +50,9 @@ type Edit =
     /// Place a machine of a machine type on a tile.
     | PlaceMachine of sceneId: string * x: int * y: int * machineTypeId: string
     | RemoveMachine of sceneId: string * x: int * y: int
+    /// The map's Remove tool: the tile's crop, node, item and machine and every animal standing
+    /// on it. NPCs stay: they are moved on the map, never deleted from it.
+    | ClearTile of sceneId: string * x: int * y: int
     /// EditorPanel "Clear Items": drop every crop and item in the scene.
     | ClearCropsAndItems of sceneId: string
     /// EditorPanel "Reset Soil": every soil tile becomes dry grass without a crop.

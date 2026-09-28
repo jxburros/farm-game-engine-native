@@ -95,6 +95,27 @@ module internal EditScenes =
     let removeMachine (sceneId: string) (x: int) (y: int) (project: GameProject) =
         Proj.mapScene sceneId (Proj.mapCell x y (fun tile -> if isNull tile.Machine then tile else setField tile "Machine" null)) project
 
+    /// The Remove tool: what was placed on the tile goes, and so does every animal standing on it
+    /// (animals stand on the tile their position rounds down to). NPCs stay.
+    let clearTile (sceneId: string) (x: int) (y: int) (project: GameProject) =
+        match Proj.tryScene sceneId project with
+        | Some scene when Proj.inBounds scene x y ->
+            let cleared =
+                Proj.mapScene sceneId (Proj.mapCell x y (fun tile ->
+                    if isNull tile.Crop && isNull tile.Node && isNull tile.Item && isNull tile.Machine then tile
+                    else Records.withValues tile [ ("Crop", null); ("Node", null); ("Item", null); ("Machine", null) ])) project
+            let standsHere (a: AnimalState) = a.SceneId = sceneId && int (floor a.X) = x && int (floor a.Y) = y
+            Proj.update "Animals" (Lists.filterChanged (standsHere >> not) cleared.Animals) cleared
+        | _ -> project
+
+    /// Web eyedropper (`case 'eyedropper'`): the tile's type and the art on that type's own layer.
+    let brushAt (project: GameProject) (sceneId: string) (x: int) (y: int) : (string * VisualRef option) option =
+        match Proj.tryScene sceneId project with
+        | Some scene when Proj.inBounds scene x y ->
+            let tile = scene.Tiles.[y].[x]
+            Some(tile.Type, TileRules.visualOf (TileRules.layerOf tile.Type) tile)
+        | _ -> None
+
     /// EditorPanel "Clear Items".
     let clearCropsAndItems (sceneId: string) (project: GameProject) =
         Proj.mapScene sceneId (Proj.mapTiles (fun tile ->

@@ -36,6 +36,7 @@ module Document =
         | RemovePlacedItem(sceneId, x, y) -> EditScenes.removePlacedItem sceneId x y project
         | PlaceMachine(sceneId, x, y, machineTypeId) -> EditScenes.placeMachine sceneId x y machineTypeId project
         | RemoveMachine(sceneId, x, y) -> EditScenes.removeMachine sceneId x y project
+        | ClearTile(sceneId, x, y) -> EditScenes.clearTile sceneId x y project
         | ClearCropsAndItems sceneId -> EditScenes.clearCropsAndItems sceneId project
         | ResetSoil sceneId -> EditScenes.resetSoil sceneId project
         | FillScene(sceneId, tileType) -> EditScenes.fillScene sceneId tileType project

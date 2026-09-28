@@ -223,3 +223,76 @@ let ``the brush art rides along when painting the selected type`` () =
     Assert.Null((tile cleared farmId 3 3).Visuals)
     let art = errors cleared |> List.filter (fun p -> p.Code.StartsWith "graphics.")
     Assert.True(art.IsEmpty, describe art)
+
+[<Fact>]
+let ``the eyedropper picks the tile type and the art on that type's layer`` () =
+    let project = starter ()
+    let visual = VisualRef(AssetId = "art-path")
+    let painted = project |> apply (Batch("path art", [ PaintTiles(farmId, Overlay, [ (4, 4) ], "path"); SetTileVisual(farmId, Overlay, [ (4, 4) ], Some visual) ]))
+    match nonNull (Edits.PickBrush(painted, farmId, 4, 4)) with
+    | SelectBrush(tileType, picked) ->
+        Assert.Equal("path", tileType)
+        Assert.Same(visual, Option.toObj picked)
+    | other -> failwithf "expected SelectBrush, got %A" other
+    let brush = painted |> apply (nonNull (Edits.PickBrush(painted, farmId, 4, 4)))
+    Assert.Equal("path", brush.SelectedTileType)
+    Assert.Same(visual, brush.SelectedTileVisual)
+    // Art on another layer is not picked up.
+    match nonNull (Edits.PickBrush(painted |> apply (PaintTiles(farmId, Background, [ (4, 4) ], "grass")), farmId, 4, 4)) with
+    | SelectBrush(tileType, picked) ->
+        Assert.Equal("grass", tileType)
+        Assert.True(picked.IsNone)
+    | other -> failwithf "expected SelectBrush, got %A" other
+    Assert.Null(Edits.PickBrush(painted, farmId, 99, 0))
+    Assert.Null(Edits.PickBrush(painted, "nope", 0, 0))
+
+[<Fact>]
+let ``the remove tool clears what was placed on a tile and the animals standing there`` () =
+    let project = starter ()
+    let wood = project.Items |> Seq.find (fun i -> i.Id = "material-wood")
+    let species = project.AnimalSpecies.[0].Id
+    let here = Defaults.newAnimal project species farmId 5 5
+    let placed =
+        project
+        |> apply (Batch("place", [ PlaceNode(farmId, 5, 5, "node-rock"); PlaceItem(farmId, 5, 5, wood); PlaceMachine(farmId, 5, 5, "machine-kitchen")
+                                   UpsertAnimal here; MoveNpc("npc-farmer", farmId, 5, 5) ]))
+    let neighbour = Defaults.newAnimal placed species farmId 6 5
+    let placed = placed |> apply (UpsertAnimal neighbour)
+    let cleared = placed |> apply (ClearTile(farmId, 5, 5))
+    let t = tile cleared farmId 5 5
+    Assert.Null t.Node
+    Assert.Null t.Item
+    Assert.Null t.Machine
+    Assert.DoesNotContain(cleared.Animals, fun a -> a.Id = here.Id)
+    Assert.Contains(cleared.Animals, fun a -> a.Id = neighbour.Id)
+    // NPCs are moved on the map, never deleted from it.
+    Assert.Equal(5.0, (npc cleared "npc-farmer").X)
+    Assert.Same(cleared, cleared |> apply (ClearTile(farmId, 5, 5)))
+    Assert.Same(placed, placed |> apply (ClearTile(farmId, 99, 5)))
+    Assert.Same(placed, placed |> apply (ClearTile("nope", 5, 5)))
+
+[<Fact>]
+let ``the place tools offer the project's content and put it on the clicked tile`` () =
+    let project = starter ()
+    let ids kind = MapPlacement.Choices(kind, project) |> Seq.map (fun o -> o.Id) |> List.ofSeq
+    Assert.Contains("npc-farmer", ids "npc")
+    Assert.Contains("node-rock", ids "nodeType")
+    Assert.Equal((ids "nodeType").Length, (ids "nodeType" |> List.distinct).Length)
+    Assert.Contains("material-wood", ids "item")
+    Assert.Contains("machine-kitchen", ids "machineType")
+    Assert.Equal<string list>(project.AnimalSpecies |> Seq.map (fun s -> s.Id) |> List.ofSeq, ids "animalSpecies")
+    Assert.Empty(MapPlacement.Choices("scene", project))
+
+    let place kind id = project |> apply (nonNull (MapPlacement.Place(project, kind, id, farmId, 5, 5)))
+    let farmer = npc (place "npc" "npc-farmer") "npc-farmer"
+    Assert.Equal((farmId, 5.0, 5.0), (farmer.SceneId, farmer.X, farmer.Y))
+    Assert.Equal("node-rock", (nonNull (tile (place "nodeType" "node-rock") farmId 5 5).Node).TypeId)
+    Assert.Equal("material-wood", (nonNull (tile (place "item" "material-wood") farmId 5 5).Item).Id)
+    Assert.Equal("machine-kitchen", (nonNull (tile (place "machineType" "machine-kitchen") farmId 5 5).Machine).TypeId)
+    let species = project.AnimalSpecies.[0]
+    let withAnimal = place "animalSpecies" species.Id
+    Assert.Equal(project.Animals.Count + 1, withAnimal.Animals.Count)
+    let animal = withAnimal.Animals |> Seq.last
+    Assert.Equal((species.Id, species.Name, farmId, 5.0, 5.0), (animal.SpeciesId, animal.Name, animal.SceneId, animal.X, animal.Y))
+    Assert.Null(MapPlacement.Place(project, "item", "item-unknown", farmId, 5, 5))
+    Assert.Null(MapPlacement.Place(project, "scene", farmId, farmId, 5, 5))
