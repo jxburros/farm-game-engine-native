@@ -11,6 +11,7 @@ members = [
     "crates/farm-cart-schema",
     "crates/farm-runtime",
     "crates/farm-render",
+    "crates/farm-ui",
     "crates/farm-ffi",
     "crates/farm-player",
     "crates/farm-plugins",
