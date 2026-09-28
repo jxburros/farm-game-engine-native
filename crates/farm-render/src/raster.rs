@@ -6,6 +6,14 @@
 //! Gaussian (a separable kernel over an offscreen coverage mask, cached by shape), daylight
 //! uses `Modulate`, foliage tints are cached copies of the sheets, and glyphs are outlined from
 //! the embedded fonts (cached per glyph). Transforms are expected to be axis-aligned.
+//!
+//! Under a scale-and-translate transform (every draw list here), hard-edged rectangles, rounded
+//! rectangles and cached blurs are blended by direct loops over the covered pixels instead of the
+//! general pipeline; UI frames are mostly such shapes.
+//!
+//! Plain (unstroked) text under a scale-and-translate transform is drawn from cached glyph
+//! sprites: each glyph is rasterized once per font, device size, colour and quarter-pixel
+//! position, then blended in. UI text, redrawn every frame, costs a copy instead of a path fill.
 
 use crate::builtin_art::BuiltinArt;
 use crate::css_color::Color;
@@ -17,7 +25,7 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use tiny_skia::{
     BlendMode, FillRule, FilterQuality, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, Pattern, Pixmap, PixmapMut,
-    PixmapPaint, PixmapRef, Point, SpreadMode, Stroke, Transform,
+    PixmapRef, Point, SpreadMode, Stroke, Transform,
 };
 
 /// Cache bounds (entries). Caches are cleared when they grow past these.
@@ -25,6 +33,11 @@ const MAX_BLURS: usize = 512;
 const MAX_TINTED: usize = 64;
 const MAX_CROPS: usize = 1024;
 const MAX_GLYPHS: usize = 4096;
+const MAX_GLYPH_SPRITES: usize = 4096;
+/// Glyph sprite positions per device pixel, on each axis.
+const SUBPIXELS: f32 = 4.0;
+/// Larger text is filled as paths (big titles are few; their sprites would be large).
+const MAX_SPRITE_TEXT: f32 = 160.0;
 /// Largest offscreen blur mask, in pixels.
 const MAX_BLUR_PIXELS: i64 = 4096 * 4096;
 
@@ -72,12 +85,32 @@ struct CropKey {
     y1: u32,
 }
 
+/// A glyph rasterized at one device size, colour and subpixel position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct SpriteKey {
+    font: FontId,
+    glyph: u16,
+    /// Device pixels × 64.
+    size: u32,
+    x: u8,
+    y: u8,
+    color: u32,
+}
+
+/// A premultiplied glyph image and where its top-left sits relative to the pen position.
+struct GlyphSprite {
+    left: i32,
+    top: i32,
+    pixmap: Pixmap,
+}
+
 #[derive(Default)]
 struct Caches {
     blurs: BTreeMap<BlurKey, Pixmap>,
     tinted: BTreeMap<(ImageId, u32), Pixmap>,
     crops: BTreeMap<CropKey, Pixmap>,
     glyphs: BTreeMap<(FontId, u16), Option<Path>>,
+    sprites: BTreeMap<SpriteKey, Option<GlyphSprite>>,
 }
 
 #[derive(Default)]
@@ -131,6 +164,7 @@ impl std::fmt::Debug for Rasterizer {
             .field("tinted", &self.caches.tinted.len())
             .field("crops", &self.caches.crops.len())
             .field("glyphs", &self.caches.glyphs.len())
+            .field("sprites", &self.caches.sprites.len())
             .finish()
     }
 }
@@ -316,6 +350,211 @@ impl Caches {
     }
 }
 
+impl Caches {
+    /// The sprite of a glyph (rasterized on first use); `None` for empty glyphs.
+    fn sprite(&mut self, key: SpriteKey) -> Option<&GlyphSprite> {
+        if !self.sprites.contains_key(&key) {
+            limit(&mut self.sprites, MAX_GLYPH_SPRITES);
+            let path = self.glyph(key.font, ttf_parser::GlyphId(key.glyph)).cloned();
+            let sprite = path.and_then(|path| {
+                let scale = key.size as f32 / 64.0 / text::font(key.font).units_per_em();
+                let (dx, dy) = (f32::from(key.x) / SUBPIXELS, f32::from(key.y) / SUBPIXELS);
+                let bounds = path.bounds();
+                let left = (bounds.left() * scale + dx).floor() as i32 - 1;
+                let top = (bounds.top() * scale + dy).floor() as i32 - 1;
+                let right = (bounds.right() * scale + dx).ceil() as i32 + 1;
+                let bottom = (bounds.bottom() * scale + dy).ceil() as i32 + 1;
+                let mut pixmap = Pixmap::new((right - left).max(1) as u32, (bottom - top).max(1) as u32)?;
+                let transform = Transform::from_row(scale, 0.0, 0.0, scale, dx - left as f32, dy - top as f32);
+                let color = key.color.to_be_bytes();
+                let paint = solid(Color::rgba(color[0], color[1], color[2], color[3]), true);
+                pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+                Some(GlyphSprite { left, top, pixmap })
+            });
+            self.sprites.insert(key, sprite);
+        }
+        self.sprites.get(&key).and_then(Option::as_ref)
+    }
+}
+
+/// True for transforms that only scale (positively) and translate.
+fn is_scale_translate(transform: Transform) -> bool {
+    transform.kx == 0.0 && transform.ky == 0.0 && transform.sx > 0.0 && transform.sy > 0.0
+}
+
+/// The device pixel box `[x0, x1) × [y0, y1)` inside the target and the clip.
+fn pixel_box(target: &PixmapMut<'_>, x0: i64, y0: i64, x1: i64, y1: i64, clip: Option<ClipBox>) -> Option<ClipBox> {
+    let (width, height) = (i64::from(target.width()), i64::from(target.height()));
+    let clip = clip.unwrap_or(ClipBox { x0: 0, y0: 0, x1: width as i32, y1: height as i32 });
+    let x0 = x0.max(i64::from(clip.x0)).max(0);
+    let y0 = y0.max(i64::from(clip.y0)).max(0);
+    let x1 = x1.min(i64::from(clip.x1)).min(width);
+    let y1 = y1.min(i64::from(clip.y1)).min(height);
+    (x0 < x1 && y0 < y1).then_some(ClipBox { x0: x0 as i32, y0: y0 as i32, x1: x1 as i32, y1: y1 as i32 })
+}
+
+/// Premultiplied RGBA of a colour at `coverage` (0..=255).
+fn premultiplied(color: Color, coverage: u32) -> [u32; 4] {
+    let alpha = div255(u32::from(color.a) * coverage + 127).min(255);
+    let channel = |c: u8| u32::from(mul_div_255_round(c, alpha as u8));
+    [channel(color.r), channel(color.g), channel(color.b), alpha]
+}
+
+/// Source-over of one premultiplied colour onto a pixel.
+fn blend_pixel(out: &mut [u8], source: [u32; 4]) {
+    match source[3] {
+        0 => {}
+        255 => {
+            for (d, s) in out.iter_mut().zip(source) {
+                *d = s as u8;
+            }
+        }
+        a => {
+            let inverse = 255 - a;
+            for (d, s) in out.iter_mut().zip(source) {
+                *d = (s + div255(u32::from(*d) * inverse)).min(255) as u8;
+            }
+        }
+    }
+}
+
+/// A hard-edged rectangle (device pixels): covers the pixels whose centres are inside, like
+/// `FillRect` without anti-aliasing.
+fn fill_device_rect(
+    target: &mut PixmapMut<'_>,
+    (left, top, right, bottom): (f32, f32, f32, f32),
+    color: Color,
+    clip: Option<ClipBox>,
+) {
+    if color.a == 0 || !(left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()) {
+        return;
+    }
+    let edge = |v: f32| (v - 0.5).ceil().clamp(-(1 << 30) as f32, (1 << 30) as f32) as i64;
+    let Some(area) = pixel_box(target, edge(left), edge(top), edge(right), edge(bottom), clip) else { return };
+    let source = premultiplied(color, 255);
+    let stride = target.width() as usize * 4;
+    let data = target.data_mut();
+    let pixel: [u8; 4] = source.map(|c| c as u8);
+    for row in area.y0..area.y1 {
+        let start = row as usize * stride + area.x0 as usize * 4;
+        let span = &mut data[start..start + (area.x1 - area.x0) as usize * 4];
+        if source[3] == 255 {
+            for out in span.chunks_exact_mut(4) {
+                out.copy_from_slice(&pixel);
+            }
+        } else {
+            for out in span.chunks_exact_mut(4) {
+                blend_pixel(out, source);
+            }
+        }
+    }
+}
+
+/// An anti-aliased rounded rectangle (device pixels): each pixel's coverage comes from its
+/// centre's signed distance to the shape, so only the corners need square roots.
+fn fill_device_round_rect(
+    target: &mut PixmapMut<'_>,
+    (left, top, right, bottom): (f32, f32, f32, f32),
+    radius: f32,
+    color: Color,
+    clip: Option<ClipBox>,
+) {
+    let (width, height) = (right - left, bottom - top);
+    if color.a == 0 || !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
+        return;
+    }
+    let radius = if radius.is_finite() { radius.clamp(0.0, width.min(height) / 2.0) } else { 0.0 };
+    let Some(area) =
+        pixel_box(target, left.floor() as i64, top.floor() as i64, right.ceil() as i64, bottom.ceil() as i64, clip)
+    else {
+        return;
+    };
+    let (center_x, center_y) = (left + width / 2.0, top + height / 2.0);
+    let (half_x, half_y) = (width / 2.0 - radius, height / 2.0 - radius);
+    let full = premultiplied(color, 255);
+    let full_pixel: [u8; 4] = full.map(|c| c as u8);
+    let stride = target.width() as usize * 4;
+    let data = target.data_mut();
+    let coverage_at = |column: i32, qy: f32| {
+        let qx = (column as f32 + 0.5 - center_x).abs() - half_x;
+        let distance = if qx > 0.0 && qy > 0.0 { (qx * qx + qy * qy).sqrt() } else { qx.max(qy) } - radius;
+        (0.5 - distance).clamp(0.0, 1.0)
+    };
+    for row in area.y0..area.y1 {
+        let qy = (row as f32 + 0.5 - center_y).abs() - half_y;
+        let start = row as usize * stride;
+        // Columns whose centre lies at least half a pixel inside the shape are fully covered.
+        let inner = if qy <= 0.0 {
+            (qy - radius <= -0.5).then_some(half_x + radius - 0.5)
+        } else {
+            (qy <= radius - 0.5).then(|| half_x + ((radius - 0.5).powi(2) - qy * qy).max(0.0).sqrt())
+        };
+        let (full_start, full_end) = match inner.filter(|inner| *inner >= 0.0) {
+            Some(inner) => {
+                let first = ((center_x - inner - 0.5).ceil() as i32).clamp(area.x0, area.x1);
+                let last = (((center_x + inner - 0.5).floor() as i32) + 1).clamp(first, area.x1);
+                (first, last)
+            }
+            None => (area.x1, area.x1),
+        };
+        for column in (area.x0..full_start).chain(full_end..area.x1) {
+            let coverage = coverage_at(column, qy);
+            if coverage > 0.0 {
+                let at = start + column as usize * 4;
+                blend_pixel(&mut data[at..at + 4], premultiplied(color, (coverage * 255.0 + 0.5) as u32));
+            }
+        }
+        if full_start < full_end {
+            let span = &mut data[start + full_start as usize * 4..start + full_end as usize * 4];
+            if full[3] == 255 {
+                for out in span.chunks_exact_mut(4) {
+                    out.copy_from_slice(&full_pixel);
+                }
+            } else {
+                for out in span.chunks_exact_mut(4) {
+                    blend_pixel(out, full);
+                }
+            }
+        }
+    }
+}
+
+/// Blends a premultiplied sprite source-over at (`x`, `y`) device pixels, inside `clip`.
+fn blend_sprite(target: &mut PixmapMut<'_>, sprite: &Pixmap, x: i32, y: i32, clip: Option<ClipBox>) {
+    let (width, height) = (target.width() as i32, target.height() as i32);
+    let clip = clip.unwrap_or(ClipBox { x0: 0, y0: 0, x1: width, y1: height });
+    let x0 = x.max(clip.x0).max(0);
+    let y0 = y.max(clip.y0).max(0);
+    let x1 = (x + sprite.width() as i32).min(clip.x1).min(width);
+    let y1 = (y + sprite.height() as i32).min(clip.y1).min(height);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let source_stride = sprite.width() as usize * 4;
+    let target_stride = width as usize * 4;
+    let source = sprite.data();
+    let data = target.data_mut();
+    for row in y0..y1 {
+        let source_start = (row - y) as usize * source_stride + (x0 - x) as usize * 4;
+        let target_start = row as usize * target_stride + x0 as usize * 4;
+        let count = (x1 - x0) as usize * 4;
+        let source_row = &source[source_start..source_start + count];
+        let target_row = &mut data[target_start..target_start + count];
+        for (out, pixel) in target_row.chunks_exact_mut(4).zip(source_row.chunks_exact(4)) {
+            match pixel[3] {
+                0 => {}
+                255 => out.copy_from_slice(pixel),
+                a => {
+                    let inverse = 255 - u32::from(a);
+                    for (d, s) in out.iter_mut().zip(pixel) {
+                        *d = (u32::from(*s) + div255(u32::from(*d) * inverse)).min(255) as u8;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Glyph outlines in font units with y pointing down.
 struct GlyphPath(PathBuilder);
 
@@ -415,7 +654,10 @@ fn draw(
 ) {
     match command {
         DrawCmd::FillRect { rect, color, anti_alias } => {
-            if let Some(rect) = skia_rect(rect) {
+            if !*anti_alias && is_scale_translate(transform) {
+                let (left, top, right, bottom) = map_rect(transform, rect);
+                fill_device_rect(target, (left, top, right, bottom), *color, clip);
+            } else if let Some(rect) = skia_rect(rect) {
                 target.fill_rect(rect, &solid(*color, *anti_alias), transform, mask);
             }
         }
@@ -431,7 +673,10 @@ fn draw(
             }
         }
         DrawCmd::FillRoundRect { rect, radius, color } => {
-            if let Some(path) = round_rect_path(rect, *radius) {
+            if is_scale_translate(transform) && (transform.sx - transform.sy).abs() <= 1e-6 * transform.sx {
+                let (left, top, right, bottom) = map_rect(transform, rect);
+                fill_device_round_rect(target, (left, top, right, bottom), radius * transform.sx, *color, clip);
+            } else if let Some(path) = round_rect_path(rect, *radius) {
                 target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, mask);
             }
         }
@@ -456,10 +701,10 @@ fn draw(
             }
         }
         DrawCmd::BlurOval { rect, color, sigma } => {
-            draw_blur(caches, target, BlurShape::Oval, rect, *color, *sigma, transform, mask);
+            draw_blur(caches, target, BlurShape::Oval, rect, *color, *sigma, transform, (mask, clip));
         }
         DrawCmd::BlurRect { rect, color, sigma } => {
-            draw_blur(caches, target, BlurShape::Rect, rect, *color, *sigma, transform, mask);
+            draw_blur(caches, target, BlurShape::Rect, rect, *color, *sigma, transform, (mask, clip));
         }
         DrawCmd::Line { x0, y0, x1, y1, color, width } => {
             let mut pb = PathBuilder::new();
@@ -481,7 +726,17 @@ fn draw(
             }
         }
         DrawCmd::Text { text, x, y, font, size, color, stroke, align } => {
-            draw_text(caches, target, text, *x, *y, *font, *size, *color, *stroke, *align, transform, mask);
+            let run = TextRun {
+                content: text,
+                x: *x,
+                y: *y,
+                font: *font,
+                size: *size,
+                color: *color,
+                outline: *stroke,
+                align: *align,
+            };
+            draw_text(caches, target, &run, transform, (mask, clip));
         }
         DrawCmd::Save
         | DrawCmd::Restore
@@ -500,7 +755,7 @@ fn draw_blur(
     color: Color,
     sigma: f32,
     transform: Transform,
-    mask: Option<&Mask>,
+    (mask, clip): (Option<&Mask>, Option<ClipBox>),
 ) {
     let (sx, sy) = transform.get_scale();
     let device_sigma = sigma * (sx * sy).abs().sqrt();
@@ -553,14 +808,7 @@ fn draw_blur(
             None => return,
         },
     };
-    target.draw_pixmap(
-        origin_x as i32,
-        origin_y as i32,
-        pixmap.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        mask,
-    );
+    blend_sprite(target, pixmap, origin_x as i32, origin_y as i32, clip);
 }
 
 /// How an image command paints.
@@ -817,21 +1065,26 @@ fn blit_nearest(
     true
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_text(
-    caches: &mut Caches,
-    target: &mut PixmapMut<'_>,
-    content: &str,
+/// One text command.
+struct TextRun<'a> {
+    content: &'a str,
     x: f32,
     y: f32,
-    font_id: FontId,
+    font: FontId,
     size: f32,
     color: Color,
     outline: Option<TextStroke>,
     align: TextAlign,
+}
+
+fn draw_text(
+    caches: &mut Caches,
+    target: &mut PixmapMut<'_>,
+    run: &TextRun<'_>,
     transform: Transform,
-    mask: Option<&Mask>,
+    (mask, clip): (Option<&Mask>, Option<ClipBox>),
 ) {
+    let TextRun { content, x, y, font: font_id, size, color, outline, align } = *run;
     if size.is_nan() || size <= 0.0 || content.is_empty() {
         return;
     }
@@ -842,6 +1095,36 @@ fn draw_text(
         TextAlign::Center => x - font.measure(content, size) / 2.0,
         TextAlign::Right => x - font.measure(content, size),
     };
+    // Plain text under scale + translate: cached glyph sprites at quarter-pixel positions.
+    let device_size = size * transform.sx;
+    let sprites = outline.is_none()
+        && transform.kx == 0.0
+        && transform.ky == 0.0
+        && transform.sx > 0.0
+        && (transform.sx - transform.sy).abs() <= 1e-6 * transform.sx
+        && device_size <= MAX_SPRITE_TEXT;
+    if sprites {
+        let size_q = (device_size * 64.0 + 0.5).floor() as u32;
+        let baseline = y * transform.sy + transform.ty;
+        let (row, sub_y) = (baseline.floor(), ((baseline - baseline.floor()) * SUBPIXELS) as u8);
+        for (glyph, offset) in font.layout(content, size) {
+            let pen = (start + offset) * transform.sx + transform.tx;
+            let (column, sub_x) = (pen.floor(), ((pen - pen.floor()) * SUBPIXELS) as u8);
+            let key = SpriteKey {
+                font: font_id,
+                glyph: glyph.0,
+                size: size_q,
+                x: sub_x.min(SUBPIXELS as u8 - 1),
+                y: sub_y.min(SUBPIXELS as u8 - 1),
+                color: color.to_u32(),
+            };
+            if let Some(sprite) = caches.sprite(key) {
+                let (left, top) = (column as i32 + sprite.left, row as i32 + sprite.top);
+                blend_sprite(target, &sprite.pixmap, left, top, clip);
+            }
+        }
+        return;
+    }
     // The outline first, then the fill (canvas strokeText then fillText).
     let passes = outline.into_iter().map(Some).chain(std::iter::once(None));
     for pass in passes {
