@@ -45,7 +45,7 @@ internal sealed class GameTestHost : IDisposable
             new ProjectStore(_dir.Path),
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
-        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun }, dialogs, Launcher);
+        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false }, dialogs, Launcher);
         var coordinator = new UpdateCoordinator(new FakeUpdateService(), new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
         Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };

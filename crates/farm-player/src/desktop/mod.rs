@@ -11,7 +11,6 @@
 // simulation (docs/LANGUAGES.md "Determinism rules").
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
-mod audio;
 pub mod crash;
 pub mod folders;
 mod gamepad;
@@ -20,7 +19,7 @@ mod keys;
 use crate::input::{InputEvent, PointerButton};
 use crate::player::{Player, PlayerOptions, PlayerRequest};
 use crate::saves::{FsSaveStore, FsSettingsStore, MemorySaveStore, MemorySettingsStore};
-use audio::Audio;
+use crate::speaker::Audio;
 use gamepad::Gamepads;
 use std::num::NonZeroU32;
 use std::rc::Rc;

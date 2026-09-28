@@ -11,6 +11,9 @@ public sealed record GameSurfaceOptions
     /// <summary>Run the frame loop in Play Mode.</summary>
     public bool AutoRun { get; init; } = true;
 
+    /// <summary>Play the game's sounds (tests turn this off).</summary>
+    public bool Audio { get; init; } = true;
+
     /// <summary>Options for the Rust player of each playtest (seed, reduced motion, UI scale).</summary>
     public RustPlayerOptions? Player { get; init; }
 }
@@ -182,7 +185,8 @@ public sealed class GameWorkspaceView : UserControl
         System.Diagnostics.Trace.TraceError($"Playtest faulted: {exception}");
     }
 
-    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project) => RustPlayer.Create(project, _options.Player);
+    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project) =>
+        RustPlayer.Create(project, (_options.Player ?? new RustPlayerOptions()) with { Audio = _options.Audio });
 
     private void OnRestartRequested(object? sender, EventArgs e)
     {

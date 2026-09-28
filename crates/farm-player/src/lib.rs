@@ -7,6 +7,8 @@
 //!   embeds it through farm-ffi.
 //! - [`desktop`] (feature `desktop`, on by default) is the exported game: a window, gamepads,
 //!   audio, user folders and crash logs around a `Player`.
+//! - `speaker` (feature `audio-out`, part of `desktop`) plays a frame's sounds on the default
+//!   output device; the editor enables it without the rest of the desktop game.
 //! - [`run_cartridge`] is the headless path: load a cartridge, replay commands, check a hash,
 //!   write a save (`--headless`).
 #![forbid(unsafe_code)]
@@ -21,6 +23,8 @@ pub mod render;
 pub mod saves;
 pub mod script;
 pub mod session;
+#[cfg(feature = "audio-out")]
+pub mod speaker;
 
 pub use audio::{Mixer, SoundRequest};
 pub use farm_ui::{GamepadButton, Settings};

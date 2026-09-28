@@ -1,10 +1,15 @@
-//! The audio device (cpal): a stream whose callback drains sound requests into a [`Mixer`].
-//! Without a device (headless machines, CI) the game simply stays silent.
+//! The audio device (cpal, feature `audio-out`): a stream whose callback drains sound requests
+//! into a [`Mixer`]. Without a device (headless machines, CI) the game simply stays silent.
+//!
+//! [`Audio`] belongs to the thread that opened it (cpal streams cannot move between threads);
+//! [`SpeakerThread`] keeps one on a thread of its own for hosts that drive the player from
+//! different threads (the editor's Play Mode).
 
 use crate::audio::{Mixer, SoundRequest};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::JoinHandle;
 
 /// A running output stream.
 pub struct Audio {
@@ -92,5 +97,47 @@ impl Audio {
 
     pub fn play(&self, request: SoundRequest) {
         let _ = self.sender.send(request);
+    }
+}
+
+/// An output stream on its own thread: `Send`, so its owner may move between threads. Silent
+/// when there is no device. Dropping it closes the stream.
+#[derive(Debug)]
+pub struct SpeakerThread {
+    sender: Option<Sender<SoundRequest>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl SpeakerThread {
+    pub fn start() -> Self {
+        let (sender, receiver) = mpsc::channel::<SoundRequest>();
+        let thread = std::thread::Builder::new()
+            .name("farm-audio".to_owned())
+            .spawn(move || {
+                let audio = Audio::start();
+                for request in receiver {
+                    if let Some(audio) = &audio {
+                        audio.play(request);
+                    }
+                }
+            })
+            .ok();
+        Self { sender: Some(sender), thread }
+    }
+
+    pub fn play(&self, request: SoundRequest) {
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(request);
+        }
+    }
+}
+
+impl Drop for SpeakerThread {
+    fn drop(&mut self) {
+        // Closing the channel ends the thread's loop, which drops the stream.
+        self.sender.take();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }

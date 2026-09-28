@@ -30,6 +30,8 @@ struct PlayerCreate {
     reduced_motion: bool,
     /// Interface size (1 = 100 %).
     ui_scale: Option<f32>,
+    /// Play the frames' sounds on the default output device (silent without one).
+    audio: bool,
 }
 
 /// `{dt, events, width, height, render}` for [`fe_player_frame`].
@@ -87,6 +89,8 @@ enum Query {
 /// An opaque embedded player.
 pub struct FePlayer {
     player: Player,
+    /// The output device when the editor asked for sound.
+    speaker: Option<farm_player::speaker::SpeakerThread>,
     poisoned: bool,
     last_error: String,
 }
@@ -150,6 +154,11 @@ impl FePlayer {
                 self.player.step(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
             (output.sounds, output.requests, None)
         };
+        if let Some(speaker) = &self.speaker {
+            for sound in &sounds {
+                speaker.play(sound.clone());
+            }
+        }
         let info = FrameInfo {
             sounds: sounds.into_iter().map(|sound| SoundInfo { cue: sound.cue, gain: sound.gain }).collect(),
             requests: requests.iter().map(request_name).collect(),
@@ -262,7 +271,8 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// Creates an embedded player for a (migrated) project's JSON or a compiled cartridge.
-/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?}` (may be empty). On failure `error`
+/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?}` (may be empty); with
+/// `audio` the frames' sounds play on the default output device. On failure `error`
 /// holds the message.
 ///
 /// # Safety
@@ -306,7 +316,8 @@ pub unsafe extern "C" fn fe_player_new(
             settings.display.ui_scale = scale;
         }
         player.set_settings(settings);
-        Ok(FePlayer { player, poisoned: false, last_error: String::new() })
+        let speaker = create.audio.then(farm_player::speaker::SpeakerThread::start);
+        Ok(FePlayer { player, speaker, poisoned: false, last_error: String::new() })
     }));
     match result {
         Ok(Ok(player)) => {
@@ -553,6 +564,18 @@ mod tests {
         let (result, bytes) = call(|out| unsafe { fe_player_state_json(player, out) });
         assert_eq!(result, FeResult::Ok);
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[test]
+    fn sound_is_opt_in_and_silent_without_a_device() {
+        let project = starter_project();
+        // Sleeping plays a cue; with audio on it also goes to the output device (none on CI).
+        let player = new_player(project.as_bytes(), r#"{"audio":true}"#);
+        let sleep = br#"[{"type":"sleep"}]"#;
+        assert_eq!(call(|out| unsafe { fe_player_commands(player, sleep.as_ptr(), sleep.len(), out) }).0, FeResult::Ok);
+        let (_, _, info, _) = frame(player, r#"{"dt":0.016,"events":[],"width":64,"height":40}"#);
+        assert!(info["sounds"].is_array());
+        unsafe { fe_player_free(player) };
     }
 
     #[test]

@@ -164,7 +164,8 @@ public sealed record PlayerToast(string Text, string Kind);
 /// <param name="Seed">Seed of the game (the project's own when null).</param>
 /// <param name="ReducedMotion">No floating pops, fades or flashes.</param>
 /// <param name="UiScale">Interface size (1 = 100 %; null keeps the default).</param>
-public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null);
+/// <param name="Audio">Play the game's sounds on the default output device (silent without one).</param>
+public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null, bool Audio = false);
 
 /// <summary>
 /// The Rust game player embedded in the editor (<c>farm_player::Player</c> through
@@ -215,7 +216,7 @@ public sealed class RustPlayer : IDisposable
         }
 
         options ??= new RustPlayerOptions();
-        var settings = new JsonObject { ["reducedMotion"] = options.ReducedMotion };
+        var settings = new JsonObject { ["reducedMotion"] = options.ReducedMotion, ["audio"] = options.Audio };
         if (!string.IsNullOrEmpty(options.Seed))
         {
             settings["seed"] = options.Seed;

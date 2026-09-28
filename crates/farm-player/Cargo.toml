@@ -13,7 +13,10 @@ default = ["desktop"]
 # The desktop game: a window (winit + softbuffer), gamepads (gilrs), audio (cpal) and user
 # folders (directories). Without it the crate is the platform-independent player library (what
 # farm-ffi embeds in the editor, and what builds for wasm32).
-desktop = ["dep:winit", "dep:softbuffer", "dep:gilrs", "dep:cpal", "dep:directories"]
+desktop = ["audio-out", "dep:winit", "dep:softbuffer", "dep:gilrs", "dep:directories"]
+# Sound output on the default device (cpal), without the rest of the desktop game: the editor's
+# Play Mode.
+audio-out = ["dep:cpal"]
 
 [dependencies]
 farm-cart = { path = "../farm-cart" }
