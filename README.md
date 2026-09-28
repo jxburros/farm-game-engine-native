@@ -37,9 +37,10 @@ Play Mode falls back to the C# engine.
 Rust Play Mode also uses `farm-runtime` for frame timing, gameplay bindings,
 minigame scoring, creator panels, calendar views and sound cues. `farm-render`
 builds its world snapshots, including crop maturity and live NPC/animal views.
-Avalonia/Skia still draws the UI and artwork; the Rust GPU renderer and graphical
-standalone player remain unfinished. Differential tests compare these runtime
-views and resulting game states with the C# reference.
+Avalonia/Skia still draws the editor's Play Mode UI and artwork. Exported games
+run the graphical Rust player (`farm-player` with `farm-ui`); embedding it in
+Play Mode and a GPU renderer are still to come. Differential tests compare the
+runtime views and resulting game states with the C# reference.
 
 Content compilation, built-in authored definitions, pack composition and
 localization now run in F#. Editor content previews and cartridge exports use
@@ -128,8 +129,9 @@ from the command line, for example in CI:
 dotnet run --project src/FarmEngine.Cli -- export my-game.json --target windows-x64 --target linux-x64 --out dist
 ```
 
-Exported games still run the headless player until the graphical game shell
-is finished. See [docs/EXPORT.md](docs/EXPORT.md).
+Exported games open a window with a title screen, save slots, a pause menu,
+settings and gamepad support. See [docs/EXPORT.md](docs/EXPORT.md) and
+[docs/PLAYER.md](docs/PLAYER.md).
 
 ## Build from source
 
@@ -151,9 +153,12 @@ for the Rust session:
 dotnet run --project src/FarmEngine.Cli -- compile my-project.json --out game.cart
 ```
 
-The Rust `farm-player` can load a cartridge and run a headless replay for
-validation; see [docs/PLAYER.md](docs/PLAYER.md). Its graphical shell is
-still in progress.
+The Rust `farm-player` plays a cartridge in a window, runs a headless replay
+for validation, or renders screenshots; see [docs/PLAYER.md](docs/PLAYER.md).
+
+```sh
+cargo run -p farm-player -- --cart game.cart
+```
 
 The build also puts a player template for your platform (Windows or Linux
 x64) in `players/` next to the app and `farmc`, so Export Game works from a
@@ -184,7 +189,8 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `crates/farm-ffi` (Rust) | C ABI the app loads | — |
 | `crates/farm-cart` (Rust) | Save migrations/files and verified cartridge reader | `packages/engine-schemas/src/save.ts` |
 | `crates/farm-cart-schema` (Rust) | Generated FlatBuffers accessors, isolated from hand-written safe Rust | — |
-| `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command; the Export Game template | — |
+| `crates/farm-player` (Rust) | The game player: window, game shell, saves, settings, audio, gamepads; headless replays and screenshots; the Export Game template | `packages/game-shell` |
+| `crates/farm-ui` (Rust) | In-game UI on draw lists: HUD, dialogue, shop, crafting, inventory, quests, panels, minigames, the game shell's screens | `GameView.tsx` and its dialogs |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
 | `crates/farm-render` (Rust) | World snapshots, art decoration, draw lists, a CPU rasterizer and fonts; the app still draws with Skia | `packages/renderer-canvas2d`, `packages/game-shell/src/snapshot.ts`, native `FarmEngine.Rendering` |
 | `crates/farm-plugins` (Rust) | Plugin sandbox: QuickJS in WebAssembly, one wasmi instance per plugin, fuel budgets | `packages/engine-runtime/src/plugins.ts` |

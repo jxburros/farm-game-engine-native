@@ -4,7 +4,8 @@
 Rust core passes every golden (replays, content, saves) and `farm-runtime`
 has the input, minigame, panel and audio logic. Phase 3 has edits, undo,
 migrations and validation in F#; phase 4 has started (Play Mode runs on
-Rust); and the first phase 5 map views are available. See the remaining work in
+Rust); the first phase 5 map views are available; and phase 6 has the plugin
+sandbox, `farm-ui` and the graphical `farm-player`. See the remaining work in
 [ROADMAP.md](../ROADMAP.md#remaining-work). This is the reference for
 where code goes as the native app grows. Read it before you port a new part of
 the web editor. [PORTING.md](PORTING.md) still covers how C# code mirrors the
@@ -516,11 +517,11 @@ The C# engine keeps working until its replacement passes the same tests.
 5. **Editor port** (the list above), on the new stack. It can start as soon
    as phase 3 lands. See the checklist below.
 6. **Rust player and plugins.** `farm-plugins` (QuickJS in wasmi, done),
-   `farm-render` wgpu backend, `farm-ui`, `farm-player` with kira. Embed it in
-   Play Mode through `NativeControlHost` and retire the C# play views and Jint.
-   Add the game shell (title screen, save slots, settings, gamepad) and Export
-   Game for Windows and Linux, then the optional web demo target
-   ([EXPORT.md](EXPORT.md)). *Exit:* screenshot tests and replays match
+   `farm-render` wgpu backend, `farm-ui` (done), `farm-player` (the graphical
+   player and game shell are done, on the CPU rasterizer with cpal audio).
+   Embed it in Play Mode through `NativeControlHost` and retire the C# play
+   views and Jint. Export Game for Windows and Linux (done), then the
+   optional web demo target ([EXPORT.md](EXPORT.md), [PLAYER.md](PLAYER.md)). *Exit:* screenshot tests and replays match
    between embedded, standalone and wasm players, and exported sample games
    replay their goldens on Windows and Linux.
 7. **Native numerics (v9).** First the web version adopts `farm-wasm` for play
@@ -578,8 +579,8 @@ moves to F# almost line for line.
   Avalonia can draw overlays. If wgpu offscreen rendering into an Avalonia
   bitmap turns out to be fast enough, Edit Mode can drop Skia too and use one
   rasterizer everywhere.
-- **In-game UI toolkit.** `farm-ui` is planned as a small custom layer
-  (nine-slice pixel-art panels on the draw list, layout with
-  [taffy](https://crates.io/crates/taffy)) rather than egui, which looks like
-  a tool, not a cozy game. Confirm with a prototype of the inventory grid and
-  dialogue box.
+- **In-game UI toolkit.** Settled: `farm-ui` is a small custom
+  immediate-mode layer on the draw list rather than egui, which looks like a
+  tool, not a cozy game. Panels are rounded, shadowed shapes in the theme's
+  colours, and layout is rectangle cutting, so it needs no layout engine.
+  Nine-slice pixel-art panels can come later as a theme option.

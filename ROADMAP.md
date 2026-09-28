@@ -74,7 +74,8 @@ exit criteria for each phase.
 5. [ ] Editor port on the new stack (the list above)
 6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
    Windows and Linux, then an optional web demo target
-   (**started:** the `farm-plugins` sandbox)
+   (**started:** the `farm-plugins` sandbox, `farm-ui`, the graphical
+   `farm-player` and Export Game)
 7. [ ] Native numerics (v9): one engine for web and native
 
 ## Remaining work
@@ -219,7 +220,23 @@ available as native views.
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
-  The graphical shell and packaging are still open.
+- [x] `farm-ui`: an immediate-mode UI on `farm-render` draw lists, with
+  stable widget ids, layout, scrolling, focus navigation for keyboard,
+  gamepad and mouse, and a theme with UI scale and text size. It ports every
+  Play Mode overlay (HUD, dialogue, shop, crafting, inventory, quest log,
+  creator panels, minigames, toasts, credit). Every action is an engine
+  command, and the rules come from Rust queries (`farm_sim::overlay`, shared
+  with `farm-ffi`).
+- [x] Graphical `farm-player`: title screen, three save slots with previews
+  and thumbnails, autosave each morning, pause menu, settings (display,
+  audio, controls, accessibility) and credits. winit and softbuffer, gilrs
+  gamepads, cpal audio, TOML settings in the user's folders, a crash log.
+  `--screenshot` renders PNGs; screenshot goldens at 1280×800 and 1920×1080.
+  The `Player` library runs standalone or embedded, from a cartridge or a
+  project, is `Send`, and reports engine failures as errors.
+- [ ] Embed `Player` in Play Mode through `farm-ffi` and retire the C# play
+  views. Music playback, a message box on crash and gamepad rebinding in the
+  menu are still open.
 - [x] `farm-plugins`: the plugin sandbox in Rust. QuickJS is compiled to
   WebAssembly (checked in; `tools/plugin-guest/build.sh` rebuilds it) and
   each plugin gets its own instance in wasmi, a pure-Rust interpreter with no
@@ -228,17 +245,16 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
   validation and the command queue work like the Jint host, and every C# and
   web plugin test is ported. `PluginRuntime` feeds a step's hook events to
   plugins and hands mutations back as commands.
-- [ ] Use `farm-plugins` from `farm-player` and, through `farm-ffi`, from
-  Play Mode; then retire the Jint host.
+- [ ] Use `farm-plugins` through `farm-ffi` from Play Mode, then retire the
+  Jint host. `farm-player` already runs pack plugins in `farm-plugins`.
 - [x] `farm-render` supplies world snapshots, draw lists and a CPU
-  rasterizer that also builds for WebAssembly. GPU drawing, Rust game UI,
-  audio playback and a graphical standalone player remain open.
+  rasterizer that also builds for WebAssembly. GPU drawing remains open.
 - [x] Export Game packaging (`FarmEngine.Export`, File → Export Game…,
   `farmc export`): Problems gate, deterministic cartridge, renamed player
   template, Windows icon and version info patched from .NET, Linux `.png` and
   `.desktop`, license notices, reproducible `.zip`/`.tar.gz`. Releases build
   both templates (Linux in Steam Runtime sniper) and ship them in `players/`.
-  The exported player is still the headless one until the graphical shell lands.
+  Exported games run the graphical player.
 - [x] Ship only used assets: the compiler leaves unused custom assets out of
   the cartridge, and Export lists them as warnings.
 
@@ -259,8 +275,8 @@ later. The web version's single-file HTML export is not ported.
 
 Packaging works now: **File → Export Game…** and `farmc export` build the
 Windows and Linux folders and archives from the prebuilt templates. The games
-it makes still run the headless player until the graphical shell (phase 6)
-replaces it; export itself doesn't change when that happens.
+it makes run the graphical player, with a title screen, save slots, settings
+and gamepad support ([docs/PLAYER.md](docs/PLAYER.md)).
 [docs/EXPORT.md](docs/EXPORT.md) has the design, what is done and what is left.
 
 ## Later

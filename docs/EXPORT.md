@@ -2,13 +2,12 @@
 
 **Status:** Export Game works (September 2026). **File → Export Game…** in the
 editor and `farmc export` build the Windows and Linux folders and archives
-described below. See [What is implemented](#what-is-implemented). The games
-still run the headless player: the graphical shell, title screen and
-controller support are phase 6 work
-([LANGUAGES.md](LANGUAGES.md#phases)). When that shell lands in `farm-player`,
-exported games get it with no change to export. This document covers what an
-exported game is, how export builds it, and what the earlier phases must get
-right.
+described below. See [What is implemented](#what-is-implemented). Exported
+games run the graphical player: a window with a title screen, save slots, a
+pause menu, settings and gamepad support ([PLAYER.md](PLAYER.md)). Export did
+not change for it; the player template is simply the new `farm-player`. This
+document covers what an exported game is, how export builds it, and what the
+earlier phases must get right.
 
 ## The goal
 
@@ -239,8 +238,9 @@ project that never saved export settings exports with the defaults.
 ## What the player must include (phase 6)
 
 The web version relied on the browser for a lot of this. A desktop game has
-to do it itself. `farm-player` gets a **game shell** (in `farm-ui`) that
-surrounds the game:
+to do it itself. `farm-player` has a **game shell** (in `farm-ui`) that
+surrounds the game. It is built as listed here, with the differences noted
+after the list; [PLAYER.md](PLAYER.md) describes it in full.
 
 - **Title screen:** New Game, Continue, Load, Settings, Credits and Quit, with
   a background and logo from the art pipeline.
@@ -273,6 +273,23 @@ surrounds the game:
   The simulation is deterministic, so the save plus the command log replays
   the crash exactly.
 
+Differences from this plan, as built:
+
+- The title screen shows the game's title over its first scene; there is no
+  logo art field yet.
+- The pause menu has Resume, Save, Load, Settings, Quit to title and Quit.
+  The game autosaves each morning (after sleeping).
+- Display settings have no resolution, vsync or frame cap. The window is
+  resizable, the player paces itself to 60 frames per second, and fullscreen
+  is borderless at the desktop resolution.
+- Audio has no ambience volume (there is no ambience content). Music has a
+  volume but no music content yet.
+- Keyboard keys are rebindable in the Controls tab. The gamepad layout is
+  shown there and read from `settings.toml`, but not rebound in the menu.
+- Accessibility has text size and reduced motion (no pops, fades or
+  flashes). There is no text speed, because dialogue shows at once.
+- A crash writes the log and prints its path. It shows no message box.
+
 ## What earlier phases must get right
 
 Most of export is phase 6 work. These decisions come earlier, and they are
@@ -296,6 +313,7 @@ expensive to change after games have shipped:
 | Orchestration, report, C# entry points | `src/FarmEngine.Export` (F#): `Exporter.run`, `GameExporter.Export` |
 | Menu command and dialog | `ProjectCommandHandler.ExportGameAsync`, `ExportGameViewModel`, `ExportGameWindow` |
 | CLI | `farmc export` in `src/FarmEngine.Cli` |
+| The game: window, title screen, saves, settings, gamepads | `crates/farm-player`, `crates/farm-ui` ([PLAYER.md](PLAYER.md)) |
 | Placeholder resources | `crates/farm-player/build.rs` |
 | Templates | `FarmPlayerTemplates` MSBuild target, `tools/player-templates/package.sh`, release workflow |
 | License notices | `tools/player-licenses` |
@@ -351,6 +369,12 @@ and an end-to-end export for the host target whose player runs headless and
 reports the right game id, version and hash. `FarmingRpgMaker.App.Tests` drives
 the dialog. CI exports `project-v8.json` on Linux and Windows and runs the
 exported game against the checked-in replay.
+
+The player's own tests cover the screenshot goldens (title screen, settings,
+gameplay HUD, dialogue and shop at 1280×800 and 1920×1080, in
+`fixtures/player/`), the shell flow from New Game to Continue, and the real
+window under Xvfb in CI. The standalone and embedded players draw with the
+same code. The web player does not exist yet.
 
 ## Notes for creators
 

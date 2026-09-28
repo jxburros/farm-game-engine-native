@@ -2,6 +2,20 @@
 
 ## 0.2.0 (unreleased)
 
+- **Graphical player.** Exported games now open a window with a title screen,
+  three save slots with previews, a pause menu, settings and credits. The game
+  autosaves each morning. Keyboard, mouse and gamepads work everywhere,
+  including menus, and keys are rebindable. Settings cover display, audio,
+  controls and accessibility, and are kept apart from the saves. The world
+  renders at its pixel-art size and scales up crisply; the UI draws at full
+  resolution, and 16:10 screens such as the Steam Deck lay out cleanly. A
+  crash writes a log with the recent commands. `farm-player --screenshot`
+  renders frames to a PNG without a window.
+- **Rust game UI.** The new `farm-ui` crate draws the HUD, dialogue, shop,
+  crafting, inventory, quest log, creator panels, minigames and toasts on
+  `farm-render` draw lists. Every button runs an engine command. The player
+  is also a library, `farm_player::Player`, that the editor can embed for
+  Play Mode. The editor still uses its C# play views for now.
 - **Nested content forms.** Content entries now edit nested records, lists and
   references with native controls. Lists add, remove and move rows. Reference
   fields are searchable pickers that keep a missing id visible as
@@ -37,8 +51,7 @@
   listed, and two exports of the same project are byte-identical.
   `farmc export` does the same from the command line. Releases build the
   player templates (Linux in the Steam Runtime sniper SDK) and ship them with
-  the app. Exported games run the headless player until the graphical shell
-  is ready.
+  the app. Exported games run the graphical player.
 - **Rust plugin sandbox.** The new `farm-plugins` crate runs content-pack
   plugins in QuickJS compiled to WebAssembly, one isolated instance per
   plugin, in the wasmi interpreter (no JIT). Budgets are deterministic fuel
@@ -55,7 +68,7 @@
   snapshots from Rust state. Differential tests cover all templates, crop
   maturity/withered state, soil, machines, missing definitions/tiles, moving
   NPCs and animals. The app still decorates artwork and draws through Skia;
-  a GPU renderer and standalone graphical player are not included yet.
+  a GPU renderer is not included yet.
 - **Rust renderer.** `farm-render` now holds the whole world renderer: Edit
   Mode snapshots, art decoration, the built-in art pack (moved to
   `assets/builtin-art/`), draw lists and a CPU rasterizer with embedded Inter
