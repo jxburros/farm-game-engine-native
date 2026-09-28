@@ -8,7 +8,9 @@
 
 use crate::draw::FontId;
 use std::sync::OnceLock;
-use ttf_parser::{Face, GlyphId};
+use ttf_parser::Face;
+/// A glyph of an embedded font ([`Font::glyph`], [`Font::layout`]).
+pub use ttf_parser::GlyphId;
 
 const INTER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 const INTER_BOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-Bold.ttf");
