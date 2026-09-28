@@ -78,7 +78,7 @@ led here):
                        │ Rust workspace                                                                │
                        │  farm-cart (cartridge + save formats) ─▶ farm-sim (deterministic core)       │
                        │  farm-runtime (timestep, input, minigames, panels, audio cues)               │
-                       │  farm-plugins (wasmtime + QuickJS sandbox)                                   │
+                       │  farm-plugins (QuickJS in WebAssembly, run by wasmi)                         │
                        │  farm-render (draw lists; wgpu backend) · farm-ui (HUD, dialogue, shop…)     │
                        │  farm-player (standalone game exe; also embedded in the editor's Play Mode)  │
                        │  farm-wasm (same core + player for the web version and web demo exports)     │
@@ -186,10 +186,12 @@ what an exported game contains.
   error results, never unwound into .NET.
 - **Synchronous hooks.** Plugin mutations are queued and come back as
   commands (the `PluginMutationQueue` design), so they cross the boundary
-  cleanly. The exception is `onWeatherRoll`, whose listeners return an
-  override *during* the nightly step (`GameTime.cs`). In Rust, synchronous
-  hooks are answered by the Rust plugin host. Until that exists, `farm-ffi`
-  exposes a callback so the interim C# Jint host can answer.
+  cleanly. The engine lets `onWeatherRoll` listeners return an override
+  *during* the nightly step (`GameTime.cs`), but plugins never do: the web
+  and C# bridges return nothing from their listeners. So `farm-plugins`'
+  `PluginRuntime` dispatches `onWeatherRoll` after the step like any other
+  hook, and installs no `WeatherRollListener`. The `farm-ffi` callback stays
+  for the interim C# Jint host.
 
 ### WebAssembly (`farm-wasm`)
 
@@ -203,7 +205,12 @@ what an exported game contains.
 These replace `BannedSymbols.txt`. They're enforced in `farm-sim` with
 `clippy.toml` and crate attributes, and CI runs clippy with `-D warnings`:
 
-- `#![forbid(unsafe_code)]` in `farm-sim`, `farm-cart`, `farm-runtime`.
+- `#![forbid(unsafe_code)]` in `farm-sim`, `farm-cart`, `farm-runtime`,
+  `farm-plugins`.
+- Plugins are deterministic too. Their budgets are fuel (counted wasm
+  instructions), not wall-clock time; the guest's clock is constant and
+  `Math.random` is seeded the same way on every run; payloads are serialized
+  in engine order.
 - `disallowed-types`: `std::collections::HashMap` and `HashSet` (use `Vec`,
   `IndexMap`, `BTreeMap`), `std::time::Instant` and `SystemTime` (use the game
   clock), any `rand::rngs::ThreadRng` (use the seeded `Rng`).
@@ -241,7 +248,7 @@ crates/
   farm-cart/       # FlatBuffers readers, interning, cartridge + save load, save migrations
   farm-sim/        # deterministic core           ← src/FarmEngine.Core
   farm-runtime/    # timestep, input, minigames, panel model, audio cues ← src/FarmEngine.Runtime
-  farm-plugins/    # PluginHost trait; wasmtime + QuickJS host (native)  ← Runtime/Plugins.cs
+  farm-plugins/    # PluginHost trait; QuickJS-in-wasm host run by wasmi  ← Runtime/Plugins.cs
   farm-render/     # draw-list builder; wgpu backend (feature)           ← src/FarmEngine.Rendering
   farm-ui/         # in-game UI (HUD, dialogue, shop, inventory, crafting, quests, panels)
   farm-player/     # standalone player (winit + wgpu + kira + gilrs) and game shell; embeddable
@@ -360,7 +367,7 @@ already covered by the F# migration pipeline; rendering still awaits its Rust po
 | `Minigames.cs` | `farm-runtime::minigames` (logic); drawing in `farm-ui` |
 | `GamePanels.cs` | `farm-runtime::panels` (model); drawing in `farm-ui` |
 | `Audio.cs` | `farm-runtime::audio` (settings, cues, synthesized SFX presets); playback in `farm-player` with [kira](https://crates.io/crates/kira) |
-| `Plugins.cs` (Jint) | `farm-plugins`: QuickJS compiled to WebAssembly, run in wasmtime with fuel (step) and memory limits. Jint stays as the interim host until then. This also covers the "out-of-process plugin host" roadmap item, since each plugin gets its own isolated wasm instance. |
+| `Plugins.cs` (Jint) | `farm-plugins`: QuickJS compiled to WebAssembly (a checked-in guest), one isolated instance per plugin, run in [wasmi](https://crates.io/crates/wasmi). wasmi is a pure-Rust interpreter: no JIT, so it also runs where JITs are forbidden. Budgets are deterministic fuel (counted wasm instructions) instead of wall-clock timeouts, plus heap, memory and call-depth limits. The wasm engine sits behind a small internal trait, so wasmtime can be added as a feature later for speed. Jint stays as the interim host until the app switches. This also covers the "out-of-process plugin host" roadmap item. |
 
 ### `FarmEngine.Rendering` → Rust draw lists, with a C# Skia executor
 
@@ -496,7 +503,7 @@ The C# engine keeps working until its replacement passes the same tests.
    with no C# engine left.
 5. **Editor port** (the list above), on the new stack. It can start as soon
    as phase 3 lands. See the checklist below.
-6. **Rust player and plugins.** `farm-plugins` (QuickJS in wasmtime),
+6. **Rust player and plugins.** `farm-plugins` (QuickJS in wasmi, done),
    `farm-render` wgpu backend, `farm-ui`, `farm-player` with kira. Embed it in
    Play Mode through `NativeControlHost` and retire the C# play views and Jint.
    Add the game shell (title screen, save slots, settings, gamepad) and Export

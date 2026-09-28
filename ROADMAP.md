@@ -74,6 +74,7 @@ exit criteria for each phase.
 5. [ ] Editor port on the new stack (the list above)
 6. [ ] Rust player and plugin sandbox; embedded Play Mode; Export Game for
    Windows and Linux, then an optional web demo target
+   (**started:** the `farm-plugins` sandbox)
 7. [ ] Native numerics (v9): one engine for web and native
 
 ## Remaining work
@@ -200,11 +201,21 @@ available as native views.
 - [ ] Dedicated nested editors and cross-reference pickers for each content
   type; SVG import and more animation tools.
 
-**Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmtime),
+**Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmi),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
-  The graphical shell, plugin sandbox and packaging are still open.
+  The graphical shell and packaging are still open.
+- [x] `farm-plugins`: the plugin sandbox in Rust. QuickJS is compiled to
+  WebAssembly (checked in; `tools/plugin-guest/build.sh` rebuilds it) and
+  each plugin gets its own instance in wasmi, a pure-Rust interpreter with no
+  JIT. Budgets are deterministic fuel, not wall-clock time: an infinite loop
+  stops after about 40 ms in release builds. Strikes, errors, mutation
+  validation and the command queue work like the Jint host, and every C# and
+  web plugin test is ported. `PluginRuntime` feeds a step's hook events to
+  plugins and hands mutations back as commands.
+- [ ] Use `farm-plugins` from `farm-player` and, through `farm-ffi`, from
+  Play Mode; then retire the Jint host.
 - [x] Initial `farm-render` crate supplies host-independent world snapshots
   and is used by the editor's Rust Play Mode. GPU drawing, Rust game UI,
   audio playback and a graphical standalone player remain open.
@@ -243,8 +254,9 @@ replaces it; export itself doesn't change when that happens.
 
 - **Localization** of the editor UI (`src/lib/i18n.ts`).
 - **Code signing** for the Windows installer (see `docs/RELEASING.md`).
-- **Out-of-process plugin host.** Jint runs in-process today; a separate
-  worker process would fully contain hostile plugins.
+- **Out-of-process plugin host.** Jint runs in-process today. The
+  `farm-plugins` sandbox gives each plugin its own WebAssembly instance, which
+  contains hostile plugins without a separate process, once the app uses it.
 - **macOS/Linux builds** of the editor. Avalonia and Velopack already support
   them; this needs packaging and CI jobs. (Exported *games* get Linux builds
   in phase 6, whatever the editor runs on.)

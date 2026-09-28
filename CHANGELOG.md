@@ -13,6 +13,13 @@
   player templates (Linux in the Steam Runtime sniper SDK) and ship them with
   the app. Exported games run the headless player until the graphical shell
   is ready.
+- **Rust plugin sandbox.** The new `farm-plugins` crate runs content-pack
+  plugins in QuickJS compiled to WebAssembly, one isolated instance per
+  plugin, in the wasmi interpreter (no JIT). Budgets are deterministic fuel
+  instead of wall-clock time, so the same plugins give the same results on
+  every machine. Hardening, strikes, error kinds, mutation validation and the
+  mutation queue match the Jint host. The app still uses Jint; switching it
+  over comes next.
 - **Rust Play Mode runtime.** Frame timing, gameplay input bindings, minigame
   scoring, creator-panel values, calendar displays and sound-cue mapping now
   execute in Rust when Rust Play Mode is selected. Minigame views use mount

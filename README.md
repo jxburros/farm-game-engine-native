@@ -187,6 +187,7 @@ Everything builds and tests on Windows, macOS and Linux. The
 | `crates/farm-player` (Rust) | Headless cartridge runner, replay and save command; the Export Game template | — |
 | `crates/farm-runtime` (Rust) | Fixed timestep, input bindings, minigames, creator panels, audio model | `packages/engine-runtime` |
 | `crates/farm-render` (Rust) | Read-only play world snapshots; native Skia host still draws them | `packages/game-shell/src/snapshot.ts`, native `ShellSnapshot` |
+| `crates/farm-plugins` (Rust) | Plugin sandbox: QuickJS in WebAssembly, one wasmi instance per plugin, fuel budgets | `packages/engine-runtime/src/plugins.ts` |
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
 [docs/LANGUAGES.md](docs/LANGUAGES.md) is the plan to move the engine to Rust
