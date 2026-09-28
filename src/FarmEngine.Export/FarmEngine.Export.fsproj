@@ -14,7 +14,6 @@
     <Compile Include="PeResources.fs" />
     <Compile Include="Icons.fs" />
     <Compile Include="Templates.fs" />
-    <Compile Include="AssetUsage.fs" />
     <Compile Include="DesktopEntry.fs" />
     <Compile Include="Exporter.fs" />
     <Compile Include="GameExporter.fs" />

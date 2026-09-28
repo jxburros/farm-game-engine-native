@@ -40,22 +40,38 @@ module ContentCompiler =
         && (weather.Table.Values |> Seq.forall (fun entries ->
             present entries && (entries |> Seq.forall (fun entry -> present entry && present entry.WeatherId && entry.Weight > 0.0))))
 
-    let baseContent (project: GameProject) =
+    /// The project's items, or the built-in catalog when it has none.
+    let items (project: GameProject) =
+        if present project.Items && project.Items.Count > 0 then project.Items else Builtin.items ()
+
+    /// Built-in and mine node types the project does not replace, then the project's own.
+    let nodeTypes (project: GameProject) =
         let nodeTypes = orEmpty project.NodeTypes
         let ids = HashSet<string>(nodeTypes |> Seq.map (fun d -> d.Id))
+        List<NodeTypeDefinition>(seq {
+            yield! Builtin.nodeTypes () |> Seq.filter (fun d -> not (ids.Contains d.Id))
+            yield! Builtin.mineNodeTypes () |> Seq.filter (fun d -> not (ids.Contains d.Id))
+            yield! nodeTypes })
+
+    /// The project's settings, or the defaults when they would not load.
+    let settings (project: GameProject) =
+        if validSettings project.Settings then project.Settings else SettingsSchema.DefaultProjectSettings
+
+    /// The project's weather, or the default weather when it would not load.
+    let weather (project: GameProject) =
+        if validWeather project.Weather then project.Weather else MigrationsSchema.DefaultWeatherConfig()
+
+    let baseContent (project: GameProject) =
         GameContent(
             ContentVersion = GameContentSchema.CurrentContentVersion,
             Crops = mergeCrops project.CustomCrops,
-            Items = (if present project.Items && project.Items.Count > 0 then project.Items else Builtin.items ()),
+            Items = items project,
             Npcs = orEmpty project.Npcs, Dialogues = orEmpty project.Dialogues,
             Quests = orEmpty project.Quests, Events = orEmpty project.Events, Shops = orEmpty project.Shops,
-            NodeTypes = List<NodeTypeDefinition>(seq {
-                yield! Builtin.nodeTypes () |> Seq.filter (fun d -> not (ids.Contains d.Id))
-                yield! Builtin.mineNodeTypes () |> Seq.filter (fun d -> not (ids.Contains d.Id))
-                yield! nodeTypes }),
-            Settings = (if validSettings project.Settings then project.Settings else SettingsSchema.DefaultProjectSettings),
+            NodeTypes = nodeTypes project,
+            Settings = settings project,
             Recipes = orEmpty project.Recipes, MachineTypes = orEmpty project.MachineTypes,
-            Weather = (if validWeather project.Weather then project.Weather else MigrationsSchema.DefaultWeatherConfig()),
+            Weather = weather project,
             AnimalSpecies = orEmpty project.AnimalSpecies, FishTables = orEmpty project.FishTables,
             Mine = (if present project.Mine then project.Mine else MineConfig(Enabled = false)),
             Actions = orEmpty project.Actions, Minigames = orEmpty project.Minigames,

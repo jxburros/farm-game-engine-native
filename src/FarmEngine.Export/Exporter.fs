@@ -105,12 +105,9 @@ module Exporter =
         let assetWarnings =
             [ for asset in unused ->
                 let index = project.CustomAssets.IndexOf asset
-                sprintf "customAssets[%d]: Asset \"%s\" (%s) is not used by the game." index asset.Name asset.Id ]
-        let note =
-            if unused.IsEmpty then []
-            else [ "game.cart still embeds every project asset, including unused ones. Delete unused art to keep it out of the game." ]
+                sprintf "customAssets[%d]: Asset \"%s\" (%s) is not used by the game and is left out of it." index asset.Name asset.Id ]
         problems |> Problems.errors |> List.map line,
-        (problems |> Problems.warnings |> List.map line) @ assetWarnings @ note
+        (problems |> Problems.warnings |> List.map line) @ assetWarnings
 
     /// The version resource for a Windows game.
     let versionResource (game: GameIdentity) (editorVersion: string) : VersionResource =

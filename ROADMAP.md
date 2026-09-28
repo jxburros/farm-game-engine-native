@@ -192,20 +192,28 @@ available as native views.
   transitions and collision; art bindings remain in the art pipeline milestone.
 - [x] Content workspace for NPCs, dialogue, items, crops, quests, events,
   shops, recipes, node and machine types, animal species, fish tables,
-  actions and minigames. Scalar fields have native controls; nested fields
-  accept JSON. Every save/removal uses the F# document and undo history.
+  actions and minigames. Every save/removal uses the F# document and undo
+  history.
 - [x] Project settings and calendar editor; Problems panel with navigation
   to affected map scenes and content entries.
 - [x] Mods panel: validate and review pack manifests, permissions and plugin
   source before install; enable/disable, reorder, remove and import packs.
-- [x] Raster art import (PNG, JPEG, WebP, GIF, BMP normalized to PNG),
+- [x] Art import (PNG, JPEG, WebP, GIF, BMP and SVG normalized to PNG),
   animation clip slicing and frame edits, visual bindings for the player,
   map brush and content definitions. Art edits use F# undo/redo.
 - [x] Creator Workshop exposes the 13 F# patterns with a one-step undo and
   links to their generated content. Interface editor creates and edits
   in-game panels and their entries.
-- [ ] Dedicated nested editors and cross-reference pickers for each content
-  type; SVG import and more animation tools.
+- [x] Nested editors and cross-reference pickers for every content type.
+  F# `References` declares what each schema field holds (a test fails when an
+  id-like field is undeclared) and lists picker options from the content
+  compiler; F# `Vocabulary` ports the condition/outcome forms. Forms show
+  nested records, list rows with add/remove/move, reference chips and a
+  collapsed Edit as JSON box per nested field. Missing ids stay visible.
+- [x] Export settings controls in Project Settings, with the `ChecksExport`
+  problems shown inline.
+- [x] SVG import (Svg.Skia, self-contained files only, optional size), frame
+  duplication and frame durations (one frame or every frame), as F# edits.
 
 **Player and export (phase 6)**: `farm-plugins` (QuickJS in wasmi),
 wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
@@ -231,9 +239,8 @@ wgpu renderer, `farm-ui`, `farm-player`, game shell, Export Game.
   `.desktop`, license notices, reproducible `.zip`/`.tar.gz`. Releases build
   both templates (Linux in Steam Runtime sniper) and ship them in `players/`.
   The exported player is still the headless one until the graphical shell lands.
-- [ ] Ship only used assets: the cartridge's asset table still holds every
-  project asset. Export reports unused ones as warnings; the compiler should
-  leave them out of `presentation.customAssets`.
+- [x] Ship only used assets: the compiler leaves unused custom assets out of
+  the cartridge, and Export lists them as warnings.
 
 **Audit follow-ups**
 - [ ] Run plugin hooks off the UI thread (they can take 50 ms each today).

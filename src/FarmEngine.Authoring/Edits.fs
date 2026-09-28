@@ -137,6 +137,11 @@ type Edit =
     | UpsertAsset of asset: CustomAsset
     /// AssetManager "Remove unused art": here every binding that pointed at it is cleared instead.
     | RemoveAsset of assetId: string
+    /// AssetManager frame timing: one frame's duration in ticks, or every frame's when `frame` is
+    /// `None` (20 ticks = 1 second; at least 1).
+    | SetFrameTicks of assetId: string * clip: string * frame: int option * ticks: int
+    /// Art studio: copy a frame of a clip and insert the copy right after it (at most 1024 frames).
+    | DuplicateFrame of assetId: string * clip: string * frame: int
     /// ModsEditor install (after the permission review); refused when the pack id is already installed.
     | InstallPack of pack: ContentPack
     | SetPackEnabled of packId: string * enabled: bool

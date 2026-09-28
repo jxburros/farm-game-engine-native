@@ -53,6 +53,8 @@ module internal ChecksContent =
                 sink.Warning("item.seedWithoutCrop", path + ".cropType", sprintf "Seed \"%s\" does not say which crop it grows" item.Name, target)
             if item.Type = ItemTypes.Tool && not (hasValue item.ToolType) then
                 sink.Warning("item.toolWithoutType", path + ".toolType", sprintf "Tool \"%s\" has no tool type, so it cannot be used" item.Name, target)
+            if item.Type <> ItemTypes.Seed && missing context.CropIds item.CropType then
+                sink.Warning("item.unknownCrop", path + ".cropType", sprintf "Item \"%s\" belongs to missing crop \"%s\"" item.Name item.CropType, target)
             // validate-extensibility.ts: "on use" action must exist.
             if missing context.ActionIds item.UseActionId then
                 sink.Error("item.useActionMissing", path + ".useActionId", sprintf "Item \"%s\" uses missing action \"%s\"" item.Name item.UseActionId, target))
@@ -150,6 +152,16 @@ module internal ChecksContent =
             | :? FestivalIdCondition as f ->
                 if missing context.FestivalIds f.FestivalId then
                     sink.Error(sprintf "%s.conditionUnknownFestival" family, cpath + ".festivalId", sprintf "%s checks missing festival \"%s\"" label f.FestivalId, target)
+            | :? InventorySpaceCondition as i ->
+                if missing context.ItemIds i.ItemId then
+                    sink.Error(sprintf "%s.conditionUnknownItem" family, cpath + ".itemId", sprintf "%s checks room for missing item \"%s\"" label i.ItemId, target)
+            // Event conditions on items and quests are content lints (validation.ts); actions get them here.
+            | :? HasItemCondition as h when family <> "event" ->
+                if missing context.ItemIds h.ItemId then
+                    sink.Error(sprintf "%s.conditionUnknownItem" family, cpath + ".itemId", sprintf "%s checks missing item \"%s\"" label h.ItemId, target)
+            | :? QuestStatusCondition as q when family <> "event" ->
+                if missing context.QuestIds q.QuestId then
+                    sink.Error(sprintf "%s.conditionUnknownQuest" family, cpath + ".questId", sprintf "%s checks missing quest \"%s\"" label q.QuestId, target)
             | _ -> ())
 
     let private outcomes (context: Context) (sink: Sink) (family: string) (path: string) (label: string) (sceneId: string) (target: NavigationTarget option) (outcomes: List<EventOutcome>) =
@@ -160,9 +172,19 @@ module internal ChecksContent =
                 if not present then
                     sink.Error(sprintf "%s.outcomeMissingField" family, opath + "." + field, sprintf "%s has a %s outcome with no %s" label outcome.Type field, target)
             let sceneFor (id: string | null) = if hasValue id then (match id with null -> sceneId | s -> s) else sceneId
+            // Event outcomes on items, quests, NPCs and warps are content lints (validation.ts);
+            // actions and minigame tiers get the same checks here.
+            let unknown (code: string) (field: string) (known: string -> bool) (id: string | null) (what: string) =
+                if family <> "event" && (match id with null -> false | id -> id.Length > 0 && not (known id)) then
+                    sink.Error(sprintf "%s.%s" family code, opath + "." + field, sprintf "%s references missing %s \"%s\"" label what id, target)
+            let unknownScene () =
+                if (match outcome.SceneId with null -> false | id -> id.Length > 0 && not (context.Scenes.ContainsKey id)) then
+                    sink.Error(sprintf "%s.outcomeUnknownScene" family, opath + ".sceneId", sprintf "%s %s in missing scene \"%s\"" label outcome.Type outcome.SceneId, target)
             match outcome.Type with
             | EventOutcomeTypes.Message -> needs "message" (hasValue outcome.Message)
-            | EventOutcomeTypes.GiveItem | EventOutcomeTypes.TakeItem -> needs "itemId" (hasValue outcome.ItemId)
+            | EventOutcomeTypes.GiveItem | EventOutcomeTypes.TakeItem ->
+                needs "itemId" (hasValue outcome.ItemId)
+                unknown "outcomeUnknownItem" "itemId" context.ItemIds.Contains outcome.ItemId "item"
             | EventOutcomeTypes.GiveMoney | EventOutcomeTypes.TakeMoney | EventOutcomeTypes.ModifyEnergy -> needs "amount" outcome.Amount.HasValue
             | EventOutcomeTypes.ModifyFriendship ->
                 needs "npcId" (hasValue outcome.NpcId)
@@ -170,10 +192,15 @@ module internal ChecksContent =
                 if missing context.NpcIds outcome.NpcId then
                     sink.Error(sprintf "%s.outcomeUnknownNpc" family, opath + ".npcId", sprintf "%s changes friendship with missing NPC \"%s\"" label outcome.NpcId, target)
             | EventOutcomeTypes.SetFlag | EventOutcomeTypes.ClearFlag -> needs "flagName" (hasValue outcome.FlagName)
-            | EventOutcomeTypes.StartQuest | EventOutcomeTypes.CompleteQuest -> needs "questId" (hasValue outcome.QuestId)
-            | EventOutcomeTypes.SpawnNpc | EventOutcomeTypes.RemoveNpc -> needs "npcId" (hasValue outcome.NpcId)
+            | EventOutcomeTypes.StartQuest | EventOutcomeTypes.CompleteQuest ->
+                needs "questId" (hasValue outcome.QuestId)
+                unknown "outcomeUnknownQuest" "questId" context.QuestIds.Contains outcome.QuestId "quest"
+            | EventOutcomeTypes.SpawnNpc | EventOutcomeTypes.RemoveNpc ->
+                needs "npcId" (hasValue outcome.NpcId)
+                unknown "outcomeUnknownNpc" "npcId" context.NpcIds.Contains outcome.NpcId "NPC"
             | EventOutcomeTypes.StartDialogue ->
                 needs "npcId" (hasValue outcome.NpcId)
+                unknown "outcomeUnknownNpc" "npcId" context.NpcIds.Contains outcome.NpcId "NPC"
                 match outcome.NpcId with
                 | null -> ()
                 | npcId ->
@@ -187,6 +214,7 @@ module internal ChecksContent =
                     | _ -> ()
             | EventOutcomeTypes.ChangeTile ->
                 needs "newTileType" (hasValue outcome.NewTileType)
+                unknownScene ()
                 let scene = sceneFor outcome.SceneId
                 let x = if outcome.TileX.HasValue then outcome.TileX.Value else 0.0
                 let y = if outcome.TileY.HasValue then outcome.TileY.Value else 0.0
@@ -194,6 +222,7 @@ module internal ChecksContent =
                     sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".tileX", sprintf "%s changes tile (%g,%g), outside the scene" label x y, target)
             | EventOutcomeTypes.WarpPlayer ->
                 needs "sceneId" (hasValue outcome.SceneId)
+                unknown "outcomeUnknownScene" "sceneId" context.Scenes.ContainsKey outcome.SceneId "scene"
                 let x = if outcome.X.HasValue then outcome.X.Value else 0.0
                 let y = if outcome.Y.HasValue then outcome.Y.Value else 0.0
                 match outcome.SceneId with
@@ -202,6 +231,7 @@ module internal ChecksContent =
                     sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".x", sprintf "%s warps the player to (%g,%g), outside \"%s\"" label x y context.Scenes[scene].Name, target)
                 | _ -> ()
             | EventOutcomeTypes.LockTransition | EventOutcomeTypes.UnlockTransition ->
+                unknownScene ()
                 let scene = sceneFor outcome.SceneId
                 let x = if outcome.X.HasValue then outcome.X.Value else 0.0
                 let y = if outcome.Y.HasValue then outcome.Y.Value else 0.0
@@ -325,6 +355,11 @@ module internal ChecksContent =
             match recipe.Unlock with
             | null -> ()
             | unlock ->
+                match unlock.Skill with
+                | null -> ()
+                | skill when not (SaveSchema.SkillNames |> Seq.contains skill.Skill) ->
+                    sink.Warning("recipe.unknownSkill", path + ".unlock.skill.skill", sprintf "Recipe \"%s\" unlocks with unknown skill \"%s\"" recipe.Name skill.Skill, target)
+                | _ -> ()
                 if missing context.QuestIds unlock.QuestId then
                     sink.Error("recipe.unlockQuestMissing", path + ".unlock.questId", sprintf "Recipe \"%s\" unlocks after missing quest \"%s\"" recipe.Name unlock.QuestId, target)
                 match unlock.Seasons with

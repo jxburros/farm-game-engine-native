@@ -20,6 +20,7 @@
     <Compile Include="ProjectCatalogTests.fs" />
     <Compile Include="DefaultsTests.fs" />
     <Compile Include="ProblemsTests.fs" />
+    <Compile Include="ReferencesTests.fs" />
     <Compile Include="PatternsTests.fs" />
     <Compile Include="PropertyTests.fs" />
     <Compile Include="BrokenProjects.fs" />

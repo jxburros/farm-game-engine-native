@@ -69,7 +69,7 @@ public sealed class ContentEditorTests
         Assert.Equal("A native greeting.", host.Workspace.Current.Dialogues.First(d => d.Id == id).Text);
         Assert.Equal("A native greeting.", host.Workspace.Current.Npcs.First(n => n.Id == npcId).Dialogue.First(d => d.Id == id).Text);
 
-        FindByName<TextBox>(host.Window, "ContentField_Options").Text = "not JSON";
+        FindByName<TextBox>(host.Window, "ContentJson_Options").Text = "not JSON";
         Press(host, "SaveContentButton");
         Assert.Contains("Could not save", FindByName<TextBlock>(host.Window, "ContentMessage").Text);
         Assert.Equal("A native greeting.", host.Workspace.Current.Dialogues.First(d => d.Id == id).Text);
@@ -166,6 +166,10 @@ public sealed class ContentEditorTests
         Press(host, "SliceArtButton");
         asset = Assert.Single(host.Workspace.Current.CustomAssets);
         Assert.Equal(2, Assert.Single(asset.Animations!).Frames.Count);
+        // The Rust renderer draws the preview frame (a 16×16 frame fitted into the 140px box).
+        var preview = FindByName<Border>(host.Window, "ArtPreview");
+        var shown = Assert.IsType<Image>(preview.Child);
+        Assert.Equal(new Avalonia.PixelSize(140, 140), Assert.IsAssignableFrom<Avalonia.Media.Imaging.Bitmap>(shown.Source).PixelSize);
 
         Press(host, "BindArtButton");
         Assert.Equal(asset.Id, host.Workspace.Current.PlayerVisual?.AssetId);

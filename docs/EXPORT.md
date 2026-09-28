@@ -75,12 +75,12 @@ player template for the target ─────────┘    (renamed exe, i
   machines. The cartridge never does.
 - **Errors block export.** Export runs the Problems pipeline first. Any error
   stops it. Warnings are listed in the export report.
-- **Only used assets ship.** The compiler should embed only the assets that
-  content references. Export already reports unused assets as warnings (an
-  asset is used when anything in the project outside the asset list names its
-  id or data URL, when it is the art of a tile type in use, or when a used
-  asset's frames draw from it). The cartridge still embeds every asset for
-  now; the report says so, and [ROADMAP.md](../ROADMAP.md) tracks the fix.
+- **Only used assets ship.** The compiler embeds only the assets the game
+  uses, and Export lists the others as warnings. An asset is used when
+  anything in the project outside the asset list names its id or data URL,
+  when it is the art of a tile type in use, or when a used asset's frames draw
+  from it (`AssetUsage` in F#). A coincidental match keeps an asset; a used
+  asset is never left out.
 
 ### Output layout
 
@@ -231,9 +231,10 @@ F# Problems pipeline validates the block and blocks export on errors.
 | `credits` | text | Shown on the credits screen. |
 | `targets` | `["windows-x64", "linux-x64"]` | The targets the creator exported last time. |
 
-Validation lives in F# `ChecksExport`, called by `Problems.collect`. The editor
-has no controls for these fields yet (Export Game records `targets`); until it
-does, export uses the defaults or values set in the project JSON.
+Validation lives in F# `ChecksExport`, called by `Problems.collect`. Project
+Settings → Export edits every field except `gameId` (set once) and `targets`
+(Export Game records them), and shows the `ChecksExport` problems inline. A
+project that never saved export settings exports with the defaults.
 
 ## What the player must include (phase 6)
 

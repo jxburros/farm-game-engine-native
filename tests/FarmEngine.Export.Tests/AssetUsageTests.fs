@@ -37,11 +37,14 @@ let ``bindings, legacy images, frames, tile art and the export icon count as use
     Assert.Equal<string list>([ "art-brush" ], unusedIds project)
 
 [<Fact>]
-let ``unused assets become export warnings with a note about the cartridge`` () =
+let ``unused assets become export warnings and stay out of the cartridge`` () =
     let project = starter () |> withAssets [ asset "art-scratch" png ]
     let errors, warnings = Exporter.check project
     Assert.Empty errors
-    Assert.Contains(warnings, fun w -> w.StartsWith("customAssets[0]: Asset \"art-scratch\"") && w.Contains("not used"))
-    Assert.Contains(warnings, fun w -> w.Contains("game.cart still embeds every project asset"))
+    Assert.Contains(warnings, fun w -> w.StartsWith("customAssets[0]: Asset \"art-scratch\"") && w.Contains("left out"))
     let clean = snd (Exporter.check (starter ()))
-    Assert.DoesNotContain(clean, fun w -> w.Contains("game.cart still embeds"))
+    Assert.DoesNotContain(clean, fun w -> w.Contains("customAssets"))
+    // The compiled game carries no copy of the unused art.
+    let cart = FarmEngine.Cart.Cartridge.GetRootAsCartridge(Google.FlatBuffers.ByteBuffer(CartridgeCompiler.Compile project))
+    Assert.Equal(0, cart.AssetsLength)
+    Assert.Empty(AssetUsage.used project)

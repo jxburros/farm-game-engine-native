@@ -2,6 +2,32 @@
 
 ## 0.2.0 (unreleased)
 
+- **Nested content forms.** Content entries now edit nested records, lists and
+  references with native controls. Lists add, remove and move rows. Reference
+  fields are searchable pickers that keep a missing id visible as
+  "(missing: id)". Reference lists such as seasons and gift tastes are chips.
+  Event, action and minigame conditions and outcomes pick a type and show
+  only that type's fields, like the web editor. Quest objectives show the
+  targets of their type. Each nested field has a collapsed Edit as JSON box.
+  One save is still one undo step.
+- **F# field metadata.** `References` declares what every schema field holds
+  and lists picker options from the content compiler, built-in items, crops
+  and node types included. `Vocabulary` ports `event-vocabulary.ts` and the
+  per-type fields of `event-forms.tsx`. A test fails when an id-like schema
+  field has no declaration.
+- **More reference checks.** Problems now also reports missing ids in action
+  and minigame conditions and outcomes, inventory-space conditions, transition
+  and tile outcomes, dialogue option items and actions, gift tastes, item
+  crops, placed machines, scene NPC and event lists, the player's quests and
+  recipe skills. Each has a JSON path.
+- **Export settings.** Project Settings edits the export title, executable
+  name, version, author, company, icon (large PNG art only), window size,
+  fullscreen, pixel scale and credits, and shows export problems inline.
+- **SVG import.** The art studio imports SVG files as PNG art at their own
+  size or a chosen size, within the raster limits. Files with scripts,
+  embedded HTML or external links are refused.
+- **Animation tools.** Frames can be duplicated, and durations set for one
+  frame or every frame of a clip, as undoable F# edits.
 - **Export Game.** File → Export Game… builds standalone Windows x64 and Linux
   x64 games from the open project, with an optional `.zip` or `.tar.gz` for
   each. The Windows executable gets the game's icon and version info, written
@@ -57,8 +83,8 @@
 - **Creator content workspace.** Edit Mode now includes native forms for
   NPCs, dialogue, items, crops, quests, events, shops, recipes, nodes,
   machines, wildlife, actions and minigames. Creators can add, edit and delete
-  entries through the F# undoable document. Nested fields are editable as
-  JSON. Project settings and the calendar have their own controls, and the
+  entries through the F# undoable document. Project settings and the calendar
+  have their own controls, and the
   Problems tab links issues to affected entries.
 - **Pack manager.** Creators can review a pack's manifest, dependencies,
   requested permissions and plugin source before installing it. The Mods tab
@@ -67,7 +93,7 @@
 - **Art studio.** Import raster artwork into portable project assets, slice
   sprite sheets into animation clips, append/reorder/remove frames, and bind
   visuals to the player, map brush or content definitions. Removing an asset
-  clears its bindings. SVG import remains to be ported.
+  clears its bindings.
 - **Workshop and interface.** The 13 F# creator patterns can now be used from
   Edit Mode, each as one undo step. Creators can add in-game panels and edit
   their titles, visibility flags and live entries.

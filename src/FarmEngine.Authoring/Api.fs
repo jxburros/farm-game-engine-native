@@ -109,6 +109,11 @@ type Edits =
     static member BindMachineTypeVisual(machineTypeId: string, visual: VisualRef | null) : Edit = BindVisual(MachineTypeVisual machineTypeId, Edits.Visual visual)
     static member UpsertAsset(asset: CustomAsset) : Edit = UpsertAsset asset
     static member RemoveAsset(assetId: string) : Edit = RemoveAsset assetId
+    /// One frame's duration in ticks (20 ticks = 1 second).
+    static member SetFrameTicks(assetId: string, clip: string, frame: int, ticks: int) : Edit = SetFrameTicks(assetId, clip, Some frame, ticks)
+    /// Every frame of a clip gets the same duration.
+    static member SetAllFrameTicks(assetId: string, clip: string, ticks: int) : Edit = SetFrameTicks(assetId, clip, None, ticks)
+    static member DuplicateFrame(assetId: string, clip: string, frame: int) : Edit = DuplicateFrame(assetId, clip, frame)
     static member InstallPack(pack: ContentPack) : Edit = InstallPack pack
     static member SetPackEnabled(packId: string, enabled: bool) : Edit = SetPackEnabled(packId, enabled)
     static member ReorderPacks(packIds: seq<string>) : Edit = ReorderPacks(List.ofSeq packIds)
@@ -192,6 +197,141 @@ type Defaults =
     static member NewFestival(project: GameProject, calendar: CalendarConfig) : CalendarFestival | null = Defaults.newFestival project calendar |> Option.toObj
     static member MineEnabled(project: GameProject, enabled: bool) : MineConfig = Defaults.mineEnabled project enabled
     static member NewGamePanel(project: GameProject) : GamePanel = Defaults.newGamePanel project
+
+/// A form field for C#: what a property or vocabulary field holds, as strings and read-only
+/// lists instead of F# unions (docs/LANGUAGES.md "C# friendliness at the boundary").
+[<Sealed>]
+type FormField internal (key: string, label: string, kind: string, reference: string, choices: PickerOption list,
+                         optional: bool, emptyLabel: string option, placeholder: string, whenEmpty: float,
+                         min: float option, max: float option, onLabel: string, offLabel: string, reason: string) =
+    /// The JSON key of a vocabulary field ("itemId"); empty for a declared schema property.
+    member _.Key = key
+    member _.Label = label
+    /// "text", "integer", "number", "bool", "choice", "reference", "referenceList",
+    /// "referenceKeys" or "plain" (named like a reference but not one; see `Reason`).
+    member _.Kind = kind
+    /// The reference kind ("item", "npc", …) for reference fields, else "".
+    member _.Reference = reference
+    member _.Choices: IReadOnlyList<PickerOption> = choices |> Array.ofList :> IReadOnlyList<PickerOption>
+    /// Clearing the field removes the value.
+    member _.Optional = optional
+    /// The label of the "nothing chosen" entry, or null when a value is required.
+    member _.EmptyLabel: string | null = Option.toObj emptyLabel
+    member _.Placeholder = placeholder
+    /// What a cleared required number stores.
+    member _.WhenEmpty = whenEmpty
+    member _.HasMin = min.IsSome
+    member _.Min = defaultArg min 0.0
+    member _.HasMax = max.IsSome
+    member _.Max = defaultArg max 0.0
+    member _.OnLabel = onLabel
+    member _.OffLabel = offLabel
+    member _.Reason = reason
+
+    static member internal OfVocabulary(field: VocabularyField) =
+        let kind, reference, choices, onLabel, offLabel =
+            match field.Kind with
+            | FieldKind.Text -> "text", "", [], "", ""
+            | FieldKind.Integer -> "integer", "", [], "", ""
+            | FieldKind.Number -> "number", "", [], "", ""
+            | FieldKind.Bool(on, off) -> "bool", "", [], on, off
+            | FieldKind.OneOf choices -> "choice", "", References.choiceOptions choices, "", ""
+            | FieldKind.Reference kind -> "reference", ReferenceKind.name kind, [], "", ""
+            | FieldKind.ReferenceList kind -> "referenceList", ReferenceKind.name kind, [], "", ""
+        FormField(field.Key, field.Label, kind, reference, choices, field.Optional, None, field.Placeholder,
+                  field.WhenEmpty, field.Min, field.Max, onLabel, offLabel, "")
+
+    static member internal OfRole(label: string, role: FieldRole) =
+        let make kind reference choices empty reason =
+            FormField("", label, kind, reference, choices, Option.isSome empty, empty, "", 0.0, None, None, "", "", reason)
+        match role with
+        | FieldRole.Reference(kind, empty) -> make "reference" (ReferenceKind.name kind) [] empty ""
+        | FieldRole.ReferenceList kind -> make "referenceList" (ReferenceKind.name kind) [] None ""
+        | FieldRole.ReferenceKeys kind -> make "referenceKeys" (ReferenceKind.name kind) [] None ""
+        | FieldRole.OneOf(choices, empty) -> make "choice" "" (References.choiceOptions choices) empty ""
+        | FieldRole.NotReference reason -> make "plain" "" [] None reason
+
+/// Form metadata for C# content editors: what each schema property holds, the pickers' entries,
+/// the condition/outcome vocabulary and the defaults of new list rows. The view maps these to
+/// controls; every decision stays here.
+[<AbstractClass; Sealed>]
+type ContentForms =
+    static member private List(xs: 'T list) = xs |> Array.ofList :> IReadOnlyList<'T>
+    static member private Kind(kind: string) =
+        match ReferenceKind.tryParse kind with
+        | Some kind -> kind
+        | None -> invalidArg (nameof kind) (sprintf "Unknown reference kind \"%s\"" kind)
+
+    /// What `owner.property` holds (`owner` is the C# record type name), or null when the
+    /// property is not declared (the form then picks a control from its type alone).
+    static member Field(owner: string, property: string, label: string) : FormField | null =
+        match References.roleOf owner property with
+        | Some role -> FormField.OfRole(label, role)
+        | None -> null
+
+    /// The ids a picker of `kind` offers, in project order.
+    static member Options(kind: string, project: GameProject) : IReadOnlyList<PickerOption> =
+        References.options (ContentForms.Kind kind) project |> ContentForms.List
+
+    /// A picker's entries for `field` holding `current`: the empty entry when allowed, a
+    /// "(missing: id)" entry for an unknown id, then `available` (from `Options`, or the choices).
+    static member Entries(field: FormField, available: seq<PickerOption>, current: string | null) : IReadOnlyList<PickerOption> =
+        References.pickerEntries (List.ofSeq available) (Option.ofObj field.EmptyLabel) current |> ContentForms.List
+
+    /// Chips of a reference list: each id with its label, or "(missing: id)" when unknown.
+    static member ListEntries(available: seq<PickerOption>, ids: seq<string>) : IReadOnlyList<PickerOption> =
+        let known = available |> Seq.map (fun o -> o.Id, o) |> Seq.distinctBy fst |> dict
+        [ for id in ids ->
+              match known.TryGetValue id with
+              | true, option -> option
+              | _ -> { Id = id; Label = sprintf "(missing: %s)" id; Missing = true } ]
+        |> ContentForms.List
+
+    static member ConditionTypes: IReadOnlyList<PickerOption> = References.choiceOptions Vocabulary.conditionTypes |> ContentForms.List
+    static member OutcomeTypes: IReadOnlyList<PickerOption> = References.choiceOptions Vocabulary.outcomeTypes |> ContentForms.List
+    static member ConditionLabel(kind: string) : string = Vocabulary.conditionLabel kind
+    static member OutcomeLabel(kind: string) : string = Vocabulary.outcomeLabel kind
+    static member ConditionFields(kind: string) : IReadOnlyList<FormField> = Vocabulary.conditionFields kind |> List.map FormField.OfVocabulary |> ContentForms.List
+    static member OutcomeFields(kind: string) : IReadOnlyList<FormField> = Vocabulary.outcomeFields kind |> List.map FormField.OfVocabulary |> ContentForms.List
+    static member DefaultCondition(kind: string, project: GameProject) : EventCondition = Vocabulary.defaultCondition kind project
+    static member DefaultOutcome(kind: string) : EventOutcome = Vocabulary.defaultOutcome kind
+
+    /// Properties of `owner` to hide while its `type` is `kind` (quest objective targets).
+    static member HiddenProperties(owner: string, kind: string) : IReadOnlyList<string> = Vocabulary.hiddenProperties owner kind |> ContentForms.List
+
+    /// A new list element of `elementType` (C# type name) for the entry being edited, or null
+    /// when the record's own defaults apply.
+    static member NewElement(elementType: string, project: GameProject, entity: obj, siblingIds: seq<string>) : objnull =
+        match Vocabulary.newElement elementType project entity (List.ofSeq siblingIds) with
+        | Some element -> element
+        | None -> null
+
+/// Export settings for the Project Settings view: the values to show, the icon picker and the
+/// `ChecksExport` problems of a draft.
+[<AbstractClass; Sealed>]
+type ExportSettingsForm =
+    /// The project's export settings, or the ones export would start from.
+    static member Current(project: GameProject) : ExportSettings =
+        match project.Export with
+        | null -> Defaults.newExportSettings project
+        | settings -> settings
+
+    /// Assets that can be the icon (PNG, at least 256×256), with "(none)" first and a
+    /// "(missing: id)" entry when `current` is not one of them.
+    static member IconOptions(project: GameProject, current: string | null) : IReadOnlyList<PickerOption> =
+        let icons = project.CustomAssets |> Seq.filter ChecksExport.suitableIcon |> Seq.map (fun a -> { Id = a.Id; Label = (if a.Name = a.Id then a.Id else sprintf "%s (%s)" a.Name a.Id); Missing = false })
+        References.pickerEntries (List.ofSeq icons) (Some "(none)") current |> Array.ofList :> IReadOnlyList<PickerOption>
+
+    static member PixelScales: IReadOnlyList<PickerOption> =
+        match References.roleOf "ExportSettings" "PixelScale" with
+        | Some(FieldRole.OneOf(choices, _)) -> References.choiceOptions choices |> Array.ofList :> IReadOnlyList<PickerOption>
+        | _ -> [||] :> IReadOnlyList<PickerOption>
+
+    /// The export problems the project would have with `settings`.
+    static member Check(project: GameProject, settings: ExportSettings) : IReadOnlyList<Problem> =
+        let sink = Sink()
+        ChecksExport.run (Document.run project (SetExportSettings(Some settings))) sink
+        sink.ToList() |> Array.ofList :> IReadOnlyList<Problem>
 
 /// What `Patterns.Build` hands to C#: the edit to apply, or the message to show.
 [<Sealed>]

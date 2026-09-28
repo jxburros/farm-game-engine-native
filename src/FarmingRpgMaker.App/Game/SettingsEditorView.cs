@@ -35,6 +35,20 @@ public sealed class SettingsEditorView : UserControl
     private readonly CheckBox _energy = new() { Name = "Setting_EnergyEnabled", Content = "Energy enabled" };
     private readonly CheckBox _skills = new() { Name = "Setting_SkillsEnabled", Content = "Skills enabled" };
     private readonly CheckBox _credit = new() { Name = "Setting_ShowMadeWithCredit", Content = "Show creator credit" };
+    private readonly TextBox _exportTitle = new() { Name = "Export_Title", Watermark = "Project name" };
+    private readonly TextBox _exportExecutable = new() { Name = "Export_ExecutableName" };
+    private readonly TextBox _exportVersion = new() { Name = "Export_Version", Watermark = "Project version" };
+    private readonly TextBox _exportAuthor = new() { Name = "Export_Author" };
+    private readonly TextBox _exportCompany = new() { Name = "Export_Company" };
+    private readonly TextBox _exportGameId = new() { Name = "Export_GameId", IsReadOnly = true };
+    private readonly ComboBox _exportIcon = new() { Name = "Export_Icon", MinWidth = 260 };
+    private readonly TextBox _exportWidth = new() { Name = "Export_WindowWidth", Width = 90 };
+    private readonly TextBox _exportHeight = new() { Name = "Export_WindowHeight", Width = 90 };
+    private readonly CheckBox _exportFullscreen = new() { Name = "Export_Fullscreen", Content = "Start fullscreen" };
+    private readonly ComboBox _exportPixelScale = new() { Name = "Export_PixelScale", MinWidth = 260 };
+    private readonly TextBox _exportCredits = new() { Name = "Export_Credits", AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MinHeight = 60 };
+    private readonly StackPanel _exportProblems = new() { Name = "ExportSettingsProblems", Spacing = 4 };
+    private readonly TextBlock _exportMessage = Ui.Wrapped("", "muted", "small");
 
     public SettingsEditorView(ProjectWorkspace workspace)
     {
@@ -72,6 +86,26 @@ public sealed class SettingsEditorView : UserControl
         save.Name = "SaveSettingsButton";
         var revert = Ui.Button("Revert fields", Refresh, "tool");
         form.Children.Add(Ui.HStack(8, save, revert));
+        form.Children.Add(Ui.Text("EXPORT", "section"));
+        form.Children.Add(Ui.Wrapped("How File → Export Game names and packages the standalone game. Empty title and version use the project's.", "muted", "small"));
+        Field(form, "Game title", _exportTitle);
+        Field(form, "Executable name", _exportExecutable);
+        Field(form, "Game version", _exportVersion);
+        Field(form, "Author", _exportAuthor);
+        Field(form, "Company", _exportCompany);
+        Field(form, "Game id (keeps save folders stable; set once)", _exportGameId);
+        form.Children.Add(Ui.Text("Icon (PNG artwork, at least 256×256)", "muted", "small"));
+        form.Children.Add(_exportIcon);
+        form.Children.Add(Ui.HStack(8, Ui.Text("Window", "muted", "small"), _exportWidth, Ui.Text("×"), _exportHeight, _exportFullscreen));
+        form.Children.Add(Ui.Text("Pixel scale", "muted", "small"));
+        form.Children.Add(_exportPixelScale);
+        Field(form, "Credits", _exportCredits);
+        _exportMessage.Name = "ExportSettingsMessage";
+        form.Children.Add(_exportProblems);
+        form.Children.Add(_exportMessage);
+        var saveExport = Ui.Button("Save export settings", SaveExport, "accent");
+        saveExport.Name = "SaveExportSettingsButton";
+        form.Children.Add(saveExport);
         Content = new ScrollViewer { Content = form };
         _workspace.ProjectChanged += (_, _) =>
         {
@@ -179,6 +213,92 @@ public sealed class SettingsEditorView : UserControl
         _festivals.Children.Clear();
         foreach (var festival in settings.Calendar.Festivals) AddFestivalRow(festival);
         _message.Text = "";
+        RefreshExport(project);
+    }
+
+    private static void Fill(ComboBox box, IEnumerable<PickerOption> options, string? current)
+    {
+        box.Items.Clear();
+        foreach (var option in options)
+        {
+            var item = new ComboBoxItem { Content = option.Label, Tag = option.Id };
+            if (option.Missing) item.Classes.Add("missing");
+            box.Items.Add(item);
+        }
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag! == (current ?? ""));
+    }
+
+    private static string? Optional(TextBox box) => string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
+
+    private void RefreshExport(GameProject project)
+    {
+        var export = ExportSettingsForm.Current(project);
+        _exportTitle.Text = export.Title ?? "";
+        _exportExecutable.Text = export.ExecutableName ?? "";
+        _exportVersion.Text = export.Version ?? "";
+        _exportAuthor.Text = export.Author ?? "";
+        _exportCompany.Text = export.Company ?? "";
+        _exportGameId.Text = export.GameId;
+        Fill(_exportIcon, ExportSettingsForm.IconOptions(project, export.IconAssetId), export.IconAssetId);
+        _exportWidth.Text = export.Window.Width.ToString(CultureInfo.InvariantCulture);
+        _exportHeight.Text = export.Window.Height.ToString(CultureInfo.InvariantCulture);
+        _exportFullscreen.IsChecked = export.Window.Fullscreen;
+        Fill(_exportPixelScale, ExportSettingsForm.PixelScales, export.PixelScale);
+        _exportCredits.Text = export.Credits ?? "";
+        _exportMessage.Text = project.Export is null ? "Not saved yet: export uses these defaults." : "";
+        ShowExportProblems(project.Export is null ? [] : ExportSettingsForm.Check(project, export));
+    }
+
+    private void ShowExportProblems(IReadOnlyList<Problem> problems)
+    {
+        _exportProblems.Children.Clear();
+        for (var i = 0; i < problems.Count; i++)
+        {
+            var line = Ui.Wrapped(problems[i].Message, problems[i].IsError ? "error" : "muted", "small");
+            line.Name = $"ExportSettingsProblem_{i}";
+            _exportProblems.Children.Add(line);
+        }
+    }
+
+    private static int WholeNumber(TextBox box, string label) =>
+        int.TryParse(box.Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : throw new FormatException($"{label} must be a whole number.");
+
+    private void SaveExport()
+    {
+        if (_workspace.Current is not { } project) return;
+        try
+        {
+            var current = ExportSettingsForm.Current(project);
+            var settings = current with
+            {
+                Title = Optional(_exportTitle),
+                ExecutableName = Optional(_exportExecutable),
+                Version = Optional(_exportVersion),
+                Author = Optional(_exportAuthor),
+                Company = Optional(_exportCompany),
+                IconAssetId = (_exportIcon.SelectedItem as ComboBoxItem)?.Tag is string { Length: > 0 } icon ? icon : null,
+                Window = current.Window with
+                {
+                    Width = WholeNumber(_exportWidth, "Window width"),
+                    Height = WholeNumber(_exportHeight, "Window height"),
+                    Fullscreen = _exportFullscreen.IsChecked == true,
+                },
+                PixelScale = (_exportPixelScale.SelectedItem as ComboBoxItem)?.Tag as string ?? current.PixelScale,
+                Credits = Optional(_exportCredits),
+            };
+            var problems = ExportSettingsForm.Check(project, settings);
+            _workspace.Apply(Edits.SetExportSettings(settings));
+            ShowExportProblems(problems);
+            _exportMessage.Text = problems.Any(problem => problem.IsError)
+                ? "Export settings saved. Fix the errors above before exporting."
+                : "Export settings saved.";
+        }
+        catch (FormatException error)
+        {
+            _exportMessage.Text = $"Could not save: {error.Message}";
+        }
     }
 
     private void Save()

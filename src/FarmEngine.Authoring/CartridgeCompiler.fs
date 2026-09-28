@@ -90,7 +90,8 @@ type CartridgeCompiler =
             | null -> ()
             | value -> presentation[name] <- node value
         presentation["name"] <- JsonValue.Create project.Name
-        presentation["customAssets"] <- node project.CustomAssets
+        // Only the art the game uses ships (docs/EXPORT.md); the editor keeps the rest.
+        presentation["customAssets"] <- node (Collections.Generic.List<CustomAsset>(AssetUsage.used project))
         addOptional "customCrops" project.CustomCrops
         addOptional "playerCustomImage" project.PlayerCustomImage
         addOptional "playerVisual" project.PlayerVisual

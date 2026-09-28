@@ -42,7 +42,9 @@ let ``data urls move to the asset table once and are referenced by content hash`
     let copy = CustomAsset(Id = "art-cow-2", Name = "cow copy.png", Type = "art", DataUrl = png, Width = 16.0, Height = 16.0)
     let project =
         starter ()
-        |> apply (Batch("art", [ UpsertAsset art; UpsertAsset copy; BindVisual(PlayerVisual, Some(VisualRef(AssetId = "art-cow"))) ]))
+        |> apply (Batch("art", [ UpsertAsset art; UpsertAsset copy
+                                 BindVisual(PlayerVisual, Some(VisualRef(AssetId = "art-cow")))
+                                 BindVisual(NpcVisual "npc-farmer", Some(VisualRef(AssetId = "art-cow-2"))) ]))
     let bytes = CartridgeCompiler.Compile project
     Assert.Equal<byte>(bytes, CartridgeCompiler.Compile project)
     let cart = read bytes
@@ -63,7 +65,11 @@ let ``data urls move to the asset table once and are referenced by content hash`
 let ``malformed data urls stay inline`` () =
     let broken = CustomAsset(Id = "art-broken", Name = "broken.png", Type = "art", DataUrl = "data:image/png;base64,***", Width = 16.0, Height = 16.0)
     let plain = CustomAsset(Id = "art-plain", Name = "plain.svg", Type = "art", DataUrl = "data:image/svg+xml,%3Csvg%3E", Width = 16.0, Height = 16.0)
-    let project = starter () |> apply (Batch("art", [ UpsertAsset broken; UpsertAsset plain ]))
+    let project =
+        starter ()
+        |> apply (Batch("art", [ UpsertAsset broken; UpsertAsset plain
+                                 BindVisual(PlayerVisual, Some(VisualRef(AssetId = "art-broken")))
+                                 BindVisual(NpcVisual "npc-farmer", Some(VisualRef(AssetId = "art-plain"))) ]))
     let cart = read (CartridgeCompiler.Compile project)
     Assert.Equal(0, cart.AssetsLength)
     let json = presentation cart
@@ -89,3 +95,14 @@ let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
     Assert.Equal<string>([| "onEffect"; "onDayStart" |], [| for i in 0 .. first.GrantedHooksLength - 1 -> first.GrantedHooks(i) |])
     Assert.Equal("beta:greeter", cart.Plugins(1).Value.Id)
     Assert.Equal(0, (read (CartridgeCompiler.Compile(starter ()))).PluginsLength)
+
+[<Fact>]
+let ``unused art stays out of the cartridge`` () =
+    let used = CustomAsset(Id = "art-used", Name = "used.png", Type = "art", DataUrl = png, Width = 16.0, Height = 16.0)
+    let scratch = CustomAsset(Id = "art-scratch", Name = "scratch.png", Type = "art", DataUrl = "data:image/png;base64,AAAA", Width = 16.0, Height = 16.0)
+    let project = starter () |> apply (Batch("art", [ UpsertAsset used; UpsertAsset scratch; BindVisual(PlayerVisual, Some(VisualRef(AssetId = "art-used"))) ]))
+    let cart = read (CartridgeCompiler.Compile project)
+    Assert.Equal(1, cart.AssetsLength)
+    use doc = JsonDocument.Parse(presentation cart)
+    let ids = [ for asset in doc.RootElement.GetProperty("customAssets").EnumerateArray() -> asset.GetProperty("id").GetString() ]
+    Assert.Equal<string list>([ "art-used" ], ids |> List.map nonNull)
