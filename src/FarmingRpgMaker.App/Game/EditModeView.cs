@@ -403,14 +403,14 @@ public sealed partial class EditModeView : UserControl
             layers.Add($"bg {tile.Background}");
         }
 
-        if (tile.Overlay is not null)
+        if (tile.Overlay.OrNull() is { } overlay)
         {
-            layers.Add($"overlay {tile.Overlay}");
+            layers.Add($"overlay {overlay}");
         }
 
-        if (tile.Object is not null)
+        if (tile.Object.OrNull() is { } tileObject)
         {
-            layers.Add($"object {tile.Object}");
+            layers.Add($"object {tileObject}");
         }
 
         if (layers.Count > 0)

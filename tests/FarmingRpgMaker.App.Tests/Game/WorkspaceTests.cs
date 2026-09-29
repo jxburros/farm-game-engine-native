@@ -109,6 +109,7 @@ public sealed class WorkspaceTests
 
         var description = edit.DescribeTile(0, 0);
         Assert.StartsWith("(0, 0) · Wall", description, StringComparison.Ordinal);
+        Assert.Contains("object wall", description, StringComparison.Ordinal);
         Assert.Contains("NPC Old Farmer", edit.DescribeTile(3, 6), StringComparison.Ordinal);
 
         // Pointer hover over the canvas reports the tile under it.
