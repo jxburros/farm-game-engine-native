@@ -49,7 +49,9 @@ pub mod social;
 pub mod stable_json;
 pub mod start;
 pub mod state;
+pub mod text;
 pub mod tools;
+pub mod units;
 pub mod weather;
 pub mod world;
 
