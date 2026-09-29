@@ -57,7 +57,13 @@ export type InputEvent =
   | { type: "wheel"; dx?: number; dy: number }
   | { type: "gamepadButton"; button: string; pressed: boolean }
   | { type: "gamepadAxis"; axis: "leftX" | "leftY" | "rightX" | "rightY"; value: number }
+  | { type: "action"; action: GameAction; pressed: boolean }
   | { type: "focusLost" };
+
+/** A game action an on-screen control holds (touch buttons), whatever keys it is bound to. */
+export type GameAction =
+  | "move-up" | "move-down" | "move-left" | "move-right" | "interact" | "water" | "till" | "axe"
+  | "pickaxe" | "scythe" | "sleep" | "inventory" | "quests" | "craft" | "menu";
 
 /** `Player.frame`'s request (the same JSON as `fe_player_frame`). */
 export interface FrameRequest {

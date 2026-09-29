@@ -122,6 +122,39 @@ async function main() {
     event.preventDefault();
   }, { passive: false });
 
+  // Touch controls: shown on touch screens (and after the first touch), they hold game actions
+  // the way keys do, whatever the player bound those keys to.
+  const touch = document.getElementById("touch");
+  const coarse = window.matchMedia ? window.matchMedia("(pointer: coarse)") : null;
+  const showTouch = () => { touch.hidden = false; };
+  if (coarse && coarse.matches) showTouch();
+  coarse?.addEventListener?.("change", () => { if (coarse.matches) showTouch(); });
+  window.addEventListener("pointerdown", (event) => { if (event.pointerType === "touch") showTouch(); }, { capture: true });
+  const held = new Set();
+  const hold = (button, pressed) => {
+    const action = button.dataset.action;
+    if (pressed === held.has(action)) return;
+    if (pressed) held.add(action);
+    else held.delete(action);
+    button.classList.toggle("held", pressed);
+    send({ type: "action", action, pressed });
+  };
+  for (const button of touch.querySelectorAll("button[data-action]")) {
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      button.setPointerCapture?.(event.pointerId);
+      hold(button, true);
+    });
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(type, () => hold(button, false));
+    button.addEventListener("contextmenu", (event) => event.preventDefault());
+  }
+  const releaseTouch = () => {
+    for (const button of touch.querySelectorAll("button.held")) hold(button, false);
+  };
+  window.addEventListener("blur", releaseTouch);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releaseTouch(); });
+
   const handleRequest = (request) => {
     if (request === "fullscreen:on") document.documentElement.requestFullscreen?.().catch(() => {});
     else if (request === "fullscreen:off" && document.fullscreenElement) document.exitFullscreen().catch(() => {});
