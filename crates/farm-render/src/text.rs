@@ -2,7 +2,9 @@
 //!
 //! The fonts are Inter 3.019 Regular and Bold (SIL Open Font License 1.1, see
 //! `assets/fonts/OFL.txt`), the same files the desktop app loads from `Avalonia.Fonts.Inter`, so
-//! in-world text matches the Skia host. Measurement is what a UI layout needs: glyph advances,
+//! in-world text matches the Skia host; and Atkinson Hyperlegible Regular and Bold (Braille
+//! Institute, SIL Open Font License 1.1, see `assets/fonts/OFL-AtkinsonHyperlegible.txt`) for the
+//! player's "Readable font" setting ([`FontId::readable`]). Measurement is what a UI layout needs: glyph advances,
 //! line metrics, greedy word wrap and ellipsis truncation. Like SkiaSharp's `DrawText`, runs are
 //! laid out from glyph advances without kerning or shaping.
 
@@ -14,6 +16,8 @@ pub use ttf_parser::GlyphId;
 
 const INTER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 const INTER_BOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-Bold.ttf");
+const ATKINSON_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/AtkinsonHyperlegible-Regular.ttf");
+const ATKINSON_BOLD: &[u8] = include_bytes!("../../../assets/fonts/AtkinsonHyperlegible-Bold.ttf");
 
 /// The ellipsis appended by [`ellipsize`].
 pub const ELLIPSIS: &str = "\u{2026}";
@@ -35,9 +39,13 @@ impl std::fmt::Debug for Font {
 pub fn font(id: FontId) -> &'static Font {
     static REGULAR: OnceLock<Font> = OnceLock::new();
     static BOLD: OnceLock<Font> = OnceLock::new();
+    static READABLE_REGULAR: OnceLock<Font> = OnceLock::new();
+    static READABLE_BOLD: OnceLock<Font> = OnceLock::new();
     let (cell, bytes) = match id {
         FontId::Regular => (&REGULAR, INTER_REGULAR),
         FontId::Bold => (&BOLD, INTER_BOLD),
+        FontId::ReadableRegular => (&READABLE_REGULAR, ATKINSON_REGULAR),
+        FontId::ReadableBold => (&READABLE_BOLD, ATKINSON_BOLD),
     };
     cell.get_or_init(|| {
         let face = Face::parse(bytes, 0).expect("the embedded fonts are valid TrueType");
@@ -91,6 +99,12 @@ impl Font {
 
     pub fn glyph_advance(&self, glyph: GlyphId, size: f32) -> f32 {
         f32::from(self.face.glyph_hor_advance(glyph).unwrap_or(0)) * self.scale(size)
+    }
+
+    /// Whether the font has a glyph for every character of `text` (whitespace and control
+    /// characters aside).
+    pub fn covers(&self, text: &str) -> bool {
+        text.chars().all(|ch| ch.is_whitespace() || ch.is_control() || self.face.glyph_index(ch).is_some())
     }
 
     pub fn char_advance(&self, ch: char, size: f32) -> f32 {
@@ -206,6 +220,28 @@ mod tests {
         }
         // Bold is wider than regular.
         assert!(measure(FontId::Bold, 20.0, "Harvest") > measure(FontId::Regular, 20.0, "Harvest"));
+    }
+
+    #[test]
+    fn readable_fonts_load_and_cover_the_interface() {
+        for (id, inter) in [(FontId::ReadableRegular, FontId::Regular), (FontId::ReadableBold, FontId::Bold)] {
+            assert_eq!(inter.readable(), id);
+            assert_eq!(id.readable(), id);
+            let font = font(id);
+            assert_eq!(font.id(), id);
+            assert!(font.ascent(16.0) > 10.0 && font.ascent(16.0) < 20.0, "{}", font.ascent(16.0));
+            assert!(font.descent(16.0) > 2.0 && font.descent(16.0) < 8.0);
+            // Another face: its advances differ from Inter's.
+            assert_ne!(measure(id, 20.0, "Harvest"), measure(inter, 20.0, "Harvest"));
+            // English and Spanish interface text, money and the separators the UI uses.
+            assert!(font.covers("Harvest $1,250 \u{00b7} \u{00d7}5 \u{2026} \u{2014} \u{2022}"));
+            assert!(
+                font.covers("\u{bf}Volver al t\u{ed}tulo? \u{a1}A\u{f1}o! Estaci\u{f3}n, M\u{fa}sica, cr\u{e9}ditos")
+            );
+        }
+        // Coverage is per character: neither face has CJK.
+        assert!(!font(FontId::ReadableRegular).covers("\u{7530}"));
+        assert!(font(FontId::ReadableRegular).covers(" \n\t"));
     }
 
     #[test]

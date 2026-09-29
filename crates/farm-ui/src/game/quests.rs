@@ -3,6 +3,7 @@
 
 use super::{item_name, GameAction, GameView};
 use crate::format::{money, num};
+use crate::i18n::Lang;
 use crate::icons::Icon;
 use crate::layout::Align;
 use crate::theme::fade;
@@ -39,7 +40,7 @@ fn objectives(quest: &Quest, progress: Option<&QuestProgress>, completed: bool) 
         .collect()
 }
 
-fn rewards_line(view: &GameView<'_>, quest: &Quest, completed: bool) -> Option<String> {
+fn rewards_line(view: &GameView<'_>, quest: &Quest, completed: bool, lang: Lang) -> Option<String> {
     let rewards = &quest.rewards;
     let mut parts = Vec::new();
     if let Some(amount) = rewards.money.filter(|amount| *amount > 0.0) {
@@ -48,8 +49,8 @@ fn rewards_line(view: &GameView<'_>, quest: &Quest, completed: bool) -> Option<S
     for reward in rewards.items.iter().flatten() {
         parts.push(format!("{}\u{00d7} {}", num(reward.quantity), item_name(view.content, &reward.item_id)));
     }
-    (!parts.is_empty())
-        .then(|| format!("{}: {}", if completed { "Rewards claimed" } else { "Rewards" }, parts.join(" \u{00b7} ")))
+    let key = if completed { "quests.rewardsClaimed" } else { "quests.rewards" };
+    (!parts.is_empty()).then(|| lang.format(key, &[&parts.join(" \u{00b7} ")]))
 }
 
 /// Draws one quest card from `top`; returns its height.
@@ -77,7 +78,7 @@ fn card(ui: &mut Ui, view: &GameView<'_>, area: Rect, top: f32, quest: &Quest, c
                 + if objective.done { 4.0 } else { 12.0 }
         })
         .collect();
-    let rewards = rewards_line(view, quest, completed);
+    let rewards = rewards_line(view, quest, completed, ui.lang());
     let rewards_height =
         rewards.as_ref().map_or(0.0, |line| ui.paragraph_height(line, 12.5, FontId::Regular, width) + 4.0);
     let height =
@@ -143,11 +144,12 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         view.content.quests.iter().filter(|q| status(q) == Some(quest_statuses::ACTIVE)).collect();
     let completed: Vec<&Quest> =
         view.content.quests.iter().filter(|q| status(q) == Some(quest_statuses::COMPLETED)).collect();
-    let subtitle = format!("{} active \u{2022} {} completed", active.len(), completed.len());
+    let lang = ui.lang();
+    let subtitle = lang.format("quests.subtitle", &[&active.len(), &completed.len()]);
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("quests"),
         icon: Icon::Star,
-        title: "Quest Log",
+        title: lang.tr("quests.title"),
         subtitle: Some(&subtitle),
         width: 620.0,
         max_height: 640.0,
@@ -160,16 +162,16 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     let area = modal.body;
     let mut y = modal.top;
     if active.is_empty() && completed.is_empty() {
-        y += ui.empty_state(area, y, Icon::Star, "No quests yet", "Talk to NPCs to discover new quests!");
+        y += ui.empty_state(area, y, Icon::Star, lang.tr("quests.empty"), lang.tr("quests.emptyDetail"));
     }
     if !active.is_empty() {
-        y += ui.section(area, y, "Active quests", None);
+        y += ui.section(area, y, lang.tr("quests.active"), None);
         for quest in active {
             y += card(ui, view, area, y, quest, false) + 10.0;
         }
     }
     if !completed.is_empty() {
-        y += ui.section(area, y, "Completed quests", None);
+        y += ui.section(area, y, lang.tr("quests.completed"), None);
         for quest in completed {
             y += card(ui, view, area, y, quest, true) + 10.0;
         }

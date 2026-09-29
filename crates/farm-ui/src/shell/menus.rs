@@ -19,16 +19,18 @@ pub struct PauseView {
 }
 
 pub fn pause(ui: &mut Ui, view: &PauseView) -> Option<ShellAction> {
-    let mut entries: Vec<(&str, Icon, ShellAction)> = vec![("Resume", Icon::Play, ShellAction::Resume)];
+    // (widget name, label key, icon, action)
+    let mut entries: Vec<(&str, &'static str, Icon, ShellAction)> =
+        vec![("Resume", "pause.resume", Icon::Play, ShellAction::Resume)];
     if view.full {
-        entries.push(("Save", Icon::Save, ShellAction::OpenSave));
-        entries.push(("Load", Icon::Folder, ShellAction::OpenLoad));
+        entries.push(("Save", "pause.save", Icon::Save, ShellAction::OpenSave));
+        entries.push(("Load", "pause.load", Icon::Folder, ShellAction::OpenLoad));
     }
-    entries.push(("Settings", Icon::Gear, ShellAction::OpenSettings));
+    entries.push(("Settings", "pause.settings", Icon::Gear, ShellAction::OpenSettings));
     if view.full {
-        entries.push(("Quit to title", Icon::Exit, ShellAction::QuitToTitle));
+        entries.push(("Quit to title", "pause.quitToTitle", Icon::Exit, ShellAction::QuitToTitle));
         if view.can_quit {
-            entries.push(("Quit game", Icon::Close, ShellAction::Quit));
+            entries.push(("Quit game", "pause.quitGame", Icon::Close, ShellAction::Quit));
         }
     }
     let button_height = ui.button_height(15.0).max(40.0);
@@ -36,7 +38,7 @@ pub fn pause(ui: &mut Ui, view: &PauseView) -> Option<ShellAction> {
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("pause"),
         icon: Icon::Menu,
-        title: "Paused",
+        title: ui.tr("pause.title"),
         subtitle: Some(&view.title),
         width: 360.0,
         max_height: 640.0,
@@ -45,13 +47,13 @@ pub fn pause(ui: &mut Ui, view: &PauseView) -> Option<ShellAction> {
     });
     let mut action = (modal.close || ui.back_pressed()).then_some(ShellAction::Resume);
     let mut y = modal.top;
-    for (index, (label, icon, entry)) in entries.into_iter().enumerate() {
-        let mut button = Button::new(label).kind(ButtonKind::Menu).icon(icon).size(15.0);
+    for (index, (name, key, icon, entry)) in entries.into_iter().enumerate() {
+        let mut button = Button::new(ui.tr(key)).kind(ButtonKind::Menu).icon(icon).size(15.0);
         if index == 0 {
             button = button.default_focus();
         }
         if ui.button(
-            WidgetId::new("pause").with(label),
+            WidgetId::new("pause").with(name),
             Rect::new(modal.body.x, y, modal.body.width, button_height),
             button,
         ) {
@@ -77,11 +79,11 @@ pub struct CreditsView {
 pub fn credits(ui: &mut Ui, view: &CreditsView) -> Option<ShellAction> {
     let colors = ui.theme().colors;
     let footer = ui.button_height(13.0) + 20.0;
-    let subtitle = format!("Version {}", view.version);
+    let subtitle = ui.tr_format("credits.version", &[&view.version]);
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("credits"),
         icon: Icon::Heart,
-        title: "Credits",
+        title: ui.tr("credits.title"),
         subtitle: Some(&subtitle),
         width: 600.0,
         max_height: 640.0,
@@ -96,7 +98,7 @@ pub fn credits(ui: &mut Ui, view: &CreditsView) -> Option<ShellAction> {
     let by: Vec<&str> =
         [view.author.as_deref(), view.company.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect();
     if !by.is_empty() {
-        let line = format!("by {}", by.join(" \u{00b7} "));
+        let line = ui.tr_format("credits.by", &[&by.join(" \u{00b7} ")]);
         y += ui.paragraph(area.x, y, area.width, &line, 14.0, FontId::Regular, colors.text, TextAlign::Center) + 8.0;
     }
     if let Some(text) = view.credits.as_deref().filter(|text| !text.trim().is_empty()) {
@@ -113,21 +115,13 @@ pub fn credits(ui: &mut Ui, view: &CreditsView) -> Option<ShellAction> {
     y += 12.0;
     ui.list_mut().line((area.x + area.width * 0.3, y), (area.right() - area.width * 0.3, y), colors.panel_border, 1.0);
     y += 14.0;
+    y += ui.paragraph(area.x, y, area.width, ui.tr("hud.madeWith"), 14.0, FontId::Bold, colors.text, TextAlign::Center)
+        + 4.0;
     y += ui.paragraph(
         area.x,
         y,
         area.width,
-        "Made with Farming RPG Maker",
-        14.0,
-        FontId::Bold,
-        colors.text,
-        TextAlign::Center,
-    ) + 4.0;
-    y += ui.paragraph(
-        area.x,
-        y,
-        area.width,
-        "Third-party licenses are in licenses/THIRD-PARTY.txt next to the game.",
+        ui.tr("credits.licenses"),
         12.5,
         FontId::Regular,
         colors.muted,
@@ -135,7 +129,7 @@ pub fn credits(ui: &mut Ui, view: &CreditsView) -> Option<ShellAction> {
     );
     ui.end_modal_body(y);
     if let Some(mut footer) = modal.footer {
-        let back = Button::new("Back").default_focus();
+        let back = Button::new(ui.tr("common.back")).default_focus();
         let width = ui.button_width(&back).max(90.0);
         let rect = footer.cut_right(width).centered(width, ui.button_height(13.0));
         if ui.button(WidgetId::new("credits-back"), rect, back) {
@@ -183,7 +177,7 @@ pub fn confirm(ui: &mut Ui, view: &ConfirmView) -> Option<ShellAction> {
     ui.end_modal_body(y);
     if let Some(mut footer) = modal.footer {
         let yes = Button::new(&view.confirm).primary();
-        let no = Button::new("Cancel").default_focus();
+        let no = Button::new(ui.tr("common.cancel")).default_focus();
         let height = ui.button_height(13.0);
         let yes_width = ui.button_width(&yes).max(90.0);
         let no_width = ui.button_width(&no).max(90.0);

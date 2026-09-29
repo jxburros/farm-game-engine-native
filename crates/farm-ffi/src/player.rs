@@ -32,6 +32,9 @@ struct PlayerCreate {
     ui_scale: Option<f32>,
     /// Play the frames' sounds on the default output device (silent without one).
     audio: bool,
+    /// The editor's language (`es`): the game interface follows it until the player picks one
+    /// in Settings.
+    locale: Option<String>,
 }
 
 /// `{dt, events, width, height, render}` for [`fe_player_frame`].
@@ -271,7 +274,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// Creates an embedded player for a (migrated) project's JSON or a compiled cartridge.
-/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?}` (may be empty); with
+/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?, "locale"?}` (may be empty); with
 /// `audio` the frames' sounds play on the default output device. On failure `error`
 /// holds the message.
 ///
@@ -303,6 +306,7 @@ pub unsafe extern "C" fn fe_player_new(
         };
         let mut player_options = PlayerOptions::embedded();
         player_options.seed = create.seed.filter(|seed| !seed.is_empty());
+        player_options.system_locale = create.locale.filter(|locale| !locale.is_empty());
         let mut player = if farm_cart::is_cartridge(game) {
             Player::from_cartridge_bytes(game, player_options)
         } else {

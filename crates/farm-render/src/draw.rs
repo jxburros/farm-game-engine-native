@@ -57,6 +57,20 @@ pub enum FontId {
     Regular,
     /// Inter Bold (in-world pops, like the C# host).
     Bold,
+    /// Atkinson Hyperlegible Regular (the player's "Readable font" setting).
+    ReadableRegular,
+    /// Atkinson Hyperlegible Bold.
+    ReadableBold,
+}
+
+impl FontId {
+    /// The Atkinson Hyperlegible face of the same weight (readable faces map to themselves).
+    pub fn readable(self) -> FontId {
+        match self {
+            FontId::Regular | FontId::ReadableRegular => FontId::ReadableRegular,
+            FontId::Bold | FontId::ReadableBold => FontId::ReadableBold,
+        }
+    }
 }
 
 /// Horizontal anchor of a text run relative to its `x`.
