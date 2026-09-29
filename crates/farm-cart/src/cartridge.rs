@@ -83,7 +83,7 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
             crate::CART_FORMAT
         ));
     }
-    if cart.project_schema_version() as f64 > farm_sim::schema::CURRENT_PROJECT_SCHEMA_VERSION {
+    if cart.project_schema_version() > farm_sim::schema::CURRENT_PROJECT_SCHEMA_VERSION {
         return Err(format!("Project schema {} is newer than this player supports.", cart.project_schema_version()));
     }
     let info = cart.info();

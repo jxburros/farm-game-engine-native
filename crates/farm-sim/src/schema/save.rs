@@ -241,8 +241,8 @@ pub struct SaveMigrationResult {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<GameState>,
-    #[serde(with = "crate::units::count")]
-    pub from_version: u32,
+    /// The version the input declared, as read (a report, not state: `2.5` stays `2.5`).
+    pub from_version: f64,
     pub migrated: bool,
     pub errors: Vec<String>,
 }
