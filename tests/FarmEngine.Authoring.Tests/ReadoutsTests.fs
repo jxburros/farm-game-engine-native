@@ -172,21 +172,20 @@ let ``customizing a built-in crop keeps its id and values`` () =
 [<Fact>]
 let ``deleting a replacement brings the built-in crop back without clearing its uses`` () =
     let project = starter ()
-    let restored = project |> apply (Readouts.restoreBuiltinCrop project "wheat" |> Option.get)
+    // The starter's wheat replaces the built-in (the base pack merges it in).
+    Assert.Contains(project.CustomCrops.Value, fun crop -> crop.Id = "wheat")
+    let restored = project |> apply (RemoveCrop "wheat")
     Assert.DoesNotContain(restored.CustomCrops.Value, fun crop -> crop.Id = "wheat")
     Assert.Contains(Readouts.builtinCrops restored, fun crop -> crop.Id = "wheat")
     let seed = restored.Items |> List.find (fun item -> item.Id = "seed-wheat")
     Assert.Equal(Builtin.items () |> List.find (fun item -> item.Id = "seed-wheat"), seed)
     Assert.Contains(restored.Items, fun item -> item.Id = "crop-wheat")
-    // RemoveCrop, by contrast, drops the seed although built-in wheat still grows.
-    Assert.DoesNotContain((project |> apply (RemoveCrop "wheat")).Items, fun item -> item.Id = "seed-wheat")
-    // Only replacements restore.
-    Assert.Equal(None, Readouts.restoreBuiltinCrop restored "wheat")
+    // A crop of the creator's own still takes its items along.
     let custom = project |> apply (UpsertCrop { CustomCropDefinition.Default with Id = "custom-1"; Name = "Moonmelon"; Stages = 4.0 })
-    Assert.Equal(None, Readouts.restoreBuiltinCrop custom "custom-1")
-    Assert.Null(ContentReadouts.RestoreBuiltinCrop(custom, "custom-1"))
+    Assert.Contains(custom.Items, fun item -> item.Id = "seed-custom-1")
+    Assert.DoesNotContain((custom |> apply (RemoveCrop "custom-1")).Items, fun item -> item.Id = "seed-custom-1")
     // One undo step.
-    let doc = Document.create project |> Document.apply (ContentReadouts.RestoreBuiltinCrop(project, "wheat"))
+    let doc = Document.create project |> Document.apply (RemoveCrop "wheat")
     Assert.Equal(1, doc.Past.Length)
 
 [<Fact>]
@@ -194,13 +193,10 @@ let ``deleting a replacement node type keeps the placed nodes`` () =
     let project = starter ()
     let trees (p: GameProject) = (farm p).Tiles |> List.sumBy (fun row -> row |> List.filter (fun t -> t.Node |> Option.exists (fun n -> n.TypeId = "node-tree")) |> List.length)
     Assert.True(trees project > 0)
-    let restored = project |> apply (ContentReadouts.RestoreBuiltinNodeType(project, "node-tree"))
+    let restored = project |> apply (RemoveNodeType "node-tree")
     Assert.DoesNotContain(restored.NodeTypes, fun node -> node.Id = "node-tree")
     Assert.Equal(trees project, trees restored)
     Assert.Contains(ContentCompiler.nodeTypes restored, fun node -> node.Id = "node-tree")
-    Assert.Equal(0, trees (project |> apply (RemoveNodeType "node-tree")))
-    Assert.Equal(None, Readouts.restoreBuiltinNodeType restored "node-tree")
-    Assert.Equal(None, Readouts.restoreBuiltinNodeType project "node-oak")
 
 [<Fact>]
 let ``schedule minutes read as clock times`` () =

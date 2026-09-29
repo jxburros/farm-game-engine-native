@@ -33,7 +33,7 @@ public sealed partial class EditModeView : UserControl
         ["floor"] = "#b5a48d",
     };
 
-    public const string PortingNotice = "Map, content, settings, art, mods, workshop and interface panels are editable here. Some advanced fields still use JSON.";
+    public const string PortingNotice = "Tip: click the map (or Tab to it), then use the arrow keys and Enter or Space to edit from the keyboard.";
 
     private readonly ProjectWorkspace _workspace;
     private readonly MapCanvas _canvas = new() { Name = "EditCanvas", Cursor = new Cursor(StandardCursorType.Hand) };

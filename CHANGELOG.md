@@ -2,6 +2,42 @@
 
 ## 0.2.0 (unreleased)
 
+- **The last web editor features, ported.** Everything the web editor did that
+  the native one didn't:
+  - **Keyboard map editing and screen readers.** The map takes the keyboard:
+    arrow keys move a gold editing cursor, Enter or Space uses the current tool
+    there (Rectangle and Select take a press per corner, Esc cancels), and a
+    live status line announces the tile. Editor controls have screen-reader
+    names, and a test walks every tab and content form to keep it that way.
+  - **Touch controls in the web demo.** On phones and tablets the page shows a
+    D-pad with Interact, Sleep, Inventory and Menu. They send the new `action`
+    input event (a game action held or let go), so they keep working when a
+    player rebinds keys.
+  - **Profit readouts.** Recipes show their profit per craft and per hour of
+    machine time (in the list too); crops show their profit per harvest and a
+    summary card. They update as you type. The numbers come from F#
+    (`Readouts`).
+  - **Errors while editing.** An unexpected error shows an error screen with
+    **Try Again** and **Undo last change and try again** instead of closing the
+    app, and a playtest running at the time is discarded. A save that fails
+    (full disk, no permission) no longer crashes the autosave: a banner says
+    why and offers **Retry save**, and the changes stay open.
+  - **Art studio.** Click cells of the sprite sheet to add frames, see
+    thumbnails in the asset list, pause and play the preview, and build one
+    animation from frames of several images.
+  - **NPC portraits.** The game's dialogue box shows the NPC's art (its visual,
+    custom image or built-in look) instead of a generic icon.
+  - **Friendlier content forms.** NPC schedules, patrol waypoints and shop
+    stock have their own row layouts; crops have Basic, Growth and Asset tabs;
+    the skill level curve is a list of levels instead of a JSON box. The crop
+    and node type lists include the built-in ones (read-only, with
+    **Customize**), and every list and art field shows thumbnails. Deleting a
+    crop or node type that replaced a built-in one now brings the built-in back
+    with its seeds, planted crops and placed nodes, instead of clearing them.
+  - **Interface panels** pick items and actions from dropdowns.
+  - **Smaller things:** the Workshop's "Build your game" links, duplicating a
+    single door, dialogue and asset counts in the project stats, and the scene
+    size calculator.
 - **One engine for the web and native editors.** The web editor
   ([jxburros/farm-game-engine](https://github.com/jxburros/farm-game-engine))
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,

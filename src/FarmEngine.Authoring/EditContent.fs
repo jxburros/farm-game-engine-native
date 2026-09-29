@@ -177,7 +177,9 @@ module internal EditContent =
         let seed, produce = cropItems crop
         project |> upsertItem seed |> upsertItem produce
 
-    /// CropEditor delete: the definition, its seed and crop items, and what referenced them.
+    /// CropEditor delete: the definition, its seed and crop items, and what referenced them. A
+    /// custom crop that replaced a built-in one gives way to it instead: the built-in's seed and
+    /// crop items come back and planted crops, quests and seeds keep the id.
     let removeCrop (cropId: string) (project: GameProject) =
         match project.CustomCrops with
         | None -> project
@@ -185,10 +187,16 @@ module internal EditContent =
             match Lists.removeBy (fun (c: CustomCropDefinition) -> c.Id) cropId crops with
             | None -> project
             | Some kept ->
-                { project with CustomCrops = Some kept }
-                |> removeItem (sprintf "seed-%s" cropId)
-                |> removeItem (sprintf "crop-%s" cropId)
-                |> Cleanup.dropCrop cropId
+                let project = { project with CustomCrops = Some kept }
+                if Builtin.crops () |> List.exists (fun (id, _) -> id = cropId) then
+                    let builtinItems = Builtin.items () |> List.filter (fun i -> i.Id = sprintf "seed-%s" cropId || i.Id = sprintf "crop-%s" cropId)
+                    let restore (item: Item) = builtinItems |> List.tryFind (fun builtin -> builtin.Id = item.Id) |> Option.defaultValue item
+                    { project with Items = project.Items |> List.map restore }
+                else
+                    project
+                    |> removeItem (sprintf "seed-%s" cropId)
+                    |> removeItem (sprintf "crop-%s" cropId)
+                    |> Cleanup.dropCrop cropId
 
     // ---- Quests, events, shops, recipes, nodes, machines, wildlife, actions ----
 
@@ -220,7 +228,10 @@ module internal EditContent =
     let removeRecipe (recipeId: string) (project: GameProject) = removeIn recipes Cleanup.dropRecipe recipeId project
 
     let upsertNodeType (nodeType: NodeTypeDefinition) (project: GameProject) = upsertIn nodeTypes nodeType project
-    let removeNodeType (nodeTypeId: string) (project: GameProject) = removeIn nodeTypes Cleanup.dropNodeType nodeTypeId project
+    /// A node type that replaced a built-in one gives way to it: placed nodes and mine bands keep the id.
+    let removeNodeType (nodeTypeId: string) (project: GameProject) =
+        let builtin = Builtin.nodeTypes () @ Builtin.mineNodeTypes () |> List.exists (fun n -> n.Id = nodeTypeId)
+        removeIn nodeTypes (if builtin then noCleanup else Cleanup.dropNodeType) nodeTypeId project
 
     let upsertMachineType (machineType: MachineTypeDefinition) (project: GameProject) = upsertIn machineTypes machineType project
     let removeMachineType (machineTypeId: string) (project: GameProject) = removeIn machineTypes Cleanup.dropMachineType machineTypeId project

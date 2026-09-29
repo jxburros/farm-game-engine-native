@@ -20,9 +20,11 @@ Export Game are F#; the editor's desktop UI is C# on .NET 10 with
 The port of the web version is complete. The simulation, runtime, renderer,
 in-game UI, plugin sandbox and game player run in Rust; the editor keeps its
 Avalonia UI and does its project work in F#. Edit Mode includes map painting
-and scene tools, content forms with nested editors and reference pickers,
-project and export settings, Problems, mods, art (raster and SVG), creator
-patterns and interface panels. Projects move between the native and
+and scene tools (by mouse or keyboard, with screen-reader support), content
+forms with nested editors, reference pickers, profit readouts and thumbnails,
+project and export settings, Problems, mods, an art and animation studio
+(raster and SVG), creator patterns and interface panels. Everything the web
+editor did is ported (see [ROADMAP.md](ROADMAP.md#parity-with-the-web-editor)). Projects move between the native and
 [web version](https://github.com/jxburros/farm-game-engine) through the same
 project JSON format (schema v9), and both apps now run one engine: the web
 editor plays through `farm-wasm` and loads, checks and compiles projects with

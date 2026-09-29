@@ -152,23 +152,6 @@ module Readouts =
     let builtinCropNote (crop: CropDefinition) : string =
         sprintf "%s · %s stages" (origin [] true crop.Id) (JsNumber.format crop.Stages)
 
-    /// Deleting a custom crop that replaces a built-in one: only the replacement goes, so the
-    /// built-in comes back. Its seed and crop items return to the built-in ones, and planted
-    /// crops, quests and seeds keep the id (`RemoveCrop` would clear them although the crop still
-    /// exists). None when `cropId` is not such a replacement.
-    let restoreBuiltinCrop (project: GameProject) (cropId: string) : Edit option =
-        match project.CustomCrops with
-        | Some crops when List.contains cropId (builtinCropIds ()) && crops |> List.exists (fun crop -> crop.Id = cropId) ->
-            let builtinItems = Builtin.items () |> List.filter (fun item -> item.Id = "seed-" + cropId || item.Id = "crop-" + cropId)
-            let restore (item: Item) = builtinItems |> List.tryFind (fun builtin -> builtin.Id = item.Id) |> Option.defaultValue item
-            Some(
-                ReplaceProject
-                    { project with
-                        CustomCrops = Some(crops |> List.filter (fun crop -> crop.Id <> cropId))
-                        Items = project.Items |> List.map restore }
-            )
-        | _ -> None
-
     // ---- Node types ----
 
     /// Built-in and mine node ids.
@@ -192,15 +175,6 @@ module Readouts =
     /// is listed read-only), "Replaces built-in · …" or "Custom · …".
     let nodeTypeListNote (node: NodeTypeDefinition) (builtin: bool) : string =
         sprintf "%s · %s" (origin (builtinNodeTypeIds ()) builtin node.Id) (nodeTypeNote node)
-
-    /// Deleting a project node type that replaces a built-in one: only the replacement goes, so
-    /// placed nodes and mine bands keep the id (`RemoveNodeType` would clear them although the type
-    /// still exists). None when `nodeTypeId` is not such a replacement.
-    let restoreBuiltinNodeType (project: GameProject) (nodeTypeId: string) : Edit option =
-        if List.contains nodeTypeId (builtinNodeTypeIds ()) && project.NodeTypes |> List.exists (fun node -> node.Id = nodeTypeId) then
-            Some(ReplaceProject { project with NodeTypes = project.NodeTypes |> List.filter (fun node -> node.Id <> nodeTypeId) })
-        else
-            None
 
     /// The node type summary card: health, tool, drops, respawn and blocking.
     let nodeTypeSummary (project: GameProject) (node: NodeTypeDefinition) : ReadoutLine list =

@@ -58,15 +58,14 @@ public sealed class ContentEditorView : UserControl
     /// <summary>
     /// Built-ins a category lists beside the project's own entries (web CropEditor's default
     /// crops, NodeTypeEditor's built-in types). F# says which remain (a project entry with the
-    /// same id replaces one), how one becomes a project entry, and how deleting that entry brings
-    /// the built-in back.
+    /// same id replaces one) and how one becomes a project entry. Deleting that entry (the usual
+    /// F# remove) brings the built-in back with its uses intact.
     /// </summary>
     private sealed record BuiltinContent(
         string Kind,
         Func<GameProject, IEnumerable<object>> Entries,
         Func<string, bool> IsBuiltinId,
-        Func<object, Edit> Customize,
-        Func<GameProject, string, Edit?> Restore);
+        Func<object, Edit> Customize);
 
     private static Category Of<T>(string name, Func<GameProject, IEnumerable<T>> entries,
         Func<GameProject, T?> create, Func<T, Edit> upsert, Func<string, Edit> remove,
@@ -103,7 +102,7 @@ public sealed class ContentEditorView : UserControl
             }),
             Profit = new ProfitLine("CropProfit", (_, entity) => ContentReadouts.CropProfitText((CustomCropDefinition)entity)),
             Builtins = new BuiltinContent("crop", ContentReadouts.BuiltinCrops, ContentReadouts.IsBuiltinCrop,
-                entity => Edits.UpsertCrop(ContentReadouts.CustomizeCrop((CropDefinition)entity)), ContentReadouts.RestoreBuiltinCrop),
+                entity => Edits.UpsertCrop(ContentReadouts.CustomizeCrop((CropDefinition)entity))),
         },
         Of("Quests", p => p.Quests, Defaults.NewQuest, Edits.UpsertQuest, Edits.RemoveQuest),
         Of("Events", p => p.Events, Defaults.NewEvent, Edits.UpsertEvent, Edits.RemoveEvent),
@@ -119,7 +118,7 @@ public sealed class ContentEditorView : UserControl
             Note = (_, entity, builtin) => ContentReadouts.NodeTypeListNote((NodeTypeDefinition)entity, builtin),
             Summary = new SummaryCard("NodeTypeSummary", (project, entity) => ContentReadouts.NodeTypeSummary(project, (NodeTypeDefinition)entity)),
             Builtins = new BuiltinContent("node type", ContentReadouts.BuiltinNodeTypes, ContentReadouts.IsBuiltinNodeType,
-                entity => Edits.UpsertNodeType((NodeTypeDefinition)entity), ContentReadouts.RestoreBuiltinNodeType),
+                entity => Edits.UpsertNodeType((NodeTypeDefinition)entity)),
         },
         Of("Machine types", p => p.MachineTypes, Defaults.NewMachineType, Edits.UpsertMachineType, Edits.RemoveMachineType) with
         {
@@ -488,11 +487,11 @@ public sealed class ContentEditorView : UserControl
     /// <summary>Removes the entry; one that replaces a built-in goes back to the built-in (still selected).</summary>
     private void Delete()
     {
-        if (_selectedId is not { } id || _workspace.Current is not { } project) return;
-        var builtins = _selectedCategory.Builtins;
-        if (builtins?.Restore(project, id) is { } restore)
+        if (_selectedId is not { } id) return;
+        // A replacement of a built-in gives way to it: the built-in stays selected.
+        if (_selectedCategory.Builtins is { } builtins && builtins.IsBuiltinId(id))
         {
-            if (_workspace.Apply(restore)) _message.Text = $"Removed your changes: {id} is the built-in {builtins.Kind} again.";
+            if (_workspace.Apply(_selectedCategory.Remove(id))) _message.Text = $"Removed your changes: {id} is the built-in {builtins.Kind} again.";
             return;
         }
 
