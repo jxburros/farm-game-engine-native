@@ -494,6 +494,16 @@ public sealed partial class EditModeView : UserControl
         _topLevel?.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
     }
 
+    /// <summary>
+    /// Stops following the project for good (the error screen's Try Again replaced this editor
+    /// with a fresh one) and frees the map renderer.
+    /// </summary>
+    public void Retire()
+    {
+        _workspace.ProjectChanged -= OnProjectChanged;
+        _canvas.Dispose();
+    }
+
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);

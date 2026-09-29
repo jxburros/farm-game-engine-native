@@ -111,6 +111,7 @@ public sealed class GameWorkspaceView : UserControl
     public void TryAgain()
     {
         _editHost.Children.Remove(EditView);
+        EditView.Retire();
         EditView = new EditModeView(_workspace);
         _editHost.Children.Add(EditView);
         Content = _editHost;
