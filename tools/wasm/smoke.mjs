@@ -3,7 +3,8 @@
 //
 //   node tools/wasm/smoke.mjs [dist folder]    # default tools/wasm/dist
 //
-// - a Player renders frames of fixtures/projects/project-v8.json and takes input;
+// - a Player renders frames of fixtures/projects/project-v8.json and takes input (keys and the
+//   touch controls' actions);
 // - a standalone Player autosaves into its in-memory storage, and a new Player continues from
 //   the exported storage with the same state hash;
 // - pack plugins run in the player (QuickJS in wasmi, inside WebAssembly);
@@ -73,6 +74,13 @@ await test("a player renders project-v8.json and takes input", () => {
   for (let i = 0; i < 30; i++) frame(player, [], [320, 200], false);
   frame(player, [{ type: "keyUp", key: "d" }]);
   assert.ok(JSON.parse(player.stateJson()).player.x > x, "held D walked right");
+  // The web demo's touch controls hold game actions, whatever keys they are bound to.
+  // Back the way it came, so nothing is in the way.
+  const right = JSON.parse(player.stateJson()).player.x;
+  frame(player, [{ type: "action", action: "move-left", pressed: true }]);
+  for (let i = 0; i < 20; i++) frame(player, [], [320, 200], false);
+  frame(player, [{ type: "action", action: "move-left", pressed: false }]);
+  assert.ok(JSON.parse(player.stateJson()).player.x < right, "the touch D-pad walked left");
   const stepped = frame(player, [], [8, 8], false);
   assert.equal(stepped.pixels, null, "render: false steps without pixels");
   assert.equal(stepped.width, 0);
