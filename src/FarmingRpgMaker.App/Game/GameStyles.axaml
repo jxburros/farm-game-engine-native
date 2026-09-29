@@ -286,6 +286,13 @@
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="10,8" />
   </Style>
+  <Style Selector="Border.save-error">
+    <Setter Property="Background" Value="{StaticResource FarmErrorTintBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource FarmDestructiveBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="4" />
+  </Style>
   <Style Selector="Border.stat">
     <Setter Property="Background" Value="{StaticResource FarmSurfaceBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource FarmBorderBrush}" />
