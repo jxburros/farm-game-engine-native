@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using FarmEngine.Interop;
+using FarmingRpgMaker.App.Localization;
 
 namespace FarmingRpgMaker.App.Game;
 
@@ -55,20 +56,21 @@ public sealed class PlayModeView : UserControl
             return button;
         }
 
-        Tool("RestartButton", Ui.IconLabel("IconRefresh", "Restart"), () => RestartRequested?.Invoke(this, EventArgs.Empty), "Restore the pre-playtest snapshot and start over");
-        _keepChanges = new ToggleButton { Name = "KeepChangesButton", Content = Ui.IconLabel("IconCheckCircle", "Keep changes"), Margin = new Thickness(6, 3, 0, 3), Focusable = false };
+        // Labels in the editor's language (EditorStrings); a playtest starts a new view.
+        Tool("RestartButton", Ui.IconLabel("IconRefresh", EditorStrings.Get("toolbar.restart")), () => RestartRequested?.Invoke(this, EventArgs.Empty), EditorStrings.Get("toolbar.restartTip"));
+        _keepChanges = new ToggleButton { Name = "KeepChangesButton", Content = Ui.IconLabel("IconCheckCircle", EditorStrings.Get("toolbar.keepChanges")), Margin = new Thickness(6, 3, 0, 3), Focusable = false };
         _keepChanges.Classes.Add("tool");
-        ToolTip.SetTip(_keepChanges, "Keep playtest changes when exiting to the editor");
+        ToolTip.SetTip(_keepChanges, EditorStrings.Get("toolbar.keepChangesTip"));
         _keepChanges.IsCheckedChanged += (_, _) =>
         {
             ShowToast(_keepChanges.IsChecked == true
-                ? new ToastMessage("Playtest changes will be kept when you exit", ToastKind.Success)
-                : new ToastMessage("Playtest changes will be discarded when you exit", ToastKind.Info));
+                ? new ToastMessage(EditorStrings.Get("toolbar.keepOn"), ToastKind.Success)
+                : new ToastMessage(EditorStrings.Get("toolbar.keepOff"), ToastKind.Info));
         };
         toolbar.Children.Add(_keepChanges);
-        Tool("DebugButton", "Debug", ToggleDebug, "Playtest debug drawer");
+        Tool("DebugButton", EditorStrings.Get("toolbar.debug"), ToggleDebug, EditorStrings.Get("toolbar.debugTip"));
 
-        var hint = Ui.Text("Click the game to play. Esc pauses; F6 returns to the editor.", "muted", "small");
+        var hint = Ui.Text(EditorStrings.Get("toolbar.playHint"), "muted", "small");
         hint.VerticalAlignment = VerticalAlignment.Center;
         var barGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         barGrid.Children.Add(hint);

@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using Avalonia.Controls;
 using FarmingRpgMaker.App.Hosting;
+using FarmingRpgMaker.App.Localization;
 using FarmingRpgMaker.App.Mvvm;
+using FarmingRpgMaker.App.Projects;
 using FarmingRpgMaker.Updates;
 
 namespace FarmingRpgMaker.App.ViewModels;
@@ -14,6 +16,7 @@ namespace FarmingRpgMaker.App.ViewModels;
 public sealed class MainWindowViewModel : ObservableObject, IShellHost
 {
     private readonly IProjectCommandHandler _projectCommands;
+    private readonly AppSettingsStore? _settings;
     private string _projectName = "Untitled Game";
     private EditorMode _mode = EditorMode.Edit;
     private object? _gameContent;
@@ -24,6 +27,7 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
         ArgumentNullException.ThrowIfNull(composition);
         Updates = updates ?? throw new ArgumentNullException(nameof(updates));
         _projectCommands = composition.ProjectCommands;
+        _settings = composition.Workspace?.Settings;
 
         NewProjectCommand = ProjectCommand(() => _projectCommands.NewProjectAsync(this));
         OpenProjectCommand = ProjectCommand(() => _projectCommands.OpenProjectAsync(this));
@@ -36,8 +40,12 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
         ToggleModeCommand = new RelayCommand(() => Mode = Mode == EditorMode.Play ? EditorMode.Edit : EditorMode.Play);
         OpenUpdateCenterCommand = new RelayCommand(() => UpdateCenterRequested?.Invoke(this, EventArgs.Empty));
         AboutCommand = new RelayCommand(() => AboutRequested?.Invoke(this, EventArgs.Empty));
+        WelcomeCommand = new RelayCommand(() => WelcomeRequested?.Invoke(this, EventArgs.Empty));
+        CreatorGuideCommand = new RelayCommand(() => CreatorGuideRequested?.Invoke(this, EventArgs.Empty));
+        ShortcutsCommand = new RelayCommand(() => ShortcutsRequested?.Invoke(this, EventArgs.Empty));
 
         Updates.PropertyChanged += OnUpdatesChanged;
+        EditorStrings.LanguageChanged += OnLanguageChanged;
         GameContent = composition.GameSurfaceFactory.CreateGameSurface(this);
     }
 
@@ -51,6 +59,15 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
 
     /// <summary>The view closes the main window.</summary>
     public event EventHandler? ExitRequested;
+
+    /// <summary>The view opens the welcome tour (Help → Welcome Tour).</summary>
+    public event EventHandler? WelcomeRequested;
+
+    /// <summary>The view opens the creator guide (Help → Creator Guide).</summary>
+    public event EventHandler? CreatorGuideRequested;
+
+    /// <summary>The view opens the keyboard shortcuts (Help → Keyboard Shortcuts).</summary>
+    public event EventHandler? ShortcutsRequested;
 
     public UpdateCoordinator Updates { get; }
 
@@ -86,10 +103,34 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
     public bool IsEditMode => _mode == EditorMode.Edit;
 
     /// <summary>"Playing: name" / "Editing: name", like the web header.</summary>
-    public string Subtitle => IsPlayMode ? $"Playing: {_projectName}" : $"Editing: {_projectName}";
+    public string Subtitle => EditorStrings.Format(IsPlayMode ? "header.playing" : "header.editing", _projectName);
 
     /// <summary>The toggle offers the other mode.</summary>
-    public string ModeToggleText => IsPlayMode ? "Edit Mode" : "Play Mode";
+    public string ModeToggleText => EditorStrings.Get(IsPlayMode ? "mode.edit" : "mode.play");
+
+    public string PlayModeMenuText => EditorStrings.Get("menu.playMode");
+
+    public string EditModeMenuText => EditorStrings.Get("menu.editMode");
+
+    public string HelpMenuText => EditorStrings.Get("menu.help");
+
+    public string WelcomeMenuText => EditorStrings.Get("menu.welcome");
+
+    public string CreatorGuideMenuText => EditorStrings.Get("menu.creatorGuide");
+
+    public string ShortcutsMenuText => EditorStrings.Get("menu.shortcuts");
+
+    public string LanguageMenuText => EditorStrings.Get("menu.language");
+
+    public string UpdateCenterMenuText => EditorStrings.Get("menu.updateCenter");
+
+    public string AboutMenuText => EditorStrings.Get("menu.about");
+
+    /// <summary>The editor's language (<see cref="EditorStrings.Language"/>).</summary>
+    public string Language => EditorStrings.Language;
+
+    /// <summary>True until the welcome tour has been dismissed once (kept in the app settings).</summary>
+    public bool ShouldShowWelcome => _settings is { } settings && settings.Load().WelcomeSeen != true;
 
     /// <summary>
     /// Content of the central <c>GameHostPresenter</c>: an Avalonia control or a view model with a
@@ -138,7 +179,37 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
 
     public RelayCommand AboutCommand { get; }
 
+    public RelayCommand WelcomeCommand { get; }
+
+    public RelayCommand CreatorGuideCommand { get; }
+
+    public RelayCommand ShortcutsCommand { get; }
+
     public void ShowStatus(string message) => StatusMessage = message;
+
+    /// <summary>Remembers that the welcome tour was seen, so it no longer opens at startup.</summary>
+    public void MarkWelcomeSeen() => _settings?.Update(settings => settings with { WelcomeSeen = true });
+
+    /// <summary>Switches the editor's language and remembers the choice.</summary>
+    public void SetLanguage(string code)
+    {
+        EditorStrings.SetLanguage(code);
+        _settings?.Update(settings => settings with { EditorLanguage = EditorStrings.Language });
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => OnPropertiesChanged(
+        nameof(Language),
+        nameof(Subtitle),
+        nameof(ModeToggleText),
+        nameof(PlayModeMenuText),
+        nameof(EditModeMenuText),
+        nameof(HelpMenuText),
+        nameof(WelcomeMenuText),
+        nameof(CreatorGuideMenuText),
+        nameof(ShortcutsMenuText),
+        nameof(LanguageMenuText),
+        nameof(UpdateCenterMenuText),
+        nameof(AboutMenuText));
 
     private AsyncRelayCommand ProjectCommand(Func<Task> action) =>
         new(action, onError: ex => ShowStatus($"Something went wrong: {ex.Message}"));

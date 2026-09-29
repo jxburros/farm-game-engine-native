@@ -17,6 +17,7 @@
     <KeyBinding Gesture="Ctrl+Shift+E" Command="{Binding ExportGameCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding PlayModeCommand}" />
     <KeyBinding Gesture="F6" Command="{Binding EditModeCommand}" />
+    <KeyBinding Gesture="F1" Command="{Binding CreatorGuideCommand}" />
   </Window.KeyBindings>
 
   <DockPanel>
@@ -33,15 +34,21 @@
         <MenuItem Header="E_xit" InputGesture="Alt+F4" Command="{Binding ExitCommand}" />
       </MenuItem>
       <MenuItem Header="_Game">
-        <MenuItem Header="_Play Mode" InputGesture="F5" ToggleType="Radio" GroupName="mode"
+        <MenuItem Name="PlayModeMenuItem" Header="{Binding PlayModeMenuText}" InputGesture="F5" ToggleType="Radio" GroupName="mode"
                   IsChecked="{Binding IsPlayMode, Mode=OneWay}" Command="{Binding PlayModeCommand}" />
-        <MenuItem Header="_Edit Mode" InputGesture="F6" ToggleType="Radio" GroupName="mode"
+        <MenuItem Name="EditModeMenuItem" Header="{Binding EditModeMenuText}" InputGesture="F6" ToggleType="Radio" GroupName="mode"
                   IsChecked="{Binding IsEditMode, Mode=OneWay}" Command="{Binding EditModeCommand}" />
       </MenuItem>
-      <MenuItem Header="_Help">
-        <MenuItem Header="_Update Center…" Command="{Binding OpenUpdateCenterCommand}" />
+      <MenuItem Name="HelpMenu" Header="{Binding HelpMenuText}">
+        <MenuItem Name="WelcomeMenuItem" Header="{Binding WelcomeMenuText}" Command="{Binding WelcomeCommand}" />
+        <MenuItem Name="CreatorGuideMenuItem" Header="{Binding CreatorGuideMenuText}" InputGesture="F1" Command="{Binding CreatorGuideCommand}" />
+        <MenuItem Name="ShortcutsMenuItem" Header="{Binding ShortcutsMenuText}" Command="{Binding ShortcutsCommand}" />
+        <!-- One radio item per language, added by MainWindow from EditorStrings.Languages. -->
+        <MenuItem Name="LanguageMenuItem" Header="{Binding LanguageMenuText}" />
         <Separator />
-        <MenuItem Header="_About Farming RPG Maker" Command="{Binding AboutCommand}" />
+        <MenuItem Header="{Binding UpdateCenterMenuText}" Command="{Binding OpenUpdateCenterCommand}" />
+        <Separator />
+        <MenuItem Header="{Binding AboutMenuText}" Command="{Binding AboutCommand}" />
       </MenuItem>
     </Menu>
 
