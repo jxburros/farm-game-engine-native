@@ -1,3 +1,5 @@
+using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using FarmEngine.Authoring;
 using FarmEngine.Interop;
@@ -24,13 +26,19 @@ public sealed record GameSurfaceOptions
 /// Mode for the workspace's project, following <see cref="IShellHost.Mode"/>. Owns the
 /// playtest lifecycle like the web App.tsx: entering Play snapshots the project; exiting
 /// restores the snapshot, or keeps the played state ("Keep changes") through the Rust player's
-/// <c>applyStateToProject</c>.
+/// <c>applyStateToProject</c>. An unexpected error while editing replaces Edit Mode with
+/// <see cref="EditorErrorView"/> (web <c>ErrorFallback</c>), and a banner above the editor says
+/// when the project can't be saved.
 /// </summary>
 public sealed class GameWorkspaceView : UserControl
 {
     private readonly IShellHost _shell;
     private readonly ProjectWorkspace _workspace;
     private readonly GameSurfaceOptions _options;
+    private readonly DockPanel _editHost = new() { Name = "EditHost" };
+    private readonly Border _saveBanner = new() { Name = "SaveErrorBanner", IsVisible = false, Margin = new Thickness(0, 0, 0, 10) };
+    private readonly TextBlock _saveBannerText = Ui.Wrapped("", "small");
+    private readonly Func<Exception, bool> _viewErrorHandler;
     private PlayModeView? _play;
     private FarmEngine.Schemas.GameProject? _snapshot;
 
@@ -40,19 +48,76 @@ public sealed class GameWorkspaceView : UserControl
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         _options = options ?? new GameSurfaceOptions();
         Name = "GameWorkspace";
+        BuildSaveBanner();
         EditView = new EditModeView(workspace);
-        Content = EditView;
+        _editHost.Children.Add(_saveBanner);
+        _editHost.Children.Add(EditView);
+        Content = _editHost;
 
         _shell.ModeChanged += OnModeChanged;
         _workspace.ProjectChanged += OnProjectChanged;
+        _workspace.SaveStatusChanged += OnSaveStatusChanged;
+        _viewErrorHandler = ShowEditorError;
+        _workspace.ViewErrorHandler = _viewErrorHandler;
         SyncProjectName();
+        SyncSaveBanner();
         if (_shell.Mode == EditorMode.Play)
         {
             StartPlaytest();
         }
     }
 
-    public EditModeView EditView { get; }
+    public EditModeView EditView { get; private set; }
+
+    /// <summary>The error screen while one is shown, else null.</summary>
+    public EditorErrorView? ErrorView => Content as EditorErrorView;
+
+    /// <summary>
+    /// Shows <paramref name="error"/> instead of the editor, after ending any playtest (its
+    /// changes are discarded) and saving what can be saved. False when the error screen is
+    /// already up, so an error it raises itself is not caught again.
+    /// </summary>
+    public bool ShowEditorError(Exception error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        if (Content is EditorErrorView)
+        {
+            return false;
+        }
+
+        System.Diagnostics.Trace.TraceError($"Editor error: {error}");
+        if (_play is not null)
+        {
+            _play.KeepChanges = false;
+            EndPlaytest();
+            if (_shell.Mode == EditorMode.Play)
+            {
+                _shell.Mode = EditorMode.Edit;
+            }
+        }
+
+        _workspace.EndStroke();
+        _workspace.FlushPendingSave();
+        Content = new EditorErrorView(error, _workspace.SaveError, _workspace.CanUndo, TryAgain, () =>
+        {
+            _workspace.Undo();
+            TryAgain();
+        });
+        _shell.ShowStatus($"The editor ran into a problem: {error.Message}");
+        return true;
+    }
+
+    /// <summary>"Try Again": a fresh editor over the open project (web <c>resetErrorBoundary</c>).</summary>
+    public void TryAgain()
+    {
+        _editHost.Children.Remove(EditView);
+        EditView.Retire();
+        EditView = new EditModeView(_workspace);
+        _editHost.Children.Add(EditView);
+        Content = _editHost;
+        SyncSaveBanner();
+        _shell.ShowStatus("Editor reopened.");
+    }
 
     /// <summary>The Play Mode view while playtesting.</summary>
     public PlayModeView? PlayView => _play;
@@ -131,7 +196,7 @@ public sealed class GameWorkspaceView : UserControl
         play.Close();
         _play = null;
         _workspace.IsPlaytesting = false;
-        Content = EditView;
+        Content = _editHost;
 
         if (finalProject is not null)
         {
@@ -171,6 +236,53 @@ public sealed class GameWorkspaceView : UserControl
         PrepareForShutdown();
         _shell.ModeChanged -= OnModeChanged;
         _workspace.ProjectChanged -= OnProjectChanged;
+        _workspace.SaveStatusChanged -= OnSaveStatusChanged;
+        if (ReferenceEquals(_workspace.ViewErrorHandler, _viewErrorHandler))
+        {
+            _workspace.ViewErrorHandler = null;
+        }
+    }
+
+    private void BuildSaveBanner()
+    {
+        // Success announces itself (SaveStatusChanged); a failure again says so here.
+        var retry = Ui.Button("Retry save", () =>
+        {
+            if (!_workspace.RetrySave())
+            {
+                _shell.ShowStatus($"Still can't save: {_workspace.SaveError}");
+            }
+        }, "accent");
+        retry.Name = "RetrySaveButton";
+        ToolTip.SetTip(retry, "Try to write the project file again");
+        _saveBannerText.Name = "SaveErrorText";
+        AutomationProperties.SetLiveSetting(_saveBannerText, AutomationLiveSetting.Assertive);
+        var icon = Ui.Icon("IconAlertCircle", 18);
+        icon.Margin = new Thickness(0, 0, 8, 0);
+        DockPanel.SetDock(icon, Dock.Left);
+        var message = new DockPanel();
+        message.Children.Add(icon);
+        message.Children.Add(_saveBannerText);
+        _saveBanner.Child = Ui.Row(message, retry);
+        _saveBanner.Classes.Add("save-error");
+        DockPanel.SetDock(_saveBanner, Dock.Top);
+    }
+
+    private void SyncSaveBanner()
+    {
+        var error = _workspace.SaveError;
+        _saveBanner.IsVisible = error is not null;
+        _saveBannerText.Text = error is null
+            ? ""
+            : $"Your project could not be saved: {error} Your changes are still open here. Free up disk space or check the folder's permissions, then choose Retry save (or File → Export Project JSON… to keep a copy).";
+    }
+
+    private void OnSaveStatusChanged(object? sender, EventArgs e)
+    {
+        SyncSaveBanner();
+        _shell.ShowStatus(_workspace.SaveError is { } error
+            ? $"Your project could not be saved: {error}"
+            : "Saving works again — your project is being stored.");
     }
 
     private void OnPlayFaulted(object? sender, Exception exception)

@@ -48,8 +48,24 @@ public sealed class App : Application
             };
             Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
-                // Last chance before the process dies: save what we can, then let it crash.
                 System.Diagnostics.Trace.TraceError($"Unhandled exception: {e.Exception}");
+                // The editor shows the error with Try Again (web ErrorFallback) and keeps going.
+                try
+                {
+                    if (composition.TryRecover(e.Exception))
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+#pragma warning disable CA1031 // Recovery failed; fall through to the last-chance save.
+                catch (Exception recoverError)
+#pragma warning restore CA1031
+                {
+                    System.Diagnostics.Trace.TraceError($"Showing the error failed: {recoverError}");
+                }
+
+                // Last chance before the process dies: save what we can, then let it crash.
                 try
                 {
                     composition.PrepareForShutdown();

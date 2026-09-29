@@ -22,7 +22,7 @@ demo of the same game can go on an itch.io page.
 | **Linux x64**, including Steam Deck | First | A folder (and `.tar.gz`) with a `<Game>` binary |
 | Web demo | Done | `index.html` + the `farm-wasm` player + `game.cart`, for itch.io pages |
 | macOS | Later | An `.app`; needs signing and notarization |
-| Consoles, mobile | Not planned | Keep the player portable (see [open questions](#open-questions)) |
+| Consoles, mobile apps | Not planned | Keep the player portable (see [open questions](#open-questions)); the web demo has touch controls for phones |
 
 The web version's HTML export (a single file that embeds `shell.iife.js`, from
 `src/lib/export-html.ts`) is **not** ported. The web demo is a different thing:
@@ -132,7 +132,11 @@ licenses/THIRD-PARTY.txt
 
 The page runs `farm-wasm`'s standalone player: the same title screen, save
 slots, settings and game UI as the desktop game, drawn into a canvas. Saves and
-settings live in the browser's `localStorage`, one entry per game id. Browsers
+settings live in the browser's `localStorage`, one entry per game id. On a
+phone or tablet (a coarse pointer, or after the first touch) the page shows
+touch controls over the game: a D-pad, Interact, Sleep, Inventory and Menu.
+They send the player `action` events, so they keep working when a player
+rebinds the keys, and taps on the game's own buttons work as clicks. Browsers
 only load WebAssembly modules from a web server, so the export report reminds
 you to test it with `python3 -m http.server` in the folder (itch.io serves it
 for you).

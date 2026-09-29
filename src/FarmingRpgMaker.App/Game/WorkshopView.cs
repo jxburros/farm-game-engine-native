@@ -9,6 +9,14 @@ namespace FarmingRpgMaker.App.Game;
 /// <summary>Creates ordinary editable content from the F# creator patterns in one undo step.</summary>
 public sealed class WorkshopView : UserControl
 {
+    /// <summary>"Build your game" shortcuts: web editor tab keys and their labels (web CreatorWorkshop).</summary>
+    private static readonly (string Tab, string Label)[] QuickLinks =
+    [
+        ("assets", "Import art"), ("scenes", "Create scenes"), ("crops", "Crops & seeds"), ("wildlife", "Animals & fish"),
+        ("items", "Inventory items"), ("craft", "Recipes & stations"), ("npcs", "Characters & dialogue"), ("quests", "Quests"),
+        ("events", "Story events"), ("actions", "Magic & minigames"), ("problems", "Check project"),
+    ];
+
     private readonly ProjectWorkspace _workspace;
     private readonly Action<string> _openEditor;
     private readonly ComboBox _patterns = new() { Name = "WorkshopPattern", MinWidth = 240 };
@@ -29,6 +37,8 @@ public sealed class WorkshopView : UserControl
         _openEditor = openEditor;
         Name = "WorkshopView";
         _message.Name = "WorkshopMessage";
+        Ui.Label((_patterns, "Pattern"), (_name, "Name"), (_text, "Story text or description"), (_x, "Scene tile X"), (_y, "Scene tile Y"),
+            (_day, "Delivery day"), (_friendship, "Friendship"), (_npc, "Character"));
         foreach (var pattern in Patterns.All) _patterns.Items.Add(new ComboBoxItem { Content = pattern.Name, Tag = pattern });
         _patterns.SelectionChanged += (_, _) =>
         {
@@ -56,6 +66,17 @@ public sealed class WorkshopView : UserControl
         var open = Ui.Button("Open its editor", OpenEditor, "tool");
         form.Children.Add(Ui.HStack(8, create, open));
         form.Children.Add(_message);
+
+        form.Children.Add(Ui.Text("BUILD YOUR GAME", "section"));
+        var links = new WrapPanel { Name = "WorkshopLinks" };
+        foreach (var (tab, label) in QuickLinks)
+        {
+            var link = Ui.Button(label, () => _openEditor(tab), "tool");
+            link.Name = $"WorkshopLink_{tab}";
+            link.Margin = new Thickness(0, 0, 6, 6);
+            links.Children.Add(link);
+        }
+        form.Children.Add(links);
         Content = new ScrollViewer { Content = form };
         _workspace.ProjectChanged += (_, _) =>
         {

@@ -84,7 +84,9 @@ and exit criteria for each phase.
 ## Remaining work
 
 Status at the end of September 2026: phases 1–7 are done
-([Phase 7](#phase-7-one-engine) below). What's left is under [Later](#later).
+([Phase 7](#phase-7-one-engine) below), and so is
+[parity with the web editor](#parity-with-the-web-editor). What's left is under
+[Later](#later).
 
 **Rust core (phase 2)**: done.
 - [x] `SaveMigrations.cs` ported to `farm-cart::save`; all eight save
@@ -305,6 +307,29 @@ project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
   See [docs/NUMERICS.md](docs/NUMERICS.md).
 - [x] **Web demo export**: Export Game's web target runs `farm-wasm`'s
   standalone player in a page for itch.io.
+
+## Parity with the web editor
+
+After phase 7 a review listed what the web editor still did better. All of it
+is ported:
+
+- [x] Keyboard map editing (arrow-key cursor, Enter/Space applies the tool,
+  announced tile position) and screen-reader names across the editor.
+- [x] Touch controls in the web demo (D-pad, Interact, Sleep, Inventory, Menu)
+  through the player's `action` input event.
+- [x] Profit per craft and per hour for recipes; profit per harvest and a
+  summary card for crops (F# `Readouts`).
+- [x] An error screen with Try Again, and a warning with Retry when a save
+  fails.
+- [x] Art studio: click the sprite sheet to add frames, asset thumbnails,
+  preview Pause/Play, animations from frames of several images.
+- [x] NPC portraits in the game's dialogue box.
+- [x] Custom layouts for NPC schedules, crop tabs and shop stock; the skill
+  level curve as rows; built-in crops and node types in the content lists;
+  thumbnails in lists and forms; item and action dropdowns in the interface
+  editor.
+- [x] Workshop "Build your game" links, duplicating a door, dialogue and asset
+  counts in the project stats, the scene size calculator.
 
 ## Export Game
 

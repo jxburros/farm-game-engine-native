@@ -79,16 +79,18 @@ public sealed class ContentFormTests
     [AvaloniaFact]
     public void ReferenceChipsAddAndRemoveSeasonsAndEmptyOptionalListsBecomeAbsent()
     {
+        // Shop stock seasons are checkboxes now (ContentLayoutTests); quests keep the chips.
         using var host = new GameTestHost();
-        OpenEntry(host, "Shops", "shop-general");
-        var seasons = Shop(host).Stock[0].Seasons.OrEmpty();
-        Assert.NotNull(TryFindByName<Border>(host.Window, "ContentChip_Stock_0_Seasons_0"));
-        for (var i = seasons.Length - 1; i >= 0; i--) Press(host, $"ContentChipRemove_Stock_0_Seasons_{i}");
-        Assert.Null(TryFindByName<Border>(host.Window, "ContentChip_Stock_0_Seasons_0"));
-        Choose(host, "ContentChipAdd_Stock_1_Seasons", "winter");
+        Quest Current() => host.Workspace.Current!.Quests.First(quest => quest.Id == "quest-go-shopping");
+        OpenEntry(host, "Quests", "quest-go-shopping");
+        var prerequisites = Current().Prerequisites.OrEmpty();
+        Assert.NotNull(TryFindByName<Border>(host.Window, "ContentChip_Prerequisites_0"));
+        for (var i = prerequisites.Length - 1; i >= 0; i--) Press(host, $"ContentChipRemove_Prerequisites_{i}");
+        Assert.Null(TryFindByName<Border>(host.Window, "ContentChip_Prerequisites_0"));
+        Choose(host, "ContentChipAdd_AvailableSeasons", "winter");
         Press(host, "SaveContentButton");
-        Assert.Null(Shop(host).Stock[0].Seasons.OrNull());
-        Assert.Contains("winter", Shop(host).Stock[1].Seasons.OrEmpty());
+        Assert.Null(Current().Prerequisites.OrNull());
+        Assert.Contains("winter", Current().AvailableSeasons.OrEmpty());
     }
 
     [AvaloniaFact]

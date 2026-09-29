@@ -66,7 +66,10 @@ public sealed class MainWindowTests
 
         var host = Find<ContentControl>(window, "GameHostPresenter");
         var surface = Assert.IsType<FarmingRpgMaker.App.Game.GameWorkspaceView>(host.Content);
-        Assert.Same(surface.EditView, surface.Content);
+        // Edit Mode: the editor, under the (hidden) save-error banner.
+        var editHost = Assert.IsType<DockPanel>(surface.Content);
+        Assert.Contains(surface.EditView, editHost.Children);
+        Assert.Null(surface.ErrorView);
         Assert.Contains(FarmingRpgMaker.App.Game.EditModeView.PortingNotice, AllVisibleText(host), StringComparison.Ordinal);
         Assert.False(string.IsNullOrWhiteSpace(viewModel.ProjectName));
         Assert.StartsWith("Editing: ", Find<TextBlock>(window, "HeaderSubtitle").Text, StringComparison.Ordinal);

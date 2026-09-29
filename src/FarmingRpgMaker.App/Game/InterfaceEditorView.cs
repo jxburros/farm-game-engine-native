@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
@@ -10,7 +11,11 @@ namespace FarmingRpgMaker.App.Game;
 /// <summary>Creator-defined in-game panels and their live entries.</summary>
 public sealed class InterfaceEditorView : UserControl
 {
-    private sealed record EntryRow(TextBox Label, ComboBox Kind, TextBox Value, Control Control);
+    /// <summary>
+    /// One entry: its label, its kind, and the value control that kind needs in
+    /// <paramref name="Value"/> (empty for live counters).
+    /// </summary>
+    private sealed record EntryRow(TextBox Label, ComboBox Kind, ContentControl Value, Button Remove, Control Control);
     private readonly ProjectWorkspace _workspace;
     private readonly ListBox _panels = new() { Name = "InterfacePanels", MinHeight = 130 };
     private readonly TextBox _title = new() { Name = "InterfaceTitle" };
@@ -28,6 +33,7 @@ public sealed class InterfaceEditorView : UserControl
         _workspace = workspace;
         Name = "InterfaceEditorView";
         _message.Name = "InterfaceMessage";
+        Ui.Label((_panels, "Game panels"), (_title, "Panel title"), (_flag, "Show after story flag (optional)"));
         _panels.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;
@@ -55,7 +61,7 @@ public sealed class InterfaceEditorView : UserControl
         var addEntry = Ui.Button("Add entry", AddEntry, "tool");
         addEntry.Name = "AddInterfaceEntryButton";
         right.Children.Add(addEntry);
-        right.Children.Add(Ui.Wrapped("Kinds: text, money, energy, day, item, flag, action. Use an item or action id as the value for those kinds.", "muted", "small"));
+        right.Children.Add(Ui.Wrapped("Kinds: text shows what you type; money, energy and day show live values; item counts that item in the bag; flag shows Yes or No for a story flag; action adds a button that runs the action.", "muted", "small"));
         _save = Ui.Button("Save panel", Save, "accent");
         _save.Name = "SaveInterfacePanelButton";
         right.Children.Add(_save);
@@ -110,16 +116,94 @@ public sealed class InterfaceEditorView : UserControl
         var kind = new ComboBox { Name = "InterfaceEntryKind", MinWidth = 85 };
         foreach (var value in GamePanelEntryKinds.All) kind.Items.Add(new ComboBoxItem { Content = value, Tag = value });
         kind.SelectedItem = kind.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, entry.Kind)) ?? kind.Items[0];
-        var content = new TextBox { Name = "InterfaceEntryValue", Text = entry.Value, Watermark = "Value / item id / action id", MinWidth = 150 };
+        var valueHost = new ContentControl { Name = "InterfaceEntryValueHost" };
+        ShowValue(valueHost, ValueControl(KindOf(kind), entry.Value));
+        EntryRow? row = null;
         var remove = Ui.Button("×", () =>
         {
-            var row = _rows.First(row => ReferenceEquals(row.Label, label));
+            if (row is null) return;
             _rows.Remove(row);
             _entries.Children.Remove(row.Control);
+            Renumber();
         }, "tool", "small");
-        var control = Ui.HStack(8, label, kind, content, remove);
-        _rows.Add(new EntryRow(label, kind, content, control));
-        _entries.Children.Add(control);
+        remove.Name = "InterfaceEntryRemove";
+        ToolTip.SetTip(remove, "Remove this entry");
+        // A new kind needs a different value: the web clears it too.
+        kind.SelectionChanged += (_, _) =>
+        {
+            ShowValue(valueHost, ValueControl(KindOf(kind), ""));
+            Renumber();
+        };
+        row = new EntryRow(label, kind, valueHost, remove, Ui.HStack(8, label, kind, valueHost, remove));
+        _rows.Add(row);
+        _entries.Children.Add(row.Control);
+        Renumber();
+    }
+
+    /// <summary>Puts <paramref name="control"/> in the row; a kind without a value takes no room.</summary>
+    private static void ShowValue(ContentControl host, Control? control)
+    {
+        host.Content = control;
+        host.IsVisible = control is not null;
+    }
+
+    private static string KindOf(ComboBox kind) => (kind.SelectedItem as ComboBoxItem)?.Tag as string ?? GamePanelEntryKinds.Text;
+
+    /// <summary>
+    /// The control an entry of <paramref name="kind"/> edits its value with: a picker of the
+    /// project's items or actions (an unknown id shows as "(missing: id)"), a text box for text
+    /// and flag names, or nothing for the live counters (money, energy, day).
+    /// </summary>
+    private Control? ValueControl(string kind, string value) => kind switch
+    {
+        GamePanelEntryKinds.Item => Picker("item", "Choose item", value),
+        GamePanelEntryKinds.Action => Picker("action", "Choose action", value),
+        GamePanelEntryKinds.Text => new TextBox { Name = "InterfaceEntryValue", Text = value, Watermark = "Text", MinWidth = 150 },
+        GamePanelEntryKinds.Flag => new TextBox { Name = "InterfaceEntryValue", Text = value, Watermark = "Flag name", MinWidth = 150 },
+        _ => null,
+    };
+
+    private ComboBox Picker(string reference, string placeholder, string value)
+    {
+        var picker = new ComboBox { Name = "InterfaceEntryValue", MinWidth = 150, PlaceholderText = placeholder, MaxDropDownHeight = 320 };
+        if (_workspace.Current is { } project)
+        {
+            var field = ContentForms.Field("GamePanelEntry", "Value", "Value") ?? throw new InvalidOperationException("GamePanelEntry.Value is not declared.");
+            foreach (var option in ContentForms.Entries(field, ContentForms.Options(reference, project), value))
+            {
+                var item = new ComboBoxItem { Content = option.Label, Tag = option.Id };
+                if (option.Missing) item.Classes.Add("missing");
+                picker.Items.Add(item);
+            }
+        }
+
+        picker.SelectedItem = picker.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value));
+        return picker;
+    }
+
+    private static string ValueOf(EntryRow row) => row.Value.Content switch
+    {
+        TextBox box => box.Text ?? "",
+        ComboBox picker => (picker.SelectedItem as ComboBoxItem)?.Tag as string ?? "",
+        _ => "",
+    };
+
+    /// <summary>Screen reader names that follow the rows' order ("Entry 2 item", "Remove entry 2").</summary>
+    private void Renumber()
+    {
+        for (var i = 0; i < _rows.Count; i++)
+        {
+            var row = _rows[i];
+            var number = i + 1;
+            AutomationProperties.SetName(row.Label, $"Entry {number} label");
+            AutomationProperties.SetName(row.Kind, $"Entry {number} kind");
+            AutomationProperties.SetName(row.Remove, $"Remove entry {number}");
+            if (row.Value.Content is Control value)
+            {
+                var what = KindOf(row.Kind) == GamePanelEntryKinds.Flag ? "flag name" : KindOf(row.Kind);
+                AutomationProperties.SetName(value, $"Entry {number} {what}");
+            }
+        }
     }
 
     private void AddEntry()
@@ -149,7 +233,7 @@ public sealed class InterfaceEditorView : UserControl
         if (_workspace.Current is not { } project || Selected() is not { } panel) return;
         var title = _title.Text?.Trim() ?? "";
         if (title.Length == 0) { _message.Text = "Give the panel a title."; return; }
-        var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind((row.Kind.SelectedItem as ComboBoxItem)?.Tag as string ?? GamePanelEntryKinds.Text).WithValue(row.Value.Text ?? "")).ToList();
+        var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind(KindOf(row.Kind)).WithValue(ValueOf(row))).ToList();
         var updated = panel.WithTitle(title).WithVisibleFlag(string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim()).WithEntries(entries);
         _workspace.Apply(Edits.SetGamePanels(project.GamePanels.OrEmpty().Select(existing => existing.Id == panel.Id ? updated : existing)));
         _message.Text = "Panel saved.";

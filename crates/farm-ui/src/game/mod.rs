@@ -117,7 +117,7 @@ impl GameUi {
             None => {}
         }
         shop::draw(ui, view, &mut self.shop_tab, &mut actions);
-        dialogue::draw(ui, view, &mut actions);
+        dialogue::draw(ui, view, images, &mut actions);
         minigame::draw(ui, view, &mut actions);
         actions
     }

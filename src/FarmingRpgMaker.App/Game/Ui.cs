@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -163,6 +164,18 @@ internal static class Ui
         block.HorizontalAlignment = HorizontalAlignment.Center;
         block.TextAlignment = TextAlignment.Center;
         return block;
+    }
+
+    /// <summary>
+    /// Gives controls their screen-reader names (web <c>aria-label</c>): boxes and pickers whose
+    /// visible label is a separate text, and buttons that show only a symbol.
+    /// </summary>
+    public static void Label(params (Control Control, string Name)[] controls)
+    {
+        foreach (var (control, name) in controls)
+        {
+            AutomationProperties.SetName(control, name);
+        }
     }
 
     /// <summary>Money like the web UI (<c>$123</c>).</summary>

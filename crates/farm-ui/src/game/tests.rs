@@ -39,6 +39,24 @@ fn dialogue_options_pick_by_click_digit_and_navigation() {
 }
 
 #[test]
+fn the_dialogue_portrait_shows_the_npcs_art() {
+    let mut fixture = Fixture::starter();
+    let images = |fixture: &Fixture| {
+        fixture.last.commands.iter().filter(|command| matches!(command, farm_render::DrawCmd::Image { .. })).count()
+    };
+    fixture.idle();
+    let without = images(&fixture);
+    // The merchant has no art of its own: the built-in art for its appearance stands in.
+    with_dialogue(&mut fixture, "npc-merchant", "dialogue-merchant-greeting");
+    assert_eq!(images(&fixture), without + 1, "the portrait is drawn from the NPC's art");
+    let portrait = fixture.last.commands.iter().rev().find_map(|command| match command {
+        farm_render::DrawCmd::Image { dst, .. } if dst.width <= 48.0 && dst.height <= 48.0 => Some(*dst),
+        _ => None,
+    });
+    assert!(portrait.is_some_and(|dst| dst.width >= 16.0), "{portrait:?}");
+}
+
+#[test]
 fn a_dialogue_without_options_says_goodbye() {
     let mut fixture = Fixture::starter();
     // The farmer's crop talk has one option; hide it behind a flag the player lacks.

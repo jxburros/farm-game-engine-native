@@ -23,6 +23,7 @@
     <Compile Include="ProblemsTests.fs" />
     <Compile Include="ReferencesTests.fs" />
     <Compile Include="PatternsTests.fs" />
+    <Compile Include="ReadoutsTests.fs" />
     <Compile Include="PropertyTests.fs" />
     <Compile Include="BrokenProjects.fs" />
     <Compile Include="ValidationCaseTests.fs" />

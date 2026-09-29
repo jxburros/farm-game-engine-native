@@ -23,6 +23,17 @@ public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IP
     }
 
     /// <summary>
+    /// An error nothing else handled (the dispatcher's last chance): Edit Mode shows it on its
+    /// error screen with Try Again instead of the app closing. False when there is no surface
+    /// to show it, or the error screen itself failed; the app then saves and closes as before.
+    /// </summary>
+    public bool TryRecover(Exception error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return (GameSurfaceFactory as GameSurfaceFactory)?.Surface is { } surface && surface.ShowEditorError(error);
+    }
+
+    /// <summary>
     /// The real app: projects under <paramref name="dataDirectory"/> (default
     /// <see cref="AppDataPaths.DefaultRoot"/>, i.e. <c>%APPDATA%/FarmingRpgMaker</c>).
     /// </summary>

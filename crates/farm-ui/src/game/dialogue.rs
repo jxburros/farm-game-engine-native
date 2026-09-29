@@ -1,29 +1,38 @@
 //! The dialogue box (web DialogueBox, C# `PlayOverlays.Dialogue`): a card at the bottom with the
-//! NPC's portrait, name and text, and the *visible* options (friendship, item and flag gates are
+//! NPC's portrait (its art as the map draws it, else a person glyph), name and text, and the *visible* options (friendship, item and flag gates are
 //! the engine's; `chooseDialogueOption` indexes the same list). Keys 1–9 pick an option;
 //! "Goodbye" closes a dialogue without options.
 
-use super::{GameAction, GameView};
+use super::{draw_sprite, GameAction, GameView};
 use crate::icons::{self, Icon};
 use crate::layout::{Align, RectExt};
 use crate::ui::{HitKind, Ui, WidgetId};
 use crate::widgets::{Button, ButtonKind};
-use farm_render::{FontId, Rect, TextAlign};
+use farm_render::{resolve_visual, FontId, ImageStore, Rect, SnapshotSprite, TextAlign};
+use farm_sim::schema::Npc;
 use farm_sim::Command;
+use std::sync::Arc;
 
 const TEXT_SIZE: f32 = 15.0;
 const OPTION_SIZE: f32 = 14.0;
 
-pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameAction>) {
+/// The NPC's art facing the player, as the map resolves it: the creator's visual, the NPC's
+/// custom image, then the built-in art for its appearance.
+fn portrait_sprite(view: &GameView<'_>, npc: &Npc) -> Option<SnapshotSprite> {
+    resolve_visual(view.art.assets, npc.visual.as_ref(), 0.0, "down", false)
+        .or_else(|| {
+            let url = npc.custom_image.as_deref().filter(|url| !url.is_empty())?;
+            Some(SnapshotSprite { image_url: Arc::from(url), ..SnapshotSprite::default() })
+        })
+        .or_else(|| view.art.builtin.and_then(|art| art.npc(Some(npc.appearance.as_str()), Some("down"), 0.0, false)))
+}
+
+pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, actions: &mut Vec<GameAction>) {
     let Some(active) = view.state.dialogue.as_ref() else { return };
     let Some(dialogue) = view.overlay.dialogue else { return };
     let colors = ui.theme().colors;
-    let npc_name = view
-        .content
-        .npcs
-        .iter()
-        .find(|npc| npc.id == active.npc_id)
-        .map_or(active.npc_id.as_str(), |npc| npc.name.as_str());
+    let npc = view.content.npcs.iter().find(|npc| npc.id == active.npc_id);
+    let npc_name = npc.map_or(active.npc_id.as_str(), |npc| npc.name.as_str());
     let options = &view.overlay.visible_dialogue_options;
 
     // Number keys pick options (1 = first visible option).
@@ -75,13 +84,22 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     // Portrait and text.
     let portrait = Rect::new(card.x + 20.0, card.y + 20.0, 56.0, 56.0);
     ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 28.0, colors.secondary);
-    icons::draw(
-        ui.list_mut(),
-        Icon::Person,
-        portrait.centered(30.0, 30.0),
-        farm_render::Color::WHITE,
-        colors.secondary,
-    );
+    let sprite = npc.and_then(|npc| portrait_sprite(view, npc));
+    let drawn = sprite.is_some_and(|sprite| {
+        ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 25.0, colors.row);
+        // 48 px: the built-in 32×48 characters draw 1:1, crisp.
+        draw_sprite(ui, images, &sprite, portrait.centered(48.0, 48.0), view.art.pixel_art)
+    });
+    if !drawn {
+        ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 28.0, colors.secondary);
+        icons::draw(
+            ui.list_mut(),
+            Icon::Person,
+            portrait.centered(30.0, 30.0),
+            farm_render::Color::WHITE,
+            colors.secondary,
+        );
+    }
     let name_rect = Rect::new(card.x + text_x, card.y + 20.0, text_width, name_height);
     ui.label(name_rect, npc_name, 16.5, FontId::Bold, colors.text, Align::Start);
     ui.paragraph(

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
@@ -42,6 +43,7 @@ public sealed partial class EditModeView
     private readonly Button _clearTransitions = new() { Name = "ClearTransitionsButton", Content = "Clear all" };
     private readonly TextBlock _doorFrom = Ui.Wrapped("Choose Door, then click a departure tile.", "muted", "small");
     private readonly TextBlock _editorMessage = Ui.Wrapped("", "muted", "small");
+    private readonly TextBlock _sceneSizeInfo = Ui.Wrapped("", "muted", "small");
     private TileLayer _selectedLayer = Edits.LayerFor(TileTypes.Grass);
     private MapTool _tool = MapTool.Inspect;
     private (int X, int Y)? _gestureStart;
@@ -65,6 +67,12 @@ public sealed partial class EditModeView
         set
         {
             _tool = value;
+            if (_gestureStart is not null)
+            {
+                // Another tool drops a rectangle's first corner (marked from the keyboard).
+                _gestureStart = null;
+                _hover.IsVisible = false;
+            }
             foreach (var button in _tools.Children.Concat(_placeTools.Children).OfType<ToggleButton>())
             {
                 button.IsChecked = Equals(button.Tag, value);
@@ -110,6 +118,7 @@ public sealed partial class EditModeView
         {
             var button = new ToggleButton { Name = $"Tool_{tool}", Tag = tool, Content = label, Margin = new Thickness(0, 0, 6, 6) };
             button.Classes.Add("tool");
+            if (panel is not null) AutomationProperties.SetName(button, tool == MapTool.Remove ? "Remove from tile" : $"Place {label}");
             button.Click += (_, _) => Tool = tool;
             (panel ?? _tools).Children.Add(button);
         }
@@ -153,6 +162,7 @@ public sealed partial class EditModeView
             }
         };
         SyncLayerSelector();
+        AutomationProperties.SetName(_layerSelector, "Layer");
         side.Children.Add(Ui.HStack(8, Ui.Text("Layer", "muted", "small"), _layerSelector));
 
         _copy.Click += (_, _) => CopySelection();
@@ -165,19 +175,29 @@ public sealed partial class EditModeView
         {
             if (!_updatingPlaceChoice && _placeKind is not null && PlaceChoice is { } id) _placeChoices[_placeKind] = id;
         };
+        AutomationProperties.SetName(_placeChoice, "What to place");
         side.Children.Add(_placeChoice);
         side.Children.Add(Ui.Wrapped("Choose what to place, then click a tile. Remove clears a tile's node, item, machine, crop and animals.", "muted", "small"));
         side.Children.Add(Ui.Text("Animals in this scene", "muted", "small"));
         side.Children.Add(_sceneAnimals);
 
         side.Children.Add(Ui.Text("SCENE", "section"));
+        AutomationProperties.SetName(_sceneName, "Scene name");
         side.Children.Add(_sceneName);
+        AutomationProperties.SetName(_sceneWidth, "Scene width");
+        AutomationProperties.SetName(_sceneHeight, "Scene height");
         side.Children.Add(Ui.HStack(8, Ui.Text("Size", "muted", "small"), _sceneWidth, Ui.Text("×"), _sceneHeight));
+        // Web SceneManager's size calculator, live as the size is typed.
+        _sceneSizeInfo.Name = "SceneSizeInfo";
+        _sceneWidth.TextChanged += (_, _) => RefreshSceneSizeInfo();
+        _sceneHeight.TextChanged += (_, _) => RefreshSceneSizeInfo();
+        side.Children.Add(_sceneSizeInfo);
         foreach (var type in TileTypes.All)
         {
             _newSceneTile.Items.Add(new ComboBoxItem { Content = Ui.Capitalize(type), Tag = type });
         }
         _newSceneTile.SelectedItem = _newSceneTile.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, TileTypes.Grass));
+        AutomationProperties.SetName(_newSceneTile, "New scene tile");
         side.Children.Add(Ui.HStack(8, Ui.Text("New scene tile", "muted", "small"), _newSceneTile));
         side.Children.Add(WrapButtons(
             NamedButton("AddSceneButton", "Add", AddScene),
@@ -203,11 +223,17 @@ public sealed partial class EditModeView
         side.Children.Add(_transitionList);
         _doorFrom.Name = "DoorFrom";
         side.Children.Add(_doorFrom);
+        AutomationProperties.SetName(_doorDestination, "To scene");
+        AutomationProperties.SetName(_doorX, "At X (arrival column)");
+        AutomationProperties.SetName(_doorY, "At Y (arrival row)");
         side.Children.Add(Ui.HStack(8, Ui.Text("To", "muted", "small"), _doorDestination));
         side.Children.Add(Ui.HStack(8, Ui.Text("At", "muted", "small"), _doorX, Ui.Text(","), _doorY));
         side.Children.Add(_doorReturn);
         side.Children.Add(Ui.HStack(8, NamedButton("SaveDoorButton", "Save door", SaveDoor), _removeDoor));
         _removeDoor.Click += (_, _) => RemoveDoor();
+        // Tool results ("Door saved", "Corner marked") are announced politely.
+        _editorMessage.Name = "MapEditorMessage";
+        AutomationProperties.SetLiveSetting(_editorMessage, AutomationLiveSetting.Polite);
         side.Children.Add(_editorMessage);
     }
 
@@ -265,6 +291,7 @@ public sealed partial class EditModeView
         _shownSceneWidth = ((int)scene.Width).ToString(CultureInfo.InvariantCulture);
         _shownSceneHeight = ((int)scene.Height).ToString(CultureInfo.InvariantCulture);
         _removeDoor.IsEnabled = _doorAt is { } at && scene.Transitions.Any(t => t.FromX == at.X && t.FromY == at.Y);
+        RefreshSceneSizeInfo();
 
         var previous = (_doorDestination.SelectedItem as ComboBoxItem)?.Tag as string;
         var ids = _doorDestination.Items.OfType<ComboBoxItem>().Select(item => item.Tag as string);
@@ -336,11 +363,15 @@ public sealed partial class EditModeView
         {
             var id = animal.Id;
             var remove = NamedButton($"RemoveAnimal_{id}", "Remove", () => _workspace.Apply(Edits.RemoveAnimal(id)));
+            AutomationProperties.SetName(remove, $"Remove {animal.Name}");
             _sceneAnimals.Children.Add(Ui.Row(Ui.Wrapped($"{animal.Name} ({Ui.Num(Math.Floor(animal.X))}, {Ui.Num(Math.Floor(animal.Y))})", "small"), remove));
         }
     }
 
-    /// <summary>The doors leaving this scene (web TransitionEditor list); a click edits one.</summary>
+    /// <summary>
+    /// The doors leaving this scene (web TransitionEditor list); a click edits one, Duplicate
+    /// starts a new door with the same destination.
+    /// </summary>
     private void RefreshTransitionList(GameProject project, Scene scene)
     {
         string SceneName(string id) => project.Scenes.FirstOrDefault(s => s.Id == id)?.Name ?? $"(missing: {id})";
@@ -362,7 +393,14 @@ public sealed partial class EditModeView
                 ChooseDoor(x, y);
             });
             button.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-            _transitionList.Children.Add(button);
+            var duplicate = NamedButton($"DuplicateTransition_{index}", "Duplicate", () => DuplicateTransition(transition));
+            AutomationProperties.SetName(duplicate, $"Duplicate transition {labels[index]}");
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            row.Children.Add(button);
+            duplicate.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(duplicate, 1);
+            row.Children.Add(duplicate);
+            _transitionList.Children.Add(row);
         }
     }
 
@@ -527,12 +565,33 @@ public sealed partial class EditModeView
 
     private bool SceneSize(out int width, out int height)
     {
-        var validWidth = int.TryParse(_sceneWidth.Text, NumberStyles.None, CultureInfo.InvariantCulture, out width);
-        var validHeight = int.TryParse(_sceneHeight.Text, NumberStyles.None, CultureInfo.InvariantCulture, out height);
-        var ok = validWidth && validHeight
-            && width is >= 1 and <= 256 && height is >= 1 and <= 256;
+        var ok = TypedSceneSize(out width, out height);
         if (!ok) _editorMessage.Text = "Scene width and height must be whole numbers from 1 to 256.";
         return ok;
+    }
+
+    /// <summary>The size typed in the Size boxes, when both are whole numbers from 1 to 256.</summary>
+    private bool TypedSceneSize(out int width, out int height)
+    {
+        var validWidth = int.TryParse(_sceneWidth.Text, NumberStyles.None, CultureInfo.InvariantCulture, out width);
+        var validHeight = int.TryParse(_sceneHeight.Text, NumberStyles.None, CultureInfo.InvariantCulture, out height);
+        return validWidth && validHeight && width is >= 1 and <= 256 && height is >= 1 and <= 256;
+    }
+
+    /// <summary>Tile count and aspect ratio of the typed size, and what a resize to it would cut off.</summary>
+    private void RefreshSceneSizeInfo()
+    {
+        if (!TypedSceneSize(out var width, out var height))
+        {
+            _sceneSizeInfo.Text = "Width and height must be whole numbers from 1 to 256.";
+            return;
+        }
+        var info = $"Total tiles: {width * height} · Aspect ratio: {((double)width / height).ToString("0.00", CultureInfo.InvariantCulture)}";
+        if (CurrentScene() is { } scene && (width < scene.Width || height < scene.Height))
+        {
+            info += $"\nResize removes the tiles outside {width}×{height}.";
+        }
+        _sceneSizeInfo.Text = info;
     }
 
     private void AddScene()
@@ -598,6 +657,40 @@ public sealed partial class EditModeView
         {
             _removeDoor.IsEnabled = false;
         }
+    }
+
+    /// <summary>
+    /// Web TransitionEditor "Duplicate": the door form gets the same destination and arrival tile,
+    /// departing from the next free tile (one to the right, else onward to the right and below).
+    /// Save door creates it.
+    /// </summary>
+    private void DuplicateTransition(SceneTransition transition)
+    {
+        if (CurrentScene() is not { } scene) return;
+        var from = FreeDoorTile(scene, (int)transition.FromX + 1, (int)transition.FromY);
+        Tool = MapTool.Door;
+        ChooseDoor(from.X, from.Y);
+        SetCursor(from);
+        _doorDestination.SelectedItem = _doorDestination.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, transition.ToSceneId));
+        _doorX.Text = ((int)transition.ToX).ToString(CultureInfo.InvariantCulture);
+        _doorY.Text = ((int)transition.ToY).ToString(CultureInfo.InvariantCulture);
+        _doorReturn.IsChecked = false;
+        _editorMessage.Text = $"Copied the door to ({from.X}, {from.Y}). Adjust the departure tile (click the map), then choose Save door.";
+    }
+
+    /// <summary>The first tile without a door from (x, y), clamped into the scene, scanning right then down.</summary>
+    private static (int X, int Y) FreeDoorTile(Scene scene, int x, int y)
+    {
+        var width = Math.Max(1, (int)scene.Width);
+        var count = width * Math.Max(1, (int)scene.Height);
+        var start = (Math.Clamp(y, 0, (count / width) - 1) * width) + Math.Clamp(x, 0, width - 1);
+        for (var i = 0; i < count; i++)
+        {
+            var index = (start + i) % count;
+            var (tileX, tileY) = (index % width, index / width);
+            if (!scene.Transitions.Any(t => t.FromX == tileX && t.FromY == tileY)) return (tileX, tileY);
+        }
+        return (start % width, start / width);
     }
 
     private void SaveDoor()

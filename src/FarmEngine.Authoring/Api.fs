@@ -364,6 +364,69 @@ type ContentForms =
         | Some element -> element
         | None -> null
 
+/// The content editors' readouts for C# (`Readouts`): profit lines, the crop and node type
+/// summary cards, the built-in crops and node types, schedule clock times and form tabs.
+[<AbstractClass; Sealed>]
+type ContentReadouts =
+    static member private List(xs: 'T list) = xs |> Array.ofList :> IReadOnlyList<'T>
+
+    /// Output value minus input value of one craft.
+    static member RecipeProfit(project: GameProject, recipe: RecipeDefinition) : float = Readouts.recipeProfit project recipe
+    /// Profit per in-game hour of processing (rounded), or null for an instant craft.
+    static member RecipeProfitPerHour(project: GameProject, recipe: RecipeDefinition) : System.Nullable<float> =
+        match Readouts.recipeProfitPerHour project recipe with
+        | Some value -> System.Nullable value
+        | None -> System.Nullable()
+    /// "Profit per craft: 12 · time-adjusted: 24/hr" (or "instant").
+    static member RecipeSummary(project: GameProject, recipe: RecipeDefinition) : string = Readouts.recipeSummary project recipe
+    /// The recipe list's second line: "hand craft · profit +12".
+    static member RecipeNote(project: GameProject, recipe: RecipeDefinition) : string = Readouts.recipeNote project recipe
+
+    /// Harvest value minus seed cost.
+    static member CropProfit(crop: CustomCropDefinition) : float = Readouts.cropProfit (Readouts.cropOfCustom crop)
+    static member CropProfit(crop: CropDefinition) : float = Readouts.cropProfit crop
+    /// "Profit per harvest: $15".
+    static member CropProfitText(crop: CustomCropDefinition) : string = Readouts.cropProfitText (Readouts.cropOfCustom crop)
+    /// The list line under a custom crop: "Custom · 5 stages" or "Replaces built-in · 4 stages".
+    static member CropNote(crop: CustomCropDefinition) : string = Readouts.cropNote crop
+    /// The list line under a built-in crop: "Built-in · 4 stages".
+    static member BuiltinCropNote(crop: CropDefinition) : string = Readouts.builtinCropNote crop
+    /// The crop summary card.
+    static member CropSummary(project: GameProject, crop: CustomCropDefinition) : IReadOnlyList<ReadoutLine> =
+        Readouts.cropSummary project (Readouts.cropOfCustom crop) |> ContentReadouts.List
+    static member CropSummary(project: GameProject, crop: CropDefinition) : IReadOnlyList<ReadoutLine> =
+        Readouts.cropSummary project crop |> ContentReadouts.List
+    /// Built-in crops no custom crop replaces, in pack order (read-only in the editor).
+    static member BuiltinCrops(project: GameProject) : IReadOnlyList<CropDefinition> = Readouts.builtinCrops project |> ContentReadouts.List
+    /// True when `id` is a built-in crop (a custom crop with that id replaces it).
+    static member IsBuiltinCrop(id: string) : bool = Readouts.builtinCropIds () |> List.contains id
+    /// A custom crop with the built-in crop's id and values, to replace it.
+    static member CustomizeCrop(crop: CropDefinition) : CustomCropDefinition = Readouts.customOfCrop crop
+
+    /// Built-in and mine node types the project does not replace (read-only in the editor).
+    static member BuiltinNodeTypes(project: GameProject) : IReadOnlyList<NodeTypeDefinition> = Readouts.builtinNodeTypes project |> ContentReadouts.List
+    /// True when `id` is a built-in node type (a project node type with that id replaces it).
+    static member IsBuiltinNodeType(id: string) : bool = Readouts.builtinNodeTypeIds () |> List.contains id
+    /// "4 hp · axe · no respawn".
+    static member NodeTypeNote(node: NodeTypeDefinition) : string = Readouts.nodeTypeNote node
+    /// The list line under a node type: "Built-in · 4 hp · axe · no respawn" (`builtin` when it is
+    /// listed read-only), "Replaces built-in · …" or "Custom · …".
+    static member NodeTypeListNote(node: NodeTypeDefinition, builtin: bool) : string = Readouts.nodeTypeListNote node builtin
+    /// The node type summary card.
+    static member NodeTypeSummary(project: GameProject, node: NodeTypeDefinition) : IReadOnlyList<ReadoutLine> =
+        Readouts.nodeTypeSummary project node |> ContentReadouts.List
+
+    /// A schedule minute as a clock time ("8:00 AM", "1:00 AM (next day)").
+    static member Clock(minute: float) : string = Readouts.clock minute
+    /// Money like the web ("$12", "-$5").
+    static member Money(value: float) : string = Readouts.money value
+
+    /// The tabs a content form of `recordType` (the C# record type name) groups its fields
+    /// into; empty for one form.
+    static member FormTabs(recordType: string) : IReadOnlyList<FormTab> = Readouts.formTabs recordType |> ContentReadouts.List
+    /// A tab's properties for C#.
+    static member TabProperties(tab: FormTab) : IReadOnlyList<string> = tab.Properties |> ContentReadouts.List
+
 /// Export settings for the Project Settings view: the values to show, the icon picker and the
 /// `ChecksExport` problems of a draft.
 [<AbstractClass; Sealed>]

@@ -1,6 +1,11 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FarmEngine.Authoring;
@@ -31,6 +36,10 @@ public sealed class ArtEditorView : UserControl
     private readonly TextBox _frameTicks = new() { Name = "ArtFrameTicks", Text = "6", Width = 58 };
     private readonly CheckBox _loop = new() { Name = "ArtLoop", Content = "Loop", IsChecked = true };
     private readonly StackPanel _frames = new() { Name = "ArtFrames", Spacing = 4 };
+    private readonly SpriteSheetView _sheet = new();
+    private readonly ComboBox _frameSource = new() { Name = "ArtFrameSource", MinWidth = 160, PlaceholderText = "Choose image" };
+    private readonly Button _addImageFrame;
+    private readonly Button _play;
     private readonly ComboBox _target = new() { Name = "ArtTarget" };
     private readonly ComboBox _bindingAsset = new() { Name = "ArtBindingAsset" };
     private readonly ComboBox _bindingClip = new() { Name = "ArtBindingClip" };
@@ -42,22 +51,29 @@ public sealed class ArtEditorView : UserControl
     private readonly CheckBox _pixelArt = new() { Name = "ArtPixelArt", Content = "Crisp pixel art" };
     private readonly TextBox _svgSize = new() { Name = "ArtSvgSize", Width = 70, Watermark = "own" };
     private readonly Border _unusedConfirm = new() { Name = "UnusedArtConfirm", IsVisible = false };
+    /// <summary>Asset list thumbnails by asset id, with the data URL they were decoded from.</summary>
+    private readonly Dictionary<string, (string DataUrl, Bitmap? Bitmap)> _thumbnails = [];
+    /// <summary>The asset (and data URL) the sprite sheet shows.</summary>
+    private (string AssetId, string DataUrl)? _sheetKey;
     private string? _selectedAssetId;
     private bool _refreshing;
+    private bool _playing = true;
     private double _tick;
 
     public ArtEditorView(ProjectWorkspace workspace, Action<string, VisualRef> useMapBrush)
     {
         _workspace = workspace;
         _useMapBrush = useMapBrush;
+        Ui.Label((_assets, "Artwork"), (_svgSize, "SVG size (longest side, px)"), (_assetName, "Asset name"), (_clips, "Animation clip"),
+            (_clipName, "Clip name"), (_frameWidth, "Frame width"), (_frameHeight, "Frame height"), (_frameX, "Frame X"), (_frameY, "Frame Y"),
+            (_frameTicks, "Ticks per frame"), (_target, "Assign to"), (_bindingAsset, "Artwork to assign"), (_bindingClip, "Clip to assign"),
+            (_cellSize, "Cell size"), (_cellColumn, "Cell column"), (_cellRow, "Cell row"), (_tileType, "Map tile behavior"));
         Name = "ArtEditorView";
         _message.Name = "ArtMessage";
-        _previewTimer.Tick += (_, _) =>
-        {
-            if (!IsEffectivelyVisible) return;
-            _tick++;
-            DrawPreview();
-        };
+        _previewTimer.Tick += (_, _) => AdvancePreview();
+        _sheet.CellClicked += AppendFrameAt;
+        _frameWidth.TextChanged += (_, _) => RefreshSheetGrid();
+        _frameHeight.TextChanged += (_, _) => RefreshSheetGrid();
         _assets.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;
@@ -104,6 +120,10 @@ public sealed class ArtEditorView : UserControl
 
         var right = new StackPanel { Spacing = 10 };
         right.Children.Add(_preview);
+        _play = Ui.Button("Pause preview", TogglePreview, "tool", "small");
+        _play.Name = "ArtPreviewPlayButton";
+        _play.HorizontalAlignment = HorizontalAlignment.Center;
+        right.Children.Add(_play);
         right.Children.Add(Ui.Text("Asset name", "muted", "small"));
         right.Children.Add(_assetName);
         var rename = Ui.Button("Rename", RenameAsset, "tool");
@@ -116,12 +136,29 @@ public sealed class ArtEditorView : UserControl
         right.Children.Add(Ui.HStack(8, Ui.Text("Name", "muted", "small"), _clipName, _loop));
         right.Children.Add(Ui.HStack(8, Ui.Text("Frame", "muted", "small"), _frameWidth, Ui.Text("×"), _frameHeight,
             Ui.Text("at", "muted", "small"), _frameX, Ui.Text(","), _frameY, Ui.Text("ticks", "muted", "small"), _frameTicks));
+        right.Children.Add(Ui.Wrapped("Click a cell of the sheet to add it to the clip, or type its position and use Append frame.", "muted", "small"));
+        right.Children.Add(new ScrollViewer
+        {
+            Name = "ArtSheetScroll",
+            Content = _sheet,
+            MaxHeight = 300,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        });
         var slice = Ui.Button("Slice entire sheet", SliceSheet, "tool");
         slice.Name = "SliceArtButton";
         var append = Ui.Button("Append frame", AppendFrame, "tool");
         append.Name = "AppendArtFrameButton";
         var removeClip = Ui.Button("Remove clip", RemoveClip, "tool");
         right.Children.Add(Ui.HStack(8, slice, append, removeClip));
+        _addImageFrame = Ui.Button("Add image frame", AddImageFrame, "tool");
+        _addImageFrame.Name = "ArtAddImageFrameButton";
+        _addImageFrame.IsEnabled = false;
+        _frameSource.SelectionChanged += (_, _) => _addImageFrame.IsEnabled = _frameSource.SelectedItem is not null;
+        ToolTip.SetTip(_addImageFrame, "Append the whole chosen image as the next frame: one animation can use frames of several images.");
+        AutomationProperties.SetName(_frameSource, "Separate image to add as a frame");
+        right.Children.Add(Ui.HStack(8, Ui.Text("Separate image", "muted", "small"), _frameSource, _addImageFrame));
         var allTicks = Ui.Button("Set every frame to these ticks", SetAllFrameTicks, "tool");
         allTicks.Name = "ArtAllFrameTicksButton";
         right.Children.Add(Ui.HStack(8, allTicks, Ui.Text("20 ticks = 1 second", "muted", "small")));
@@ -155,7 +192,7 @@ public sealed class ArtEditorView : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        _previewTimer.Start();
+        if (_playing) _previewTimer.Start();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -166,6 +203,9 @@ public sealed class ArtEditorView : UserControl
     }
 
     private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
+    /// <summary>"32×16", or "?×?" for legacy art imported without its size.</summary>
+    private static string SizeText(CustomAsset asset) =>
+        asset.Width.OrNullable() is { } width && asset.Height.OrNullable() is { } height ? $"{Number(width)}×{Number(height)}" : "?×?";
     private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{box.Name} must be a positive whole number.");
     private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{box.Name} must be zero or more.");
     private CustomAsset? SelectedAsset() => _workspace.Current?.CustomAssets.FirstOrDefault(asset => asset.Id == _selectedAssetId);
@@ -173,6 +213,28 @@ public sealed class ArtEditorView : UserControl
 
     /// <summary>The asset being edited, or null.</summary>
     public string? SelectedAssetId => _selectedAssetId;
+
+    /// <summary>Whether the animation preview is playing ("Pause preview" holds its current frame).</summary>
+    public bool PreviewPlaying => _playing;
+
+    /// <summary>The animation tick the preview shows.</summary>
+    public double PreviewTick => _tick;
+
+    /// <summary>One step of the preview timer: the next tick is drawn unless the preview is paused or hidden.</summary>
+    internal void AdvancePreview()
+    {
+        if (!_playing || !IsEffectivelyVisible) return;
+        _tick++;
+        DrawPreview();
+    }
+
+    private void TogglePreview()
+    {
+        _playing = !_playing;
+        _play.Content = _playing ? "Pause preview" : "Play preview";
+        if (_playing && TopLevel.GetTopLevel(this) is not null) _previewTimer.Start();
+        else _previewTimer.Stop();
+    }
 
     /// <summary>Opens an asset by id (Problems "Go to").</summary>
     public void SelectAsset(string assetId)
@@ -235,7 +297,7 @@ public sealed class ArtEditorView : UserControl
         var summary = imported.Count switch
         {
             0 => "",
-            1 => $"Imported {imported[0].Name} ({imported[0].Width}×{imported[0].Height}).",
+            1 => $"Imported {imported[0].Name} ({SizeText(imported[0])}).",
             _ => $"Imported {imported.Count} images.",
         };
         _message.Text = errors.Count == 0 ? summary : string.Join(" ", new[] { summary, $"Could not import {string.Join("; ", errors)}" }.Where(part => part.Length > 0));
@@ -321,10 +383,23 @@ public sealed class ArtEditorView : UserControl
         {
             _assets.SelectedItem = null;
             _assets.Items.Clear();
+            var pixelArt = project.Graphics.OrNull()?.PixelArt != false;
             foreach (var asset in project.CustomAssets)
-                _assets.Items.Add(new ListBoxItem { Tag = asset.Id, Content = $"{asset.Name} · {asset.Width ?? 0}×{asset.Height ?? 0}" });
+            {
+                var text = $"{asset.Name} · {SizeText(asset)}";
+                var thumbnail = new Image { Width = 32, Height = 32, Stretch = Stretch.Uniform, Source = Thumbnail(asset) };
+                RenderOptions.SetBitmapInterpolationMode(thumbnail, pixelArt ? BitmapInterpolationMode.None : BitmapInterpolationMode.HighQuality);
+                var item = new ListBoxItem { Tag = asset.Id, Content = Ui.HStack(8, thumbnail, Ui.Text(text)) };
+                AutomationProperties.SetName(item, text);
+                _assets.Items.Add(item);
+            }
+            foreach (var stale in _thumbnails.Keys.Where(id => !project.CustomAssets.Any(asset => asset.Id == id)).ToList())
+            {
+                _thumbnails[stale].Bitmap?.Dispose();
+                _thumbnails.Remove(stale);
+            }
             _assets.SelectedItem = _assets.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedAssetId));
-            _pixelArt.IsChecked = project.Graphics.OrNull()?.PixelArt != false;
+            _pixelArt.IsChecked = pixelArt;
             var previousTarget = (_target.SelectedItem as ComboBoxItem)?.Tag;
             _target.Items.Clear();
             void Target(string label, string kind, string id) => _target.Items.Add(new ComboBoxItem { Content = label, Tag = (kind, id) });
@@ -342,6 +417,11 @@ public sealed class ArtEditorView : UserControl
             foreach (var asset in project.CustomAssets) _bindingAsset.Items.Add(new ComboBoxItem { Tag = asset.Id, Content = asset.Name });
             _bindingAsset.SelectedItem = _bindingAsset.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, previousBinding))
                 ?? _bindingAsset.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedAssetId));
+            var previousSource = (_frameSource.SelectedItem as ComboBoxItem)?.Tag as string;
+            _frameSource.SelectedItem = null;
+            _frameSource.Items.Clear();
+            foreach (var asset in project.CustomAssets) _frameSource.Items.Add(new ComboBoxItem { Tag = asset.Id, Content = asset.Name });
+            _frameSource.SelectedItem = _frameSource.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, previousSource));
         }
         finally
         {
@@ -368,8 +448,40 @@ public sealed class ArtEditorView : UserControl
         {
             _refreshing = false;
         }
+        RefreshSheet(asset);
         RefreshFrames();
         DrawPreview();
+    }
+
+    /// <summary>The asset's list thumbnail (at most 64px, for crisp 32px display), decoded once per image.</summary>
+    private Bitmap? Thumbnail(CustomAsset asset)
+    {
+        if (_thumbnails.TryGetValue(asset.Id, out var cached))
+        {
+            if (cached.DataUrl == asset.DataUrl) return cached.Bitmap;
+            cached.Bitmap?.Dispose();
+        }
+
+        var bitmap = ArtBitmaps.Thumbnail(asset, 64);
+        _thumbnails[asset.Id] = (asset.DataUrl, bitmap);
+        return bitmap;
+    }
+
+    /// <summary>Shows the selected asset's whole image on the sprite sheet (decoded again only when it changes).</summary>
+    private void RefreshSheet(CustomAsset? asset)
+    {
+        if (asset is not null && _sheetKey is { } key && key.AssetId == asset.Id && key.DataUrl == asset.DataUrl) return;
+        var previous = _sheet.Image;
+        _sheet.SetImage(asset is null ? null : ArtBitmaps.Decode(asset.DataUrl));
+        previous?.Dispose();
+        _sheetKey = asset is null ? null : (asset.Id, asset.DataUrl);
+        RefreshSheetGrid();
+    }
+
+    private void RefreshSheetGrid()
+    {
+        static int Cell(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : 0;
+        _sheet.SetCell(Cell(_frameWidth), Cell(_frameHeight));
     }
 
     private void DrawPreview()
@@ -382,18 +494,34 @@ public sealed class ArtEditorView : UserControl
         _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
     }
 
+    /// <summary>
+    /// "1. 16,0 · 16×16" for a cell of the asset's own image, "2. from Carrot.png · 16×16" for a
+    /// frame drawn from another image.
+    /// </summary>
+    private string FrameLabel(CustomAsset asset, int index, ArtFrame frame)
+    {
+        var size = $"{Number(frame.Width)}×{Number(frame.Height)}";
+        var position = $"{Number(frame.X)},{Number(frame.Y)}";
+        if (frame.AssetId.OrNull() is not { } sourceId || sourceId == asset.Id) return $"{index + 1}. {position} · {size}";
+        var source = _workspace.Current?.CustomAssets.FirstOrDefault(other => other.Id == sourceId);
+        var at = frame.X == 0 && frame.Y == 0 ? "" : $" at {position}";
+        return $"{index + 1}. from {source?.Name ?? $"(missing: {sourceId})"}{at} · {size}";
+    }
+
     private void RefreshFrames()
     {
         _frames.Children.Clear();
         var clip = SelectedClip();
-        if (clip is null) return;
+        if (clip is null || SelectedAsset() is not { } owner) return;
         for (var index = 0; index < clip.Frames.Length; index++)
         {
             var i = index;
             var frame = clip.Frames[i];
-            var label = Ui.Text($"{i + 1}. {frame.X},{frame.Y} · {frame.Width}×{frame.Height}", "muted", "small");
+            var label = Ui.Text(FrameLabel(owner, i, frame), "muted", "small");
+            label.Name = $"ArtFrameLabel_{i}";
             var ticks = new TextBox { Name = $"ArtFrameTicks_{i}", Text = Number(frame.Ticks), Width = 52 };
             ToolTip.SetTip(ticks, $"Frame {i + 1} duration in ticks");
+            Ui.Label((ticks, $"Frame {i + 1} duration in ticks"));
             var setTicks = Ui.Button("Set", () =>
             {
                 if (SelectedAsset() is not { } asset) return;
@@ -404,6 +532,7 @@ public sealed class ArtEditorView : UserControl
                 catch (FormatException error) { _message.Text = error.Message; }
             }, "tool", "small");
             setTicks.Name = $"ArtFrameTicksSet_{i}";
+            Ui.Label((setTicks, $"Set frame {i + 1} duration"));
             var duplicate = Ui.Button("Copy", () =>
             {
                 if (SelectedAsset() is { } asset) _workspace.Apply(Edits.DuplicateFrame(asset.Id, clip.Name, i));
@@ -411,6 +540,7 @@ public sealed class ArtEditorView : UserControl
             duplicate.Name = $"ArtFrameDuplicate_{i}";
             duplicate.IsEnabled = clip.Frames.Length < 1024;
             ToolTip.SetTip(duplicate, "Duplicate this frame");
+            Ui.Label((duplicate, $"Duplicate frame {i + 1}"));
             var up = Ui.Button("↑", () =>
             {
                 if (i == 0) return;
@@ -419,12 +549,14 @@ public sealed class ArtEditorView : UserControl
                 SaveClip(clip.WithFrames(frames));
             }, "tool", "small");
             up.IsEnabled = i > 0;
+            AutomationProperties.SetName(up, $"Move frame {i + 1} earlier");
             var remove = Ui.Button("×", () =>
             {
                 var frames = clip.Frames.Where((_, n) => n != i).ToList();
                 if (frames.Count == 0) RemoveClip();
                 else SaveClip(clip.WithFrames(frames));
             }, "tool", "small");
+            AutomationProperties.SetName(remove, $"Remove frame {i + 1}");
             _frames.Children.Add(Ui.Row(label, ticks, setTicks, duplicate, up, remove));
         }
     }
@@ -460,7 +592,7 @@ public sealed class ArtEditorView : UserControl
 
     private void AppendFrame()
     {
-        if (SelectedAsset() is not { } asset || asset.Width is null || asset.Height is null) return;
+        if (SelectedAsset() is not { } asset) return;
         try
         {
             var width = Positive(_frameWidth);
@@ -468,16 +600,84 @@ public sealed class ArtEditorView : UserControl
             var x = Nonnegative(_frameX);
             var y = Nonnegative(_frameY);
             var ticks = Positive(_frameTicks);
-            var name = _clipName.Text?.Trim() ?? "";
-            if (name.Length == 0 || x + width > asset.Width.Or(0) || y + height > asset.Height.Or(0)) throw new FormatException("Frame needs a name and must fit within the image.");
-            var existing = asset.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == name);
-            var frames = existing?.Frames.ToList() ?? [];
-            if (frames.Count >= 1024) throw new FormatException("A clip may contain at most 1024 frames.");
-            frames.Add(ArtFrame.Default.WithX(x).WithY(y).WithWidth(width).WithHeight(height).WithTicks(ticks));
-            SaveClip(AnimationClip.Default.WithName(name).WithLoop(_loop.IsChecked == true).WithFrames(frames));
-            _message.Text = $"Added frame to {name}.";
+            var (imageWidth, imageHeight) = ImageSize(asset);
+            if (x + width > imageWidth || y + height > imageHeight) throw new FormatException("That frame extends beyond the image.");
+            AddFrame(asset, ArtFrame.Default.WithX(x).WithY(y).WithWidth(width).WithHeight(height).WithTicks(ticks));
         }
         catch (FormatException error) { _message.Text = error.Message; }
+    }
+
+    /// <summary>
+    /// Adds the sprite sheet cell under image pixel (<paramref name="x"/>, <paramref name="y"/>)
+    /// of the selected asset to the clip named in the Clip name box, creating the clip when needed
+    /// (web AssetManager sheet click): a frame width × height cell with the current ticks, as one
+    /// undo step.
+    /// </summary>
+    public void AppendFrameAt(double x, double y)
+    {
+        if (SelectedAsset() is not { } asset) return;
+        try
+        {
+            var width = Positive(_frameWidth);
+            var height = Positive(_frameHeight);
+            var ticks = Positive(_frameTicks);
+            var (imageWidth, imageHeight) = ImageSize(asset);
+            var cellX = Math.Floor(x / width) * width;
+            var cellY = Math.Floor(y / height) * height;
+            if (!double.IsFinite(cellX) || !double.IsFinite(cellY) || cellX < 0 || cellY < 0 || cellX + width > imageWidth || cellY + height > imageHeight)
+                throw new FormatException("That frame extends beyond the image.");
+            AddFrame(asset, ArtFrame.Default.WithX(cellX).WithY(cellY).WithWidth(width).WithHeight(height).WithTicks(ticks));
+        }
+        catch (FormatException error) { _message.Text = error.Message; }
+    }
+
+    /// <summary>
+    /// Adds the whole image picked under "Separate image" as the next frame of the clip (web
+    /// AssetManager "Add image frame"), so one animation can use frames of several images. The
+    /// renderer draws a frame with an <c>AssetId</c> from that asset.
+    /// </summary>
+    private void AddImageFrame()
+    {
+        if (SelectedAsset() is not { } asset) return;
+        var sourceId = (_frameSource.SelectedItem as ComboBoxItem)?.Tag as string;
+        if (_workspace.Current?.CustomAssets.FirstOrDefault(other => other.Id == sourceId) is not { } source)
+        {
+            _message.Text = "Choose the image to add.";
+            return;
+        }
+
+        try
+        {
+            if (source.Width.OrNullable() is not { } width || source.Height.OrNullable() is not { } height) throw new FormatException("Reimport this art to read its size.");
+            var ticks = Positive(_frameTicks);
+            // A frame of the clip's own asset needs no AssetId.
+            AddFrame(asset, ArtFrame.Default.WithAssetId(source.Id == asset.Id ? null : source.Id).WithWidth(width).WithHeight(height).WithTicks(ticks));
+        }
+        catch (FormatException error) { _message.Text = error.Message; }
+    }
+
+    /// <summary>The asset's size in pixels: the size recorded at import, else the sheet's decoded image (legacy art).</summary>
+    private (double Width, double Height) ImageSize(CustomAsset asset)
+    {
+        if (asset.Width.OrNullable() is { } width && asset.Height.OrNullable() is { } height) return (width, height);
+        if (_sheetKey?.AssetId == asset.Id && _sheet.Image is { } image) return (image.PixelSize.Width, image.PixelSize.Height);
+        throw new FormatException("Reimport this art to read its size.");
+    }
+
+    /// <summary>
+    /// Appends <paramref name="frame"/> to the clip named in the Clip name box, creating the clip
+    /// when it does not exist yet: one F# edit (one undo step).
+    /// </summary>
+    private void AddFrame(CustomAsset asset, ArtFrame frame)
+    {
+        var name = _clipName.Text?.Trim() ?? "";
+        if (name.Length == 0) throw new FormatException("Give the clip a name.");
+        var existing = asset.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == name);
+        var frames = existing?.Frames.ToList() ?? [];
+        if (frames.Count >= 1024) throw new FormatException("A clip may contain at most 1024 frames.");
+        frames.Add(frame);
+        SaveClip(AnimationClip.Default.WithName(name).WithLoop(_loop.IsChecked == true).WithFrames(frames));
+        _message.Text = $"Added frame {frames.Count} to {name}.";
     }
 
     private void SetAllFrameTicks()

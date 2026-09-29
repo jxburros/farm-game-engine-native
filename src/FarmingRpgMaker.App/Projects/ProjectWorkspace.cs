@@ -77,7 +77,26 @@ public sealed class ProjectWorkspace
     /// <summary>True when edits are waiting for the debounced autosave.</summary>
     public bool HasPendingSave => _dirty;
 
+    /// <summary>
+    /// Why the last save failed (disk full, no permission…), or null while saving works. The
+    /// edits stay open and pending; the next edit or <see cref="RetrySave"/> tries again.
+    /// </summary>
+    public string? SaveError { get; private set; }
+
     public event EventHandler<ProjectChangedEventArgs>? ProjectChanged;
+
+    /// <summary>
+    /// Shows an error a <see cref="ProjectChanged"/> handler (a view refreshing) threw, and
+    /// returns true when it was shown (the editor's error screen); unhandled errors propagate.
+    /// </summary>
+    public Func<Exception, bool>? ViewErrorHandler { get; set; }
+
+    /// <summary>
+    /// Raised when saving starts failing and when it works again (web <c>useLocalKV</c>: the
+    /// first failure is announced loudly, then nothing until a save succeeds). Read
+    /// <see cref="SaveError"/> for the state.
+    /// </summary>
+    public event EventHandler? SaveStatusChanged;
 
     /// <summary>
     /// First launch / startup: reopen the last project; else the most recent one; else create
@@ -130,11 +149,11 @@ public sealed class ProjectWorkspace
         _document = Documents.Create(opened);
         if (save || !Store.Exists(project.Id))
         {
-            Store.Save(opened);
+            _dirty = !TrySave(opened);
         }
 
         Settings.Update(s => s with { LastProjectId = project.Id });
-        ProjectChanged?.Invoke(this, new ProjectChangedEventArgs(ProjectChangeKind.Opened));
+        RaiseProjectChanged(ProjectChangeKind.Opened);
     }
 
     /// <summary>Loads project <paramref name="id"/> from the store and opens it.</summary>
@@ -241,15 +260,53 @@ public sealed class ProjectWorkspace
         FlushPendingSave();
     }
 
-    /// <summary>Writes pending edits now (exit, project switch).</summary>
+    /// <summary>
+    /// Writes pending edits now (exit, project switch). A failed write never throws: the edits
+    /// stay pending and <see cref="SaveError"/> says why.
+    /// </summary>
     public void FlushPendingSave()
     {
         _autosaveTimer?.Stop();
         if (_dirty && _document is { } document)
         {
-            _dirty = false;
-            Store.Save(document.Project);
+            _dirty = !TrySave(document.Project);
         }
+    }
+
+    /// <summary>"Retry save": writes the open project now, pending edits or not. False when it failed again.</summary>
+    public bool RetrySave()
+    {
+        _autosaveTimer?.Stop();
+        if (_document is not { } document)
+        {
+            return false;
+        }
+
+        _dirty = !TrySave(document.Project);
+        return !_dirty;
+    }
+
+    private bool TrySave(GameProject project)
+    {
+        string? error = null;
+        try
+        {
+            Store.Save(project);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = ex.Message;
+            System.Diagnostics.Trace.TraceError($"Saving project {project.Id} failed: {ex}");
+        }
+
+        var changed = (error is null) != (SaveError is null);
+        SaveError = error;
+        if (changed)
+        {
+            SaveStatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        return error is null;
     }
 
     private bool Commit(Document next, ProjectChangeKind kind)
@@ -269,7 +326,32 @@ public sealed class ProjectWorkspace
     private void SetCurrent(ProjectChangeKind kind)
     {
         ScheduleSave();
-        ProjectChanged?.Invoke(this, new ProjectChangedEventArgs(kind));
+        RaiseProjectChanged(kind);
+    }
+
+    /// <summary>
+    /// Tells every view, one at a time: a view that throws goes to <see cref="ViewErrorHandler"/>
+    /// and the others still hear about the change.
+    /// </summary>
+    private void RaiseProjectChanged(ProjectChangeKind kind)
+    {
+        var args = new ProjectChangedEventArgs(kind);
+        foreach (var handler in ProjectChanged?.GetInvocationList() ?? [])
+        {
+            try
+            {
+                ((EventHandler<ProjectChangedEventArgs>)handler)(this, args);
+            }
+#pragma warning disable CA1031 // Handed to the error screen, or rethrown.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                if (ViewErrorHandler?.Invoke(ex) != true)
+                {
+                    throw;
+                }
+            }
+        }
     }
 
     private void ScheduleSave()

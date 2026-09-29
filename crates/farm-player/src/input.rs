@@ -10,6 +10,9 @@
 //!   down). The left stick and D-pad move and navigate, A interacts and confirms, B closes and goes
 //!   back, the other buttons follow the gamepad bindings.
 //! - Held gamepad directions repeat in menus (0.4 s, then every 0.12 s).
+//! - On-screen controls (the web demo's touch buttons) send [`InputEvent::Action`]: a game
+//!   action held or let go, whatever keys it is bound to. Move actions navigate menus and
+//!   repeat like the D-pad, Interact confirms and Menu goes back.
 
 use farm_ui::settings::{BindAction, Bindings, KeyRoute};
 use farm_ui::{GamepadButton, InputDevice, NavAction, UiInput};
@@ -85,6 +88,12 @@ pub enum InputEvent {
         axis: GamepadAxis,
         value: f32,
     },
+    /// An on-screen control held (`pressed`) or let go: the action itself, not a key, so
+    /// rebinding keys never breaks touch controls.
+    Action {
+        action: BindAction,
+        pressed: bool,
+    },
     /// The window lost focus: every held key and button is released.
     FocusLost,
 }
@@ -145,6 +154,16 @@ impl Direction {
             Direction::Right => BindAction::MoveRight,
         }
     }
+
+    fn of_action(action: BindAction) -> Option<Direction> {
+        Some(match action {
+            BindAction::MoveUp => Direction::Up,
+            BindAction::MoveDown => Direction::Down,
+            BindAction::MoveLeft => Direction::Left,
+            BindAction::MoveRight => Direction::Right,
+            _ => return None,
+        })
+    }
 }
 
 /// Turns host events into [`FrameInput`]s. Keep one per player.
@@ -157,6 +176,8 @@ pub struct InputRouter {
     buttons: BTreeSet<GamepadButton>,
     /// Canonical keys held by gamepad buttons.
     button_keys: BTreeMap<GamepadButton, String>,
+    /// Actions held by on-screen controls.
+    actions: BTreeSet<BindAction>,
     axes: BTreeMap<GamepadAxis, f32>,
     /// Stick directions currently pressed (with hysteresis).
     stick: BTreeSet<Direction>,
@@ -353,6 +374,11 @@ impl InputRouter {
                     }
                     self.axes.insert(*axis, value);
                 }
+                InputEvent::Action { action, pressed } => {
+                    // Touch controls sit on a pointer screen: hints follow the pointer.
+                    self.device = InputDevice::Mouse;
+                    self.action(*action, *pressed, capture, &mut out);
+                }
                 InputEvent::FocusLost => {
                     self.release_all(&mut out);
                     out.focus_lost = true;
@@ -440,6 +466,42 @@ impl InputRouter {
         }
     }
 
+    /// An on-screen control: like a key bound to `action` (navigation, accept, the canonical
+    /// key for the game), held until it is let go.
+    fn action(&mut self, action: BindAction, pressed: bool, capture: bool, out: &mut FrameInput) {
+        if pressed == self.actions.contains(&action) {
+            return;
+        }
+        if pressed {
+            self.actions.insert(action);
+        } else {
+            self.actions.remove(&action);
+        }
+        if capture {
+            return;
+        }
+        let direction = Direction::of_action(action);
+        let canonical = action.canonical_key();
+        if pressed {
+            out.ui.nav.extend(action_nav(action));
+            if action == BindAction::Interact {
+                self.accept(true, out);
+            }
+            if let Some(direction) = direction {
+                self.repeat = Some((direction, self.time + REPEAT_DELAY));
+            }
+            self.press(canonical, out);
+        } else {
+            if action == BindAction::Interact {
+                self.accept(false, out);
+            }
+            if direction.is_some() && self.repeat.is_some_and(|(held, _)| Some(held) == direction) {
+                self.repeat = None;
+            }
+            self.release(canonical, out);
+        }
+    }
+
     fn update_stick(&mut self, bindings: &Bindings, out: &mut FrameInput) {
         let x = self.axes.get(&GamepadAxis::LeftX).copied().unwrap_or(0.0);
         let y = self.axes.get(&GamepadAxis::LeftY).copied().unwrap_or(0.0);
@@ -485,6 +547,7 @@ impl InputRouter {
         self.held.clear();
         self.buttons.clear();
         self.button_keys.clear();
+        self.actions.clear();
         self.axes.clear();
         self.stick.clear();
         self.repeat = None;
@@ -577,5 +640,44 @@ mod tests {
         let frame = router.frame(&[InputEvent::FocusLost], 0.016, &bindings, false);
         assert!(frame.focus_lost);
         assert_eq!(frame.game.len(), 3);
+    }
+
+    #[test]
+    fn on_screen_actions_hold_the_action_whatever_its_keys() {
+        let mut router = InputRouter::new();
+        let mut bindings = Bindings::default();
+        // Rebinding keys never changes what a touch button does.
+        bindings.rebind(BindAction::Interact, "k");
+        let action = |action, pressed| InputEvent::Action { action, pressed };
+        let json: InputEvent = serde_json::from_str(r#"{"type":"action","action":"move-up","pressed":true}"#).unwrap();
+        assert_eq!(json, action(BindAction::MoveUp, true));
+
+        let frame = router.frame(&[json, action(BindAction::Interact, true)], 0.016, &bindings, false);
+        assert_eq!(frame.game, vec![GameKey::Down("w".into()), GameKey::Down("e".into())]);
+        assert_eq!(frame.ui.nav, [NavAction::Up, NavAction::Accept]);
+        assert!(frame.accept_pressed && frame.ui.accept_held);
+        assert_eq!(frame.ui.device, InputDevice::Mouse);
+        // A second press of a held control changes nothing; held moves repeat in menus.
+        let frame = router.frame(&[action(BindAction::MoveUp, true)], 0.5, &bindings, false);
+        assert!(frame.game.is_empty());
+        assert_eq!(frame.ui.nav, [NavAction::Up]);
+
+        let frame = router.frame(
+            &[action(BindAction::MoveUp, false), action(BindAction::Interact, false), action(BindAction::Sleep, true)],
+            0.016,
+            &bindings,
+            false,
+        );
+        assert_eq!(frame.game, vec![GameKey::Up("w".into()), GameKey::Up("e".into()), GameKey::Down("z".into())]);
+        assert!(frame.accept_released);
+        assert_eq!(frame.game_pressed, ["z"]);
+        let frame = router.frame(&[action(BindAction::Menu, true)], 0.016, &bindings, false);
+        assert_eq!(frame.ui.nav, [NavAction::Back]);
+        assert_eq!(frame.game, vec![GameKey::Down("escape".into())]);
+        // Focus loss lets go of everything held on screen.
+        let frame = router.frame(&[InputEvent::FocusLost], 0.016, &bindings, false);
+        assert_eq!(frame.game.len(), 2);
+        let frame = router.frame(&[action(BindAction::Sleep, false)], 0.016, &bindings, false);
+        assert!(frame.game.is_empty());
     }
 }
