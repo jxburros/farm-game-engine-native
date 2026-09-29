@@ -1,10 +1,9 @@
 using System.Globalization;
-using System.Text.Json;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
-using FarmEngine.Interop;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -32,7 +31,8 @@ public sealed class SettingsEditorView : UserControl
     private readonly TextBox _dayStart = new() { Name = "Setting_DayStartMinute" };
     private readonly TextBox _dayEnd = new() { Name = "Setting_DayEndMinute" };
     private readonly TextBox _minutesPerSecond = new() { Name = "Setting_MinutesPerRealSecond" };
-    private readonly TextBox _skillCurve = new() { Name = "Setting_SkillLevelCurve" };
+    private readonly StackPanel _skillLevels = new() { Name = "SkillLevels", Spacing = 5 };
+    private readonly List<TextBox> _skillLevelBoxes = [];
     private readonly CheckBox _energy = new() { Name = "Setting_EnergyEnabled", Content = "Energy enabled" };
     private readonly CheckBox _skills = new() { Name = "Setting_SkillsEnabled", Content = "Skills enabled" };
     private readonly CheckBox _credit = new() { Name = "Setting_ShowMadeWithCredit", Content = "Show creator credit" };
@@ -79,7 +79,12 @@ public sealed class SettingsEditorView : UserControl
         Field(form, "Max energy", _maxEnergy);
         Field(form, "Collapse energy fraction", _collapseFraction);
         Field(form, "Collapse money penalty", _collapsePenalty);
-        Field(form, "Skill level curve (JSON array)", _skillCurve);
+        form.Children.Add(Ui.Text("Skill levels", "muted", "small"));
+        form.Children.Add(Ui.Wrapped("The total XP a skill needs to reach each level. Players start at level 0; the game announces \"Farming level 1!\" once farming XP reaches level 1's amount.", "muted", "small"));
+        form.Children.Add(_skillLevels);
+        var addSkillLevel = Ui.Button("Add level", AddSkillLevel, "tool");
+        addSkillLevel.Name = "AddSkillLevelButton";
+        form.Children.Add(addSkillLevel);
         form.Children.Add(Ui.Text("TIME", "section"));
         Field(form, "Day start minute", _dayStart);
         Field(form, "Day end minute", _dayEnd);
@@ -164,6 +169,57 @@ public sealed class SettingsEditorView : UserControl
         return value;
     }
     private static TextBox Box(string name, string value, double width) => new() { Name = name, Text = value, Width = width };
+
+    /// <summary>
+    /// Shows one row per skill level: "Level 0 [0] XP", "Level 1 [50] XP", … (the curve's index is
+    /// the level the game reports). Drafts are saved with "Save project settings".
+    /// </summary>
+    private void ShowSkillLevels(IReadOnlyList<string> values)
+    {
+        _skillLevelBoxes.Clear();
+        _skillLevels.Children.Clear();
+        for (var index = 0; index < values.Count; index++)
+        {
+            var i = index;
+            var box = Box($"Setting_SkillLevel_{i}", values[i], 90);
+            AutomationProperties.SetName(box, $"Level {i} XP");
+            var remove = Ui.Button("Remove", () => ShowSkillLevels(_skillLevelBoxes.Where((_, n) => n != i).Select(other => other.Text ?? "").ToList()), "tool", "small");
+            remove.Name = $"Setting_SkillLevelRemove_{i}";
+            AutomationProperties.SetName(remove, $"Remove level {i}");
+            _skillLevelBoxes.Add(box);
+            _skillLevels.Children.Add(Ui.HStack(8, new TextBlock { Text = $"Level {i}", Width = 70, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+                box, Ui.Text("XP", "muted", "small"), remove));
+        }
+    }
+
+    /// <summary>A new last level: as far above the last as the last is above the one before, else 100 XP more.</summary>
+    private void AddSkillLevel()
+    {
+        static double Value(TextBox box) =>
+            double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
+        var values = _skillLevelBoxes.Select(box => box.Text ?? "").ToList();
+        var count = _skillLevelBoxes.Count;
+        var last = count > 0 ? Value(_skillLevelBoxes[^1]) : 0;
+        var step = count > 1 ? last - Value(_skillLevelBoxes[^2]) : 0;
+        values.Add(Number(count == 0 ? 0 : last + (step > 0 ? step : 100)));
+        ShowSkillLevels(values);
+    }
+
+    /// <summary>The skill level rows as a curve: at least one level, each a finite XP amount of 0 or more and at least the one before.</summary>
+    private List<double> SkillLevelCurve()
+    {
+        if (_skillLevelBoxes.Count == 0) throw new FormatException("Add at least one skill level.");
+        var curve = new List<double>();
+        for (var i = 0; i < _skillLevelBoxes.Count; i++)
+        {
+            if (!double.TryParse(_skillLevelBoxes[i].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var xp) || !double.IsFinite(xp) || xp < 0)
+                throw new FormatException($"Level {i} needs an XP amount of 0 or more.");
+            if (curve.Count > 0 && xp < curve[^1]) throw new FormatException("Each level needs at least as much XP as the one before.");
+            curve.Add(xp);
+        }
+
+        return curve;
+    }
 
     private void AddSeasonRow(CalendarSeason season, bool saved = true)
     {
@@ -258,7 +314,7 @@ public sealed class SettingsEditorView : UserControl
         _dayStart.Text = Number(settings.Time.DayStartMinute);
         _dayEnd.Text = Number(settings.Time.DayEndMinute);
         _minutesPerSecond.Text = Number(settings.Time.MinutesPerRealSecond);
-        _skillCurve.Text = JsonSerializer.Serialize(settings.SkillLevelCurve, InteropJson.Options);
+        ShowSkillLevels(settings.SkillLevelCurve.Select(Number).ToList());
         _energy.IsChecked = settings.EnergyEnabled;
         _skills.IsChecked = settings.SkillsEnabled;
         _credit.IsChecked = settings.ShowMadeWithCredit;
@@ -443,9 +499,7 @@ public sealed class SettingsEditorView : UserControl
                 throw new FormatException("Seasons need distinct ids and positive day counts.");
             if (festivals.Any(f => f.Id.Length == 0 || f.Day != Math.Floor(f.Day) || !seasons.Any(s => s.Id == f.SeasonId && f.Day >= 1 && f.Day <= s.Days)))
                 throw new FormatException("Every festival needs a season and a day within it.");
-            var curve = JsonSerializer.Deserialize<List<double>>(_skillCurve.Text ?? "", InteropJson.Options) ?? throw new FormatException("The skill curve must be a JSON array.");
-            if (curve.Count == 0 || curve.Any(value => !double.IsFinite(value) || value < 0))
-                throw new FormatException("The skill curve needs finite nonnegative values.");
+            var curve = SkillLevelCurve();
             var settings = project.Settings
                 .WithLocale(_locale.Text?.Trim() ?? "")
                 .WithEnergyEnabled(_energy.IsChecked == true)
@@ -467,7 +521,7 @@ public sealed class SettingsEditorView : UserControl
             _workspace.Apply(Edits.Batch("Project settings", [Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
             _message.Text = "Settings saved.";
         }
-        catch (Exception error) when (error is FormatException or JsonException or OverflowException)
+        catch (Exception error) when (error is FormatException or OverflowException)
         {
             _message.Text = $"Could not save: {error.Message}";
         }
