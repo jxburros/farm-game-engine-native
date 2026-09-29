@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="TestProjects.fs" />
     <Compile Include="JsonTests.fs" />
+    <Compile Include="SchemaRecordTests.fs" />
     <Compile Include="MigrationTests.fs" />
     <Compile Include="DocumentTests.fs" />
     <Compile Include="SceneEditTests.fs" />

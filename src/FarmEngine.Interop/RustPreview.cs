@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmEngine.Interop;
@@ -39,7 +39,7 @@ public sealed class RustPreview : IDisposable
             throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
         }
 
-        var json = JsonSerializer.SerializeToUtf8Bytes(project, JsonDefaults.Options);
+        var json = RecordJson.ToUtf8(project);
         unsafe
         {
             fixed (byte* ptr = json)
@@ -62,7 +62,7 @@ public sealed class RustPreview : IDisposable
     public void SetProject(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var json = JsonSerializer.SerializeToUtf8Bytes(project, JsonDefaults.Options);
+        var json = RecordJson.ToUtf8(project);
         unsafe
         {
             ObjectDisposedException.ThrowIf(_handle == null, this);
@@ -83,7 +83,7 @@ public sealed class RustPreview : IDisposable
     public PreviewFrame Render(string sceneId, double tileSize = 28, double padding = 12, PreviewCamera? camera = null, double scale = 1)
     {
         ArgumentNullException.ThrowIfNull(sceneId);
-        var request = JsonSerializer.SerializeToUtf8Bytes(new { sceneId, tileSize, padding, camera, scale }, JsonDefaults.Options);
+        var request = JsonSerializer.SerializeToUtf8Bytes(new { sceneId, tileSize, padding, camera, scale }, InteropJson.Options);
         unsafe
         {
             ObjectDisposedException.ThrowIf(_handle == null, this);
@@ -106,7 +106,7 @@ public sealed class RustPreview : IDisposable
     /// </summary>
     public PreviewFrame RenderVisual(VisualRef? visual, double tick, double size, double scale = 1, string direction = "down", bool moving = true)
     {
-        var request = JsonSerializer.SerializeToUtf8Bytes(new { visual, tick, size, scale, direction, moving }, JsonDefaults.Options);
+        var request = JsonSerializer.SerializeToUtf8Bytes(new { visual, tick, size, scale, direction, moving }, InteropJson.Options);
         unsafe
         {
             ObjectDisposedException.ThrowIf(_handle == null, this);

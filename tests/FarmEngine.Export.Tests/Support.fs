@@ -30,7 +30,7 @@ type TempDir() =
 let v8Project () : GameProject =
     let result = ProjectMigrations.migrateProjectText (File.ReadAllText(fixture "project-v8.json"))
     Assert.True(result.Ok, String.Join("\n", result.Errors))
-    result.Data
+    result.Data.Value
 
 let starter () = ProjectCatalog.CreateInitialProject(0.0)
 
@@ -98,14 +98,11 @@ let dataUrl (png: byte[]) = "data:image/png;base64," + Convert.ToBase64String pn
 
 let asset (id: string) (png: byte[]) : CustomAsset =
     let width, height = pngSize png
-    CustomAsset(Id = id, Name = id, Type = CustomAssetTypes.Art, Width = Nullable(float width), Height = Nullable(float height), DataUrl = dataUrl png)
+    { CustomAsset.Default with Id = id; Name = id; Type = CustomAssetTypes.Art; Width = Some(float width); Height = Some(float height); DataUrl = dataUrl png }
 
 let withAssets (assets: CustomAsset list) (project: GameProject) =
-    Records.withValue project "CustomAssets" (box (Collections.Generic.List<CustomAsset>(Seq.append project.CustomAssets assets)))
+    { project with CustomAssets = project.CustomAssets @ assets }
 
 let withExport (change: ExportSettings -> ExportSettings) (project: GameProject) =
-    let settings =
-        match project.Export with
-        | null -> Defaults.newExportSettings project
-        | s -> s
-    Records.withValue project "Export" (box (change settings))
+    let settings = project.Export |> Option.defaultWith (fun () -> Defaults.newExportSettings project)
+    { project with Export = Some(change settings) }

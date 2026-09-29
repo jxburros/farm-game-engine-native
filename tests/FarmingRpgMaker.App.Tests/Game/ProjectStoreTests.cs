@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -37,7 +38,7 @@ public sealed class ProjectStoreTests
         var store = new ProjectStore(dir.Path);
         var project = FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "First", "proj-a", 0);
         store.Save(project);
-        store.Save(project with { Name = "Second" });
+        store.Save(project.WithName("Second"));
 
         var files = Directory.GetFiles(Path.Combine(dir.Path, "projects"));
         Assert.Equal(["index.json", "proj-a.json"], files.Select(Path.GetFileName).Order(StringComparer.Ordinal));

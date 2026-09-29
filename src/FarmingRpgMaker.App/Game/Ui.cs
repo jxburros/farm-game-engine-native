@@ -166,9 +166,9 @@ internal static class Ui
     }
 
     /// <summary>Money like the web UI (<c>$123</c>).</summary>
-    public static string Money(double amount) => "$" + FarmEngine.Json.Js.Num(amount);
+    public static string Money(double amount) => "$" + FarmEngine.Authoring.JsNumber.format(amount);
 
-    public static string Num(double value) => FarmEngine.Json.Js.Num(value);
+    public static string Num(double value) => FarmEngine.Authoring.JsNumber.format(value);
 
     /// <summary>"spring" → "Spring" (CSS <c>capitalize</c>).</summary>
     public static string Capitalize(string? text) =>

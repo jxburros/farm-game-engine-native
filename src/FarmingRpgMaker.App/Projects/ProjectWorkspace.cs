@@ -1,5 +1,6 @@
 using Avalonia.Threading;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Projects;
@@ -125,7 +126,7 @@ public sealed class ProjectWorkspace
     {
         ArgumentNullException.ThrowIfNull(project);
         FlushPendingSave();
-        var opened = project with { Mode = project.Mode == "play" ? "tiles" : project.Mode };
+        var opened = project.WithMode(project.Mode == "play" ? "tiles" : project.Mode);
         _document = Documents.Create(opened);
         if (save || !Store.Exists(project.Id))
         {
@@ -212,7 +213,7 @@ public sealed class ProjectWorkspace
     public void KeepPlaytestResult(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var kept = project with { Mode = "tiles" };
+        var kept = project.WithMode("tiles");
         _document = _document is { } document
             ? Documents.Apply(document, Edits.ReplaceProject(kept))
             : Documents.Create(kept);

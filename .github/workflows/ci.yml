@@ -142,6 +142,17 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --results-directory TestResults
 
+      # The authoring core must stay Fable-safe (docs/LANGUAGES.md "Phase 7"): compile it to
+      # JavaScript and check the result against the .NET cartridges and migration goldens.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Authoring core under Fable (JavaScript)
+        run: |
+          tools/fable/build.sh
+          node tools/fable/smoke.mjs
+
       # farmc finds the linux-x64 template the build put in its players/ folder.
       - name: Export a sample game and run it (linux-x64)
         run: |

@@ -23,8 +23,8 @@ let private load (projectPath: string) : Result<GameProject, string list> =
     if not migrated.Ok then Error(List.ofSeq migrated.Errors)
     else
         match migrated.Data with
-        | null -> Error [ "Migration succeeded without project data." ]
-        | project -> Ok project
+        | None -> Error [ "Migration succeeded without project data." ]
+        | Some project -> Ok project
 
 type private ExportArgs =
     { Project: string option

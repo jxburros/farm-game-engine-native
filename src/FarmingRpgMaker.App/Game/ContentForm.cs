@@ -3,15 +3,18 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FarmEngine.Authoring;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
+using FarmEngine.Interop;
 using FarmEngine.Schemas;
+using Microsoft.FSharp.Core;
+using Microsoft.FSharp.Collections;
+using Microsoft.FSharp.Reflection;
 
 namespace FarmingRpgMaker.App.Game;
 
@@ -44,7 +47,7 @@ internal sealed class ContentForm
         _entityType = entityType;
         _root = root;
         _report = report;
-        Draft = JsonSerializer.SerializeToNode(entity, entityType, JsonDefaults.Options) as JsonObject
+        Draft = RecordJson.ToNode(entity, entityType) as JsonObject
             ?? throw new InvalidOperationException("Content did not serialize to an object.");
         Rebuild();
     }
@@ -59,8 +62,14 @@ internal sealed class ContentForm
     {
         var errors = Flush();
         if (errors.Count > 0) throw new FormatException(string.Join(" ", errors));
-        return JsonSerializer.Deserialize(Draft.ToJsonString(JsonDefaults.Options), _entityType, JsonDefaults.Options)
-            ?? throw new JsonException("Content is empty.");
+        try
+        {
+            return RecordJson.FromNode(Draft, _entityType);
+        }
+        catch (FormatException error)
+        {
+            throw new JsonException(error.Message, error);
+        }
     }
 
     // ---- Draft bookkeeping ----
@@ -117,9 +126,9 @@ internal sealed class ContentForm
     {
         try
         {
-            return JsonSerializer.Deserialize(Draft.ToJsonString(JsonDefaults.Options), _entityType, JsonDefaults.Options) ?? _entity;
+            return RecordJson.FromNode(Draft, _entityType);
         }
-        catch (JsonException)
+        catch (FormatException)
         {
             return _entity;
         }
@@ -138,31 +147,37 @@ internal sealed class ContentForm
 
     // ---- Reflection over the schema records (display only) ----
 
+    /// <summary>A record's fields in declaration order, without the undeclared-keys bag.</summary>
     private static IEnumerable<PropertyInfo> FormProperties(Type type) =>
-        type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
-            .Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
-            .Where(property => property.GetCustomAttribute<JsonIgnoreAttribute>() is not { Condition: JsonIgnoreCondition.Always });
+        FSharpType.GetRecordFields(type, null).Where(property => property.Name != "Extra");
 
-    private static string JsonKey(PropertyInfo property) =>
-        property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? JsonNamingPolicy.CamelCase.ConvertName(property.Name);
+    private static string JsonKey(Type owner, PropertyInfo property) => RecordJson.JsonKey(owner, property.Name);
 
-    private static bool IsNullable(PropertyInfo property) =>
-        Nullable.GetUnderlyingType(property.PropertyType) is not null
-        || (!property.PropertyType.IsValueType && new NullabilityInfoContext().Create(property).WriteState == NullabilityState.Nullable);
+    private static bool IsOption(Type type) => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FSharpOption<>);
+
+    /// <summary><c>T option</c> → <c>T</c>; <c>float option option</c> (absent, null or a number) stays as it is.</summary>
+    private static Type Unwrap(Type type) => IsOption(type) && !IsOption(type.GetGenericArguments()[0]) ? type.GetGenericArguments()[0] : type;
+
+    private static bool IsNullable(PropertyInfo property) => IsOption(property.PropertyType);
+
+    /// <summary><c>float option option</c>: absent, null or a number.</summary>
+    private static bool IsOptionalNullableNumber(Type type) => IsOption(type) && IsOption(type.GetGenericArguments()[0]) && IsNumber(type.GetGenericArguments()[0].GetGenericArguments()[0]);
 
     private static bool IsNumber(Type type) => type == typeof(double) || type == typeof(int) || type == typeof(float) || type == typeof(long);
 
     private static Type? ListElement(Type type) =>
-        type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) ? type.GetGenericArguments()[0] : null;
+        type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FSharpList<>) ? type.GetGenericArguments()[0] : null;
 
-    private static bool IsJsonDictionary(Type type) =>
-        type.IsGenericType && type.GetGenericArguments() is [var key, var value] && key == typeof(string) && value == typeof(JsonElement)
-        && typeof(System.Collections.IDictionary).IsAssignableFrom(type);
+    /// <summary>An ordered map of JSON values: <c>(string * Json) list</c>.</summary>
+    private static bool IsJsonDictionary(Type type) => type == typeof(FSharpList<Tuple<string, Json>>);
 
     private static bool IsRecord(Type type) =>
-        type.IsClass && type != typeof(string) && !type.IsAbstract && type.Namespace == typeof(GameProject).Namespace
-        && type.GetConstructor(Type.EmptyTypes) is not null;
+        type.Namespace == typeof(GameProject).Namespace && FSharpType.IsRecord(type, null);
+
+    /// <summary>A record at its schema defaults (<c>Record.Default</c>).</summary>
+    private static object DefaultOf(Type type) =>
+        type.GetProperty("Default", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+        ?? throw new InvalidOperationException($"Cannot create a {type.Name}.");
 
     private static string? StringOf(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
@@ -206,10 +221,10 @@ internal sealed class ContentForm
 
     private void AddProperty(Panel panel, JsonObject target, Type owner, PropertyInfo property, string path)
     {
-        var key = JsonKey(property);
-        var label = Title(property.PropertyType == typeof(OptionalNullableNumber) && property.Name.EndsWith("Field", StringComparison.Ordinal) ? property.Name[..^5] : property.Name);
+        var key = JsonKey(owner, property);
+        var label = Title(property.Name);
         var name = "ContentField_" + path;
-        var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        var type = Unwrap(property.PropertyType);
         var nullable = IsNullable(property);
         var field = ContentForms.Field(owner.Name, property.Name, label);
         if (field is { Kind: "reference" or "referenceList" }) label = TrimId(label);
@@ -236,16 +251,17 @@ internal sealed class ContentForm
             return;
         }
 
-        if (IsNumber(type) || type == typeof(OptionalNullableNumber))
+        if (IsNumber(type) || IsOptionalNullableNumber(type))
         {
             panel.Children.Add(Label(label));
             panel.Children.Add(NumberControl(target, key, name, label, type == typeof(int) || type == typeof(long),
-                optional: nullable || type == typeof(OptionalNullableNumber), whenEmpty: 0, min: null, max: null));
+                optional: nullable || IsOptionalNullableNumber(type), whenEmpty: 0, min: null, max: null));
             return;
         }
 
         var body = new StackPanel { Spacing = 8 };
-        if (ListElement(type) is { } element)
+        if (IsJsonDictionary(type)) AddKeyValues(body, target, key, path);
+        else if (ListElement(type) is { } element)
         {
             if (element == typeof(string))
             {
@@ -257,7 +273,6 @@ internal sealed class ContentForm
             else if (element == typeof(EventOutcome)) AddOutcomes(body, target, key, path);
             else if (IsRecord(element)) AddRecordList(body, target, key, path, element, nullable);
         }
-        else if (IsJsonDictionary(type)) AddKeyValues(body, target, key, path);
         else if (IsRecord(type)) AddNested(body, target, key, path, type, nullable, label);
 
         AddJsonEscape(body, target, key, path, label, nullable);
@@ -458,10 +473,8 @@ internal sealed class ContentForm
     private JsonNode NewElementNode(Type element, JsonArray siblings)
     {
         var ids = siblings.OfType<JsonObject>().Select(sibling => StringOf(sibling["id"])).OfType<string>().ToList();
-        var created = ContentForms.NewElement(element.Name, _project, CurrentEntity(), ids)
-            ?? Activator.CreateInstance(element)
-            ?? throw new InvalidOperationException($"Cannot create a {element.Name}.");
-        return JsonSerializer.SerializeToNode(created, element, JsonDefaults.Options) ?? new JsonObject();
+        var created = ContentForms.NewElement(element.Name, _project, CurrentEntity(), ids) ?? DefaultOf(element);
+        return RecordJson.ToNode(created, element);
     }
 
     private void AddNested(Panel panel, JsonObject target, string key, string path, Type type, bool nullable, string label)
@@ -474,10 +487,8 @@ internal sealed class ContentForm
             {
                 if (include.IsChecked == true)
                 {
-                    var created = ContentForms.NewElement(type.Name, _project, CurrentEntity(), [])
-                        ?? Activator.CreateInstance(type)
-                        ?? throw new InvalidOperationException($"Cannot create a {type.Name}.");
-                    target[key] = JsonSerializer.SerializeToNode(created, type, JsonDefaults.Options);
+                    var created = ContentForms.NewElement(type.Name, _project, CurrentEntity(), []) ?? DefaultOf(type);
+                    target[key] = RecordJson.ToNode(created, type);
                 }
                 else target[key] = null;
             });
@@ -661,7 +672,7 @@ internal sealed class ContentForm
             picker.SelectionChanged += (_, _) =>
             {
                 if (SelectedId(picker) is { } next && next != type)
-                    Structural(() => array[index] = JsonSerializer.SerializeToNode(ContentForms.DefaultCondition(next, _project), typeof(EventCondition), JsonDefaults.Options));
+                    Structural(() => array[index] = RecordJson.ToNode(ContentForms.DefaultCondition(next, _project), typeof(EventCondition)));
             };
             var header = RowHeader(picker, RowButtons(path, i, array.Count, array, target, key, nullable: false, "condition"));
             panel.Children.Add(ListRow(header, VocabularyFields(condition, ContentForms.ConditionFields(type), $"{path}_{i}")));
@@ -671,7 +682,7 @@ internal sealed class ContentForm
         add.SelectionChanged += (_, _) =>
         {
             if (SelectedId(add) is { } type)
-                Structural(() => EnsureArray(target, key).Add(JsonSerializer.SerializeToNode(ContentForms.DefaultCondition(type, _project), typeof(EventCondition), JsonDefaults.Options)));
+                Structural(() => EnsureArray(target, key).Add(RecordJson.ToNode(ContentForms.DefaultCondition(type, _project), typeof(EventCondition))));
         };
         panel.Children.Add(add);
     }
@@ -688,7 +699,7 @@ internal sealed class ContentForm
             picker.SelectionChanged += (_, _) =>
             {
                 if (SelectedId(picker) is { } next && next != type)
-                    Structural(() => array[index] = JsonSerializer.SerializeToNode(ContentForms.DefaultOutcome(next), JsonDefaults.Options));
+                    Structural(() => array[index] = RecordJson.ToNode(ContentForms.DefaultOutcome(next)));
             };
             var title = Ui.HStack(8, Ui.Text($"{i + 1}.", "category"), picker);
             var header = RowHeader(title, RowButtons(path, i, array.Count, array, target, key, nullable: false, "outcome"));
@@ -699,7 +710,7 @@ internal sealed class ContentForm
         add.SelectionChanged += (_, _) =>
         {
             if (SelectedId(add) is { } type)
-                Structural(() => EnsureArray(target, key).Add(JsonSerializer.SerializeToNode(ContentForms.DefaultOutcome(type), JsonDefaults.Options)));
+                Structural(() => EnsureArray(target, key).Add(RecordJson.ToNode(ContentForms.DefaultOutcome(type))));
         };
         panel.Children.Add(add);
     }
@@ -750,7 +761,7 @@ internal sealed class ContentForm
 
     private void AddJsonEscape(Panel panel, JsonObject target, string key, string path, string label, bool nullable)
     {
-        var text = target[key]?.ToJsonString(JsonDefaults.Indented) ?? "null";
+        var text = target[key]?.ToJsonString(InteropJson.Indented) ?? "null";
         var box = new TextBox
         {
             Name = $"ContentJson_{path}",

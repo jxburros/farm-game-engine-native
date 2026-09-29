@@ -454,7 +454,7 @@ module Json =
 
     exception private ParseFailure of string
 
-    /// Parses JSON text (`JSON.parse`, plus `//` and `/* */` comments and trailing commas, which
+    /// Parses JSON text (`JSON.parse`, plus line and block comments and trailing commas, which
     /// hand-edited project files sometimes carry). Duplicate keys keep the last value in the
     /// first key's position, like a JS object.
     let parse (text: string) : Result<Json, string> =

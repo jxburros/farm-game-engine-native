@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -91,7 +92,7 @@ public sealed class ArtEditorView : UserControl
         left.Children.Add(svgSize);
         left.Children.Add(_assets);
         left.Children.Add(_pixelArt);
-        _pixelArt.Click += (_, _) => _workspace.Apply(Edits.SetGraphics(new GraphicsSettings { PixelArt = _pixelArt.IsChecked == true }));
+        _pixelArt.Click += (_, _) => _workspace.Apply(Edits.SetGraphics(GraphicsSettings.Default.WithPixelArt(_pixelArt.IsChecked == true)));
         left.Children.Add(_message);
 
         var right = new StackPanel { Spacing = 10 };
@@ -161,7 +162,7 @@ public sealed class ArtEditorView : UserControl
     private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{box.Name} must be a positive whole number.");
     private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{box.Name} must be zero or more.");
     private CustomAsset? SelectedAsset() => _workspace.Current?.CustomAssets.FirstOrDefault(asset => asset.Id == _selectedAssetId);
-    private AnimationClip? SelectedClip() => SelectedAsset()?.Animations?.FirstOrDefault(clip => clip.Name == (_clips.SelectedItem as ComboBoxItem)?.Tag as string);
+    private AnimationClip? SelectedClip() => SelectedAsset()?.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == (_clips.SelectedItem as ComboBoxItem)?.Tag as string);
 
     /// <summary>The asset being edited, or null.</summary>
     public string? SelectedAssetId => _selectedAssetId;
@@ -232,7 +233,7 @@ public sealed class ArtEditorView : UserControl
             foreach (var asset in project.CustomAssets)
                 _assets.Items.Add(new ListBoxItem { Tag = asset.Id, Content = $"{asset.Name} · {asset.Width ?? 0}×{asset.Height ?? 0}" });
             _assets.SelectedItem = _assets.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedAssetId));
-            _pixelArt.IsChecked = project.Graphics?.PixelArt != false;
+            _pixelArt.IsChecked = project.Graphics.OrNull()?.PixelArt != false;
             var previousTarget = (_target.SelectedItem as ComboBoxItem)?.Tag;
             _target.Items.Clear();
             void Target(string label, string kind, string id) => _target.Items.Add(new ComboBoxItem { Content = label, Tag = (kind, id) });
@@ -240,7 +241,7 @@ public sealed class ArtEditorView : UserControl
             Target("Map brush", "tiles", "");
             foreach (var npc in project.Npcs) Target($"NPC · {npc.Name}", "npc", npc.Id);
             foreach (var item in project.Items) Target($"Item · {item.Name}", "item", item.Id);
-            foreach (var crop in project.CustomCrops ?? []) Target($"Crop · {crop.Name}", "crop", crop.Id);
+            foreach (var crop in project.CustomCrops.OrEmpty()) Target($"Crop · {crop.Name}", "crop", crop.Id);
             foreach (var node in project.NodeTypes) Target($"Node · {node.Name}", "node", node.Id);
             foreach (var animal in project.AnimalSpecies) Target($"Animal · {animal.Name}", "animal", animal.Id);
             foreach (var machine in project.MachineTypes) Target($"Machine · {machine.Name}", "machine", machine.Id);
@@ -269,7 +270,7 @@ public sealed class ArtEditorView : UserControl
         {
             _clips.SelectedItem = null;
             _clips.Items.Clear();
-            foreach (var clip in asset?.Animations ?? []) _clips.Items.Add(new ComboBoxItem { Tag = clip.Name, Content = clip.Name });
+            foreach (var clip in asset?.Animations.OrEmpty() ?? []) _clips.Items.Add(new ComboBoxItem { Tag = clip.Name, Content = clip.Name });
             _clips.SelectedItem = _clips.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, previousClip)) ?? _clips.Items.OfType<ComboBoxItem>().FirstOrDefault();
         }
         finally
@@ -285,7 +286,7 @@ public sealed class ArtEditorView : UserControl
         var asset = SelectedAsset();
         var project = _workspace.Current;
         if (asset is null || project is null) { _preview.Child = null; return; }
-        var visual = new VisualRef { AssetId = asset.Id, Animation = (_clips.SelectedItem as ComboBoxItem)?.Tag as string };
+        var visual = VisualRef.Default.WithAssetId(asset.Id).WithAnimation((_clips.SelectedItem as ComboBoxItem)?.Tag as string);
         // The Rust renderer resolves and draws the frame, exactly as the game will show it.
         _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
     }
@@ -295,7 +296,7 @@ public sealed class ArtEditorView : UserControl
         _frames.Children.Clear();
         var clip = SelectedClip();
         if (clip is null) return;
-        for (var index = 0; index < clip.Frames.Count; index++)
+        for (var index = 0; index < clip.Frames.Length; index++)
         {
             var i = index;
             var frame = clip.Frames[i];
@@ -317,21 +318,21 @@ public sealed class ArtEditorView : UserControl
                 if (SelectedAsset() is { } asset) _workspace.Apply(Edits.DuplicateFrame(asset.Id, clip.Name, i));
             }, "tool", "small");
             duplicate.Name = $"ArtFrameDuplicate_{i}";
-            duplicate.IsEnabled = clip.Frames.Count < 1024;
+            duplicate.IsEnabled = clip.Frames.Length < 1024;
             ToolTip.SetTip(duplicate, "Duplicate this frame");
             var up = Ui.Button("↑", () =>
             {
                 if (i == 0) return;
                 var frames = clip.Frames.ToList();
                 (frames[i - 1], frames[i]) = (frames[i], frames[i - 1]);
-                SaveClip(clip with { Frames = frames });
+                SaveClip(clip.WithFrames(frames));
             }, "tool", "small");
             up.IsEnabled = i > 0;
             var remove = Ui.Button("×", () =>
             {
                 var frames = clip.Frames.Where((_, n) => n != i).ToList();
                 if (frames.Count == 0) RemoveClip();
-                else SaveClip(clip with { Frames = frames });
+                else SaveClip(clip.WithFrames(frames));
             }, "tool", "small");
             _frames.Children.Add(Ui.Row(label, ticks, setTicks, duplicate, up, remove));
         }
@@ -340,8 +341,8 @@ public sealed class ArtEditorView : UserControl
     private void SaveClip(AnimationClip clip)
     {
         if (SelectedAsset() is not { } asset) return;
-        var clips = (asset.Animations ?? []).Where(existing => existing.Name != clip.Name).Append(clip).ToList();
-        _workspace.Apply(Edits.UpsertAsset(asset with { Animations = clips }));
+        var clips = asset.Animations.OrEmpty().Where(existing => existing.Name != clip.Name).Append(clip).ToList();
+        _workspace.Apply(Edits.UpsertAsset(asset.WithAnimations(clips)));
         _clips.SelectedItem = _clips.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, clip.Name));
     }
 
@@ -356,11 +357,11 @@ public sealed class ArtEditorView : UserControl
             var name = _clipName.Text?.Trim() ?? "";
             if (name.Length == 0) throw new FormatException("Give the clip a name.");
             var frames = new List<ArtFrame>();
-            for (var y = 0; y + height <= asset.Height; y += height)
-                for (var x = 0; x + width <= asset.Width && frames.Count < 1024; x += width)
-                    frames.Add(new ArtFrame { X = x, Y = y, Width = width, Height = height, Ticks = ticks });
+            for (var y = 0; y + height <= asset.Height.Or(0); y += height)
+                for (var x = 0; x + width <= asset.Width.Or(0) && frames.Count < 1024; x += width)
+                    frames.Add(ArtFrame.Default.WithX(x).WithY(y).WithWidth(width).WithHeight(height).WithTicks(ticks));
             if (frames.Count == 0) throw new FormatException("No complete frames fit the image.");
-            SaveClip(new AnimationClip { Name = name, Loop = _loop.IsChecked == true, Frames = frames });
+            SaveClip(AnimationClip.Default.WithName(name).WithLoop(_loop.IsChecked == true).WithFrames(frames));
             _message.Text = $"Sliced {frames.Count} frames into {name}.";
         }
         catch (FormatException error) { _message.Text = error.Message; }
@@ -377,12 +378,12 @@ public sealed class ArtEditorView : UserControl
             var y = Nonnegative(_frameY);
             var ticks = Positive(_frameTicks);
             var name = _clipName.Text?.Trim() ?? "";
-            if (name.Length == 0 || x + width > asset.Width || y + height > asset.Height) throw new FormatException("Frame needs a name and must fit within the image.");
-            var existing = asset.Animations?.FirstOrDefault(clip => clip.Name == name);
+            if (name.Length == 0 || x + width > asset.Width.Or(0) || y + height > asset.Height.Or(0)) throw new FormatException("Frame needs a name and must fit within the image.");
+            var existing = asset.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == name);
             var frames = existing?.Frames.ToList() ?? [];
             if (frames.Count >= 1024) throw new FormatException("A clip may contain at most 1024 frames.");
-            frames.Add(new ArtFrame { X = x, Y = y, Width = width, Height = height, Ticks = ticks });
-            SaveClip(new AnimationClip { Name = name, Loop = _loop.IsChecked == true, Frames = frames });
+            frames.Add(ArtFrame.Default.WithX(x).WithY(y).WithWidth(width).WithHeight(height).WithTicks(ticks));
+            SaveClip(AnimationClip.Default.WithName(name).WithLoop(_loop.IsChecked == true).WithFrames(frames));
             _message.Text = $"Added frame to {name}.";
         }
         catch (FormatException error) { _message.Text = error.Message; }
@@ -402,13 +403,13 @@ public sealed class ArtEditorView : UserControl
     private void RemoveClip()
     {
         if (SelectedAsset() is not { } asset || SelectedClip() is not { } clip) return;
-        _workspace.Apply(Edits.UpsertAsset(asset with { Animations = asset.Animations?.Where(other => other.Name != clip.Name).ToList() }));
+        _workspace.Apply(Edits.UpsertAsset(asset.WithAnimations(asset.Animations.OrEmpty().Where(other => other.Name != clip.Name).ToList())));
     }
 
     private void RenameAsset()
     {
         if (SelectedAsset() is not { } asset || string.IsNullOrWhiteSpace(_assetName.Text)) return;
-        _workspace.Apply(Edits.UpsertAsset(asset with { Name = _assetName.Text.Trim() }));
+        _workspace.Apply(Edits.UpsertAsset(asset.WithName(_assetName.Text.Trim())));
     }
 
     private void RemoveAsset()
@@ -427,7 +428,7 @@ public sealed class ArtEditorView : UserControl
         _bindingClip.SelectedItem = null;
         _bindingClip.Items.Clear();
         _bindingClip.Items.Add(new ComboBoxItem { Content = "Automatic", Tag = "" });
-        foreach (var clip in asset?.Animations ?? []) _bindingClip.Items.Add(new ComboBoxItem { Content = clip.Name, Tag = clip.Name });
+        foreach (var clip in asset?.Animations.OrEmpty() ?? []) _bindingClip.Items.Add(new ComboBoxItem { Content = clip.Name, Tag = clip.Name });
         _bindingClip.SelectedItem = _bindingClip.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, previous)) ?? _bindingClip.Items[0];
     }
 
@@ -452,11 +453,11 @@ public sealed class ArtEditorView : UserControl
                 var size = Positive(_cellSize);
                 var x = Nonnegative(_cellColumn) * size;
                 var y = Nonnegative(_cellRow) * size;
-                if (x + size > asset.Width || y + size > asset.Height) throw new FormatException("That cell extends beyond the image.");
-                frame = new ArtFrame { X = x, Y = y, Width = size, Height = size, Ticks = 6 };
+                if (x + size > asset.Width.Or(0) || y + size > asset.Height.Or(0)) throw new FormatException("That cell extends beyond the image.");
+                frame = ArtFrame.Default.WithX(x).WithY(y).WithWidth(size).WithHeight(size).WithTicks(6);
             }
             var clip = (_bindingClip.SelectedItem as ComboBoxItem)?.Tag as string;
-            var visual = new VisualRef { AssetId = assetId, Animation = string.IsNullOrEmpty(clip) ? null : clip, Frame = frame };
+            var visual = VisualRef.Default.WithAssetId(assetId).WithAnimation(string.IsNullOrEmpty(clip) ? null : clip).WithFrame(frame);
             var edit = target.Item1 switch
             {
                 "player" => Edits.BindPlayerVisual(visual),

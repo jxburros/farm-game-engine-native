@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmEngine.Interop;
@@ -37,7 +37,7 @@ public sealed class RustSession : IDisposable
             throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
         }
 
-        var projectJson = JsonSerializer.SerializeToUtf8Bytes(project, JsonDefaults.Options);
+        var projectJson = RecordJson.ToUtf8(project);
         return CreateFromBytes(projectJson, seed, autoStartQuests);
     }
 
@@ -99,7 +99,7 @@ public sealed class RustSession : IDisposable
     public JsonArray Apply(params object[] commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        return Apply(JsonSerializer.Serialize(commands, JsonDefaults.Options));
+        return Apply(JsonSerializer.Serialize(commands, InteropJson.Options));
     }
 
     /// <summary>Advances simulation ticks and returns their effects as a JSON array.</summary>
@@ -154,7 +154,7 @@ public sealed class RustSession : IDisposable
         {
             NativeMethods.FeBytes output;
             var json = Check(NativeMethods.fe_session_project_json(_handle, &output), output, nameof(SyncedProject));
-            return JsonSerializer.Deserialize<GameProject>(json, JsonDefaults.Options)!;
+            return RecordJson.Parse<GameProject>(json);
         }
     }
 
@@ -219,7 +219,7 @@ public sealed class RustSession : IDisposable
             {
                 NativeMethods.FeBytes output;
                 var json = Check(NativeMethods.fe_session_load_save(_handle, ptr, (nuint)bytes.Length, &output), output, nameof(LoadSave));
-                return JsonSerializer.Deserialize<SaveLoadReport>(json, JsonDefaults.Options)!;
+                return JsonSerializer.Deserialize<SaveLoadReport>(json, InteropJson.Options)!;
             }
         }
     }

@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using FarmEngine.Authoring;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -32,9 +32,9 @@ public sealed class ContentEditorView : UserControl
     private static readonly Category[] Categories =
     [
         Of("NPCs", p => p.Npcs, p => Defaults.NewNpc(p, "New NPC"), Edits.UpsertNpc, Edits.RemoveNpc),
-        Of("Dialogue", p => p.Dialogues, p => p.Npcs.Count > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
+        Of("Dialogue", p => p.Dialogues, p => p.Npcs.Length > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
         Of("Items", p => p.Items, Defaults.NewItem, Edits.UpsertItem, Edits.RemoveItem),
-        Of("Crops", p => p.CustomCrops ?? [], Defaults.NewCrop, Edits.UpsertCrop, Edits.RemoveCrop),
+        Of("Crops", p => p.CustomCrops.OrEmpty(), Defaults.NewCrop, Edits.UpsertCrop, Edits.RemoveCrop),
         Of("Quests", p => p.Quests, Defaults.NewQuest, Edits.UpsertQuest, Edits.RemoveQuest),
         Of("Events", p => p.Events, Defaults.NewEvent, Edits.UpsertEvent, Edits.RemoveEvent),
         Of("Shops", p => p.Shops, Defaults.NewShop, Edits.UpsertShop, Edits.RemoveShop),

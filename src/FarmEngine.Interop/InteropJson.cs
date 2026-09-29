@@ -2,16 +2,17 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace FarmEngine.Json;
+namespace FarmEngine.Interop;
 
 /// <summary>
-/// Serializer settings shared by every persisted shape. Property names are
+/// Serializer settings for the JSON the Interop layer exchanges with farm-ffi besides the schema
+/// records (which go through <c>RecordJson</c>): requests, commands, frame info and answers. Property names are
 /// camelCase so project/save JSON is interchangeable with the web version;
 /// <c>null</c> means "absent" (TS <c>undefined</c>) and is omitted, except
 /// for properties annotated <c>[JsonIgnore(Condition = Never)]</c> which
 /// mirror zod <c>.nullable()</c> fields that are present-as-null.
 /// </summary>
-public static class JsonDefaults
+public static class InteropJson
 {
     public static readonly JsonSerializerOptions Options = Create(indented: false);
     public static readonly JsonSerializerOptions Indented = Create(indented: true);

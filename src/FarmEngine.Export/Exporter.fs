@@ -82,19 +82,16 @@ module Exporter =
         | s -> s
 
     let identity (project: GameProject) : GameIdentity =
-        let settings =
-            match project.Export with
-            | null -> Defaults.newExportSettings project
-            | settings -> settings
-        let title = match settings.Title with null -> project.Name | value -> value
-        let version = match settings.Version with null -> project.Version | value -> value
+        let settings = project.Export |> Option.defaultWith (fun () -> Defaults.newExportSettings project)
+        let title = defaultArg settings.Title project.Name
+        let version = defaultArg settings.Version project.Version
         { Title = title
-          ExecutableName = (match settings.ExecutableName with null -> Defaults.slugId title Seq.empty "game" | value -> value)
+          ExecutableName = (match settings.ExecutableName with None -> Defaults.slugId title Seq.empty "game" | Some value -> value)
           Version = version
           GameId = settings.GameId
-          Company = orNull settings.Company
-          Author = orNull settings.Author
-          IconAssetId = orNull settings.IconAssetId
+          Company = orNull (Option.toObj settings.Company)
+          Author = orNull (Option.toObj settings.Author)
+          IconAssetId = orNull (Option.toObj settings.IconAssetId)
           Targets = List.ofSeq settings.Targets }
 
     /// Problems errors (block export) and warnings, plus unused assets, as report lines.
@@ -104,7 +101,7 @@ module Exporter =
         let unused = AssetUsage.unused project
         let assetWarnings =
             [ for asset in unused ->
-                let index = project.CustomAssets.IndexOf asset
+                let index = project.CustomAssets |> List.findIndex (fun a -> obj.ReferenceEquals(a, asset) || a = asset)
                 sprintf "customAssets[%d]: Asset \"%s\" (%s) is not used by the game and is left out of it." index asset.Name asset.Id ]
         problems |> Problems.errors |> List.map line,
         (problems |> Problems.warnings |> List.map line) @ assetWarnings

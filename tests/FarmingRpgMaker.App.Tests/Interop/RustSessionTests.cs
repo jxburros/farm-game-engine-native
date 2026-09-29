@@ -1,10 +1,8 @@
 using System.Text.Json;
 using FarmEngine.Authoring;
-using FarmEngine.Cart;
 using FarmEngine.Interop;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
-using Google.FlatBuffers;
 
 namespace FarmingRpgMaker.App.Tests.Interop;
 
@@ -27,7 +25,7 @@ public sealed class RustSessionTests
 
         // The content golden records hashState(createGameState(project, "content:starter-farm")).
         using var golden = JsonDocument.Parse(File.ReadAllText(RepoFile("fixtures", "golden", "content", "starter-farm.json")));
-        var project = JsonDefaults.Deserialize<GameProject>(golden.RootElement.GetProperty("project").GetRawText())!;
+        var project = RecordJson.Parse<GameProject>(golden.RootElement.GetProperty("project").GetRawText());
         using var session = RustSession.Create(project, "content:starter-farm");
         Assert.Equal(golden.RootElement.GetProperty("stateHash").GetString(), session.StateHash());
         Assert.Equal(FarmFfi.HashText(session.StateJson()), session.StateHash());
@@ -37,21 +35,17 @@ public sealed class RustSessionTests
     [Fact]
     public void CompiledCartridgeRunsInRustAndUsesPersistentSaveIdentity()
     {
-        var project = Starter() with
-        {
-            Export = new ExportSettings { GameId = "local.test-farm", Version = "3.1.0", Title = "Test Farm" },
-        };
+        var project = Starter().WithExport(ExportSettings.Default.WithGameId("local.test-farm").WithVersion("3.1.0").WithTitle("Test Farm"));
         var bytes = CartridgeCompiler.Compile(project);
         Assert.Equal(bytes, CartridgeCompiler.Compile(project));
-        var buffer = new ByteBuffer(bytes);
-        Assert.True(Cartridge.CartridgeBufferHasIdentifier(buffer));
-        var cart = Cartridge.GetRootAsCartridge(buffer);
+        Assert.True(CartridgeReader.hasIdentifier(bytes));
+        var cart = CartridgeReader.read(bytes).ResultValue;
         Assert.Equal(2u, cart.CartFormat);
-        Assert.NotEmpty(cart.GetStartJsonArray());
-        Assert.NotEmpty(cart.GetPresentationJsonArray());
-        Assert.Equal("local.test-farm", cart.Info!.Value.GameId);
-        Assert.Equal("3.1.0", cart.Info.Value.Version);
-        Assert.NotEmpty(cart.GetContentJsonArray());
+        Assert.NotEmpty(cart.StartJson);
+        Assert.NotEmpty(cart.PresentationJson);
+        Assert.Equal("local.test-farm", cart.Info.GameId);
+        Assert.Equal("3.1.0", cart.Info.Version);
+        Assert.NotEmpty(cart.ContentJson);
 
         if (!FarmFfi.IsAvailable) return;
         using var fromCart = RustSession.CreateCartridge(bytes, "parity");
@@ -78,9 +72,9 @@ public sealed class RustSessionTests
     {
         var project = ProjectCatalog.CreateProjectForTemplate(template, 0);
         var bytes = CartridgeCompiler.Compile(project);
-        var cart = Cartridge.GetRootAsCartridge(new ByteBuffer(bytes));
-        var content = JsonSerializer.Deserialize<GameContent>(cart.GetContentJsonArray(), JsonDefaults.Options)!;
-        Assert.Equal(StableJson.Stringify(ProjectContent.Compile(project)), StableJson.Stringify(content));
+        var cart = CartridgeReader.read(bytes).ResultValue;
+        var content = RecordJson.Parse<GameContent>(cart.ContentJson);
+        Assert.Equal(RecordJson.ToStableText(ProjectContent.Compile(project)), RecordJson.ToStableText(content));
         Assert.Equal(bytes, CartridgeCompiler.Compile(project));
         if (!FarmFfi.IsAvailable) return;
 
@@ -127,7 +121,7 @@ public sealed class RustSessionTests
         Assert.False(report.Migrated);
 
         // A save from another game is refused and the state stays put.
-        using var other = RustSession.Create(project with { Id = "another-game" }, "save");
+        using var other = RustSession.Create(project.WithId("another-game"), "save");
         var ex = Assert.Throws<FarmFfiException>(() => session.LoadSave(other.Save()));
         Assert.Contains("different game", ex.Message, StringComparison.Ordinal);
         Assert.Equal(before, session.StateHash());
@@ -150,8 +144,8 @@ public sealed class RustSessionTests
         }
 
         // A project whose scenes are not a list cannot be a GameProject.
-        var broken = JsonDocument.Parse("""{"scenes": 5}""").RootElement;
-        var ex = Assert.Throws<FarmFfiException>(() => RustSession.Create(JsonSerializer.Deserialize<GameProject>("{}", JsonDefaults.Options)! with { Extra = new Dictionary<string, JsonElement> { ["scenes"] = broken.GetProperty("scenes") } }));
+        var broken = System.Text.Encoding.UTF8.GetBytes("""{"scenes": 5}""");
+        var ex = Assert.Throws<FarmFfiException>(() => RustSession.CreateCartridge(broken));
         Assert.Contains("fe_session_new failed", ex.Message, StringComparison.Ordinal);
     }
 

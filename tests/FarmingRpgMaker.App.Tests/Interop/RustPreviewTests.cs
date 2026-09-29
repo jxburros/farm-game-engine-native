@@ -1,3 +1,5 @@
+using FarmingRpgMaker.App;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Authoring;
 using FarmEngine.Interop;
 
@@ -31,11 +33,8 @@ public sealed class RustPreviewTests
         Assert.Equal(((int)Math.Ceiling(24 + (scene.Width * 29) - 1), (int)Math.Ceiling(24 + (scene.Height * 29) - 1)), (whole.Width, whole.Height));
 
         // A new project replaces the old one.
-        var flooded = scene with
-        {
-            Tiles = scene.Tiles.Select(row => row.Select(t => t with { Type = "water", Background = "water", Overlay = null, Object = null, Visuals = null }).ToList()).ToList(),
-        };
-        preview.SetProject(project with { Scenes = [.. project.Scenes.Select(s => s.Id == scene.Id ? flooded : s)] });
+        var flooded = scene.WithTiles(scene.Tiles.Select(row => row.Select(t => t.WithType("water").WithBackground("water").WithOverlay(null).WithObject(null).WithVisuals(null)).ToFSharpList()).ToList());
+        preview.SetProject(project.WithScenes([.. project.Scenes.Select(s => s.Id == scene.Id ? flooded : s)]));
         var water = preview.Render(scene.Id, 28, 12, camera, 2);
         Assert.Equal((frame.Width, frame.Height), (water.Width, water.Height));
         Assert.False(frame.Pixels.AsSpan().SequenceEqual(water.Pixels));
@@ -43,7 +42,7 @@ public sealed class RustPreviewTests
         Assert.False(preview.IsPoisoned);
 
         // A visual binding that resolves to no art draws nothing (the art studio shows a placeholder).
-        var missing = preview.RenderVisual(new FarmEngine.Schemas.VisualRef { AssetId = "no-such-asset" }, tick: 0, size: 32);
+        var missing = preview.RenderVisual(FarmEngine.Schemas.VisualRef.Default.WithAssetId("no-such-asset"), tick: 0, size: 32);
         Assert.Equal((0, 0), (missing.Width, missing.Height));
         var unbound = preview.RenderVisual(null, 0, 32);
         Assert.Equal((0, 0), (unbound.Width, unbound.Height));

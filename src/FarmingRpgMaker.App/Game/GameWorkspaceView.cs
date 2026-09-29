@@ -67,7 +67,7 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         _workspace.FlushPendingSave();
-        if (_workspace.Current.Scenes.Count == 0)
+        if (_workspace.Current.Scenes.Length == 0)
         {
             _shell.ShowStatus("This project has no scenes to play yet.");
             _shell.Mode = EditorMode.Edit;

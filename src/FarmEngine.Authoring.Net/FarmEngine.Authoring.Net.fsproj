@@ -9,6 +9,8 @@
   <ItemGroup>
     <Compile Include="JsonInterop.fs" />
     <Compile Include="ProjectMigrations.fs" />
+    <Compile Include="RecordJson.fs" />
+    <Compile Include="RecordWith.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />

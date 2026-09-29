@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -59,15 +60,16 @@ public sealed class ModsEditorView : UserControl
         _install.IsEnabled = false;
         try
         {
-            using var document = JsonDocument.Parse(json);
-            var validation = PacksSchema.ValidateContentPack(document.RootElement);
-            if (!validation.Ok || validation.Pack is null)
+            var parsed = JsonModule.parse(json);
+            if (parsed.IsError) throw new JsonException(parsed.ErrorValue);
+            var validation = PackRules.validateContentPack(parsed.ResultValue);
+            if (validation.IsError)
             {
-                _message.Text = $"Pack is invalid: {string.Join("; ", validation.Errors)}";
+                _message.Text = $"Pack is invalid: {string.Join("; ", validation.ErrorValue)}";
                 return;
             }
 
-            var pack = validation.Pack;
+            var pack = validation.ResultValue;
             if (_workspace.Current?.ContentPacks.Any(installation => installation.Pack.Manifest.Id == pack.Manifest.Id) == true)
             {
                 _message.Text = $"{pack.Manifest.Id} is already installed.";
@@ -80,13 +82,13 @@ public sealed class ModsEditorView : UserControl
             _review.Children.Add(Ui.Text($"{manifest.Name} · {manifest.Version}", "h2"));
             _review.Children.Add(Ui.Wrapped($"{manifest.Description ?? "No description"} · by {manifest.Author ?? "unknown author"}", "muted", "small"));
             _review.Children.Add(Ui.Wrapped($"Engine: {manifest.EngineCompatibility} · ID: {manifest.Id}", "muted", "small"));
-            _review.Children.Add(Ui.Wrapped($"Permissions: content injection {(manifest.Permissions.ContentInject ? "requested" : "off")}; UI panels {(manifest.Permissions.UiPanels ? "requested" : "off")}; hooks {(manifest.Permissions.Hooks.Count == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "small"));
-            if (manifest.Dependencies.Count > 0)
+            _review.Children.Add(Ui.Wrapped($"Permissions: content injection {(manifest.Permissions.ContentInject ? "requested" : "off")}; UI panels {(manifest.Permissions.UiPanels ? "requested" : "off")}; hooks {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "small"));
+            if (manifest.Dependencies.Length > 0)
                 _review.Children.Add(Ui.Wrapped($"Dependencies: {string.Join(", ", manifest.Dependencies.Select(dep => $"{dep.PackId} {dep.Version ?? "*"}"))}", "muted", "small"));
-            if (manifest.Overrides.Count > 0)
+            if (manifest.Overrides.Length > 0)
                 _review.Children.Add(Ui.Wrapped($"Overrides: {string.Join(", ", manifest.Overrides)}", "muted", "small"));
             var content = pack.Content;
-            _review.Children.Add(Ui.Wrapped($"Content: {content.Items.Count} items, {content.Npcs.Count} NPCs, {content.Scenes.Count} scenes, {content.Recipes.Count} recipes, {content.Quests.Count} quests, {pack.Plugins.Count} plugins", "small"));
+            _review.Children.Add(Ui.Wrapped($"Content: {content.Items.Length} items, {content.Npcs.Length} NPCs, {content.Scenes.Length} scenes, {content.Recipes.Length} recipes, {content.Quests.Length} quests, {pack.Plugins.Length} plugins", "small"));
             foreach (var plugin in pack.Plugins)
             {
                 _review.Children.Add(Ui.Text($"Plugin: {plugin.Name ?? plugin.Id} · hooks {string.Join(", ", plugin.Hooks)}", "section"));
@@ -138,19 +140,19 @@ public sealed class ModsEditorView : UserControl
     {
         _installed.Children.Clear();
         if (_workspace.Current is not { } project) return;
-        if (project.ContentPacks.Count == 0)
+        if (project.ContentPacks.Length == 0)
         {
             _installed.Children.Add(Ui.Wrapped("No packs installed.", "muted", "small"));
             return;
         }
 
-        for (var i = 0; i < project.ContentPacks.Count; i++)
+        for (var i = 0; i < project.ContentPacks.Length; i++)
         {
             var install = project.ContentPacks[i];
             var manifest = install.Pack.Manifest;
             var id = manifest.Id;
             var header = Ui.Text($"{manifest.Name} · {manifest.Version}{(id == _selectedPackId ? "  ←" : "")}", "h3");
-            var details = Ui.Wrapped($"{id} · {install.Pack.Plugins.Count} plugins · hooks: {(manifest.Permissions.Hooks.Count == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "muted", "small");
+            var details = Ui.Wrapped($"{id} · {install.Pack.Plugins.Length} plugins · hooks: {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "muted", "small");
             var enabled = new CheckBox { Name = $"PackEnabled_{id}", Content = "Enabled", IsChecked = install.Enabled };
             enabled.Click += (_, _) => _workspace.Apply(Edits.SetPackEnabled(id, enabled.IsChecked == true));
             var up = Ui.Button("↑", () => _workspace.Apply(Edits.MovePack(_workspace.Current!, id, -1)), "tool", "small");
@@ -158,7 +160,7 @@ public sealed class ModsEditorView : UserControl
             up.IsEnabled = i > 0;
             var down = Ui.Button("↓", () => _workspace.Apply(Edits.MovePack(_workspace.Current!, id, 1)), "tool", "small");
             down.Name = $"MovePackDown_{id}";
-            down.IsEnabled = i < project.ContentPacks.Count - 1;
+            down.IsEnabled = i < project.ContentPacks.Length - 1;
             var import = Ui.Button("Import into project", () => _workspace.Apply(Edits.ImportPack(id)), "tool", "small");
             import.Name = $"ImportPack_{id}";
             var remove = Ui.Button("Remove", () => _workspace.Apply(Edits.RemovePack(id)), "tool", "small");

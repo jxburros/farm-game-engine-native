@@ -69,14 +69,11 @@ type GameExporter =
     /// settings with their defaults if the project has none). False when nothing changes.
     static member TryRememberTargets(project: GameProject, targets: seq<string>, [<Out>] edit: byref<Edit>) : bool =
         let chosen = targets |> Seq.distinct |> Seq.filter (fun id -> (ExportTarget.tryParse id).IsSome) |> List.ofSeq
-        let current =
-            match project.Export with
-            | null -> None
-            | settings -> Some settings
+        let current = project.Export
         let settings = current |> Option.defaultWith (fun () -> Defaults.newExportSettings project)
         if chosen.IsEmpty || (current.IsSome && List.ofSeq settings.Targets = chosen) then false
         else
-            edit <- SetExportSettings(Some(Records.withValue settings "Targets" (box (List<string>(chosen)))))
+            edit <- SetExportSettings(Some { settings with Targets = chosen })
             true
 
     /// The report as text.

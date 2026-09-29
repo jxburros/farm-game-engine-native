@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Game;
@@ -238,7 +239,7 @@ public sealed partial class EditModeView
         _copy.IsEnabled = _selection is not null;
         _paste.IsEnabled = _copiedTiles is not null;
         _fillScene.IsEnabled = _brush is not null;
-        _deleteScene.IsEnabled = scene is not null && project.Scenes.Count > 1 && scene.Id != project.StartSceneId;
+        _deleteScene.IsEnabled = scene is not null && project.Scenes.Length > 1 && scene.Id != project.StartSceneId;
         _startScene.IsEnabled = scene is not null && scene.Id != project.StartSceneId;
         RefreshPlaceChoice(project);
         if (scene is null) return;
@@ -472,7 +473,7 @@ public sealed partial class EditModeView
     {
         var scene = CurrentScene();
         if (scene is null || _selection is not { } area) return;
-        if (area.Y1 >= scene.Tiles.Count || scene.Tiles.Skip(area.Y0).Take(area.Y1 - area.Y0 + 1).Any(row => area.X1 >= row.Count))
+        if (area.Y1 >= scene.Tiles.Length || scene.Tiles.Skip(area.Y0).Take(area.Y1 - area.Y0 + 1).Any(row => area.X1 >= row.Length))
         {
             ClearSelection();
             _editorMessage.Text = "The selection no longer fits this scene; select an area again.";
@@ -501,7 +502,7 @@ public sealed partial class EditModeView
         if (_workspace.Current is not { } project || scene is null || Edits.PickBrush(project, scene.Id, x, y) is not { } pick) return;
         _workspace.Apply(pick);
         var picked = _workspace.Current!;
-        SetBrush(picked.SelectedTileType, picked.SelectedTileVisual);
+        SetBrush(picked.SelectedTileType, picked.SelectedTileVisual.OrNull());
         _editorMessage.Text = $"Picked {picked.SelectedTileType}.";
     }
 
@@ -618,10 +619,7 @@ public sealed partial class EditModeView
             return;
         }
         var old = scene.Transitions.FirstOrDefault(t => t.FromX == from.X && t.FromY == from.Y);
-        var transition = (old ?? new SceneTransition()) with
-        {
-            FromX = from.X, FromY = from.Y, ToSceneId = destinationId, ToX = x, ToY = y,
-        };
+        var transition = (old ?? SceneTransition.Default).WithFromX(from.X).WithFromY(from.Y).WithToSceneId(destinationId).WithToX(x).WithToY(y);
         _workspace.Apply(_doorReturn.IsChecked == true ? Edits.LinkScenes(scene.Id, transition) : Edits.SetTransition(scene.Id, transition));
         _editorMessage.Text = $"Door saved to {destination.Name} ({x}, {y}).";
     }

@@ -16,12 +16,11 @@ let private both = [ "windows-x64"; "linux-x64" ]
 let private willowCreek () =
     starter ()
     |> withExport (fun s ->
-        Records.withValues
-            s
-            [ "Title", box "Willow Creek Farm"
-              "ExecutableName", box "WillowCreek"
-              "Version", box "1.2.0"
-              "Company", box "Willow Games" ])
+        { s with
+            Title = Some "Willow Creek Farm"
+            ExecutableName = Some "WillowCreek"
+            Version = Some "1.2.0"
+            Company = Some "Willow Games" })
 
 let private export (project: GameProject) (templates: string) (output: string) (targets: string list) =
     Exporter.run (options templates output targets) project
@@ -60,7 +59,7 @@ let ``the Windows exe carries the game's icon and version info`` () =
     use dir = new TempDir()
     let icon = makePng 256 256 false
     let project =
-        willowCreek () |> withAssets [ asset "art-icon" icon ] |> withExport (fun s -> Records.withValue s "IconAssetId" (box "art-icon"))
+        willowCreek () |> withAssets [ asset "art-icon" icon ] |> withExport (fun s -> { s with IconAssetId = Some "art-icon" })
     let report = export project (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") both
     Assert.True(report.Ok, Exporter.format report)
     let exe = File.ReadAllBytes(Path.Combine((target report "windows-x64").Folder, "WillowCreek.exe"))
@@ -147,7 +146,7 @@ let ``archives hold the folder with the execute bit on the Linux binary`` () =
 [<Fact>]
 let ``Problems errors block export and nothing is written`` () =
     use dir = new TempDir()
-    let broken = Records.withValue (willowCreek ()) "SelectedTileType" (box "lava")
+    let broken = { willowCreek () with SelectedTileType = "lava" }
     let report = export broken (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") both
     Assert.True(report.Blocked)
     Assert.False(report.Ok)
@@ -224,13 +223,13 @@ let ``the C# facade summarizes, exports and remembers targets`` () =
     Assert.False(GameExporter.TryRememberTargets(project, both, &edit))
     Assert.True(GameExporter.TryRememberTargets(project, [ "linux-x64" ], &edit))
     let updated = Document.run project edit
-    Assert.Equal<string seq>([ "linux-x64" ], updated.Export.Targets)
-    Assert.Equal(project.Export.GameId, updated.Export.GameId)
+    Assert.Equal<string list>([ "linux-x64" ], updated.Export.Value.Targets)
+    Assert.Equal(project.Export.Value.GameId, updated.Export.Value.GameId)
     // A project without export settings gets them, with the stable generated game id.
     let plain = starter ()
-    Assert.Null(plain.Export)
+    Assert.True(plain.Export.IsNone)
     Assert.True(GameExporter.TryRememberTargets(plain, both, &edit))
-    Assert.Equal((Defaults.newExportSettings plain).GameId, (Document.run plain edit).Export.GameId)
+    Assert.Equal((Defaults.newExportSettings plain).GameId, (Document.run plain edit).Export.Value.GameId)
     let templates = fakeTemplates (dir.Sub "templates") GameExporter.EditorVersion
     let report = GameExporter.Export(project, [ "linux-x64" ], dir.Sub "out", false, templates)
     Assert.True(report.Ok, GameExporter.Format report)

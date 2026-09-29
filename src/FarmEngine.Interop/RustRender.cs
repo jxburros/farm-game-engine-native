@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmEngine.Interop;
@@ -20,7 +20,7 @@ public static class RustRender
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(sceneId);
-        var request = JsonSerializer.SerializeToUtf8Bytes(new { type = "editorSnapshot", project, sceneId, tileSize, padding }, JsonDefaults.Options);
+        var request = JsonSerializer.SerializeToUtf8Bytes(new { type = "editorSnapshot", project = RecordJson.ToNode(project), sceneId, tileSize, padding }, InteropJson.Options);
         return Encoding.UTF8.GetString(Call(request, nameof(EditorSnapshotJson)));
     }
 
@@ -32,7 +32,7 @@ public static class RustRender
     {
         ArgumentNullException.ThrowIfNull(snapshotJson);
         using var snapshot = JsonDocument.Parse(snapshotJson);
-        var request = JsonSerializer.SerializeToUtf8Bytes(new { type = "rasterize", snapshot = snapshot.RootElement, scale }, JsonDefaults.Options);
+        var request = JsonSerializer.SerializeToUtf8Bytes(new { type = "rasterize", snapshot = snapshot.RootElement, scale }, InteropJson.Options);
         return Call(request, nameof(RasterizePng));
     }
 

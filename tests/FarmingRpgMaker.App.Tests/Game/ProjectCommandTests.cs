@@ -1,3 +1,4 @@
+using FarmEngine.Authoring.Net;
 using Avalonia.Headless.XUnit;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Hosting;
@@ -102,10 +103,10 @@ public sealed class ProjectCommandTests
         host.ViewModel.ExportProjectJsonCommand.Execute(null);
         PumpUntil(() => dialogs.ExportedJson is not null, "export");
         Assert.EndsWith(".json", dialogs.ExportedName, StringComparison.Ordinal);
-        var reparsed = Migrations.MigrateProject(dialogs.ExportedJson!);
+        var reparsed = ProjectMigrations.migrateProjectText(dialogs.ExportedJson!);
         Assert.True(reparsed.Ok, string.Join("; ", reparsed.Errors));
         Assert.False(reparsed.Migrated);
-        Assert.Equal(ProjectStore.ToJson(imported), ProjectStore.ToJson(reparsed.Data!));
+        Assert.Equal(ProjectStore.ToJson(imported), ProjectStore.ToJson(reparsed.Data!.Value));
         Assert.Contains("\n  \"scenes\": [", dialogs.ExportedJson, StringComparison.Ordinal);
     }
 

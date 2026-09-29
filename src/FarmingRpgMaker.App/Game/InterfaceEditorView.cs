@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -79,7 +80,7 @@ public sealed class InterfaceEditorView : UserControl
         {
             _panels.SelectedItem = null;
             _panels.Items.Clear();
-            foreach (var panel in _workspace.Current?.GamePanels ?? [])
+            foreach (var panel in _workspace.Current?.GamePanels.OrEmpty() ?? [])
                 _panels.Items.Add(new ListBoxItem { Content = panel.Title, Tag = panel.Id });
             _panels.SelectedItem = _panels.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedId));
             if (_panels.SelectedItem is null) _selectedId = null;
@@ -88,13 +89,13 @@ public sealed class InterfaceEditorView : UserControl
         RefreshSelected();
     }
 
-    private GamePanel? Selected() => _workspace.Current?.GamePanels?.FirstOrDefault(panel => panel.Id == _selectedId);
+    private GamePanel? Selected() => _workspace.Current?.GamePanels.OrEmpty().FirstOrDefault(panel => panel.Id == _selectedId);
 
     private void RefreshSelected()
     {
         var panel = Selected();
         _title.Text = panel?.Title ?? "";
-        _flag.Text = panel?.VisibleFlag ?? "";
+        _flag.Text = panel?.VisibleFlag.OrNull() ?? "";
         _rows.Clear();
         _entries.Children.Clear();
         foreach (var entry in panel?.Entries ?? []) AddEntryRow(entry);
@@ -125,7 +126,7 @@ public sealed class InterfaceEditorView : UserControl
     {
         if (Selected() is null) return;
         if (_rows.Count >= 40) { _message.Text = "A panel may have at most 40 entries."; return; }
-        AddEntryRow(new GamePanelEntry { Kind = GamePanelEntryKinds.Text });
+        AddEntryRow(GamePanelEntry.Default.WithKind(GamePanelEntryKinds.Text));
     }
 
     private void Add()
@@ -133,14 +134,14 @@ public sealed class InterfaceEditorView : UserControl
         if (_workspace.Current is not { } project) return;
         var panel = Defaults.NewGamePanel(project);
         _selectedId = panel.Id;
-        _workspace.Apply(Edits.SetGamePanels([.. project.GamePanels ?? [], panel]));
+        _workspace.Apply(Edits.SetGamePanels([.. project.GamePanels.OrEmpty(), panel]));
     }
 
     private void Delete()
     {
         if (_workspace.Current is not { } project || _selectedId is not { } id) return;
         _selectedId = null;
-        _workspace.Apply(Edits.SetGamePanels((project.GamePanels ?? []).Where(panel => panel.Id != id)));
+        _workspace.Apply(Edits.SetGamePanels(project.GamePanels.OrEmpty().Where(panel => panel.Id != id)));
     }
 
     private void Save()
@@ -148,14 +149,9 @@ public sealed class InterfaceEditorView : UserControl
         if (_workspace.Current is not { } project || Selected() is not { } panel) return;
         var title = _title.Text?.Trim() ?? "";
         if (title.Length == 0) { _message.Text = "Give the panel a title."; return; }
-        var entries = _rows.Select(row => new GamePanelEntry
-        {
-            Label = row.Label.Text ?? "",
-            Kind = (row.Kind.SelectedItem as ComboBoxItem)?.Tag as string ?? GamePanelEntryKinds.Text,
-            Value = row.Value.Text ?? "",
-        }).ToList();
-        var updated = panel with { Title = title, VisibleFlag = string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim(), Entries = entries };
-        _workspace.Apply(Edits.SetGamePanels((project.GamePanels ?? []).Select(existing => existing.Id == panel.Id ? updated : existing)));
+        var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind((row.Kind.SelectedItem as ComboBoxItem)?.Tag as string ?? GamePanelEntryKinds.Text).WithValue(row.Value.Text ?? "")).ToList();
+        var updated = panel.WithTitle(title).WithVisibleFlag(string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim()).WithEntries(entries);
+        _workspace.Apply(Edits.SetGamePanels(project.GamePanels.OrEmpty().Select(existing => existing.Id == panel.Id ? updated : existing)));
         _message.Text = "Panel saved.";
     }
 }

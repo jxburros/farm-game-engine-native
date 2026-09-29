@@ -1,3 +1,4 @@
+using FarmEngine.Authoring.Net;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -305,7 +306,7 @@ public sealed class WorkspaceTests
         Assert.Contains(picker.Items.OfType<ComboBoxItem>(), item => Equals(item.Tag, "node-rock"));
         edit.PlaceChoice = "node-rock";
         ClickTile(host, 5, 5);
-        Assert.Equal("node-rock", TileAt(5, 5).Node?.TypeId);
+        Assert.Equal("node-rock", TileAt(5, 5).Node.OrNull()?.TypeId);
         Assert.Contains("node node-rock", edit.DescribeTile(5, 5), StringComparison.Ordinal);
         host.Workspace.Undo();
         Assert.Null(TileAt(5, 5).Node);
@@ -314,12 +315,12 @@ public sealed class WorkspaceTests
         edit.Tool = MapTool.PlaceItem;
         edit.PlaceChoice = "material-wood";
         ClickTile(host, 6, 5);
-        Assert.Equal("material-wood", TileAt(6, 5).Item?.Id);
+        Assert.Equal("material-wood", TileAt(6, 5).Item.OrNull()?.Id);
 
         edit.Tool = MapTool.PlaceMachine;
         edit.PlaceChoice = "machine-kitchen";
         ClickTile(host, 7, 5);
-        Assert.Equal("machine-kitchen", TileAt(7, 5).Machine?.TypeId);
+        Assert.Equal("machine-kitchen", TileAt(7, 5).Machine.OrNull()?.TypeId);
 
         edit.Tool = MapTool.PlaceNpc;
         edit.PlaceChoice = "npc-farmer";
@@ -405,8 +406,8 @@ public sealed class WorkspaceTests
         edit.SelectScene(farmId);
         Assert.Equal("0 transition(s) from this scene", FindByName<TextBlock>(host.Window, "TransitionCount").Text);
         Assert.False(FindByName<Button>(host.Window, "ClearTransitionsButton").IsEnabled);
-        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId) with { FromX = 3, FromY = 4, ToX = 1, ToY = 2 }));
-        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId) with { FromX = 5, FromY = 4 }));
+        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId).WithFromX(3).WithFromY(4).WithToX(1).WithToY(2)));
+        host.Workspace.Apply(Edits.SetTransition(farmId, Defaults.NewTransition(pondId).WithFromX(5).WithFromY(4)));
         Pump();
         Assert.Equal("2 transition(s) from this scene", FindByName<TextBlock>(host.Window, "TransitionCount").Text);
         Assert.Equal("(3, 4) → Pond (1, 2)", FindByName<Button>(host.Window, "Transition_0").Content);
@@ -425,7 +426,7 @@ public sealed class WorkspaceTests
         Assert.Null(TryFindByName<Button>(host.Window, "Transition_0"));
         host.Workspace.Undo();
         Pump();
-        Assert.Equal(2, host.Workspace.Current!.Scenes.First(s => s.Id == farmId).Transitions.Count);
+        Assert.Equal(2, host.Workspace.Current!.Scenes.First(s => s.Id == farmId).Transitions.Length);
         Assert.NotNull(TryFindByName<Button>(host.Window, "Transition_1"));
     }
 
@@ -440,8 +441,8 @@ public sealed class WorkspaceTests
         var asset = ArtImport.FromBytes(host.Workspace.Current!, "tiles.png", encoded.ToArray());
         host.Workspace.Apply(Edits.UpsertAsset(asset));
         // Two clips with one name: an error on the asset.
-        var clip = new FarmEngine.Schemas.AnimationClip { Name = "idle" };
-        host.Workspace.Apply(Edits.UpsertAsset(host.Workspace.Current!.CustomAssets.First(a => a.Id == asset.Id) with { Animations = [clip, clip] }));
+        var clip = FarmEngine.Schemas.AnimationClip.Default.WithName("idle");
+        host.Workspace.Apply(Edits.UpsertAsset(host.Workspace.Current!.CustomAssets.First(a => a.Id == asset.Id).WithAnimations([clip, clip])));
 
         var tabs = FindByName<TabControl>(host.Window, "EditorTabs");
         tabs.SelectedIndex = 2;
