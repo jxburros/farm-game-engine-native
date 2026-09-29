@@ -1,15 +1,14 @@
 # Language plan: Rust, F# and C#
 
-**Status:** phases 1–6 are done, and phase 7 is done except the integer
-numerics (September 2026). The Rust core passes every golden (replays,
+**Status:** phases 1–7 are done (September 2026). The Rust core passes every golden (replays,
 content, saves); the schema records, project logic, the content compiler,
 cartridges and Export Game are F#, and the authoring core compiles to
 JavaScript with Fable; the editor's Play Mode runs the Rust `farm-player` on
 F#-compiled cartridges; Edit Mode draws with `farm-render`; plugins run in
 `farm-plugins`; `farm-wasm` runs the same player in the browser, and the web
 editor uses it and the Fable-compiled core. The C# engine and the C# schema
-records are gone. What remains of phase 7 is native numerics (schema v9,
-[NUMERICS.md](NUMERICS.md)). See
+records are gone, and the simulation keeps every quantity as an integer
+(schema v9, [NUMERICS.md](NUMERICS.md)). See
 [ROADMAP.md](../ROADMAP.md#phase-7-one-engine). This is the reference for
 where code goes as the native app grows; read it before you port a new part
 of the web editor. [PORTING.md](PORTING.md) covers how Rust code mirrors the
@@ -504,7 +503,7 @@ Later items (native and web roadmaps):
 ## Phases
 
 Each phase ends with CI green and a normal release through the Update Center.
-Phases 1–6 are done; the C# engine kept working until its replacement passed
+Phases 1–7 are done; the C# engine kept working until its replacement passed
 the same tests, and was then deleted.
 
 1. **Scaffolding.** Cargo workspace, `rust-toolchain.toml`, FlatBuffers
@@ -555,10 +554,9 @@ the same tests, and was then deleted.
    the web editor vendors both builds). Then switch `farm-sim` to integer and
    fixed-point types, deny float arithmetic, use the binary state hash, add the
    v8→v9 project and save migrations, and re-record goldens from Rust
-   ([NUMERICS.md](NUMERICS.md); the F# project migration is done, the Rust
-   conversion is in progress). From here Rust is the reference implementation
-   and `Js` helpers are deleted. *Exit:* old v8 saves load and play on in both
-   apps, and benchmarks meet their budgets.
+   ([NUMERICS.md](NUMERICS.md); done). From here Rust is the reference
+   implementation and the `js` helpers are deleted. *Exit:* old v8 saves load
+   and play on in both apps, and benchmarks meet their budgets (both met).
 
 ## Checklist: porting a new part of the web editor
 

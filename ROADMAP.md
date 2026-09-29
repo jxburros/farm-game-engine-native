@@ -3,9 +3,8 @@
 The native app is a phased port of the web version,
 [`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine),
 which was the reference implementation until both apps moved onto one engine.
-The port is complete: phases 1–6 below are done, and phase 7 (one engine for
-the web and native versions) is done except the integer numerics of the
-simulation, which are in progress (see [Phase 7](#phase-7-one-engine)). Each
+The port is complete: phases 1–7 below are done, including phase 7, one
+engine for the web and native versions (see [Phase 7](#phase-7-one-engine)). Each
 phase ships as a normal release through the Update Center.
 
 ## Done — foundation (v0.1)
@@ -78,15 +77,14 @@ and exit criteria for each phase.
 6. [x] Rust player and plugin sandbox, embedded in Play Mode; Export Game for
    Windows and Linux, and (with `farm-wasm`) the web demo. A GPU renderer
    comes later.
-7. [ ] One engine for web and native: F# schema records and the authoring core
-   under Fable (done), `farm-wasm` (done), the web editor on both (done),
-   native numerics v9 (in progress)
+7. [x] One engine for web and native: F# schema records and the authoring core
+   under Fable, `farm-wasm`, the web editor on both, native numerics (schema
+   v9)
 
 ## Remaining work
 
-Status at the end of September 2026: phases 1–6 are done and phase 7 is
-nearly done ([below](#phase-7-one-engine)). What's left after it is under
-[Later](#later).
+Status at the end of September 2026: phases 1–7 are done
+([Phase 7](#phase-7-one-engine) below). What's left is under [Later](#later).
 
 **Rust core (phase 2)**: done.
 - [x] `SaveMigrations.cs` ported to `farm-cart::save`; all eight save
@@ -297,10 +295,16 @@ project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
   in CI (saving is over its 1 ms target and held to a regression ceiling until
   the stable-JSON writer is replaced); proptest covers replay determinism and
   save round trips, FsCheck covers migrations and compiling.
-- [ ] **Native numerics (v9)**: integer and fixed-point quantities in
-  `farm-sim` with JSON kept in authoring units, xxh3 state hashes, save
-  version 5, project schema 9 (the F# migration is done), goldens re-recorded
-  from Rust. The design is [docs/NUMERICS.md](docs/NUMERICS.md).
+- [x] **Native numerics (v9)**: every quantity in `farm-sim` is an integer in
+  a fixed unit (float arithmetic is denied outside the JSON adapters), JSON
+  stays in authoring units, the state hash is xxh3-64 over a canonical binary
+  encoding, saves are version 5 and projects schema 9 (both migrate on load),
+  and the goldens are re-recorded from Rust; the TypeScript goldens stay in
+  `fixtures/golden/v8` as migration inputs. Before re-recording, every v8
+  replay was checked to give the same player-visible outcome at every step.
+  See [docs/NUMERICS.md](docs/NUMERICS.md).
+- [x] **Web demo export**: Export Game's web target runs `farm-wasm`'s
+  standalone player in a page for itch.io.
 
 ## Export Game
 

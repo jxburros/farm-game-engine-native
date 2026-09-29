@@ -43,11 +43,24 @@
   the F# compiler makes, exactly what Export Game ships (it still starts while
   Problems lists errors). Keep changes writes the final game state back
   through F#, checked against the Rust write-back for every template.
-- **Project schema v9 (native numerics).** Projects move to schema v9: the
-  values a project carries into play (positions, energy, money, the time of
-  day) are kept on the integer grid the engine uses (docs/NUMERICS.md), and
-  Problems warns when a price or quantity has a fraction the game will round
-  (`numbers.offGrid`). Older projects migrate on open.
+- **Native numerics (schema v9, save version 5).** The Rust simulation no
+  longer copies JavaScript number semantics: every quantity is an integer in a
+  fixed unit (whole gold, 1/1000 energy point, micro-minutes for the time of
+  day, 1/8192 tile for positions, thresholds out of 2³² for probabilities), and
+  `farm-sim` forbids float arithmetic outside `farm_sim::units`, whose serde
+  adapters convert at the JSON boundary. Project, content, state and save JSON
+  stay in authoring units; a value off the grid is rounded once when read. The
+  state hash is xxh3-64 over a canonical binary encoding (still 16 hex digits,
+  different values). Saves move to version 5 and projects to schema 9; both
+  migrate on load, and Problems warns when a price or quantity has a fraction
+  the game will round (`numbers.offGrid`). The TypeScript goldens moved to
+  `fixtures/golden/v8/` as migration inputs and Rust is the reference. Before
+  re-recording, every v8 golden replay was checked to give the same
+  player-visible outcome at every step; the only differences are player
+  positions within a tile, under 1/1000 tile, because the default speed of 4.5
+  tiles per second is now exactly 1843/8192 tile per tick. Keep changes writes
+  the state into the project JSON as the editor sent it, so content values
+  keep what the creator typed.
 - **Game interface in Spanish, and a readable font.** Every string the engine
   draws is in English and Spanish tables: the HUD, toolbar, panels, title
   screen, pause menu, settings, save slots, dialogs and messages. Players pick

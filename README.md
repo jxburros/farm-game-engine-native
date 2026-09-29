@@ -58,8 +58,9 @@ TypeScript engine: [`tools/golden`](tools/golden) recorded play sessions from
 it (farming, weather, NPC schedules, events, shops, crafting, mines, fishing,
 content packs and plugins), and the Rust tests replay them and require every
 state hash to match byte for byte. Now that the web editor runs this engine
-too, Rust is the reference; the move to integer numerics (schema v9,
-[docs/NUMERICS.md](docs/NUMERICS.md)) re-records the goldens from it. Same seed
+too, Rust is the reference: since the move to integer numerics (schema v9,
+[docs/NUMERICS.md](docs/NUMERICS.md)) the goldens are recorded from it, and the
+TypeScript ones stay as migration inputs. Same seed
 + same inputs ⇒ the same game, on the desktop, in exported games and in the
 browser.
 
@@ -195,7 +196,7 @@ Everything builds and tests on Windows, macOS and Linux. The
 
 [docs/PORTING.md](docs/PORTING.md) has the porting conventions.
 [docs/LANGUAGES.md](docs/LANGUAGES.md) describes the Rust / F# / C# split and
-what is left (phase 7's native numerics, [docs/NUMERICS.md](docs/NUMERICS.md)).
+how the integer numerics work ([docs/NUMERICS.md](docs/NUMERICS.md)).
 [docs/EXPORT.md](docs/EXPORT.md) covers Export Game: standalone Windows and
 Linux games built on the native player.
 
