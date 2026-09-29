@@ -18,6 +18,7 @@ indexmap.workspace = true
 ryu-js.workspace = true
 
 [dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
