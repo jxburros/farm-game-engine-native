@@ -1,6 +1,6 @@
 [package]
 name = "farm-sim"
-description = "Deterministic farming-RPG simulation core (port of packages/engine-core)"
+description = "Deterministic farming-RPG simulation core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,8 @@ serde.workspace = true
 serde_json.workspace = true
 indexmap.workspace = true
 ryu-js.workspace = true
+# The state hash: xxh3-64 over the canonical binary encoding (docs/NUMERICS.md).
+twox-hash = { version = "2", default-features = false, features = ["xxhash3_64", "std"] }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

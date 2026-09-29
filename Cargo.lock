@@ -811,6 +811,7 @@ dependencies = [
  "ryu-js",
  "serde",
  "serde_json",
+ "twox-hash",
 ]
 
 [[package]]
