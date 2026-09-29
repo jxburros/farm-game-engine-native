@@ -13,14 +13,15 @@ type FormTab = { Title: string; Properties: string list }
 /// CropEditor's profit line, summary card and tabs, NodeTypeEditor's built-in list): computed
 /// from the effective content, never stored in the project.
 module Readouts =
-    /// JS `Math.round` for display (half away from zero keeps negative profits symmetric).
+    /// Rounds to a whole number like the web's `toFixed(0)`: half away from zero (so a negative
+    /// profit rounds like its positive twin). Same as `Math.round` for the non-negative day counts.
     let private round (value: float) = if value < 0.0 then -(Math.Floor(-value + 0.5)) else Math.Floor(value + 0.5)
 
     /// Money like the web (`$12`, `-$5`).
     let money (value: float) = (if value < 0.0 then "-$" else "$") + JsNumber.format (abs value)
 
-    /// A profit with its sign (`+12`, `-5`, `0`).
-    let signed (value: float) = (if value > 0.0 then "+" else "") + JsNumber.format value
+    /// A profit with its sign like the web list (`+12`, `-5`, `+0`).
+    let signed (value: float) = (if value >= 0.0 then "+" else "") + JsNumber.format value
 
     // ---- Recipes ----
 
@@ -62,7 +63,7 @@ module Readouts =
                     |> List.tryFind (fun machine -> machine.Id = machineId)
                     |> Option.map (fun machine -> machine.Name)
                     |> Option.defaultValue "machine"
-                sprintf "%s · %s min" name (JsNumber.format recipe.ProcessingMinutes)
+                sprintf "%s · %smin" name (JsNumber.format recipe.ProcessingMinutes)
             | None -> "hand craft"
         sprintf "%s · profit %s" where (signed (recipeProfit project recipe))
 
@@ -84,6 +85,9 @@ module Readouts =
     /// Harvest value minus seed cost (web "Profit per harvest").
     let cropProfit (crop: CropDefinition) : float = crop.BaseHarvestValue - crop.SeedCost
 
+    /// "Profit per harvest: $15" (the line under the crop form).
+    let cropProfitText (crop: CropDefinition) : string = "Profit per harvest: " + money (cropProfit crop)
+
     /// Days from planting to harvest: `growthDays`, else the legacy wall-clock time in days.
     let growthDays (crop: CropDefinition) : float =
         match crop.GrowthDays with
@@ -94,7 +98,7 @@ module Readouts =
         project.Settings.Calendar.Seasons
         |> List.tryFind (fun season -> season.Id = id)
         |> Option.map (fun season -> season.Name)
-        |> Option.defaultValue (if id.Length = 0 then id else string (Char.ToUpperInvariant id.[0]) + id.Substring 1)
+        |> Option.defaultValue (if id.Length = 0 then id else id.Substring(0, 1).ToUpperInvariant() + id.Substring 1)
 
     /// The crop summary card (web CropEditor's read-only view).
     let cropSummary (project: GameProject) (crop: CropDefinition) : ReadoutLine list =
@@ -103,6 +107,8 @@ module Readouts =
         let mutationText =
             let text = JsNumber.format mutation
             if text.Contains "." then text else text + ".0"
+        // The web shows the regrowth row when either field is set and not 0 (JS truthiness).
+        let set (value: float option) = value |> Option.exists (fun v -> v <> 0.0)
         [ line "Seed cost" (money crop.SeedCost)
           line "Harvest value" (money crop.BaseHarvestValue)
           line "Profit per harvest" (money (cropProfit crop))
@@ -112,7 +118,7 @@ module Readouts =
           line "Yield range" (sprintf "%s – %s" (JsNumber.format crop.YieldMin) (JsNumber.format crop.YieldMax))
           line "Mutation chance" (mutationText + "%")
           line "Can regrow" (if crop.CanRegrow then "Yes" else "No")
-          if crop.CanRegrow && (crop.RegrowthDays.IsSome || crop.RegrowthTime.IsSome) then
+          if crop.CanRegrow && (set crop.RegrowthDays || set crop.RegrowthTime) then
               let days =
                   match crop.RegrowthDays with
                   | Some days -> days
@@ -129,6 +135,39 @@ module Readouts =
     let builtinCrops (project: GameProject) : CropDefinition list =
         let custom = project.CustomCrops |> Option.defaultValue [] |> List.map (fun crop -> crop.Id) |> Set.ofList
         Builtin.crops () |> List.filter (fun (id, _) -> not (custom.Contains id)) |> List.map snd
+
+    /// Where a listed entry comes from: a built-in shown read-only, a project entry with a
+    /// built-in's id (it replaces the built-in), or the project's own.
+    let private origin (builtinIds: string list) (listedBuiltin: bool) (id: string) =
+        if listedBuiltin then "Built-in"
+        elif List.contains id builtinIds then "Replaces built-in"
+        else "Custom"
+
+    /// The list line under a custom crop (web CropEditor): "Custom · 5 stages", or
+    /// "Replaces built-in · 4 stages" for one with a built-in crop's id.
+    let cropNote (crop: CustomCropDefinition) : string =
+        sprintf "%s · %s stages" (origin (builtinCropIds ()) false crop.Id) (JsNumber.format crop.Stages)
+
+    /// The list line under a built-in crop: "Built-in · 4 stages".
+    let builtinCropNote (crop: CropDefinition) : string =
+        sprintf "%s · %s stages" (origin [] true crop.Id) (JsNumber.format crop.Stages)
+
+    /// Deleting a custom crop that replaces a built-in one: only the replacement goes, so the
+    /// built-in comes back. Its seed and crop items return to the built-in ones, and planted
+    /// crops, quests and seeds keep the id (`RemoveCrop` would clear them although the crop still
+    /// exists). None when `cropId` is not such a replacement.
+    let restoreBuiltinCrop (project: GameProject) (cropId: string) : Edit option =
+        match project.CustomCrops with
+        | Some crops when List.contains cropId (builtinCropIds ()) && crops |> List.exists (fun crop -> crop.Id = cropId) ->
+            let builtinItems = Builtin.items () |> List.filter (fun item -> item.Id = "seed-" + cropId || item.Id = "crop-" + cropId)
+            let restore (item: Item) = builtinItems |> List.tryFind (fun builtin -> builtin.Id = item.Id) |> Option.defaultValue item
+            Some(
+                ReplaceProject
+                    { project with
+                        CustomCrops = Some(crops |> List.filter (fun crop -> crop.Id <> cropId))
+                        Items = project.Items |> List.map restore }
+            )
+        | _ -> None
 
     // ---- Node types ----
 
@@ -148,6 +187,20 @@ module Readouts =
             | Some(Some days) -> sprintf "respawns %sd" (JsNumber.format days)
             | _ -> "no respawn"
         sprintf "%s hp · %s%s · %s" (JsNumber.format node.Health) node.RequiredTool tier respawn
+
+    /// The list line under a node type: "Built-in · 4 hp · axe · no respawn" (`builtin` when it
+    /// is listed read-only), "Replaces built-in · …" or "Custom · …".
+    let nodeTypeListNote (node: NodeTypeDefinition) (builtin: bool) : string =
+        sprintf "%s · %s" (origin (builtinNodeTypeIds ()) builtin node.Id) (nodeTypeNote node)
+
+    /// Deleting a project node type that replaces a built-in one: only the replacement goes, so
+    /// placed nodes and mine bands keep the id (`RemoveNodeType` would clear them although the type
+    /// still exists). None when `nodeTypeId` is not such a replacement.
+    let restoreBuiltinNodeType (project: GameProject) (nodeTypeId: string) : Edit option =
+        if List.contains nodeTypeId (builtinNodeTypeIds ()) && project.NodeTypes |> List.exists (fun node -> node.Id = nodeTypeId) then
+            Some(ReplaceProject { project with NodeTypes = project.NodeTypes |> List.filter (fun node -> node.Id <> nodeTypeId) })
+        else
+            None
 
     /// The node type summary card: health, tool, drops, respawn and blocking.
     let nodeTypeSummary (project: GameProject) (node: NodeTypeDefinition) : ReadoutLine list =
@@ -170,15 +223,16 @@ module Readouts =
 
     // ---- Schedules ----
 
-    /// A schedule minute as a clock time: 480 → "8:00 AM", 1500 → "1:00 AM (next day)".
+    /// A schedule minute as a clock time (engine-core `formatTimeOfDay`): 480 → "8:00 AM",
+    /// 1500 → "1:00 AM (next day)". Negative and non-numbers read as midnight.
     let clock (minute: float) : string =
-        let total = int (Math.Floor(max 0.0 minute))
-        let day = total / 1440
+        let total = if minute > 0.0 then int (Math.Floor(min minute 1e9)) else 0
         let inDay = total % 1440
         let hour = inDay / 60
         let hour12 = if hour % 12 = 0 then 12 else hour % 12
-        let text = sprintf "%d:%02d %s" hour12 (inDay % 60) (if hour < 12 then "AM" else "PM")
-        if day > 0 then text + " (next day)" else text
+        let minutes = inDay % 60
+        let text = sprintf "%d:%s%d %s" hour12 (if minutes < 10 then "0" else "") minutes (if hour < 12 then "AM" else "PM")
+        if total >= 1440 then text + " (next day)" else text
 
     // ---- Form layout ----
 
