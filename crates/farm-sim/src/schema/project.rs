@@ -52,8 +52,8 @@ pub struct GameProject {
     pub selected_npc_id: Option<String>,
     /// Present-as-null.
     pub selected_item_id: Option<String>,
-    #[serde(with = "crate::units::long")]
-    pub current_time: i64,
+    #[serde(with = "crate::units::exact")]
+    pub current_time: f64,
     pub custom_assets: Vec<CustomAsset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_crops: Option<Vec<CustomCropDefinition>>,
@@ -74,8 +74,8 @@ pub struct GameProject {
     /// int.
     #[serde(with = "crate::units::count")]
     pub current_year: u32,
-    #[serde(with = "crate::units::long")]
-    pub game_start_time: i64,
+    #[serde(with = "crate::units::exact")]
+    pub game_start_time: f64,
     pub shops: Vec<ShopDefinition>,
     pub node_types: Vec<NodeTypeDefinition>,
     pub settings: ProjectSettings,
@@ -145,8 +145,8 @@ pub struct ExportedGame {
     /// int.
     #[serde(with = "crate::units::count")]
     pub current_year: u32,
-    #[serde(with = "crate::units::long")]
-    pub game_start_time: i64,
+    #[serde(with = "crate::units::exact")]
+    pub game_start_time: f64,
     pub shops: Vec<ShopDefinition>,
     pub node_types: Vec<NodeTypeDefinition>,
     pub settings: ProjectSettings,

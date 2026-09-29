@@ -632,7 +632,7 @@ pub(crate) mod test_support {
             selected_tile_type: "grass".to_owned(),
             selected_npc_id: None,
             selected_item_id: None,
-            current_time: 1_000_000,
+            current_time: 1_000_000.0,
             custom_assets: Vec::new(),
             current_season: "spring".to_owned(),
             current_day: 1,
@@ -661,7 +661,7 @@ pub(crate) mod test_support {
             fish_tables: Vec::new(),
             mine: MineConfig { enabled: false, ..MineConfig::default() },
             content_packs: Vec::new(),
-            game_start_time: 1_000_000,
+            game_start_time: 1_000_000.0,
             ..GameProject::default()
         }
     }

@@ -52,8 +52,8 @@ pub struct StartNpc {
 pub struct StartState {
     /// The project id; with `game_start_time` it forms the default engine seed.
     pub id: String,
-    #[serde(with = "crate::units::long")]
-    pub game_start_time: i64,
+    #[serde(with = "crate::units::exact")]
+    pub game_start_time: f64,
     pub settings: ProjectSettings,
     pub player: Player,
     pub quests: Vec<StartQuest>,

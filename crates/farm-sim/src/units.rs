@@ -638,6 +638,25 @@ pub mod screen {
     }
 }
 
+/// Numbers kept exactly as authored, never used in arithmetic: the legacy millisecond
+/// timestamps (`gameStartTime` seeds the RNG by its text, so `123456.5` must stay `123456.5`).
+/// JSON writes whole values as integers; the canonical encoding writes the double's bits.
+pub mod exact {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() && super::is_integer(*value) && value.abs() < 9_007_199_254_740_992.0 {
+            serializer.serialize_i64(*value as i64)
+        } else {
+            value.serialize(serializer)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        f64::deserialize(deserializer)
+    }
+}
+
 // ─── Integer helpers for game logic ─────────────────────────────────────────────────────────
 
 /// `numerator / denominator` rounded half away from zero (`denominator > 0`).

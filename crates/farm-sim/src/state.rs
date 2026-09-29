@@ -104,7 +104,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
     let max_energy = start.player.max_energy.unwrap_or(resolved_settings.max_energy);
     let engine_seed = match seed {
         Some(seed) => seed.to_owned(),
-        None => format!("{}:{}", start.id, start.game_start_time),
+        None => format!("{}:{}", start.id, units::format_number(start.game_start_time)),
     };
 
     let flags: IndexMap<String, Value> =
@@ -314,7 +314,8 @@ mod tests {
 
     #[test]
     fn engine_seed_defaults_to_project_id_and_start_time() {
-        let project = GameProject { id: "p1".to_owned(), game_start_time: 1_500_000_000_000, ..GameProject::default() };
+        let project =
+            GameProject { id: "p1".to_owned(), game_start_time: 1_500_000_000_000.0, ..GameProject::default() };
         let state = create_game_state(&project, None);
         assert_eq!(state.meta.engine_seed, "p1:1500000000000");
         assert_eq!(state.rng, rng::create_rng_state("p1:1500000000000"));

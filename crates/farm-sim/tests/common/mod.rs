@@ -186,7 +186,7 @@ pub fn make_project() -> GameProject {
         start_scene_id: "scene-test".to_owned(),
         mode: "play".to_owned(),
         selected_tile_type: "grass".to_owned(),
-        current_time: 1_000_000,
+        current_time: 1_000_000.0,
         current_season: "spring".to_owned(),
         current_day: 1,
         current_time_minutes: units::minutes(6 * 60),
@@ -204,7 +204,7 @@ pub fn make_project() -> GameProject {
             ..WeatherConfig::default()
         },
         mine: MineConfig { enabled: false, ..MineConfig::default() },
-        game_start_time: 1_000_000,
+        game_start_time: 1_000_000.0,
         ..GameProject::default()
     }
 }

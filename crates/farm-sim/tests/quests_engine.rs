@@ -56,7 +56,7 @@ fn make_project(mutate: impl FnOnce(&mut GameProject)) -> GameProject {
         start_scene_id: "farm".to_owned(),
         mode: "play".to_owned(),
         selected_tile_type: "grass".to_owned(),
-        current_time: 1,
+        current_time: 1.0,
         current_season: "spring".to_owned(),
         current_day: 1,
         current_time_minutes: units::minutes(6 * 60),
@@ -65,7 +65,7 @@ fn make_project(mutate: impl FnOnce(&mut GameProject)) -> GameProject {
         settings: ProjectSettings::default(),
         weather: default_weather_config(),
         mine: MineConfig { enabled: false, ..MineConfig::default() },
-        game_start_time: 1,
+        game_start_time: 1.0,
         ..GameProject::default()
     };
     mutate(&mut project);

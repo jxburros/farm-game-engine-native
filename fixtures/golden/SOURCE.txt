@@ -1,11 +1,31 @@
-Golden fixtures generated from the TypeScript reference engine.
-Do not hand-edit; rerun tools/golden/generate.sh instead.
+Golden fixtures.
 
-source:    local checkout (as-is)
-origin:    https://github.com/jxburros/farm-game-engine
-commit:    01b2d8f0a789b9cde5355823a1ae36feaf1babe3
-describe:  01b2d8f
-dirty:     no
-node:      v22.22.2
-vitest:    vitest/4.1.11 linux-x64 node-v22.22.2
-generator: tools/golden/golden.gen.test.ts sha256 91120cf80d8f72a6fc4d6ebdb47dc6128bbdcbeff60cfc02f4d2d2d2ddcf45e3
+Since schema v9 (docs/NUMERICS.md) the Rust engine is the reference implementation.
+Do not hand-edit; re-record and review the diff instead.
+
+Recorded from Rust (FARM_RECORD_GOLDENS=1):
+  replays/*.json   cargo test -p farm-sim --test golden_replays
+                   (inputs: the projects, seeds and input logs of v8/replays)
+  content/*.json   cargo test -p farm-sim --test golden_content
+                   (inputs: the projects of v8/content)
+  rng.json         cargo test -p farm-sim --test golden_primitives
+  hash.json        cargo test -p farm-sim --test golden_primitives
+  saves/*.json     cargo test -p farm-cart --test golden_saves
+                   (inputs: v8/saves, plus a current v5 and a future v6 save)
+
+v8/ holds the goldens of the compatibility phase, kept as migration inputs: every v8
+project, save and replay must still load (golden_content, golden_saves, v8_outcomes).
+  v8/replays, v8/content, v8/saves, v8/rng.json, v8/hash.json
+                   generated from the TypeScript reference engine:
+                   origin:    https://github.com/jxburros/farm-game-engine
+                   commit:    01b2d8f0a789b9cde5355823a1ae36feaf1babe3
+                   node:      v22.22.2
+                   vitest:    vitest/4.1.11 linux-x64 node-v22.22.2
+                   generator: tools/golden/golden.gen.test.ts sha256 91120cf80d8f72a6fc4d6ebdb47dc6128bbdcbeff60cfc02f4d2d2d2ddcf45e3
+  v8/outcomes      the player-visible outcome of every step of every v8 replay, recorded
+                   once by the v8 Rust engine (farm-game-engine-native e09d1d0) with
+                   FARM_RECORD_V8_OUTCOMES=1 cargo test -p farm-sim --test v8_outcomes.
+                   Never re-record them with a later engine.
+
+cartridges/ and migrations/ are written by the F# authoring side (the cartridge compiler and
+the project migrations); see their tests.

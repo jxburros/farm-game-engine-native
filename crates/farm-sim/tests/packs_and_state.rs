@@ -3,9 +3,13 @@
 //! running the TS engine on the same input (`fixtures/projects/content-builtin.json`;
 //! `fixtures/projects/packs-project.json` → `fixtures/projects/packs-project.ts-reference.json`) — never
 //! hand-edited.
+//!
+//! Since v9 (docs/NUMERICS.md) the engine keeps numbers on integer grids, so a reference number
+//! that is off its grid (a 0.15 chance, say) comes back as the nearest grid value: the
+//! comparisons allow that difference (1e-3) and nothing else.
 
 use farm_sim::schema::{GameContent, GameProject};
-use farm_sim::{content_builtin, hash_state, packs, stable_json, state};
+use farm_sim::{content_builtin, hash_state, packs, state};
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
@@ -31,10 +35,44 @@ fn ts_base_content() -> GameContent {
     serde_json::from_value(reference("base")).expect("base is a GameContent")
 }
 
+/// Equal JSON trees, numbers up to the v9 grids.
+fn differences(path: &str, expected: &Value, actual: &Value, out: &mut Vec<String>) {
+    match (expected, actual) {
+        (Value::Number(a), Value::Number(b)) => {
+            let (a, b) = (a.as_f64().unwrap_or(f64::NAN), b.as_f64().unwrap_or(f64::NAN));
+            if (a - b).abs() > 1e-3 {
+                out.push(format!("{path}: TS {a}, Rust {b}"));
+            }
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            for key in a.keys().chain(b.keys().filter(|key| !a.contains_key(*key))) {
+                let child = format!("{path}.{key}");
+                differences(&child, a.get(key).unwrap_or(&Value::Null), b.get(key).unwrap_or(&Value::Null), out);
+            }
+        }
+        (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
+            for (index, (x, y)) in a.iter().zip(b).enumerate() {
+                differences(&format!("{path}.{index}"), x, y, out);
+            }
+        }
+        _ if expected == actual => {}
+        _ => out.push(format!("{path}: TS {expected}, Rust {actual}")),
+    }
+}
+
+fn assert_same_within_grid(key: &str, expected: &Value, actual: &Value) {
+    let mut out = Vec::new();
+    differences("", expected, actual, &mut out);
+    assert!(out.is_empty(), "{key}: differs from the TS reference beyond the v9 grids:\n  {}", out.join("\n  "));
+}
+
 fn assert_matches_reference<T: Serialize>(key: &str, actual: &T) {
-    let expected = stable_json::stringify_value(&reference(key));
-    let actual = stable_json::stringify(actual);
-    assert!(expected == actual, "{key}: stable JSON differs.\nTS:   {expected}\nRust: {actual}");
+    let mut actual = serde_json::to_value(actual).expect("engine types always serialize");
+    // A new state is a v5 save; the reference was written by v8 (save version 4).
+    if let Some(version) = actual.pointer_mut("/meta/saveVersion") {
+        *version = Value::from(4);
+    }
+    assert_same_within_grid(key, &reference(key), &actual);
 }
 
 #[test]
@@ -54,12 +92,16 @@ fn built_in_content_matches_the_ts_definitions() {
     put("nodes", &content_builtin::default_node_types());
     put("shop", &content_builtin::create_default_shop());
     put("crops", &content_builtin::crop_definitions());
-    put("quality", &content_builtin::quality_multipliers());
-    put("mutation", &content_builtin::mutation_multipliers());
+    // The multipliers are thousandths in v9; the reference holds the factors.
+    let factors = |milli: IndexMap<String, u32>| -> IndexMap<String, f64> {
+        milli.into_iter().map(|(key, value)| (key, f64::from(value) / 1000.0)).collect()
+    };
+    put("quality", &factors(content_builtin::quality_multipliers()));
+    put("mutation", &factors(content_builtin::mutation_multipliers()));
     put("days", &content_builtin::DAYS_PER_SEASON);
     put("seasons", &content_builtin::SEASON_ORDER);
     put("tools", &content_builtin::tool_definitions());
-    assert_eq!(stable_json::stringify_value(&expected), stable_json::stringify(&actual));
+    assert_same_within_grid("content-builtin", &expected, &serde_json::to_value(&actual).expect("serializes"));
 }
 
 /// Minimal object-safe serialization so the built-in table above can mix value types.
@@ -123,9 +165,11 @@ fn create_game_state_matches_the_ts_shape() {
 }
 
 #[test]
-fn create_game_state_hashes_like_the_ts_engine() {
+fn create_game_state_hashes_like_the_ts_reference_state() {
     let project = load_project();
-    assert_eq!(hash_state(&reference("stateSeeded")), hash_state(&state::create_game_state(&project, Some("seed-x"))));
+    let mut reference: farm_sim::GameState = serde_json::from_value(reference("stateSeeded")).expect("a GameState");
+    reference.meta.save_version = farm_sim::schema::save::CURRENT_SAVE_VERSION;
+    assert_eq!(hash_state(&reference), hash_state(&state::create_game_state(&project, Some("seed-x"))));
 }
 
 #[test]

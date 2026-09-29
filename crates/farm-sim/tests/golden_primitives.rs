@@ -289,3 +289,58 @@ fn stable_stringify_and_text_hash_match_the_v8_vectors() {
         assert_eq!(entry["hash"].as_str().unwrap(), hash_text(&stable), "{name}: hash");
     }
 }
+
+/// Canonical-encoding vectors: JSON values and typed states, with their encoding (hex) and
+/// xxh3-64 hash (`fixtures/golden/hash.json`, recorded from this engine).
+fn hash_vectors() -> Vec<Value> {
+    let mut vectors = Vec::new();
+    for (name, value) in [
+        ("empty object", json!({})),
+        ("empty array", json!([])),
+        ("null", Value::Null),
+        ("scalars", json!([true, false, 0, -1, 4294967296u64, 2.5, "héllo"])),
+        ("key order does not matter", json!({"b": 1, "a": {"y": [], "x": null}})),
+    ] {
+        let bytes = farm_sim::hash::canonical_bytes(&value);
+        vectors.push(json!({
+            "name": name,
+            "kind": "value",
+            "input": value,
+            "canonical": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "hash": farm_sim::hash_state(&value),
+        }));
+    }
+    let default_state = farm_sim::GameState::default();
+    let project: farm_sim::GameProject =
+        serde_json::from_value(golden("content/starter-farm.json")["project"].clone()).expect("starter farm project");
+    let created = farm_sim::state::create_game_state(&project, Some("hash-vector"));
+    for (name, state) in [("default state", default_state), ("starter farm, seed hash-vector", created)] {
+        vectors.push(json!({
+            "name": name,
+            "kind": "state",
+            "input": serde_json::from_str::<Value>(&stable_json::stringify(&state)).expect("stable JSON"),
+            "hash": farm_sim::hash_state(&state),
+        }));
+    }
+    vectors
+}
+
+#[test]
+fn canonical_hashes_match_the_recorded_vectors() {
+    let actual = hash_vectors();
+    if recording() {
+        write_golden("hash.json", &Value::Array(actual));
+        return;
+    }
+    let recorded = golden("hash.json");
+    let recorded = recorded.as_array().expect("hash vectors");
+    assert_eq!(recorded.len(), actual.len());
+    for (want, got) in recorded.iter().zip(&actual) {
+        assert_eq!(want, got, "{}", want["name"]);
+        // A recorded state hashes the same when read back from its JSON.
+        if want["kind"] == "state" {
+            let state: farm_sim::GameState = serde_json::from_value(want["input"].clone()).expect("a GameState");
+            assert_eq!(want["hash"].as_str(), Some(farm_sim::hash_state(&state).as_str()), "{}", want["name"]);
+        }
+    }
+}
