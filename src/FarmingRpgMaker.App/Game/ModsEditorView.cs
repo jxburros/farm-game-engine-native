@@ -53,6 +53,7 @@ public sealed class ModsEditorView : UserControl
         layout.Children.Add(_registry);
         layout.Children.Add(Ui.Text("EXPORT SELECTION AS PACK", "section"));
         layout.Children.Add(Ui.Wrapped("Turn what you built here into a shareable content pack. Tick a type to include all of it, or open it to pick entries.", "muted", "small"));
+        Ui.Label((_exportName, "Pack name"));
         layout.Children.Add(Ui.HStack(8, Ui.Text("Pack name", "muted", "small"), _exportName));
         layout.Children.Add(_exportCategories);
         var export = Ui.Button("Save pack JSON…", async () => await ExportSelectionAsync(), "accent");
@@ -126,7 +127,9 @@ public sealed class ModsEditorView : UserControl
         foreach (var plugin in pack.Plugins)
         {
             _review.Children.Add(Ui.Text($"Plugin: {plugin.Name.OrNull() ?? plugin.Id} · hooks {string.Join(", ", plugin.Hooks)}", "section"));
-            _review.Children.Add(new TextBox { Text = plugin.Source, IsReadOnly = true, AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var source = new TextBox { Text = plugin.Source, IsReadOnly = true, AcceptsReturn = true, MinHeight = 80, MaxHeight = 180, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            Ui.Label((source, $"Plugin source: {plugin.Id}"));
+            _review.Children.Add(source);
         }
         _install.IsEnabled = true;
     }
@@ -296,6 +299,7 @@ public sealed class ModsEditorView : UserControl
             var down = Ui.Button("↓", () => _workspace.Apply(Edits.MovePack(_workspace.Current!, id, 1)), "tool", "small");
             down.Name = $"MovePackDown_{id}";
             down.IsEnabled = i < project.ContentPacks.Length - 1;
+            Ui.Label((up, $"Load {manifest.Name} earlier"), (down, $"Load {manifest.Name} later"), (enabled, $"{manifest.Name} enabled"));
             var import = Ui.Button("Import into project", () => _workspace.Apply(Edits.ImportPack(id)), "tool", "small");
             import.Name = $"ImportPack_{id}";
             var remove = Ui.Button("Remove", () => _workspace.Apply(Edits.RemovePack(id)), "tool", "small");

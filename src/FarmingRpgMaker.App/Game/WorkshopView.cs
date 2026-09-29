@@ -37,6 +37,8 @@ public sealed class WorkshopView : UserControl
         _openEditor = openEditor;
         Name = "WorkshopView";
         _message.Name = "WorkshopMessage";
+        Ui.Label((_patterns, "Pattern"), (_name, "Name"), (_text, "Story text or description"), (_x, "Scene tile X"), (_y, "Scene tile Y"),
+            (_day, "Delivery day"), (_friendship, "Friendship"), (_npc, "Character"));
         foreach (var pattern in Patterns.All) _patterns.Items.Add(new ComboBoxItem { Content = pattern.Name, Tag = pattern });
         _patterns.SelectionChanged += (_, _) =>
         {

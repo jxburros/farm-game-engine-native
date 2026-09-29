@@ -116,6 +116,9 @@ public sealed class SettingsEditorView : UserControl
         form.Children.Add(Ui.Wrapped("Procedural floors below an entrance tile; broken rocks reveal the ladder down.", "muted", "small"));
         _mineEnabled.Click += (_, _) => ToggleMine();
         form.Children.Add(_mineEnabled);
+        Ui.Label((_mineScene, "Mine entrance scene"), (_mineX, "Mine entrance X"), (_mineY, "Mine entrance Y"), (_mineFloors, "Mine floors"),
+            (_mineLadder, "Ladder chance (0.02–1)"), (_exportIcon, "Icon (PNG artwork, at least 256×256)"), (_exportWidth, "Window width"),
+            (_exportHeight, "Window height"), (_exportPixelScale, "Pixel scale"));
         _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance scene", "muted", "small"), _mineScene));
         _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance X", "muted", "small"), _mineX, Ui.Text("Y", "muted", "small"), _mineY));
         _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Floors", "muted", "small"), _mineFloors, Ui.Text("Ladder chance (0.02–1)", "muted", "small"), _mineLadder));
@@ -157,6 +160,7 @@ public sealed class SettingsEditorView : UserControl
 
     private static void Field(StackPanel form, string label, TextBox input)
     {
+        Ui.Label((input, label));
         form.Children.Add(Ui.Text(label, "muted", "small"));
         form.Children.Add(input);
     }
@@ -227,6 +231,8 @@ public sealed class SettingsEditorView : UserControl
         id.IsReadOnly = saved;
         var name = Box("Season_Name", season.Name, 145);
         var days = Box("Season_Days", Number(season.Days), 65);
+        var what = string.IsNullOrWhiteSpace(season.Name) ? "new season" : season.Name;
+        Ui.Label((id, $"{what} id"), (name, $"{what} name"), (days, $"{what} days"));
         var remove = Ui.Button("Remove", () =>
         {
             if (saved)
@@ -240,6 +246,7 @@ public sealed class SettingsEditorView : UserControl
                 _seasons.Children.Remove(row.Control);
             }
         }, "tool", "small");
+        Ui.Label((remove, $"Remove {what}"));
         var control = Ui.HStack(8, id, name, days, remove);
         if (saved && _workspace.Current is { } project)
         {
@@ -251,6 +258,7 @@ public sealed class SettingsEditorView : UserControl
             down.Name = $"Season_Down_{season.Id}";
             down.IsEnabled = SettingsForm.CanMoveSeason(project, season.Id, 1);
             ToolTip.SetTip(down, "Later in the year");
+            Ui.Label((up, $"Move {what} earlier in the year"), (down, $"Move {what} later in the year"));
             control.Children.Insert(0, down);
             control.Children.Insert(0, up);
         }
@@ -265,12 +273,15 @@ public sealed class SettingsEditorView : UserControl
         var name = Box("Festival_Name", festival.Name, 145);
         var season = Box("Festival_SeasonId", festival.SeasonId, 110);
         var day = Box("Festival_Day", Number(festival.Day), 60);
+        var festivalName = string.IsNullOrWhiteSpace(festival.Name) ? "new festival" : festival.Name;
+        Ui.Label((id, $"{festivalName} id"), (name, $"{festivalName} name"), (season, $"{festivalName} season id"), (day, $"{festivalName} day"));
         var remove = Ui.Button("Remove", () =>
         {
             var row = _festivalRows.First(r => ReferenceEquals(r.Id, id));
             _festivalRows.Remove(row);
             _festivals.Children.Remove(row.Control);
         }, "tool", "small");
+        Ui.Label((remove, $"Remove {festivalName}"));
         var control = Ui.HStack(8, id, name, season, day, remove);
         _festivalRows.Add(new FestivalRow(id, name, season, day, control));
         _festivals.Children.Add(control);
@@ -342,6 +353,7 @@ public sealed class SettingsEditorView : UserControl
             {
                 var cell = Box($"Weather_{season.Id}_{type.Id}", Number(SettingsForm.WeatherWeight(project, season.Id, type.Id)), 55);
                 ToolTip.SetTip(cell, $"{type.Name} in {season.Name}");
+                Ui.Label((cell, $"{type.Name} weight in {season.Name}"));
                 _weatherCells[(season.Id, type.Id)] = cell;
                 row.Children.Add(Ui.Text(type.Name, "muted", "small"));
                 row.Children.Add(cell);

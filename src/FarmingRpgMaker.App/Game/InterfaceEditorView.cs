@@ -33,6 +33,7 @@ public sealed class InterfaceEditorView : UserControl
         _workspace = workspace;
         Name = "InterfaceEditorView";
         _message.Name = "InterfaceMessage";
+        Ui.Label((_panels, "Game panels"), (_title, "Panel title"), (_flag, "Show after story flag (optional)"));
         _panels.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;

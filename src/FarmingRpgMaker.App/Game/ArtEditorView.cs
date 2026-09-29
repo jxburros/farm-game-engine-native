@@ -64,6 +64,10 @@ public sealed class ArtEditorView : UserControl
     {
         _workspace = workspace;
         _useMapBrush = useMapBrush;
+        Ui.Label((_assets, "Artwork"), (_svgSize, "SVG size (longest side, px)"), (_assetName, "Asset name"), (_clips, "Animation clip"),
+            (_clipName, "Clip name"), (_frameWidth, "Frame width"), (_frameHeight, "Frame height"), (_frameX, "Frame X"), (_frameY, "Frame Y"),
+            (_frameTicks, "Ticks per frame"), (_target, "Assign to"), (_bindingAsset, "Artwork to assign"), (_bindingClip, "Clip to assign"),
+            (_cellSize, "Cell size"), (_cellColumn, "Cell column"), (_cellRow, "Cell row"), (_tileType, "Map tile behavior"));
         Name = "ArtEditorView";
         _message.Name = "ArtMessage";
         _previewTimer.Tick += (_, _) => AdvancePreview();
@@ -517,6 +521,7 @@ public sealed class ArtEditorView : UserControl
             label.Name = $"ArtFrameLabel_{i}";
             var ticks = new TextBox { Name = $"ArtFrameTicks_{i}", Text = Number(frame.Ticks), Width = 52 };
             ToolTip.SetTip(ticks, $"Frame {i + 1} duration in ticks");
+            Ui.Label((ticks, $"Frame {i + 1} duration in ticks"));
             var setTicks = Ui.Button("Set", () =>
             {
                 if (SelectedAsset() is not { } asset) return;
@@ -527,6 +532,7 @@ public sealed class ArtEditorView : UserControl
                 catch (FormatException error) { _message.Text = error.Message; }
             }, "tool", "small");
             setTicks.Name = $"ArtFrameTicksSet_{i}";
+            Ui.Label((setTicks, $"Set frame {i + 1} duration"));
             var duplicate = Ui.Button("Copy", () =>
             {
                 if (SelectedAsset() is { } asset) _workspace.Apply(Edits.DuplicateFrame(asset.Id, clip.Name, i));
@@ -534,6 +540,7 @@ public sealed class ArtEditorView : UserControl
             duplicate.Name = $"ArtFrameDuplicate_{i}";
             duplicate.IsEnabled = clip.Frames.Length < 1024;
             ToolTip.SetTip(duplicate, "Duplicate this frame");
+            Ui.Label((duplicate, $"Duplicate frame {i + 1}"));
             var up = Ui.Button("↑", () =>
             {
                 if (i == 0) return;

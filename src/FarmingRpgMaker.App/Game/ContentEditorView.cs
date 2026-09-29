@@ -164,6 +164,7 @@ public sealed class ContentEditorView : UserControl
         _workspace = workspace;
         Name = "ContentEditorView";
         _message.Name = "ContentMessage";
+        Ui.Label((_category, "Content type"), (_entities, "Entries"));
         foreach (var category in Categories)
         {
             _category.Items.Add(new ComboBoxItem { Content = category.Name, Tag = category });
