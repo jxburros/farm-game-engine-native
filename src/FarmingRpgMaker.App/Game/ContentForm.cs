@@ -4,10 +4,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
 using FarmEngine.Interop;
@@ -25,6 +27,9 @@ namespace FarmingRpgMaker.App.Game;
 /// which condition and outcome fields each type shows, and what new rows start as. Every nested
 /// field also has a collapsed "Edit as JSON" box. Controls write into the draft; the owner turns
 /// it back into the record with <see cref="Commit"/> and applies one F# upsert.
+/// Where the web has its own layout the form follows it: tabs F# lists for the record (crops),
+/// compact schedule and waypoint rows (NPCs), stock cards (shops), and art previews beside visual
+/// bindings and legacy image fields.
 /// </summary>
 internal sealed class ContentForm
 {
@@ -39,6 +44,9 @@ internal sealed class ContentForm
     private readonly List<JsonEscape> _json = [];
     private readonly List<string> _errors = [];
     private readonly Dictionary<string, IReadOnlyList<PickerOption>> _options = [];
+    private Dictionary<string, Item>? _items;
+    private VisualPreview? _art;
+    private int _tab;
 
     public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report)
     {
@@ -119,7 +127,7 @@ internal sealed class ContentForm
         _writers.Clear();
         _json.Clear();
         _options.Clear();
-        AddProperties(_root, Draft, _entityType, "");
+        AddForm();
     }
 
     private object CurrentEntity()
@@ -207,14 +215,68 @@ internal sealed class ContentForm
 
     // ---- Record forms ----
 
-    private void AddProperties(Panel panel, JsonObject target, Type type, string path)
+    /// <summary>
+    /// The entry itself: one form, or a tab per F# <see cref="FormTab"/> (web CropEditor's Basic /
+    /// Growth / Asset). Every tab's controls exist, so the writers and <see cref="Commit"/> do not
+    /// depend on the tab showing. The art previews of one build share a renderer that is freed
+    /// when the build is done; the images keep their own bitmaps.
+    /// </summary>
+    private void AddForm()
+    {
+        _art = new VisualPreview();
+        try
+        {
+            var tabs = ContentReadouts.FormTabs(_entityType.Name);
+            if (tabs.Count == 0) AddProperties(_root, Draft, _entityType, "");
+            else _root.Children.Add(Tabs(tabs));
+        }
+        finally
+        {
+            _art.Dispose();
+            _art = null;
+        }
+    }
+
+    /// <summary>The tabs in F# order; properties no tab lists go on the last one. A rebuild keeps the selected tab.</summary>
+    private TabControl Tabs(IReadOnlyList<FormTab> tabs)
+    {
+        var properties = VisibleProperties(Draft, _entityType).ToList();
+        var listed = tabs.SelectMany(ContentReadouts.TabProperties).ToHashSet();
+        var control = new TabControl { Name = "ContentTabs" };
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var panel = new StackPanel { Spacing = 10, Margin = new Thickness(0, 12, 0, 0) };
+            var shown = ContentReadouts.TabProperties(tabs[i])
+                .Select(name => properties.FirstOrDefault(property => property.Name == name))
+                .OfType<PropertyInfo>();
+            if (i == tabs.Count - 1) shown = shown.Concat(properties.Where(property => !listed.Contains(property.Name)));
+            foreach (var property in shown) AddProperty(panel, Draft, _entityType, property, property.Name);
+            var title = tabs[i].Title;
+            control.Items.Add(Accessible(new TabItem { Name = "ContentTab_" + string.Concat(title.Where(char.IsLetterOrDigit)), Header = title, Content = panel }, title));
+        }
+
+        control.SelectedIndex = Math.Clamp(_tab, 0, tabs.Count - 1);
+        control.SelectionChanged += (_, e) =>
+        {
+            // Pickers inside the tabs raise the same (bubbling) event.
+            if (ReferenceEquals(e.Source, control) && control.SelectedIndex >= 0) _tab = control.SelectedIndex;
+        };
+        return control;
+    }
+
+    /// <summary>A record's fields as the form shows them: F# hides some while its <c>type</c> says so (quest objective targets).</summary>
+    private static IEnumerable<PropertyInfo> VisibleProperties(JsonObject target, Type type)
     {
         var hidden = type.GetProperty("Type")?.PropertyType == typeof(string)
             ? ContentForms.HiddenProperties(type.Name, StringOf(target["type"]) ?? "")
             : [];
-        foreach (var property in FormProperties(type))
+        return FormProperties(type).Where(property => !hidden.Contains(property.Name));
+    }
+
+    private void AddProperties(Panel panel, JsonObject target, Type type, string path)
+    {
+        foreach (var property in VisibleProperties(target, type))
         {
-            if (hidden.Contains(property.Name)) continue;
             AddProperty(panel, target, type, property, Join(path, property.Name));
         }
     }
@@ -232,16 +294,17 @@ internal sealed class ContentForm
         if (property.Name == "Id" && type == typeof(string))
         {
             panel.Children.Add(Label(label));
-            panel.Children.Add(new TextBox { Name = name, Text = StringOf(target[key]) ?? "", IsReadOnly = true });
+            panel.Children.Add(Accessible(new TextBox { Name = name, Text = StringOf(target[key]) ?? "", IsReadOnly = true }, label));
             return;
         }
 
         if (type == typeof(string))
         {
             panel.Children.Add(Label(label));
-            panel.Children.Add(StringControl(target, key, name, field, nullable,
+            var control = StringControl(target, key, name, label, field, nullable,
                 multiline: property.Name is "Description" or "Text" or "Message" or "FailMessage",
-                rebuildOnChange: property.Name == "Type"));
+                rebuildOnChange: property.Name == "Type");
+            panel.Children.Add(control is TextBox box && property.Name is "CustomImage" or "CustomAsset" ? WithThumbnail(box, path, label) : control);
             return;
         }
 
@@ -265,12 +328,15 @@ internal sealed class ContentForm
         {
             if (element == typeof(string))
             {
-                if (field is { Kind: "referenceList" }) AddReferenceChips(body, target, key, path, field.Reference, nullable);
-                else AddTextRows(body, target, key, path, nullable);
+                if (field is { Kind: "referenceList" }) AddReferenceChips(body, target, key, path, label, field.Reference, nullable);
+                else AddTextRows(body, target, key, path, label, nullable);
             }
             else if (IsNumber(element)) AddNumberRows(body, target, key, path, label, nullable);
             else if (element == typeof(EventCondition)) AddConditions(body, target, key, path);
             else if (element == typeof(EventOutcome)) AddOutcomes(body, target, key, path);
+            else if (element == typeof(NpcScheduleEntry)) AddScheduleRows(body, target, key, path, nullable);
+            else if (element == typeof(GridPoint)) AddWaypointRows(body, target, key, path, nullable);
+            else if (element == typeof(ShopStockEntry)) AddStockCards(body, target, key, path, nullable);
             else if (IsRecord(element)) AddRecordList(body, target, key, path, element, nullable);
         }
         else if (IsRecord(type)) AddNested(body, target, key, path, type, nullable, label);
@@ -284,6 +350,26 @@ internal sealed class ContentForm
 
     private static TextBlock Label(string text) => Ui.Text(text, "muted", "small");
 
+    /// <summary>Gives <paramref name="control"/> the name screen readers announce (its visible label).</summary>
+    private static T Accessible<T>(T control, string name) where T : Control
+    {
+        AutomationProperties.SetName(control, name);
+        return control;
+    }
+
+    /// <summary>Controls side by side in <paramref name="columns"/> (Grid column definitions).</summary>
+    private static Grid Columns(string columns, params Control[] children)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(columns), ColumnSpacing = 6 };
+        for (var i = 0; i < children.Length; i++)
+        {
+            Grid.SetColumn(children[i], i);
+            grid.Children.Add(children[i]);
+        }
+
+        return grid;
+    }
+
     private static StackPanel Labeled(string label, Control control, double width = 0)
     {
         var stack = Ui.VStack(3, Label(label), control);
@@ -293,12 +379,13 @@ internal sealed class ContentForm
 
     // ---- Scalars ----
 
-    private Control StringControl(JsonObject target, string key, string name, FormField? field, bool nullable, bool multiline, bool rebuildOnChange)
+    private Control StringControl(JsonObject target, string key, string name, string label, FormField? field, bool nullable, bool multiline, bool rebuildOnChange,
+        Func<PickerOption, string>? optionLabel = null)
     {
         var current = StringOf(target[key]);
         if (field is { Kind: "reference" or "choice" })
         {
-            var picker = Picker(name, field, current);
+            var picker = Accessible(Picker(name, field, current, optionLabel), label);
             var initial = SelectedId(picker);
             _writers.Add(() =>
             {
@@ -310,14 +397,14 @@ internal sealed class ContentForm
             return picker;
         }
 
-        var box = new TextBox
+        var box = Accessible(new TextBox
         {
             Name = name,
             Text = current ?? "",
             AcceptsReturn = multiline,
             TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
             MinHeight = multiline ? 54 : 30,
-        };
+        }, label);
         if (field is { Kind: "plain" } && field.Reason.Length > 0) ToolTip.SetTip(box, Ui.Capitalize(field.Reason) + ".");
         var original = box.Text;
         _writers.Add(() =>
@@ -332,7 +419,7 @@ internal sealed class ContentForm
     private CheckBox BoolControl(JsonObject target, string key, string name, string label, bool? whenAbsent)
     {
         var value = target[key] is JsonValue node && node.TryGetValue<bool>(out var flag) ? flag : whenAbsent;
-        var check = new CheckBox { Name = name, Content = label, IsChecked = value, IsThreeState = whenAbsent is null };
+        var check = Accessible(new CheckBox { Name = name, Content = label, IsChecked = value, IsThreeState = whenAbsent is null }, label);
         var original = check.IsChecked;
         _writers.Add(() =>
         {
@@ -344,7 +431,7 @@ internal sealed class ContentForm
 
     private TextBox NumberControl(JsonObject target, string key, string name, string label, bool integer, bool optional, double whenEmpty, double? min, double? max)
     {
-        var box = new TextBox { Name = name, Text = NumberText(target[key]), MinWidth = 90 };
+        var box = Accessible(new TextBox { Name = name, Text = NumberText(target[key]), MinWidth = 90 }, label);
         var original = box.Text;
         _writers.Add(() =>
         {
@@ -370,7 +457,11 @@ internal sealed class ContentForm
         return box;
     }
 
-    private ComboBox Picker(string name, FormField field, string? current)
+    /// <summary>
+    /// A picker of <paramref name="field"/>'s choices or references, keeping an unknown current id
+    /// as "(missing: id)"; <paramref name="optionLabel"/> relabels the known entries.
+    /// </summary>
+    private ComboBox Picker(string name, FormField field, string? current, Func<PickerOption, string>? optionLabel = null)
     {
         var available = field.Kind == "choice" ? field.Choices : Options(field.Reference);
         var picker = new ComboBox
@@ -384,8 +475,9 @@ internal sealed class ContentForm
         };
         foreach (var option in ContentForms.Entries(field, available, current))
         {
-            var item = new ComboBoxItem { Content = option.Label, Tag = option.Id };
-            TextSearch.SetText(item, option.Label);
+            var label = optionLabel is not null && !option.Missing ? optionLabel(option) : option.Label;
+            var item = new ComboBoxItem { Content = label, Tag = option.Id };
+            TextSearch.SetText(item, label);
             if (option.Missing) item.Classes.Add("missing");
             picker.Items.Add(item);
         }
@@ -409,7 +501,7 @@ internal sealed class ContentForm
 
     private Button SmallButton(string name, string text, string tip, Action action, bool enabled = true)
     {
-        var button = Ui.Button(text, action, "tool", "small");
+        var button = Accessible(Ui.Button(text, action, "tool", "small"), tip);
         button.Name = name;
         button.IsEnabled = enabled;
         ToolTip.SetTip(button, tip);
@@ -463,12 +555,16 @@ internal sealed class ContentForm
             panel.Children.Add(ListRow(header, body));
         }
 
-        panel.Children.Add(SmallButton($"ContentAdd_{path}", $"Add {what}", $"Add a {what}", () => Structural(() =>
+        panel.Children.Add(AddElementButton(path, $"Add {what}", $"Add a {what}", element, target, key));
+    }
+
+    /// <summary>Appends what F# says a new <paramref name="element"/> of this entry starts as.</summary>
+    private Button AddElementButton(string path, string text, string tip, Type element, JsonObject target, string key) =>
+        SmallButton($"ContentAdd_{path}", text, tip, () => Structural(() =>
         {
             var list = EnsureArray(target, key);
             list.Add(NewElementNode(element, list));
-        })));
-    }
+        }));
 
     private JsonNode NewElementNode(Type element, JsonArray siblings)
     {
@@ -495,16 +591,18 @@ internal sealed class ContentForm
             panel.Children.Add(include);
         }
 
-        if (node is not null) AddProperties(panel, node, type, path);
+        if (node is null) return;
+        if (type == typeof(VisualRef)) AddVisual(panel, node, path);
+        else AddProperties(panel, node, type, path);
     }
 
-    private void AddTextRows(Panel panel, JsonObject target, string key, string path, bool nullable)
+    private void AddTextRows(Panel panel, JsonObject target, string key, string path, string label, bool nullable)
     {
         var array = target[key] as JsonArray;
         for (var i = 0; i < (array?.Count ?? 0); i++)
         {
             var index = i;
-            var box = new TextBox { Name = $"ContentField_{path}_{i}", Text = StringOf(array![i]) ?? array[i]?.ToJsonString() ?? "", MinWidth = 180 };
+            var box = Accessible(new TextBox { Name = $"ContentField_{path}_{i}", Text = StringOf(array![i]) ?? array[i]?.ToJsonString() ?? "", MinWidth = 180 }, $"{label} {i + 1}");
             var original = box.Text;
             _writers.Add(() =>
             {
@@ -546,7 +644,7 @@ internal sealed class ContentForm
     }
 
     /// <summary>Reference lists as chips with a picker that adds the ids not chosen yet.</summary>
-    private void AddReferenceChips(Panel panel, JsonObject target, string key, string path, string kind, bool nullable)
+    private void AddReferenceChips(Panel panel, JsonObject target, string key, string path, string label, string kind, bool nullable)
     {
         var array = target[key] as JsonArray;
         var ids = array?.Select(node => StringOf(node) ?? "").ToList() ?? [];
@@ -557,7 +655,7 @@ internal sealed class ContentForm
         {
             var index = i;
             var text = Ui.Text(entries[i].Label, entries[i].Missing ? "error" : "small");
-            var remove = SmallButton($"ContentChipRemove_{path}_{i}", "×", "Remove", () => Structural(() =>
+            var remove = SmallButton($"ContentChipRemove_{path}_{i}", "×", $"Remove {entries[i].Label}", () => Structural(() =>
             {
                 array!.RemoveAt(index);
                 if (array.Count == 0 && nullable) target[key] = null;
@@ -567,7 +665,7 @@ internal sealed class ContentForm
 
         if (entries.Count == 0) chips.Children.Add(Ui.Text(nullable ? "None (no restriction)" : "None", "muted", "small"));
         panel.Children.Add(chips);
-        var add = new ComboBox { Name = $"ContentChipAdd_{path}", PlaceholderText = "Add…", MinWidth = 200 };
+        var add = Accessible(new ComboBox { Name = $"ContentChipAdd_{path}", PlaceholderText = "Add…", MinWidth = 200 }, $"Add to {label}");
         foreach (var option in available.Where(option => !ids.Contains(option.Id)))
         {
             var item = new ComboBoxItem { Content = option.Label, Tag = option.Id };
@@ -591,9 +689,9 @@ internal sealed class ContentForm
         for (var i = 0; i < entries.Count; i++)
         {
             var index = i;
-            var keyBox = new TextBox { Name = $"ContentKey_{path}_{i}", Text = entries[i].Key, Width = 140 };
+            var keyBox = Accessible(new TextBox { Name = $"ContentKey_{path}_{i}", Text = entries[i].Key, Width = 140 }, $"Setting {i + 1} name");
             var value = entries[i].Value;
-            var valueBox = new TextBox { Name = $"ContentValue_{path}_{i}", Text = StringOf(value) ?? value?.ToJsonString() ?? "null", MinWidth = 160 };
+            var valueBox = Accessible(new TextBox { Name = $"ContentValue_{path}_{i}", Text = StringOf(value) ?? value?.ToJsonString() ?? "null", MinWidth = 160 }, $"Setting {i + 1} value");
             var originalKey = keyBox.Text;
             var originalValue = valueBox.Text;
             _writers.Add(() => changed |= keyBox.Text != originalKey || valueBox.Text != originalValue);
@@ -644,11 +742,324 @@ internal sealed class ContentForm
         }
     }
 
+    // ---- Compact rows and cards (web NPCEditor's schedule and waypoints, ShopEditor's stock) ----
+
+    private static string Key<T>(string property) => RecordJson.JsonKey(typeof(T), property);
+
+    private static TextBlock EmptyNote(string path, string text)
+    {
+        var note = Ui.Wrapped(text, "muted", "small");
+        note.Name = $"ContentEmpty_{path}";
+        return note;
+    }
+
+    private static Control NotAnObject(Control buttons) =>
+        Columns("*,Auto", Ui.Wrapped("This entry is not an object; use Edit as JSON.", "muted", "small"), buttons);
+
+    /// <summary>A whole-number tile coordinate box.</summary>
+    private TextBox Coordinate(JsonObject target, string key, string name, string label, string watermark)
+    {
+        var box = NumberControl(target, key, name, label, integer: true, optional: false, whenEmpty: 0, min: null, max: null);
+        box.MinWidth = 0;
+        box.Width = 64;
+        box.Watermark = watermark;
+        return box;
+    }
+
+    /// <summary>
+    /// Web NPCEditor's daily schedule: a row per entry with the minute of day and its clock time,
+    /// the scene, x and y. New entries come from F# (8:00 AM at the NPC's own scene and tile).
+    /// </summary>
+    private void AddScheduleRows(Panel panel, JsonObject target, string key, string path, bool nullable)
+    {
+        var array = target[key] as JsonArray;
+        var count = array?.Count ?? 0;
+        var sceneField = ContentForms.Field(nameof(NpcScheduleEntry), nameof(NpcScheduleEntry.SceneId), "Scene");
+        for (var i = 0; i < count; i++)
+        {
+            var title = $"Schedule entry {i + 1}";
+            var buttons = RowButtons(path, i, count, array!, target, key, nullable, $"schedule entry {i + 1}");
+            if (array![i] is not JsonObject entry)
+            {
+                panel.Children.Add(NotAnObject(buttons));
+                continue;
+            }
+
+            var minute = NumberControl(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.Minute)), $"ContentField_{path}_{i}_Minute", $"{title} minute",
+                integer: true, optional: false, whenEmpty: 0, min: 0, max: 1560);
+            minute.MinWidth = 0;
+            ToolTip.SetTip(minute, "Minute of day (480 = 8:00 AM)");
+            var clock = Ui.Text(ClockText(minute.Text), "muted", "small");
+            clock.Name = $"ContentClock_{path}_{i}";
+            minute.TextChanged += (_, _) => clock.Text = ClockText(minute.Text);
+            var scene = StringControl(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.SceneId)), $"ContentField_{path}_{i}_SceneId", $"{title} scene",
+                sceneField, nullable: false, multiline: false, rebuildOnChange: false);
+            scene.MinWidth = 120;
+            var x = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
+            var y = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
+            var row = Columns("72,118,*,Auto,Auto,Auto", minute, clock, scene, x, y, buttons);
+            row.Name = $"ContentRow_{path}_{i}";
+            panel.Children.Add(row);
+        }
+
+        if (count == 0) panel.Children.Add(EmptyNote(path, "No schedule — the NPC stays put (or wanders/patrols)."));
+        panel.Children.Add(AddElementButton(path, "Add schedule entry", "Add schedule entry", typeof(NpcScheduleEntry), target, key));
+    }
+
+    /// <summary>A typed minute of day as a clock time ("8:00 AM"), clamped like the saved value; empty while it is not a number.</summary>
+    private static string ClockText(string? text) =>
+        double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var minute) && double.IsFinite(minute)
+            ? ContentReadouts.Clock(Math.Clamp(minute, 0, 1560))
+            : "";
+
+    /// <summary>Web NPCEditor's patrol waypoints: "1. x y" rows; new points start at the NPC's tile (F#).</summary>
+    private void AddWaypointRows(Panel panel, JsonObject target, string key, string path, bool nullable)
+    {
+        var array = target[key] as JsonArray;
+        var count = array?.Count ?? 0;
+        for (var i = 0; i < count; i++)
+        {
+            var title = $"Waypoint {i + 1}";
+            var buttons = RowButtons(path, i, count, array!, target, key, nullable, $"waypoint {i + 1}");
+            if (array![i] is not JsonObject point)
+            {
+                panel.Children.Add(NotAnObject(buttons));
+                continue;
+            }
+
+            var number = Ui.Text($"{i + 1}.", "muted", "small");
+            number.MinWidth = 18;
+            var x = Coordinate(point, Key<GridPoint>(nameof(GridPoint.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
+            var y = Coordinate(point, Key<GridPoint>(nameof(GridPoint.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
+            var row = Ui.HStack(6, number, x, y, buttons);
+            row.Name = $"ContentRow_{path}_{i}";
+            panel.Children.Add(row);
+        }
+
+        if (count == 0) panel.Children.Add(EmptyNote(path, "No waypoints yet."));
+        panel.Children.Add(AddElementButton(path, "Add waypoint", "Add waypoint", typeof(GridPoint), target, key));
+    }
+
+    /// <summary>
+    /// Web ShopEditor's stock: a card per entry with the item (its base value in the label), a price
+    /// override over that base, a daily limit and the calendar's seasons as checkboxes. Keys the form
+    /// does not know stay in the entry.
+    /// </summary>
+    private void AddStockCards(Panel panel, JsonObject target, string key, string path, bool nullable)
+    {
+        var array = target[key] as JsonArray;
+        var count = array?.Count ?? 0;
+        var itemField = ContentForms.Field(nameof(ShopStockEntry), nameof(ShopStockEntry.ItemId), "Item");
+        var itemKey = Key<ShopStockEntry>(nameof(ShopStockEntry.ItemId));
+        for (var i = 0; i < count; i++)
+        {
+            var title = $"Stock {i + 1}";
+            var buttons = RowButtons(path, i, count, array!, target, key, nullable, $"stock entry {i + 1}");
+            if (array![i] is not JsonObject entry)
+            {
+                panel.Children.Add(NotAnObject(buttons));
+                continue;
+            }
+
+            var item = StringControl(entry, itemKey, $"ContentField_{path}_{i}_ItemId", $"{title} item", itemField, nullable: false, multiline: false, rebuildOnChange: false,
+                optionLabel: StockLabel);
+            var price = NumberControl(entry, Key<ShopStockEntry>(nameof(ShopStockEntry.Price)), $"ContentField_{path}_{i}_Price", $"{title} price override",
+                integer: false, optional: true, whenEmpty: 0, min: null, max: null);
+            price.Watermark = BaseValueText(StringOf(entry[itemKey]));
+            if (item is ComboBox picker) picker.SelectionChanged += (_, _) => price.Watermark = BaseValueText(SelectedId(picker));
+            var limit = LimitControl(entry, Key<ShopStockEntry>(nameof(ShopStockEntry.DailyLimit)), $"ContentField_{path}_{i}_DailyLimit", $"{title} daily limit");
+            var seasons = SeasonChecks(entry, Key<ShopStockEntry>(nameof(ShopStockEntry.Seasons)), $"{path}_{i}", title);
+            var card = Ui.VStack(8,
+                Columns("*,Auto", item, buttons),
+                Columns("*,*", Labeled("Price override", price), Labeled("Daily limit", limit)),
+                Ui.VStack(4, Label("Seasons (none = all seasons)"), seasons));
+            panel.Children.Add(new Border { Name = $"ContentCard_{path}_{i}", Child = card }.WithClasses("row"));
+        }
+
+        if (count == 0) panel.Children.Add(EmptyNote(path, "No stock entries. Add one to sell items."));
+        panel.Children.Add(AddElementButton(path, "Add stock entry", "Add stock entry", typeof(ShopStockEntry), target, key));
+    }
+
+    /// <summary>The effective items (the project's, or the built-in catalog) by id.</summary>
+    private Dictionary<string, Item> ItemsById() =>
+        _items ??= ProjectContent.Compile(_project).Items.DistinctBy(item => item.Id).ToDictionary(item => item.Id);
+
+    /// <summary>"Wheat ($25)": an item with its base value (web ShopEditor's picker).</summary>
+    private string StockLabel(PickerOption option) =>
+        ItemsById().TryGetValue(option.Id, out var item)
+            ? $"{(string.IsNullOrWhiteSpace(item.Name) ? item.Id : item.Name)} ({ContentReadouts.Money(item.Value)})"
+            : option.Label;
+
+    /// <summary>The price placeholder: "25 (base)", the item's value when there is no override.</summary>
+    private string BaseValueText(string? itemId) =>
+        itemId is not null && ItemsById().TryGetValue(itemId, out var item) ? $"{Ui.Num(item.Value)} (base)" : "Base value";
+
+    /// <summary>A whole-number limit; empty, zero or less removes it (web "Unlimited").</summary>
+    private TextBox LimitControl(JsonObject target, string key, string name, string label)
+    {
+        var box = Accessible(new TextBox { Name = name, Text = NumberText(target[key]), MinWidth = 90, Watermark = "Unlimited" }, label);
+        var original = box.Text;
+        _writers.Add(() =>
+        {
+            var raw = (box.Text ?? "").Trim();
+            if (raw == original) return;
+            if (raw.Length == 0)
+            {
+                target[key] = null;
+                return;
+            }
+
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value) || value != Math.Floor(value))
+            {
+                _errors.Add($"{label} must be a whole number.");
+                return;
+            }
+
+            target[key] = value > 0 ? JsonValue.Create(value) : null;
+        });
+        return box;
+    }
+
+    /// <summary>
+    /// A season filter as a checkbox per calendar season: none checked means every season and is
+    /// stored as absent. Ids the calendar no longer has stay listed as "(missing: id)" until unchecked.
+    /// </summary>
+    private WrapPanel SeasonChecks(JsonObject target, string key, string path, string title)
+    {
+        var ids = (target[key] as JsonArray)?.Select(node => StringOf(node) ?? "").ToList() ?? [];
+        var calendar = Options("season");
+        var seasons = calendar.Concat(ContentForms.ListEntries(calendar, ids).Where(entry => entry.Missing)).DistinctBy(entry => entry.Id).ToList();
+        var wrap = new WrapPanel { Name = $"ContentSeasons_{path}" };
+        var checks = new List<(string Id, CheckBox Check)>();
+        for (var i = 0; i < seasons.Count; i++)
+        {
+            var check = new CheckBox
+            {
+                Name = $"ContentSeason_{path}_{i}",
+                Content = seasons[i].Label,
+                IsChecked = ids.Contains(seasons[i].Id),
+                Margin = new Thickness(0, 0, 14, 0),
+            };
+            checks.Add((seasons[i].Id, Accessible(check, $"{title} season {seasons[i].Label}")));
+            wrap.Children.Add(check);
+        }
+
+        var original = checks.Select(entry => entry.Check.IsChecked).ToList();
+        _writers.Add(() =>
+        {
+            if (checks.Select(entry => entry.Check.IsChecked).SequenceEqual(original)) return;
+            var chosen = checks.Where(entry => entry.Check.IsChecked == true).Select(entry => (JsonNode?)JsonValue.Create(entry.Id)).ToArray();
+            target[key] = chosen.Length == 0 ? null : new JsonArray(chosen);
+        });
+        return wrap;
+    }
+
+    // ---- Art previews ----
+
+    private const double ArtSize = 64;
+
+    /// <summary>
+    /// A visual binding's fields beside a small preview of its art, drawn by the Rust renderer as
+    /// the game draws it; picking another asset redraws it.
+    /// </summary>
+    private void AddVisual(Panel panel, JsonObject node, string path)
+    {
+        var fields = new StackPanel { Spacing = 8 };
+        AddProperties(fields, node, typeof(VisualRef), path);
+        var preview = Accessible(new Border
+        {
+            Name = $"ContentArt_{path}",
+            Width = ArtSize + 10,
+            Height = ArtSize + 10,
+            Padding = new Thickness(4),
+            VerticalAlignment = VerticalAlignment.Top,
+        }.WithClasses("row"), "Art preview");
+        Show(preview, ArtImage(node));
+        var assetKey = Key<VisualRef>(nameof(VisualRef.AssetId));
+        var pickerName = $"ContentField_{Join(path, nameof(VisualRef.AssetId))}";
+        if (fields.Children.OfType<ComboBox>().FirstOrDefault(picker => picker.Name == pickerName) is { } picker)
+        {
+            picker.SelectionChanged += (_, _) =>
+            {
+                if (SelectedId(picker) is not { } id) return;
+                var chosen = (JsonObject)node.DeepClone();
+                chosen[assetKey] = id;
+                Show(preview, ArtImage(chosen));
+            };
+        }
+
+        panel.Children.Add(Columns("*,Auto", fields, preview));
+    }
+
+    /// <summary>A preview frame holds an image, or hides while there is none.</summary>
+    private static void Show(Border frame, Image? image)
+    {
+        frame.Child = image;
+        frame.IsVisible = image is not null;
+    }
+
+    /// <summary>The art a visual binding draws, or null when it draws nothing.</summary>
+    private Image? ArtImage(JsonNode node)
+    {
+        VisualRef visual;
+        try
+        {
+            visual = RecordJson.FromNode<VisualRef>(node);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        if (visual.AssetId.Length == 0) return null;
+        if (_art is not null) return _art.Render(_project, visual, 0, ArtSize);
+        using var art = new VisualPreview();
+        return art.Render(_project, visual, 0, ArtSize);
+    }
+
+    /// <summary>A legacy image field (an asset id or a data URL) with a thumbnail of what it holds.</summary>
+    private Grid WithThumbnail(TextBox box, string path, string label)
+    {
+        var thumbnail = Accessible(new Border
+        {
+            Name = $"ContentThumb_{path}",
+            Width = 40,
+            Height = 40,
+            VerticalAlignment = VerticalAlignment.Center,
+        }, $"{label} preview");
+        Show(thumbnail, Thumbnail(box.Text));
+        box.TextChanged += (_, _) => Show(thumbnail, Thumbnail(box.Text));
+        return Columns("*,Auto", box, thumbnail);
+    }
+
+    /// <summary>The image of a <c>data:image/…;base64,</c> URL, or of the asset with that id; null when there is none or it does not decode.</summary>
+    private Image? Thumbnail(string? text)
+    {
+        var url = (text ?? "").Trim();
+        if (url.Length == 0) return null;
+        if (!url.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            url = _project.CustomAssets.FirstOrDefault(asset => asset.Id == url)?.DataUrl ?? "";
+        var comma = url.IndexOf(',', StringComparison.Ordinal);
+        if (comma < 0 || !url.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
+            || !url[..comma].EndsWith(";base64", StringComparison.OrdinalIgnoreCase)) return null;
+        try
+        {
+            using var stream = new MemoryStream(Convert.FromBase64String(url[(comma + 1)..]));
+            var image = new Image { Source = new Bitmap(stream), Stretch = Stretch.Uniform };
+            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.None);
+            return image;
+        }
+        catch (Exception error) when (error is FormatException or ArgumentException or InvalidOperationException or NotSupportedException or IOException)
+        {
+            return null;
+        }
+    }
+
     // ---- Condition and outcome vocabulary ----
 
     private ComboBox TypePicker(string name, IReadOnlyList<PickerOption> types, string current, string placeholder)
     {
-        var picker = new ComboBox { Name = name, MinWidth = 200, PlaceholderText = placeholder };
+        var picker = Accessible(new ComboBox { Name = name, MinWidth = 200, PlaceholderText = placeholder }, placeholder.TrimStart('+', ' '));
         foreach (var option in types)
         {
             picker.Items.Add(new ComboBoxItem { Content = option.Label, Tag = option.Id });
@@ -735,16 +1146,16 @@ internal sealed class ContentForm
                     wrap.Children.Add(BoolControl(target, field.Key, name, field.OnLabel, whenAbsent: true));
                     break;
                 case "choice" or "reference":
-                    wrap.Children.Add(Labeled(field.Label, StringControl(target, field.Key, name, field, field.Optional, multiline: false, rebuildOnChange: false), 240));
+                    wrap.Children.Add(Labeled(field.Label, StringControl(target, field.Key, name, field.Label, field, field.Optional, multiline: false, rebuildOnChange: false), 240));
                     break;
                 case "referenceList":
                     var chips = new StackPanel { Spacing = 4 };
                     chips.Children.Add(Label(field.Label));
-                    AddReferenceChips(chips, target, field.Key, $"{path}_{Pascal(field.Key)}", field.Reference, nullable: false);
+                    AddReferenceChips(chips, target, field.Key, $"{path}_{Pascal(field.Key)}", field.Label, field.Reference, nullable: false);
                     stack.Children.Add(chips);
                     break;
                 default:
-                    var text = (TextBox)StringControl(target, field.Key, name, null, field.Optional, multiline: false, rebuildOnChange: false);
+                    var text = (TextBox)StringControl(target, field.Key, name, field.Label, null, field.Optional, multiline: false, rebuildOnChange: false);
                     text.Watermark = field.Placeholder;
                     text.MinWidth = 240;
                     wrap.Children.Add(Labeled(field.Label, text));
@@ -762,7 +1173,7 @@ internal sealed class ContentForm
     private void AddJsonEscape(Panel panel, JsonObject target, string key, string path, string label, bool nullable)
     {
         var text = target[key]?.ToJsonString(InteropJson.Indented) ?? "null";
-        var box = new TextBox
+        var box = Accessible(new TextBox
         {
             Name = $"ContentJson_{path}",
             Text = text,
@@ -770,8 +1181,8 @@ internal sealed class ContentForm
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 70,
             FontFamily = new FontFamily("Cascadia Mono, Consolas, DejaVu Sans Mono, monospace"),
-        };
-        var apply = SmallButton($"ContentJsonApply_{path}", "Apply JSON", "Replace this field with the JSON above", () => Structural(() => { }));
+        }, $"{label} as JSON");
+        var apply = Accessible(SmallButton($"ContentJsonApply_{path}", "Apply JSON", "Replace this field with the JSON above", () => Structural(() => { })), $"Apply {label} JSON");
         _json.Add(new JsonEscape(label, box, text, nullable, node => target[key] = node));
         panel.Children.Add(new Expander
         {
