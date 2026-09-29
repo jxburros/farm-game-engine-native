@@ -2,6 +2,81 @@
 
 ## 0.2.0 (unreleased)
 
+- **One engine for the web and native editors.** The web editor
+  ([jxburros/farm-game-engine](https://github.com/jxburros/farm-game-engine))
+  now runs this repository's engine: its Play Mode plays through `farm-wasm`,
+  and opening older projects, importing, the Problems panel and a new
+  "Download cartridge (.farmcart)" export run the F# authoring core compiled to
+  JavaScript. Both builds are vendored in the web repo's `packages/engine-native`
+  with the native commit they came from.
+- **Schema records in F#.** The project, content and save records moved from
+  C# to F# (`Schema.fs`, with explicit JSON codecs in `SchemaJson.fs`), and the
+  C# `FarmEngine.Schemas` project, its migrations, validation and generated
+  FlatBuffers readers are gone. The authoring core has no .NET-only code left:
+  JSON, UTF-8, base64, SHA-256 and the FlatBuffers builder are plain F#, and
+  cartridges come out byte-identical. The whole core compiles with Fable, and
+  CI checks the JavaScript against the .NET cartridges and every migration
+  golden. The desktop app builds records through generated `WithField`
+  extensions (`RecordWith`). Behaviour snapshots of every golden, fixture,
+  broken and sample project (`fixtures/authoring/snapshots.json`) pinned the
+  move.
+- **WebAssembly player (`farm-wasm`).** Web pages can run the same game player
+  as the editor's Play Mode. `farm-wasm` is a wasm-bindgen package that mirrors
+  `farm-ffi`: `Player` (frames with RGBA pixels for `ImageData`, sound cues,
+  debug actions, keep changes, queries), `Session` (headless replays),
+  `Preview` and `renderJson`, `hashText`, and `sfxSamples` to play the
+  synthesized sound effects with WebAudio. Save slots and settings are kept in
+  memory and move to browser storage through `exportStorage`/`importStorage`.
+  Pack plugins run inside the module. The player, session and preview protocol
+  now lives in the new `farm-host` crate, shared by `farm-ffi` (unchanged C ABI)
+  and `farm-wasm`. `tools/wasm/build.sh` builds the package and
+  `tools/wasm/smoke.mjs` checks it in Node, including every golden replay; CI
+  runs both.
+- **Play Mode runs the exported cartridge.** A playtest now runs the cartridge
+  the F# compiler makes, exactly what Export Game ships (it still starts while
+  Problems lists errors). Keep changes writes the final game state back
+  through F#, checked against the Rust write-back for every template.
+- **Project schema v9 (native numerics).** Projects move to schema v9: the
+  values a project carries into play (positions, energy, money, the time of
+  day) are kept on the integer grid the engine uses (docs/NUMERICS.md), and
+  Problems warns when a price or quantity has a fraction the game will round
+  (`numbers.offGrid`). Older projects migrate on open.
+- **Game interface in Spanish, and a readable font.** Every string the engine
+  draws is in English and Spanish tables: the HUD, toolbar, panels, title
+  screen, pause menu, settings, save slots, dialogs and messages. Players pick
+  a language in Settings → Accessibility, or it follows the system language,
+  then the game's locale. A "Readable font" setting switches the interface to
+  Atkinson Hyperlegible (SIL OFL 1.1).
+- **Welcome tour and in-app help.** The editor has a first-run welcome tour,
+  and a Help menu with the Welcome Tour, a built-in Creator Guide (F1,
+  docs/CREATOR-GUIDE.md), Keyboard Shortcuts and Language. Help → Language
+  translates the editor's mode names, Play Mode toolbar and help into Spanish,
+  and Play Mode passes that language on to the game.
+- **Map placement tools.** Edit Mode places items, gathering nodes, machines,
+  NPCs and animals on the map and removes them, picks a brush from a tile
+  (eyedropper), lists a scene's transitions with Clear all, and lets a new
+  scene start from any tile type. Problems entries about art jump to the
+  asset.
+- **More of the web editor.** Project Settings edits the weather odds per
+  season, the mine (entrance scene and tile, floors, ladder chance; switching
+  it on fills in sensible defaults) and the order of the seasons, each as one
+  undo step. Actions, minigames and crops can be duplicated, and items added to
+  the player's starting inventory. The art studio imports several images at
+  once and removes all unused art after listing what goes. The project list
+  renames and duplicates projects; a duplicate is a separate game with its own
+  save folder id. The Mods view lists the curated packs that ship with the
+  editor (the Glow Farm demo and the My First Mod template) and exports chosen
+  content types or entries as a validated content pack JSON.
+- **Benchmarks and property tests.** The new `farm-bench` crate measures the
+  runtime against the LANGUAGES.md budgets: the overnight pass on a 64×64 and a
+  256×256 farm, saving, loading the sample games, and a gameplay frame on the
+  CPU rasterizer at 1280×800 and 1920×1080. It runs under criterion with
+  `cargo bench -p farm-bench`, and CI runs its budget check in release. The
+  overnight, cartridge and frame budgets are met with room to spare; saving is
+  about ten times over its 1 ms target and is held to a regression ceiling
+  until the stable-JSON serializer is rewritten. Property tests now cover
+  replay determinism and save round trips (proptest), and project migration
+  and compiling (FsCheck). The sample games also ship as test cartridges.
 - **Play Mode is the real game.** The editor's Play Mode now runs the same Rust
   player as exported games: the world, HUD, dialogue, shops, crafting,
   inventory, quests, minigames, toasts and pause menu look and behave exactly
@@ -13,8 +88,8 @@
   and the Jint plugin host, are gone: the game runs in Rust (`farm-sim`,
   `farm-runtime`, `farm-render`, `farm-plugins`, `farm-player`) everywhere,
   and templates come from F#. Their tests moved to the Rust and F# suites or
-  to the new `FarmEngine.Schemas.Tests`; shared fixtures live in
-  `fixtures/projects`. The editor ships the Rust license notices.
+  to `FarmEngine.Schemas.Tests` (since folded into the F# tests with the
+  records); shared fixtures live in `fixtures/projects`. The editor ships the Rust license notices.
 - **Graphical player.** Exported games now open a window with a title screen,
   three save slots with previews, a pause menu, settings and credits. The game
   autosaves each morning. Keyboard, mouse and gamepads work everywhere,
@@ -73,7 +148,7 @@
   mutation queue match the Jint host it replaces.
 - **Rust Play Mode runtime.** Frame timing, gameplay input bindings, minigame
   scoring, creator-panel values, calendar displays and sound-cue mapping now
-  execute in Rust when Rust Play Mode is selected. Minigame views use mount
+  execute in Rust. Minigame views use mount
   tokens to reject stale input, and results pass through the command pipeline
   once.
 - **Rust world snapshots.** The new `farm-render` crate builds read-only play
@@ -95,8 +170,7 @@
   resolution. F# authoring no longer references the C# simulation assembly;
   tile construction and layer edits also live in F#. Parity tests compare the
   compiled content with TypeScript goldens and the C# compatibility engine,
-  and run compiled sample cartridges through Rust. The C# schema records
-  remain the editor's data model.
+  and run compiled sample cartridges through Rust.
 - **F# pack authoring progress.** Dependency ordering, conflict-aware content
   merging, and importing a pack into editable project content now run through
   F#. Differential tests compare the results with the C# compatibility engine.
