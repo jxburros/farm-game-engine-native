@@ -1,47 +1,53 @@
 module FarmEngine.Authoring.Tests.ReferencesTests
 
 open System
-open System.Collections
 open System.Collections.Generic
 open System.Reflection
 open System.Text.Json
-open System.Text.Json.Serialization
+open Microsoft.FSharp.Reflection
 open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Tests.TestProjects
-open FarmEngine.Json
 open FarmEngine.Schemas
 
-// ---- The declarations cover the schema (reflection over the C# records) ----
+// ---- The declarations cover the schema (reflection over the F# records) ----
 
 let private schemaAssembly = typeof<GameProject>.Assembly
 
-let private formProperties (t: Type) =
-    t.GetProperties(BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.DeclaredOnly)
-    |> Array.filter (fun p ->
-        isNull (p.GetCustomAttribute<JsonExtensionDataAttribute>())
-        && (match p.GetCustomAttribute<JsonIgnoreAttribute>() with
-            | null -> true
-            | ignore -> ignore.Condition <> JsonIgnoreCondition.Always))
+/// A record's form fields: every declared field but the undeclared-keys bag.
+let private formProperties (t: Type) : PropertyInfo list =
+    FSharpType.GetRecordFields t |> Array.filter (fun p -> p.Name <> "Extra") |> List.ofArray
+
+let private isGeneric (definition: Type) (t: Type) = t.IsGenericType && t.GetGenericTypeDefinition() = definition
+
+/// `'T option` → `'T`; anything else as it is.
+let private unwrapOption (t: Type) = if isGeneric typedefof<option<_>> t then t.GetGenericArguments().[0] else t
 
 /// Every schema record a project can hold: the types reachable from `GameProject`, including the
-/// polymorphic condition types.
+/// condition records inside the `EventCondition` union.
 let private reachableRecords () =
     let seen = HashSet<Type>()
     let rec walk (t: Type) =
-        let t = match Nullable.GetUnderlyingType t with null -> t | u -> u
-        if t.IsArray then walk (t.GetElementType())
-        elif t.IsGenericType then for argument in t.GetGenericArguments() do walk argument
-        elif t.Assembly = schemaAssembly && t.IsClass && seen.Add t then
-            for derived in t.GetCustomAttributes<JsonDerivedTypeAttribute>() do walk derived.DerivedType
+        if t.IsGenericType then for argument in t.GetGenericArguments() do walk argument
+        elif t = typeof<Json> then ()
+        elif t.Assembly = schemaAssembly && FSharpType.IsUnion t && seen.Add t then
+            for case in FSharpType.GetUnionCases t do
+                for field in case.GetFields() do walk field.PropertyType
+        elif t.Assembly = schemaAssembly && FSharpType.IsRecord t && seen.Add t then
             for p in formProperties t do walk p.PropertyType
     walk typeof<GameProject>
-    List.ofSeq seen
+    seen |> Seq.filter FSharpType.IsRecord |> List.ofSeq
 
-let private isStringList (t: Type) = t = typeof<List<string>>
+let private isStringList (t: Type) = unwrapOption t = typeof<string list>
 
+/// An ordered map keyed by strings: `(string * 'T) list`.
 let private isStringDictionary (t: Type) =
-    t.GetInterfaces() |> Array.exists (fun i -> i.IsGenericType && i.GetGenericTypeDefinition() = typedefof<IDictionary<_, _>> && i.GetGenericArguments().[0] = typeof<string>)
+    let t = unwrapOption t
+    isGeneric typedefof<list<_>> t
+    && (let element = t.GetGenericArguments().[0]
+        FSharpType.IsTuple element && (FSharpType.GetTupleElements element).[0] = typeof<string>)
+
+let private isText (t: Type) = unwrapOption t = typeof<string>
 
 let private referenceNames =
     References.declarations
@@ -52,13 +58,16 @@ let private referenceNames =
     |> Set.ofList
 
 /// A property that looks like it holds ids: `*Id`/`*Ids`, a name used for a reference anywhere,
-/// any list of strings and any dictionary keyed by strings. `Id` itself is the record's own id.
+/// any list of strings and any map keyed by strings. `Id` itself is the record's own id.
 let private looksLikeReference (p: PropertyInfo) =
     let t = p.PropertyType
     p.Name <> "Id"
-    && ((t = typeof<string> && (p.Name.EndsWith "Id" || referenceNames.Contains p.Name))
+    && ((isText t && (p.Name.EndsWith "Id" || referenceNames.Contains p.Name))
         || isStringList t
         || isStringDictionary t)
+
+let private recordNamed (name: string) =
+    schemaAssembly.GetTypes() |> Array.tryFind (fun t -> t.Namespace = "FarmEngine.Schemas" && t.Name = name && FSharpType.IsRecord t)
 
 [<Fact>]
 let ``every id-like property of every reachable schema record is declared`` () =
@@ -76,15 +85,15 @@ let ``every id-like property of every reachable schema record is declared`` () =
 let ``every declaration names a real property of the right shape`` () =
     let problems =
         [ for d in References.declarations do
-              match schemaAssembly.GetTypes() |> Array.tryFind (fun t -> t.Namespace = "FarmEngine.Schemas" && t.Name = d.Owner) with
+              match recordNamed d.Owner with
               | None -> yield sprintf "%s: no such record" d.Owner
               | Some t ->
-                  match t.GetProperty(d.Property, BindingFlags.Public ||| BindingFlags.Instance) with
-                  | null -> yield sprintf "%s.%s: no such property" d.Owner d.Property
-                  | p ->
+                  match formProperties t |> List.tryFind (fun p -> p.Name = d.Property) with
+                  | None -> yield sprintf "%s.%s: no such property" d.Owner d.Property
+                  | Some p ->
                       let fits =
                           match d.Role with
-                          | FieldRole.Reference _ | FieldRole.OneOf _ -> p.PropertyType = typeof<string>
+                          | FieldRole.Reference _ | FieldRole.OneOf _ -> isText p.PropertyType
                           | FieldRole.ReferenceList _ -> isStringList p.PropertyType
                           | FieldRole.ReferenceKeys _ -> isStringDictionary p.PropertyType
                           | FieldRole.NotReference reason -> reason.Length > 0
@@ -94,15 +103,14 @@ let ``every declaration names a real property of the right shape`` () =
     Assert.Empty duplicates
 
 [<Fact>]
-let ``nullable references offer an empty entry`` () =
-    let context = NullabilityInfoContext()
+let ``optional references offer an empty entry`` () =
     let missingEmpty =
         [ for d in References.declarations do
               match d.Role with
               | FieldRole.Reference(_, None) ->
-                  let t = schemaAssembly.GetTypes() |> Array.find (fun t -> t.Namespace = "FarmEngine.Schemas" && t.Name = d.Owner)
-                  let p = t.GetProperty(d.Property)
-                  if context.Create(p).WriteState = NullabilityState.Nullable then yield sprintf "%s.%s" d.Owner d.Property
+                  let t = (recordNamed d.Owner).Value
+                  let p = formProperties t |> List.find (fun p -> p.Name = d.Property)
+                  if isGeneric typedefof<option<_>> p.PropertyType then yield sprintf "%s.%s" d.Owner d.Property
               | _ -> () ]
     Assert.True(missingEmpty.IsEmpty, String.Join("\n", missingEmpty))
 
@@ -143,7 +151,7 @@ let private ids (options: PickerOption list) = options |> List.map (fun o -> o.I
 let ``item options are the items the game resolves`` () =
     let project = starter ()
     Assert.Equal<string list>(project.Items |> Seq.map (fun i -> i.Id) |> List.ofSeq, ids (References.options ReferenceKind.Item project))
-    let bare = Records.withValue project "Items" (box (listOf ([]: Item list)))
+    let bare = { project with Items = [] }
     Assert.Equal<string list>(Builtin.items () |> Seq.map (fun i -> i.Id) |> List.ofSeq, ids (References.options ReferenceKind.Item bare))
     let first = References.options ReferenceKind.Item project |> List.head
     Assert.Equal(sprintf "%s (%s)" project.Items.[0].Name project.Items.[0].Id, first.Label)
@@ -176,16 +184,16 @@ let ``dialogue options include every NPC's dialogue once`` () =
 [<Fact>]
 let ``pickers keep a missing id and offer the empty entry`` () =
     let project = starter ()
-    let entries = References.picker ReferenceKind.Shop (Some "(none)") project "shop-gone"
+    let entries = References.picker ReferenceKind.Shop (Some "(none)") project (Some "shop-gone")
     Assert.Equal("", entries.[0].Id)
     Assert.Equal("(none)", entries.[0].Label)
     Assert.Equal("shop-gone", entries.[1].Id)
     Assert.Equal("(missing: shop-gone)", entries.[1].Label)
     Assert.True entries.[1].Missing
-    let known = References.picker ReferenceKind.Item None project project.Items.[0].Id
+    let known = References.picker ReferenceKind.Item None project (Some project.Items.[0].Id)
     Assert.DoesNotContain(known, fun o -> o.Missing)
-    Assert.Equal(project.Items.Count, known.Length)
-    Assert.Equal(project.Items.Count, (References.picker ReferenceKind.Item None project "").Length)
+    Assert.Equal(project.Items.Length, known.Length)
+    Assert.Equal(project.Items.Length, (References.picker ReferenceKind.Item None project None).Length)
 
 // ---- The condition/outcome vocabulary matches event-vocabulary.ts and event-forms.tsx ----
 
@@ -272,7 +280,7 @@ let ``each outcome type shows the web fields`` () =
 [<Fact>]
 let ``condition defaults match event-vocabulary.ts`` () =
     let project = starter ()
-    let json kind = JsonSerializer.Serialize(Vocabulary.defaultCondition kind project, typeof<EventCondition>, JsonDefaults.Options)
+    let json kind = Json.stringify (SchemaJson.encodeEventCondition (Vocabulary.defaultCondition kind project))
     let season = project.Settings.Calendar.Seasons.[0].Id
     let festival = match Seq.tryHead project.Settings.Calendar.Festivals with Some f -> f.Id | None -> ""
     let expected =
@@ -293,14 +301,16 @@ let ``condition defaults match event-vocabulary.ts`` () =
     for kind, text in expected do
         Assert.Equal(text, json kind)
     let withFestival =
-        let calendar = Records.withValue project.Settings.Calendar "Festivals" (box (listOf [ CalendarFestival(Id = "fair", Name = "Fair", SeasonId = season, Day = 1.0) ]))
-        project |> apply (SetSettings(Records.withValue project.Settings "Calendar" (box calendar)))
-    Assert.Equal("fair", (Vocabulary.defaultCondition "festivalId" withFestival :?> FestivalIdCondition).FestivalId)
+        let calendar = { project.Settings.Calendar with Festivals = ([ { CalendarFestival.Default with Id = "fair"; Name = "Fair"; SeasonId = season; Day = 1.0 } ]) }
+        project |> apply (SetSettings({ project.Settings with Calendar = calendar }))
+    match Vocabulary.defaultCondition "festivalId" withFestival with
+    | EventCondition.FestivalId condition -> Assert.Equal("fair", condition.FestivalId)
+    | other -> failwithf "unexpected %A" other
 
 [<Fact>]
 let ``outcome defaults are just the type, like the web add picker`` () =
     for kind, _ in Vocabulary.outcomeTypes do
-        Assert.Equal(sprintf """{"type":"%s"}""" kind, JsonSerializer.Serialize(Vocabulary.defaultOutcome kind, JsonDefaults.Options))
+        Assert.Equal(sprintf """{"type":"%s"}""" kind, Json.stringify (SchemaJson.encodeEventOutcome (Vocabulary.defaultOutcome kind)))
 
 [<Fact>]
 let ``quest objectives show the targets of their type`` () =
@@ -332,12 +342,12 @@ let ``new list rows start like the web add buttons`` () =
 
 let private withClip () =
     let project = starter ()
-    let frame x = ArtFrame(X = x, Y = 0.0, Width = 16.0, Height = 16.0, Ticks = 6.0)
-    let clip = AnimationClip(Name = "walk", Loop = true, Frames = listOf [ frame 0.0; frame 16.0 ])
-    let asset = CustomAsset(Id = "art-1", Name = "sheet.png", Type = "art", DataUrl = "data:image/png;base64,AA==", Width = 32.0, Height = 16.0, Animations = listOf [ clip ])
+    let frame x = { ArtFrame.Default with X = x; Y = 0.0; Width = 16.0; Height = 16.0; Ticks = 6.0 }
+    let clip = { AnimationClip.Default with Name = "walk"; Loop = true; Frames = [ frame 0.0; frame 16.0 ] }
+    let asset = { CustomAsset.Default with Id = "art-1"; Name = "sheet.png"; Type = "art"; DataUrl = "data:image/png;base64,AA=="; Width = Some(32.0); Height = Some(16.0); Animations = Some([ clip ]) }
     project |> apply (UpsertAsset asset)
 
-let private frames (project: GameProject) = (project.CustomAssets |> Seq.find (fun a -> a.Id = "art-1")).Animations.[0].Frames
+let private frames (project: GameProject) = (project.CustomAssets |> Seq.find (fun a -> a.Id = "art-1")).Animations.Value.[0].Frames
 
 [<Fact>]
 let ``frame durations change one frame or every frame, never below one tick`` () =
@@ -366,7 +376,7 @@ let ``duplicating a frame inserts the copy after it`` () =
 [<Fact>]
 let ``export icon options list large PNG art only`` () =
     let project = starter ()
-    let asset id size = CustomAsset(Id = id, Name = id, Type = "art", DataUrl = "data:image/png;base64,AA==", Width = Nullable size, Height = Nullable size)
+    let asset id size = { CustomAsset.Default with Id = id; Name = id; Type = "art"; DataUrl = "data:image/png;base64,AA=="; Width = Some(size); Height = Some(size) }
     let withArt = project |> apply (UpsertAsset(asset "big" 256.0)) |> apply (UpsertAsset(asset "small" 64.0))
     let options = ExportSettingsForm.IconOptions(withArt, null) |> List.ofSeq
     Assert.Equal<string list>([ ""; "big" ], ids options)
@@ -376,6 +386,6 @@ let ``export icon options list large PNG art only`` () =
     Assert.Equal<string list>([ "integer"; "fit" ], ExportSettingsForm.PixelScales |> Seq.map (fun o -> o.Id) |> List.ofSeq)
     let settings = ExportSettingsForm.Current withArt
     Assert.Empty(ExportSettingsForm.Check(withArt, settings))
-    let bad = Records.withValues settings [ ("Window", box (ExportWindow(Width = 100, Height = 100))); ("IconAssetId", box "small") ]
+    let bad = { settings with Window = { ExportWindow.Default with Width = 100; Height = 100 }; IconAssetId = Some "small" }
     let codes = ExportSettingsForm.Check(withArt, bad) |> Seq.map (fun p -> p.Code) |> List.ofSeq
     Assert.Equal<string list>([ "export.window"; "export.icon" ], codes)

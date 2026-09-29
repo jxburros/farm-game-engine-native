@@ -62,11 +62,11 @@ fn a_save_from_a_newer_game_version_loads_with_a_warning() {
     let project = starter_project();
     let (content, target) = build(&project);
     let state = state::create_game_state(&project, Some("save-file"));
-    let text = write_save(&state, &SaveTarget { game_version: "99.0".to_owned(), ..target.clone() });
+    let text = write_save(&state, &SaveTarget { game_version: "99".to_owned(), ..target.clone() });
     let loaded = load_save(&text, &target, &content);
     assert!(loaded.ok);
     assert_eq!(loaded.warnings.len(), 1);
-    assert!(loaded.warnings[0].contains("newer version of the game (99.0"), "{}", loaded.warnings[0]);
+    assert!(loaded.warnings[0].contains("newer version of the game (99"), "{}", loaded.warnings[0]);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn saves_survive_items_being_added_changed_and_removed() {
     v11.items.retain(|item| item.id != removed_id);
     for item in &mut v11.items {
         if item.id == kept_id {
-            item.value += 7.0;
+            item.value += 7;
         }
     }
     let mut added = v11.items[0].clone();
@@ -141,7 +141,7 @@ fn bare_web_saves_load_and_reconcile() {
     let mut state = state::create_game_state(&project, Some("save-file"));
     let mut ghost = state.player.inventory[0].clone();
     ghost.item.id = "item-from-nowhere".to_owned();
-    state.player.inventory.push(InventorySlot { quantity: 2.0, ..ghost });
+    state.player.inventory.push(InventorySlot { quantity: 2, ..ghost });
     let bare = serde_json::to_string(&state).unwrap();
 
     let loaded = load_save(&bare, &target, &content);
@@ -176,10 +176,10 @@ fn garbage_is_refused_softly() {
 #[test]
 fn versions_compare_numerically() {
     assert_eq!(compare_versions("1.10", "1.9"), Ordering::Greater);
-    assert_eq!(compare_versions("1.0", "1"), Ordering::Equal);
+    assert_eq!(compare_versions("1", "1"), Ordering::Equal);
     assert_eq!(compare_versions("v2.0", "1.5.3"), Ordering::Greater);
-    assert_eq!(compare_versions("1.0-beta", "1.0-alpha"), Ordering::Greater);
-    assert_eq!(compare_versions("0.9", "1.0"), Ordering::Less);
+    assert_eq!(compare_versions("1-beta", "1-alpha"), Ordering::Greater);
+    assert_eq!(compare_versions("0.9", "1"), Ordering::Less);
 }
 
 #[test]

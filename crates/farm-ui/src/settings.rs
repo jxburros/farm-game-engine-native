@@ -1,12 +1,13 @@
-//! Player settings: display, audio, controls and accessibility. They are plain data with serde
-//! (the desktop player stores them as TOML in the config folder, apart from the saves); every
-//! field has a default, so older or partial files load.
+//! Player settings: language, display, audio, controls and accessibility. They are plain data
+//! with serde (the desktop player stores them as TOML in the config folder, apart from the
+//! saves); every field has a default, so older or partial files load.
 //!
 //! Controls are data too. [`Bindings`] maps each [`BindAction`] to keyboard keys (rebindable in
 //! the settings screen) and gamepad buttons to actions. The game engine only knows the default
 //! keys (farm-runtime's bindings), so the player translates a pressed key into the action's
 //! *canonical* key ([`BindAction::canonical_key`]) before the engine sees it.
 
+use crate::i18n::Lang;
 use crate::input::GamepadButton;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -15,6 +16,9 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct Settings {
+    /// The interface language's code (`en`, `es`); empty follows the system, then the game
+    /// ([`Lang::resolve`]).
+    pub language: String,
     pub display: DisplaySettings,
     pub audio: AudioSettings,
     pub controls: Bindings,
@@ -78,16 +82,23 @@ pub struct AccessibilitySettings {
     pub text_size: f32,
     /// No floating pops, fades or screen flashes.
     pub reduced_motion: bool,
+    /// Draw the interface in Atkinson Hyperlegible instead of Inter.
+    pub readable_font: bool,
 }
 
 impl Default for AccessibilitySettings {
     fn default() -> Self {
-        Self { text_size: 1.0, reduced_motion: false }
+        Self { text_size: 1.0, reduced_motion: false, readable_font: false }
     }
 }
 
-/// Text sizes offered by the settings screen.
-pub const TEXT_SIZES: [(&str, f32); 4] = [("Small", 0.9), ("Default", 1.0), ("Large", 1.2), ("Largest", 1.4)];
+/// Text sizes offered by the settings screen (names are [`crate::i18n`] keys).
+pub const TEXT_SIZES: [(&str, f32); 4] = [
+    ("settings.textSmall", 0.9),
+    ("settings.textDefault", 1.0),
+    ("settings.textLarge", 1.2),
+    ("settings.textLargest", 1.4),
+];
 /// Interface scales offered by the settings screen.
 pub const UI_SCALES: [(&str, f32); 6] =
     [("75%", 0.75), ("90%", 0.9), ("100%", 1.0), ("110%", 1.1), ("125%", 1.25), ("150%", 1.5)];
@@ -162,42 +173,43 @@ impl BindAction {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            BindAction::MoveUp => "Move up",
-            BindAction::MoveDown => "Move down",
-            BindAction::MoveLeft => "Move left",
-            BindAction::MoveRight => "Move right",
-            BindAction::Interact => "Interact",
-            BindAction::Water => "Watering can",
-            BindAction::Till => "Hoe",
-            BindAction::Axe => "Axe",
-            BindAction::Pickaxe => "Pickaxe",
-            BindAction::Scythe => "Scythe",
-            BindAction::Sleep => "Sleep",
-            BindAction::Inventory => "Inventory",
-            BindAction::Quests => "Quests",
-            BindAction::Craft => "Craft",
-            BindAction::Menu => "Menu / close",
-        }
+    /// The action's name in the settings screen.
+    pub fn label(self, lang: Lang) -> &'static str {
+        lang.tr(match self {
+            BindAction::MoveUp => "bind.moveUp",
+            BindAction::MoveDown => "bind.moveDown",
+            BindAction::MoveLeft => "bind.moveLeft",
+            BindAction::MoveRight => "bind.moveRight",
+            BindAction::Interact => "bind.interact",
+            BindAction::Water => "bind.water",
+            BindAction::Till => "bind.till",
+            BindAction::Axe => "bind.axe",
+            BindAction::Pickaxe => "bind.pickaxe",
+            BindAction::Scythe => "bind.scythe",
+            BindAction::Sleep => "bind.sleep",
+            BindAction::Inventory => "bind.inventory",
+            BindAction::Quests => "bind.quests",
+            BindAction::Craft => "bind.craft",
+            BindAction::Menu => "bind.menu",
+        })
     }
 
     /// Short label for the controls hint row.
-    pub fn hint(self) -> &'static str {
-        match self {
-            BindAction::MoveUp | BindAction::MoveDown | BindAction::MoveLeft | BindAction::MoveRight => "Move",
-            BindAction::Interact => "Interact",
-            BindAction::Water => "Water",
-            BindAction::Till => "Till",
-            BindAction::Axe => "Axe",
-            BindAction::Pickaxe => "Pickaxe",
-            BindAction::Scythe => "Scythe",
-            BindAction::Sleep => "Sleep",
-            BindAction::Inventory => "Inventory",
-            BindAction::Quests => "Quests",
-            BindAction::Craft => "Craft",
-            BindAction::Menu => "Menu",
-        }
+    pub fn hint(self, lang: Lang) -> &'static str {
+        lang.tr(match self {
+            BindAction::MoveUp | BindAction::MoveDown | BindAction::MoveLeft | BindAction::MoveRight => "hint.move",
+            BindAction::Interact => "hint.interact",
+            BindAction::Water => "hint.water",
+            BindAction::Till => "hint.till",
+            BindAction::Axe => "hint.axe",
+            BindAction::Pickaxe => "hint.pickaxe",
+            BindAction::Scythe => "hint.scythe",
+            BindAction::Sleep => "hint.sleep",
+            BindAction::Inventory => "hint.inventory",
+            BindAction::Quests => "hint.quests",
+            BindAction::Craft => "hint.craft",
+            BindAction::Menu => "hint.menu",
+        })
     }
 
     fn default_keys(self) -> &'static [&'static str] {
@@ -325,33 +337,44 @@ impl Bindings {
 
     /// The prompt for an action: its first key.
     pub fn key_label(&self, action: BindAction) -> String {
-        self.keys(action).first().map_or_else(|| "—".to_owned(), |key| key_label(key))
+        self.key_label_in(action, Lang::En)
+    }
+
+    /// [`Bindings::key_label`] with keycap names in `lang`.
+    pub fn key_label_in(&self, action: BindAction, lang: Lang) -> String {
+        self.keys(action).first().map_or_else(|| "—".to_owned(), |key| key_label_in(key, lang))
     }
 }
 
 /// How a key name is shown on a keycap.
 pub fn key_label(key: &str) -> String {
-    match key {
-        " " => "Space".to_owned(),
-        "arrowup" => "\u{2191}".to_owned(),
-        "arrowdown" => "\u{2193}".to_owned(),
-        "arrowleft" => "\u{2190}".to_owned(),
-        "arrowright" => "\u{2192}".to_owned(),
-        "escape" => "Esc".to_owned(),
-        "enter" => "Enter".to_owned(),
-        "tab" => "Tab".to_owned(),
-        "backspace" => "Backspace".to_owned(),
-        "delete" => "Delete".to_owned(),
-        "shift" => "Shift".to_owned(),
-        "control" => "Ctrl".to_owned(),
-        "alt" => "Alt".to_owned(),
-        "meta" => "Meta".to_owned(),
-        "pageup" => "PgUp".to_owned(),
-        "pagedown" => "PgDn".to_owned(),
-        "home" => "Home".to_owned(),
-        "end" => "End".to_owned(),
-        other => other.to_uppercase(),
-    }
+    key_label_in(key, Lang::En)
+}
+
+/// [`key_label`] with the names of named keys in `lang` (`Espacio`, `Intro`).
+pub fn key_label_in(key: &str, lang: Lang) -> String {
+    let named = match key {
+        " " => "key.space",
+        "enter" => "key.enter",
+        "backspace" => "key.backspace",
+        "delete" => "key.delete",
+        "shift" => "key.shift",
+        "pageup" => "key.pageUp",
+        "pagedown" => "key.pageDown",
+        "home" => "key.home",
+        "end" => "key.end",
+        "arrowup" => return "\u{2191}".to_owned(),
+        "arrowdown" => return "\u{2193}".to_owned(),
+        "arrowleft" => return "\u{2190}".to_owned(),
+        "arrowright" => return "\u{2192}".to_owned(),
+        "escape" => return "Esc".to_owned(),
+        "tab" => return "Tab".to_owned(),
+        "control" => return "Ctrl".to_owned(),
+        "alt" => return "Alt".to_owned(),
+        "meta" => return "Meta".to_owned(),
+        other => return other.to_uppercase(),
+    };
+    lang.tr(named).to_owned()
 }
 
 #[cfg(test)]
@@ -384,6 +407,47 @@ mod tests {
         assert_eq!(bindings.route("i"), KeyRoute::Drop);
         assert_eq!(bindings.key_label(BindAction::Inventory), "Tab");
         assert_eq!(bindings.key_label(BindAction::Water), "E");
+    }
+
+    #[test]
+    fn labels_and_named_keys_follow_the_language() {
+        let bindings = Bindings::default();
+        assert_eq!(BindAction::Water.label(Lang::En), "Watering can");
+        assert_eq!(BindAction::Water.label(Lang::Es), "Regadera");
+        assert_eq!(BindAction::MoveLeft.hint(Lang::Es), "Moverse");
+        assert_eq!(key_label(" "), "Space");
+        assert_eq!(key_label_in(" ", Lang::Es), "Espacio");
+        assert_eq!(key_label_in("enter", Lang::Es), "Intro");
+        assert_eq!(key_label_in("q", Lang::Es), "Q");
+        assert_eq!(key_label_in("arrowup", Lang::Es), "\u{2191}");
+        assert_eq!(bindings.key_label_in(BindAction::Interact, Lang::Es), "E");
+        for action in BindAction::ALL {
+            for lang in Lang::ALL {
+                assert!(!action.label(lang).contains('.'), "{action:?} has no {lang:?} label");
+                assert!(!action.hint(lang).contains('.'), "{action:?} has no {lang:?} hint");
+            }
+        }
+        for (key, _) in TEXT_SIZES {
+            assert_ne!(Lang::Es.tr(key), key);
+        }
+    }
+
+    #[test]
+    fn language_and_readable_font_default_off_and_round_trip() {
+        let settings = Settings::default();
+        assert_eq!(settings.language, "");
+        assert!(!settings.accessibility.readable_font);
+        let old: Settings = serde_json::from_str(r#"{"accessibility":{"text-size":1.2}}"#).unwrap();
+        assert_eq!(old.language, "");
+        assert!(!old.accessibility.readable_font);
+        let chosen = Settings {
+            language: "es".to_owned(),
+            accessibility: AccessibilitySettings { readable_font: true, ..AccessibilitySettings::default() },
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&chosen).unwrap();
+        assert!(json.contains(r#""language":"es""#) && json.contains(r#""readable-font":true"#), "{json}");
+        assert_eq!(serde_json::from_str::<Settings>(&json).unwrap(), chosen);
     }
 
     #[test]

@@ -168,7 +168,7 @@ module Vocabulary =
             objectiveTargetProperties |> List.filter (fun p -> not (List.contains p shown))
         | _ -> []
 
-    let private some (value: obj) : obj option = Some value
+    let private some (value: 'T) : obj option = Some(box value |> nonNull)
 
     let private firstId (options: PickerOption list) =
         match options with
@@ -182,17 +182,18 @@ module Vocabulary =
     let newElement (elementType: string) (project: GameProject) (entity: obj) (siblingIds: string list) : obj option =
         let firstItem () = firstId (References.options ReferenceKind.Item project)
         match elementType with
-        | "ShopStockEntry" -> some (ShopStockEntry(ItemId = firstItem ()))
-        | "RecipeIngredient" -> some (RecipeIngredient(ItemId = firstItem (), Quantity = 1.0))
-        | "NodeDrop" -> some (NodeDrop(ItemId = firstItem (), Min = 1.0, Max = 1.0, Weight = 1.0))
-        | "FishTableEntry" -> some (FishTableEntry(ItemId = firstItem (), Weight = 1.0, Difficulty = 0.3))
-        | "QuestRewardItem" -> some (QuestRewardItem(ItemId = firstItem (), Quantity = 1.0))
-        | "MineRockWeight" -> some (MineRockWeight(NodeTypeId = firstId (References.options ReferenceKind.NodeType project), Weight = 1.0))
-        | "WeatherTableEntry" -> some (WeatherTableEntry(WeatherId = firstId (References.options ReferenceKind.Weather project), Weight = 1.0))
+        | "ShopStockEntry" -> some { ShopStockEntry.Default with ItemId = firstItem () }
+        | "RecipeIngredient" -> some ({ ItemId = firstItem (); Quantity = 1.0 } : RecipeIngredient)
+        | "NodeDrop" -> some ({ ItemId = firstItem (); Min = 1.0; Max = 1.0; Weight = 1.0; Extra = [] } : NodeDrop)
+        | "FishTableEntry" -> some ({ ItemId = firstItem (); Weight = 1.0; Difficulty = 0.3 } : FishTableEntry)
+        | "QuestRewardItem" -> some ({ ItemId = firstItem (); Quantity = 1.0 } : QuestRewardItem)
+        | "MineRockWeight" -> some ({ NodeTypeId = firstId (References.options ReferenceKind.NodeType project); Weight = 1.0 } : MineRockWeight)
+        | "WeatherTableEntry" -> some ({ WeatherId = firstId (References.options ReferenceKind.Weather project); Weight = 1.0 } : WeatherTableEntry)
         | "QuestObjective" ->
-            let objective = QuestObjective(Id = Defaults.nextId "obj" siblingIds, Type = QuestObjectiveTypes.Collect,
-                                           Description = "New objective", Completed = false, Progress = 0.0)
-            some objective
+            some
+                { QuestObjective.Default with
+                    Id = Defaults.nextId "obj" siblingIds; Type = QuestObjectiveTypes.Collect
+                    Description = "New objective"; Completed = false; Progress = 0.0 }
         | "DialogueOption" -> some (Defaults.newDialogueOption ())
         | "MinigameResultTier" -> some (Defaults.newResultTier ())
         | "NpcScheduleEntry" ->
@@ -201,14 +202,14 @@ module Vocabulary =
             | _ -> None
         | "GridPoint" ->
             match entity with
-            | :? Npc as npc -> some (GridPoint(X = npc.X, Y = npc.Y))
+            | :? Npc as npc -> some ({ X = npc.X; Y = npc.Y } : GridPoint)
             | _ -> None
         | "Dialogue" ->
             match entity with
             | :? Npc as npc ->
                 let taken = Seq.append (Defaults.allIds project) (npc.Dialogue |> Seq.map (fun d -> d.Id)) |> Seq.append siblingIds
                 let dialogue = Defaults.newDialogue project npc.Id
-                some (Records.withValue dialogue "Id" (box (Defaults.nextId "dialogue" taken)))
+                some { dialogue with Id = Defaults.nextId "dialogue" taken }
             | _ -> None
         | "EventCondition" -> some (defaultCondition "enterTile" project)
         | "EventOutcome" -> some (defaultOutcome EventOutcomeTypes.Message)

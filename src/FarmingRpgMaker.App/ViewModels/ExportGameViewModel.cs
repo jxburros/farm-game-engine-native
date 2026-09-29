@@ -26,6 +26,7 @@ public sealed class ExportGameViewModel : ObservableObject
 {
     public const string WindowsTarget = "windows-x64";
     public const string LinuxTarget = "linux-x64";
+    public const string WebTarget = "web";
 
     private readonly ProjectWorkspace _workspace;
     private readonly Func<string?, Task<string?>> _pickFolder;
@@ -33,6 +34,7 @@ public sealed class ExportGameViewModel : ObservableObject
     private readonly string? _templatesFolder;
     private bool _exportWindows;
     private bool _exportLinux;
+    private bool _exportWeb;
     private bool _createArchives;
     private bool _isExporting;
     private string _outputFolder;
@@ -52,6 +54,7 @@ public sealed class ExportGameViewModel : ObservableObject
         Summary = GameExporter.Summarize(project);
         _exportWindows = Summary.Targets.Contains(WindowsTarget);
         _exportLinux = Summary.Targets.Contains(LinuxTarget);
+        _exportWeb = Summary.Targets.Contains(WebTarget);
         var settings = workspace.Settings.Load();
         _outputFolder = settings.LastExportFolder ?? DefaultOutputFolder;
         _createArchives = settings.ExportArchives ?? true;
@@ -96,6 +99,13 @@ public sealed class ExportGameViewModel : ObservableObject
         set => SetChoice(ref _exportLinux, value);
     }
 
+    /// <summary>The web demo: the game in a page, for itch.io and the like.</summary>
+    public bool ExportWeb
+    {
+        get => _exportWeb;
+        set => SetChoice(ref _exportWeb, value);
+    }
+
     public bool CreateArchives
     {
         get => _createArchives;
@@ -122,7 +132,7 @@ public sealed class ExportGameViewModel : ObservableObject
 
     /// <summary>The chosen target ids, in menu order.</summary>
     public IReadOnlyList<string> SelectedTargets =>
-        [.. new[] { (WindowsTarget, ExportWindows), (LinuxTarget, ExportLinux) }.Where(t => t.Item2).Select(t => t.Item1)];
+        [.. new[] { (WindowsTarget, ExportWindows), (LinuxTarget, ExportLinux), (WebTarget, ExportWeb) }.Where(t => t.Item2).Select(t => t.Item1)];
 
     public bool CanExport => !IsExporting && !IsBlockedByProblems && SelectedTargets.Count > 0 && !string.IsNullOrWhiteSpace(OutputFolder);
 
@@ -241,7 +251,7 @@ public sealed class ExportGameViewModel : ObservableObject
         if (!EqualityComparer<T>.Default.Equals(field, value))
         {
             field = value;
-            OnPropertiesChanged(nameof(ExportWindows), nameof(ExportLinux), nameof(CreateArchives), nameof(OutputFolder), nameof(SelectedTargets), nameof(CanExport));
+            OnPropertiesChanged(nameof(ExportWindows), nameof(ExportLinux), nameof(ExportWeb), nameof(CreateArchives), nameof(OutputFolder), nameof(SelectedTargets), nameof(CanExport));
             RefreshCommands();
         }
     }

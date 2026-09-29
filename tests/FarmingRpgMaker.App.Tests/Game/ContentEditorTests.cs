@@ -1,3 +1,4 @@
+using FarmEngine.Authoring.Net;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
@@ -28,9 +29,9 @@ public sealed class ContentEditorTests
     {
         using var host = new GameTestHost();
         OpenContent(host, "Items");
-        var originalCount = host.Workspace.Current!.Items.Count;
+        var originalCount = host.Workspace.Current!.Items.Length;
         Press(host, "AddContentButton");
-        Assert.Equal(originalCount + 1, host.Workspace.Current.Items.Count);
+        Assert.Equal(originalCount + 1, host.Workspace.Current.Items.Length);
         var id = host.Workspace.Current.Items[^1].Id;
 
         FindByName<TextBox>(host.Window, "ContentField_Name").Text = "Moon Berry";
@@ -80,7 +81,7 @@ public sealed class ContentEditorTests
     {
         using var host = new GameTestHost();
         var npc = host.Workspace.Current!.Npcs[0];
-        host.Workspace.Apply(Edits.UpsertNpc(npc with { SceneId = "missing-scene" }));
+        host.Workspace.Apply(Edits.UpsertNpc(npc.WithSceneId("missing-scene")));
         var tabs = FindByName<TabControl>(host.Window, "EditorTabs");
         tabs.SelectedIndex = 2;
         Pump();
@@ -165,28 +166,28 @@ public sealed class ContentEditorTests
         Assert.StartsWith("data:image/png;base64,", asset.DataUrl, StringComparison.Ordinal);
         Press(host, "SliceArtButton");
         asset = Assert.Single(host.Workspace.Current.CustomAssets);
-        Assert.Equal(2, Assert.Single(asset.Animations!).Frames.Count);
+        Assert.Equal(2, Assert.Single(asset.Animations.OrEmpty()).Frames.Length);
         // The Rust renderer draws the preview frame (a 16×16 frame fitted into the 140px box).
         var preview = FindByName<Border>(host.Window, "ArtPreview");
         var shown = Assert.IsType<Image>(preview.Child);
         Assert.Equal(new Avalonia.PixelSize(140, 140), Assert.IsAssignableFrom<Avalonia.Media.Imaging.Bitmap>(shown.Source).PixelSize);
 
         Press(host, "BindArtButton");
-        Assert.Equal(asset.Id, host.Workspace.Current.PlayerVisual?.AssetId);
+        Assert.Equal(asset.Id, host.Workspace.Current.PlayerVisual.OrNull()?.AssetId);
         FindByName<ComboBox>(host.Window, "ArtTarget").SelectedIndex = 1;
         Press(host, "BindArtButton");
         Assert.Equal(0, tabs.SelectedIndex);
-        Assert.Equal(asset.Id, host.Workspace.Current.SelectedTileVisual?.AssetId);
+        Assert.Equal(asset.Id, host.Workspace.Current.SelectedTileVisual.OrNull()?.AssetId);
         var edit = host.Surface.EditView;
         edit.PaintTile(4, 4);
-        Assert.Equal(asset.Id, host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals?.Background?.AssetId);
+        Assert.Equal(asset.Id, host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals.OrNull()?.Background.OrNull()?.AssetId);
 
         tabs.SelectedIndex = 5;
         Pump();
         Press(host, "RemoveArtButton");
         Assert.Empty(host.Workspace.Current.CustomAssets);
         Assert.Null(host.Workspace.Current.PlayerVisual);
-        Assert.Null(host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals?.Background);
+        Assert.Null(host.Workspace.Current.Scenes.First(scene => scene.Id == edit.SceneId).Tiles[4][4].Visuals.OrNull()?.Background.OrNull());
     }
 
     [AvaloniaFact]
@@ -195,15 +196,15 @@ public sealed class ContentEditorTests
         using var host = new GameTestHost();
         FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 6;
         Pump();
-        var before = host.Workspace.Current!.Npcs.Count;
+        var before = host.Workspace.Current!.Npcs.Length;
         FindByName<TextBox>(host.Window, "WorkshopName").Text = "Luna";
         FindByName<TextBox>(host.Window, "WorkshopX").Text = "4";
         FindByName<TextBox>(host.Window, "WorkshopY").Text = "4";
         Press(host, "CreatePatternButton");
-        Assert.Equal(before + 1, host.Workspace.Current.Npcs.Count);
-        Assert.Contains(host.Workspace.Current.Npcs, npc => npc.Name == "Luna" && npc.Dialogue.Count == 3);
+        Assert.Equal(before + 1, host.Workspace.Current.Npcs.Length);
+        Assert.Contains(host.Workspace.Current.Npcs, npc => npc.Name == "Luna" && npc.Dialogue.Length == 3);
         host.Workspace.Undo();
-        Assert.Equal(before, host.Workspace.Current.Npcs.Count);
+        Assert.Equal(before, host.Workspace.Current.Npcs.Length);
     }
 
     [AvaloniaFact]
@@ -212,19 +213,19 @@ public sealed class ContentEditorTests
         using var host = new GameTestHost();
         FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 7;
         Pump();
-        var before = host.Workspace.Current!.GamePanels?.Count ?? 0;
+        var before = host.Workspace.Current!.GamePanels.OrEmpty().Length;
         Press(host, "AddInterfacePanelButton");
-        Assert.Equal(before + 1, host.Workspace.Current.GamePanels?.Count);
+        Assert.Equal(before + 1, host.Workspace.Current.GamePanels.OrEmpty().Length);
         FindByName<TextBox>(host.Window, "InterfaceTitle").Text = "Farm Journal";
         Press(host, "AddInterfaceEntryButton");
         var newLabel = FindByName<TextBox>(host.Window, "InterfaceEntryLabel");
         newLabel.Text = "Mood";
         FindByName<TextBox>(host.Window, "InterfaceEntryValue").Text = "Calm";
         Press(host, "SaveInterfacePanelButton");
-        var panel = host.Workspace.Current.GamePanels![^1];
+        var panel = host.Workspace.Current.GamePanels.OrEmpty().Last();
         Assert.Equal("Farm Journal", panel.Title);
         Assert.Contains(panel.Entries, entry => entry.Label == "Mood" && entry.Value == "Calm");
         host.Workspace.Undo();
-        Assert.NotEqual("Farm Journal", host.Workspace.Current.GamePanels![^1].Title);
+        Assert.NotEqual("Farm Journal", host.Workspace.Current.GamePanels.OrEmpty().Last().Title);
     }
 }

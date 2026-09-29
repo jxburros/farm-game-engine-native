@@ -16,12 +16,11 @@ let private both = [ "windows-x64"; "linux-x64" ]
 let private willowCreek () =
     starter ()
     |> withExport (fun s ->
-        Records.withValues
-            s
-            [ "Title", box "Willow Creek Farm"
-              "ExecutableName", box "WillowCreek"
-              "Version", box "1.2.0"
-              "Company", box "Willow Games" ])
+        { s with
+            Title = Some "Willow Creek Farm"
+            ExecutableName = Some "WillowCreek"
+            Version = Some "1.2.0"
+            Company = Some "Willow Games" })
 
 let private export (project: GameProject) (templates: string) (output: string) (targets: string list) =
     Exporter.run (options templates output targets) project
@@ -60,7 +59,7 @@ let ``the Windows exe carries the game's icon and version info`` () =
     use dir = new TempDir()
     let icon = makePng 256 256 false
     let project =
-        willowCreek () |> withAssets [ asset "art-icon" icon ] |> withExport (fun s -> Records.withValue s "IconAssetId" (box "art-icon"))
+        willowCreek () |> withAssets [ asset "art-icon" icon ] |> withExport (fun s -> { s with IconAssetId = Some "art-icon" })
     let report = export project (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") both
     Assert.True(report.Ok, Exporter.format report)
     let exe = File.ReadAllBytes(Path.Combine((target report "windows-x64").Folder, "WillowCreek.exe"))
@@ -147,7 +146,7 @@ let ``archives hold the folder with the execute bit on the Linux binary`` () =
 [<Fact>]
 let ``Problems errors block export and nothing is written`` () =
     use dir = new TempDir()
-    let broken = Records.withValue (willowCreek ()) "SelectedTileType" (box "lava")
+    let broken = { willowCreek () with SelectedTileType = "lava" }
     let report = export broken (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") both
     Assert.True(report.Blocked)
     Assert.False(report.Ok)
@@ -219,20 +218,52 @@ let ``the C# facade summarizes, exports and remembers targets`` () =
     Assert.Equal("WillowCreek", summary.ExecutableName)
     Assert.Equal(0, summary.ErrorCount)
     Assert.Equal<string list>(both, summary.Targets)
-    Assert.Equal<string list>(both, [ for t in GameExporter.Targets -> t.Id ])
+    Assert.Equal<string list>(both @ [ "web" ], [ for t in GameExporter.Targets -> t.Id ])
     let mutable edit = Unchecked.defaultof<Edit>
     Assert.False(GameExporter.TryRememberTargets(project, both, &edit))
     Assert.True(GameExporter.TryRememberTargets(project, [ "linux-x64" ], &edit))
     let updated = Document.run project edit
-    Assert.Equal<string seq>([ "linux-x64" ], updated.Export.Targets)
-    Assert.Equal(project.Export.GameId, updated.Export.GameId)
+    Assert.Equal<string list>([ "linux-x64" ], updated.Export.Value.Targets)
+    Assert.Equal(project.Export.Value.GameId, updated.Export.Value.GameId)
     // A project without export settings gets them, with the stable generated game id.
     let plain = starter ()
-    Assert.Null(plain.Export)
+    Assert.True(plain.Export.IsNone)
     Assert.True(GameExporter.TryRememberTargets(plain, both, &edit))
-    Assert.Equal((Defaults.newExportSettings plain).GameId, (Document.run plain edit).Export.GameId)
+    Assert.Equal((Defaults.newExportSettings plain).GameId, (Document.run plain edit).Export.Value.GameId)
     let templates = fakeTemplates (dir.Sub "templates") GameExporter.EditorVersion
     let report = GameExporter.Export(project, [ "linux-x64" ], dir.Sub "out", false, templates)
     Assert.True(report.Ok, GameExporter.Format report)
     Assert.Equal("12 B", GameExporter.FormatSize 12L)
     Assert.Equal("1.5 KB", GameExporter.FormatSize 1536L)
+
+[<Fact>]
+let ``the web demo is a page with the module, the cartridge and an icon, zipped flat`` () =
+    use dir = new TempDir()
+    let project = { willowCreek () with Name = "Willow & <Creek>" } |> withExport (fun s -> { s with Title = Some "Willow & <Creek>" })
+    let report = export project (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") [ "web" ]
+    Assert.True(report.Ok, Exporter.format report)
+    let web = target report "web"
+    let files = readFolder web.Folder
+    Assert.Equal<string list>(
+        [ "farm_wasm.js"; "farm_wasm_bg.wasm"; "game.cart"; "game.js"; "icon.png"; "index.html"; "licenses/THIRD-PARTY.txt" ],
+        files |> Map.toList |> List.map fst)
+    // The page carries the game's title, escaped.
+    Assert.Contains("<title>Willow &amp; &lt;Creek&gt;</title>", Text.Encoding.UTF8.GetString files.["index.html"])
+    Assert.Equal<byte>(CartridgeCompiler.Compile project, files.["game.cart"])
+    Assert.Equal((256, 256), pngSize files.["icon.png"])
+    // Browsers need a web server for modules and wasm: the report says so.
+    Assert.Contains(web.Warnings, fun w -> w.Contains "web server")
+    // itch.io serves index.html from the root of the upload.
+    let archive = File.ReadAllBytes web.Archive
+    Assert.EndsWith(".zip", web.Archive)
+    Assert.Contains("index.html", Text.Encoding.ASCII.GetString archive)
+    Assert.DoesNotContain("WillowCreek/index.html", Text.Encoding.ASCII.GetString archive)
+
+[<Fact>]
+let ``a web template without its page files is refused`` () =
+    use dir = new TempDir()
+    let templates = fakeTemplates (dir.Sub "templates") "1.0.0-test"
+    File.Delete(Path.Combine(templates, "web", "game.js"))
+    let report = export (willowCreek ()) templates (dir.Sub "out") [ "web" ]
+    Assert.False report.Ok
+    Assert.Contains("has no game.js", String.concat " " (target report "web").Errors)

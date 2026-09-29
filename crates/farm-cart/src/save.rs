@@ -3,15 +3,20 @@
 //! `SchemaValidation.ValidateGameState`.
 //!
 //! Saves belong to the player's machine, so Rust owns their format and their migrations
-//! (docs/LANGUAGES.md "Saves (Rust only)"). In the compatibility phase a save is the
-//! `GameState` JSON the web version writes; the migrations run on the raw JSON tree with
-//! JavaScript semantics (`??`, object spread), exactly like the TypeScript, and the result is
-//! then parsed into [`GameState`] and checked. [`migrate_game_state`] never panics on bad input.
+//! (docs/LANGUAGES.md "Saves (Rust only)"). A save is the `GameState` JSON in authoring units
+//! (the web version writes the same); the migrations run on the raw JSON tree with JavaScript
+//! semantics (`??`, object spread), exactly like the TypeScript did, and the result is then
+//! parsed into [`GameState`] and checked. [`migrate_game_state`] never panics on bad input.
+//!
+//! - v5 (schema v9, docs/NUMERICS.md): the simulation keeps integers. The v4→v5 step is the
+//!   quantization the `farm_sim::units` adapters apply when the state is parsed (positions to
+//!   1/8192 tile, energy to 1/1000 point, …) plus the version stamp; the zod `int()`
+//!   refinements are still checked on the JSON as read.
 
-use farm_sim::js;
 use farm_sim::schema::primitives::{directions, quest_statuses};
-use farm_sim::schema::save::{center_coordinate, SaveMigrationResult, CURRENT_SAVE_VERSION};
+use farm_sim::schema::save::{SaveMigrationResult, CURRENT_SAVE_VERSION};
 use farm_sim::schema::GameState;
+use farm_sim::units;
 use serde_json::{Map, Value};
 
 /// A save migration step: upgrades a version-n state to n+1, in place.
@@ -19,7 +24,12 @@ pub type SaveMigration = fn(&mut Map<String, Value>);
 
 /// TS `SAVE_MIGRATIONS`: `(n, step)` upgrades a version-n `GameState` to n+1.
 pub const SAVE_MIGRATIONS: &[(f64, SaveMigration)] =
-    &[(1.0, migrate_v1_to_v2), (2.0, migrate_v2_to_v3), (3.0, migrate_v3_to_v4)];
+    &[(1.0, migrate_v1_to_v2), (2.0, migrate_v2_to_v3), (3.0, migrate_v3_to_v4), (4.0, migrate_v4_to_v5)];
+
+/// [`CURRENT_SAVE_VERSION`] as the number a save's JSON declares.
+fn current_version() -> f64 {
+    f64::from(CURRENT_SAVE_VERSION)
+}
 
 /// The most errors a failed parse reports (zod `issues.slice(0, 20)`).
 pub(crate) const MAX_ERRORS: usize = 20;
@@ -32,35 +42,40 @@ pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
         return fail(0.0, false, "Save state is not an object".to_owned());
     }
     let from_version = get(get(Some(raw), "meta"), "saveVersion").and_then(Value::as_f64).unwrap_or(1.0);
-    if from_version > CURRENT_SAVE_VERSION {
+    if from_version > current_version() {
         return fail(
             from_version,
             false,
             format!(
                 "Save version {} is newer than this engine supports ({}). Update the engine.",
-                js::num(from_version),
-                js::num(CURRENT_SAVE_VERSION)
+                units::format_number(from_version),
+                CURRENT_SAVE_VERSION
             ),
         );
     }
 
-    let migrated = from_version < CURRENT_SAVE_VERSION;
+    let migrated = from_version < current_version();
     let mut state = spread(Some(raw));
     let mut version = from_version;
-    while version < CURRENT_SAVE_VERSION {
+    while version < current_version() {
         let Some((_, migrate)) = SAVE_MIGRATIONS.iter().find(|(from, _)| *from == version) else {
-            return fail(from_version, false, format!("No save migration registered for version {}", js::num(version)));
+            return fail(
+                from_version,
+                false,
+                format!("No save migration registered for version {}", units::format_number(version)),
+            );
         };
         migrate(&mut state);
         version += 1.0;
     }
     let mut meta = spread(state.get("meta"));
-    meta.insert("saveVersion".to_owned(), js::value(CURRENT_SAVE_VERSION));
+    meta.insert("saveVersion".to_owned(), Value::from(CURRENT_SAVE_VERSION));
     state.insert("meta".to_owned(), Value::Object(meta));
 
-    match parse_game_state(Value::Object(state)) {
+    let raw_state = Value::Object(state);
+    match parse_game_state(raw_state.clone()) {
         Ok(data) => {
-            let errors = validate_game_state(&data);
+            let errors = validate_game_state_json(&raw_state, &data);
             if errors.is_empty() {
                 SaveMigrationResult { ok: true, data: Some(data), from_version, migrated, errors }
             } else {
@@ -90,11 +105,23 @@ pub fn revalidate_game_state(state: &GameState) -> SaveMigrationResult {
 /// Port of `SchemaValidation.ValidateGameState`: the zod refinements serde's types don't express
 /// (integers, enums, ranges). Returns at most [`MAX_ERRORS`] messages as `path: message`.
 pub fn validate_game_state(state: &GameState) -> Vec<String> {
+    match serde_json::to_value(state) {
+        Ok(raw) => validate_game_state_json(&raw, state),
+        Err(error) => vec![format!("(root): {error}")],
+    }
+}
+
+/// [`validate_game_state`] for a state parsed from `raw`: the `int()` refinements are checked on
+/// the numbers as the JSON wrote them (parsing rounds them onto the integer grids), the rest on
+/// the parsed state.
+pub fn validate_game_state_json(raw: &Value, state: &GameState) -> Vec<String> {
     let mut errors = Vec::new();
     let mut error = |path: String, message: String| errors.push(format!("{path}: {message}"));
-    let int = |path: String, value: f64, error: &mut dyn FnMut(String, String)| {
-        if !js::is_integer(value) {
-            error(path, format!("Expected integer, received {}", js::num(value)));
+    // `path` names the error, `at` walks the raw JSON (absent keys took their defaults).
+    let int = |path: String, at: &[&str], error: &mut dyn FnMut(String, String)| {
+        let value = at.iter().try_fold(raw, |node, key| node.get(key)).and_then(Value::as_f64);
+        if let Some(value) = value.filter(|value| !units::is_integer(*value)) {
+            error(path, format!("Expected integer, received {}", units::format_number(value)));
         }
     };
     let one_of = |path: String, value: &str, allowed: &[&str], error: &mut dyn FnMut(String, String)| {
@@ -104,44 +131,45 @@ pub fn validate_game_state(state: &GameState) -> Vec<String> {
         }
     };
 
-    int("meta.saveVersion".into(), state.meta.save_version, &mut error);
-    int("clock.tick".into(), state.clock.tick, &mut error);
-    int("clock.day".into(), state.clock.day, &mut error);
-    int("clock.year".into(), state.clock.year, &mut error);
+    int("meta.saveVersion".into(), &["meta", "saveVersion"], &mut error);
+    int("clock.tick".into(), &["clock", "tick"], &mut error);
+    int("clock.day".into(), &["clock", "day"], &mut error);
+    int("clock.year".into(), &["clock", "year"], &mut error);
 
     let player = &state.player;
     one_of("player.direction".into(), &player.direction, directions::ALL, &mut error);
     for (axis, value) in [("dx", player.move_intent.dx), ("dy", player.move_intent.dy)] {
         let path = format!("player.moveIntent.{axis}");
-        int(path.clone(), value, &mut error);
-        if value < -1.0 {
+        int(path.clone(), &["player", "moveIntent", axis], &mut error);
+        if value < -1 {
             error(path.clone(), "Number must be greater than or equal to -1".into());
         }
-        if value > 1.0 {
+        if value > 1 {
             error(path, "Number must be less than or equal to 1".into());
         }
     }
-    for (name, skill) in &player.skills {
-        int(format!("player.skills.{name}.level"), skill.level, &mut error);
+    for name in player.skills.keys() {
+        int(format!("player.skills.{name}.level"), &["player", "skills", name, "level"], &mut error);
     }
 
     for (id, npc) in &state.npcs {
-        int(format!("npcs.{id}.x"), npc.x, &mut error);
-        int(format!("npcs.{id}.y"), npc.y, &mut error);
-        if let Some(patrol) = npc.patrol_index {
-            int(format!("npcs.{id}.patrolIndex"), patrol, &mut error);
+        int(format!("npcs.{id}.x"), &["npcs", id, "x"], &mut error);
+        int(format!("npcs.{id}.y"), &["npcs", id, "y"], &mut error);
+        if npc.patrol_index.is_some() {
+            int(format!("npcs.{id}.patrolIndex"), &["npcs", id, "patrolIndex"], &mut error);
         }
-        for (i, point) in npc.path.iter().flatten().enumerate() {
-            int(format!("npcs.{id}.path.{i}.x"), point.x, &mut error);
-            int(format!("npcs.{id}.path.{i}.y"), point.y, &mut error);
+        for i in 0..npc.path.as_ref().map_or(0, Vec::len) {
+            let index = i.to_string();
+            int(format!("npcs.{id}.path.{i}.x"), &["npcs", id, "path", &index, "x"], &mut error);
+            int(format!("npcs.{id}.path.{i}.y"), &["npcs", id, "path", &index, "y"], &mut error);
         }
     }
     for (id, quest) in &state.quests {
         one_of(format!("quests.{id}.status"), &quest.status, quest_statuses::ALL, &mut error);
     }
 
-    int("mine.deepestFloor".into(), state.mine.deepest_floor, &mut error);
-    int("mine.currentFloor".into(), state.mine.current_floor, &mut error);
+    int("mine.deepestFloor".into(), &["mine", "deepestFloor"], &mut error);
+    int("mine.currentFloor".into(), &["mine", "currentFloor"], &mut error);
 
     if state.rng.algorithm != "xoshiro128ss" {
         error("rng.algorithm".into(), "Invalid literal value, expected \"xoshiro128ss\"".into());
@@ -154,9 +182,9 @@ pub fn validate_game_state(state: &GameState) -> Vec<String> {
 // ---- migration steps --------------------------------------------------------------------------
 
 /// `{ ...(state.meta ?? {}), saveVersion: n, packs: state.meta?.packs ?? [] }`.
-fn stamp_meta(state: &mut Map<String, Value>, save_version: f64) {
+fn stamp_meta(state: &mut Map<String, Value>, save_version: u32) {
     let mut meta = spread(state.get("meta"));
-    meta.insert("saveVersion".to_owned(), js::value(save_version));
+    meta.insert("saveVersion".to_owned(), Value::from(save_version));
     default(&mut meta, "packs", || Value::Array(Vec::new()));
     state.insert("meta".to_owned(), Value::Object(meta));
 }
@@ -169,58 +197,64 @@ fn with_object(state: &mut Map<String, Value>, key: &str, update: impl FnOnce(&m
 }
 
 fn migrate_v1_to_v2(state: &mut Map<String, Value>) {
-    stamp_meta(state, 2.0);
+    stamp_meta(state, 2);
     with_object(state, "clock", |clock| {
-        default(clock, "tick", || js::value(0.0));
-        default(clock, "timeMinutes", || js::value(360.0));
-        default(clock, "day", || js::value(1.0));
+        default(clock, "tick", || Value::from(0));
+        default(clock, "timeMinutes", || Value::from(360));
+        default(clock, "day", || Value::from(1));
         default(clock, "season", || Value::from("spring"));
-        default(clock, "year", || js::value(1.0));
+        default(clock, "year", || Value::from(1));
         default(clock, "weatherId", || Value::from("sun"));
     });
     with_object(state, "player", |player| {
-        default(player, "energy", || js::value(100.0));
-        default(player, "maxEnergy", || js::value(100.0));
+        default(player, "energy", || Value::from(100));
+        default(player, "maxEnergy", || Value::from(100));
     });
     default(state, "shop", || Value::Null);
     default(state, "shopPurchasesToday", || Value::Object(Map::new()));
 }
 
 fn migrate_v2_to_v3(state: &mut Map<String, Value>) {
-    stamp_meta(state, 3.0);
+    stamp_meta(state, 3);
     with_object(state, "clock", |clock| default(clock, "weatherId", || Value::from("sun")));
     with_object(state, "player", |player| default(player, "skills", || Value::Object(Map::new())));
     default(state, "social", || Value::Object(Map::new()));
     default(state, "animals", || Value::Array(Vec::new()));
     default(state, "mine", || {
         let mut mine = Map::new();
-        mine.insert("deepestFloor".to_owned(), js::value(0.0));
-        mine.insert("currentFloor".to_owned(), js::value(0.0));
+        mine.insert("deepestFloor".to_owned(), Value::from(0));
+        mine.insert("currentFloor".to_owned(), Value::from(0));
         Value::Object(mine)
     });
     default(state, "quarantinedItems", || Value::Array(Vec::new()));
 }
 
 fn migrate_v3_to_v4(state: &mut Map<String, Value>) {
-    stamp_meta(state, 4.0);
+    stamp_meta(state, 4);
     with_object(state, "player", |player| {
         // Grid saves stored the occupied tile; the free-movement position is that tile's
         // center. Fractional values pass through untouched.
         for axis in ["x", "y"] {
-            let value = get_in(player, axis).cloned().unwrap_or_else(|| js::value(0.0));
+            let value = get_in(player, axis).cloned().unwrap_or_else(|| Value::from(0));
             let centered = match value.as_f64() {
-                Some(number) => js::value(center_coordinate(number)),
-                None => value,
+                Some(number) if units::is_integer(number) => units::value(number + 0.5),
+                _ => value,
             };
             player.insert(axis.to_owned(), centered);
         }
         default(player, "moveIntent", || {
             let mut intent = Map::new();
-            intent.insert("dx".to_owned(), js::value(0.0));
-            intent.insert("dy".to_owned(), js::value(0.0));
+            intent.insert("dx".to_owned(), Value::from(0));
+            intent.insert("dy".to_owned(), Value::from(0));
             Value::Object(intent)
         });
     });
+}
+
+/// v5 (schema v9): the state is quantized onto the integer grids when it is parsed; the step
+/// itself only stamps the version.
+fn migrate_v4_to_v5(state: &mut Map<String, Value>) {
+    stamp_meta(state, 5);
 }
 
 // ---- JavaScript semantics over the JSON tree (the Rust side of C# `RawJson`) -----------------
@@ -335,9 +369,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn minimal_v4() -> Value {
+    fn minimal_v5() -> Value {
         json!({
-            "meta": { "saveVersion": 4, "engineSeed": "t", "packs": [] },
+            "meta": { "saveVersion": 5, "engineSeed": "t", "packs": [] },
             "clock": { "tick": 0, "timeMinutes": 360, "day": 1, "season": "spring", "year": 1, "weatherId": "sun" },
             "world": { "scenes": [] },
             "player": { "x": 1.5, "y": 1.5, "moveIntent": { "dx": 0, "dy": 0 }, "direction": "down", "sceneId": "s",
@@ -351,15 +385,36 @@ mod tests {
 
     #[test]
     fn a_current_save_passes_through_unmigrated() {
-        let result = migrate_game_state(&minimal_v4());
+        let result = migrate_game_state(&minimal_v5());
         assert!(result.ok, "{:?}", result.errors);
         assert!(!result.migrated);
-        assert_eq!(result.from_version, 4.0);
+        assert_eq!(result.from_version, 5.0);
+    }
+
+    #[test]
+    fn a_v4_save_is_quantized_and_stamped_v5() {
+        let mut raw = minimal_v5();
+        raw["meta"]["saveVersion"] = json!(4);
+        raw["player"]["x"] = json!(1.00001);
+        raw["player"]["energy"] = json!(97.25);
+        raw["clock"]["timeMinutes"] = json!(390.05);
+        let result = migrate_game_state(&raw);
+        assert!(result.ok, "{:?}", result.errors);
+        assert!(result.migrated);
+        let data = result.data.expect("data");
+        assert_eq!(data.meta.save_version, 5);
+        assert_eq!(data.player.x, 8192); // 1.00001 × 8192 = 8192.08 → 8192
+        assert_eq!(data.player.energy, 97_250);
+        assert_eq!(data.clock.time_minutes, 390_050_000);
+        let written = serde_json::to_value(&data).expect("serializes");
+        assert_eq!(written["player"]["x"], json!(1));
+        assert_eq!(written["player"]["energy"], json!(97.25));
+        assert_eq!(written["meta"]["saveVersion"], json!(5));
     }
 
     #[test]
     fn fractional_versions_have_no_migration() {
-        let mut raw = minimal_v4();
+        let mut raw = minimal_v5();
         raw["meta"]["saveVersion"] = json!(2.5);
         let result = migrate_game_state(&raw);
         assert!(!result.ok);
@@ -369,7 +424,7 @@ mod tests {
 
     #[test]
     fn type_errors_are_reported_zod_style() {
-        let mut raw = minimal_v4();
+        let mut raw = minimal_v5();
         raw["player"]["money"] = json!("lots");
         let result = migrate_game_state(&raw);
         assert!(!result.ok);
@@ -378,7 +433,7 @@ mod tests {
 
     #[test]
     fn refinements_are_checked() {
-        let mut raw = minimal_v4();
+        let mut raw = minimal_v5();
         raw["player"]["direction"] = json!("north");
         raw["player"]["moveIntent"]["dx"] = json!(2);
         raw["clock"]["day"] = json!(1.5);
@@ -404,14 +459,14 @@ mod tests {
 
     #[test]
     fn grid_positions_move_to_tile_centers() {
-        let mut raw = minimal_v4();
+        let mut raw = minimal_v5();
         raw["meta"]["saveVersion"] = json!(3);
         raw["player"]["x"] = json!(4);
         raw["player"]["y"] = json!(2.25);
         let result = migrate_game_state(&raw);
         assert!(result.ok, "{:?}", result.errors);
         let data = result.data.expect("data");
-        assert_eq!((data.player.x, data.player.y), (4.5, 2.25));
+        assert_eq!((data.player.x, data.player.y), (units::pos(4.5), units::pos(2.25)));
         assert!(result.migrated);
     }
 }

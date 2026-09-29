@@ -7,7 +7,6 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events;
 use crate::inventory;
-use crate::js;
 use crate::quests;
 use crate::schema::{Dialogue, DialogueOption, DialogueState, GameState, ShopSession};
 use crate::social;
@@ -27,7 +26,7 @@ pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str
     ctx.content.dialogues.iter().find(|d| d.id == dialogue_id)
 }
 
-pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: f64) -> Effects {
+pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: i32) -> Effects {
     let Some(dialogue_ref) = state.dialogue.clone() else {
         return Vec::new();
     };
@@ -37,11 +36,8 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     let option: Option<DialogueOption> = dialogue.and_then(|dialogue| {
         let visible = social::visible_dialogue_options(ctx, state, dialogue);
         // JS arr[index]: undefined for negative, fractional or out-of-range indices.
-        if js::is_integer(index) && index >= 0.0 && index < visible.len() as f64 {
-            Some(visible[index as usize].clone())
-        } else {
-            None
-        }
+        // A fractional or negative index (read as −1) picks nothing.
+        usize::try_from(index).ok().and_then(|index| visible.get(index).cloned())
     });
     let (Some(_dialogue), Some(option)) = (dialogue, option) else {
         state.dialogue = None;
@@ -50,21 +46,21 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     let mut effects = Vec::new();
 
-    if let Some(give_money) = option.give_money.filter(|money| *money != 0.0 && !money.is_nan()) {
-        state.player.money += give_money;
-        effects.push(Effect::message(message_levels::SUCCESS, format!("Received ${}", js::num(give_money))));
+    if let Some(give_money) = option.give_money.filter(|money| *money != 0) {
+        state.player.money = state.player.money.saturating_add(give_money);
+        effects.push(Effect::message(message_levels::SUCCESS, format!("Received ${give_money}")));
     }
 
     if let Some(give_item) = non_empty(option.give_item.as_deref()) {
         let item = ctx.content.items.iter().find(|i| i.id == give_item);
         if let Some(item) = item {
             // `option.giveItemQuantity || 1`: undefined, 0 and NaN all fall back to 1.
-            let quantity = option.give_item_quantity.filter(|q| *q != 0.0 && !q.is_nan()).unwrap_or(1.0);
+            let quantity = option.give_item_quantity.filter(|q| *q != 0).unwrap_or(1);
             let result =
                 inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
             if result.added {
                 state.player.inventory = result.inventory;
-                let suffix = if quantity > 1.0 { format!(" x{}", js::num(quantity)) } else { String::new() };
+                let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
                 effects.push(Effect::message(message_levels::SUCCESS, format!("Received {}{}", item.name, suffix)));
             } else {
                 effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));

@@ -434,7 +434,7 @@ impl MinigameSession for FallbackSession {
 pub mod custom_game {
     use super::{string_config, MinigameConfig, MinigameImpl, MinigameMountOptions, MinigameRegistry};
     use super::{MinigameSession, SessionCore};
-    use farm_sim::js;
+    use farm_sim::units;
     use std::any::Any;
     use std::sync::{Arc, LazyLock};
 
@@ -495,7 +495,8 @@ pub mod custom_game {
     impl HoldToCatchSession {
         pub fn new(options: MinigameMountOptions) -> Self {
             let target_ms = number(&options.config, "holdMs", 1200.0, 10000.0);
-            let prompt = format!("Hold for {} seconds, then release to reel in.", js::to_fixed(target_ms / 1000.0, 1));
+            let prompt =
+                format!("Hold for {} seconds, then release to reel in.", units::to_fixed(target_ms / 1000.0, 1));
             let mut core = SessionCore::new(options);
             core.button_text = HOLD_BUTTON_TEXT.to_owned();
             Self { core, now_ms: 0.0, started_ms: None, target_ms, prompt }
@@ -622,10 +623,10 @@ pub mod custom_game {
         pub fn status(&self) -> String {
             format!(
                 "You: {} health · {} magic | {}: {} health",
-                js::num(self.hp.max(0.0)),
-                js::num(self.mana),
+                units::format_number(self.hp.max(0.0)),
+                units::format_number(self.mana),
                 self.enemy_name,
-                js::num(self.enemy.max(0.0))
+                units::format_number(self.enemy.max(0.0))
             )
         }
 
@@ -679,7 +680,7 @@ pub mod custom_game {
 mod tests {
     use super::custom_game::{HoldToCatchSession, SimpleBattleSession};
     use super::*;
-    use farm_sim::js;
+    use farm_sim::units;
     use std::sync::{Arc, Mutex};
 
     fn options(config: MinigameConfig) -> (MinigameMountOptions, Arc<Mutex<Vec<f64>>>) {
@@ -696,7 +697,7 @@ mod tests {
 
     #[test]
     fn hold_to_catch_prompt_uses_js_to_fixed_and_cancel_hold_resets() {
-        let (opts, scores) = options([("holdMs".to_owned(), js::value(250.0))].into_iter().collect());
+        let (opts, scores) = options([("holdMs".to_owned(), units::value(250.0))].into_iter().collect());
         let mut session = HoldToCatchSession::new(opts);
         // (0.25).toFixed(1) is "0.3" in JavaScript.
         assert_eq!(session.prompt(), "Hold for 0.3 seconds, then release to reel in.");
@@ -716,7 +717,7 @@ mod tests {
 
     #[test]
     fn simple_battle_heavy_attacks_and_loss() {
-        let config = [("playerHealth".to_owned(), js::value(12.0)), ("enemyName".to_owned(), Value::from("Crab"))]
+        let config = [("playerHealth".to_owned(), units::value(12.0)), ("enemyName".to_owned(), Value::from("Crab"))]
             .into_iter()
             .collect();
         let (opts, scores) = options(config);

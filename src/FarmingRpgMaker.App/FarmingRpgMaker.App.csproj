@@ -23,6 +23,10 @@
     <None Include="../../tools/player-licenses/THIRD-PARTY.txt" Link="licenses/THIRD-PARTY-rust.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Help → Creator Guide renders the guide from the repository's docs (Views/HelpWindows.cs). -->
+    <EmbeddedResource Include="../../docs/CREATOR-GUIDE.md" LogicalName="FarmingRpgMaker.App.CreatorGuide.md" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Skia" />

@@ -6,21 +6,22 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{ActionHookPayload, HookEvent, RelationshipChangeHookPayload};
-use crate::js;
 use crate::schema::{
     event_fired_flag, DialogueState, EventCondition, EventOutcome, GameEvent, GameState, MinigameSession,
     NpcSocialState, NpcState, MAX_FRIENDSHIP,
 };
-use crate::world::tiles;
+use crate::text;
+use crate::units;
+use crate::world::{tiles, world_movement};
 use crate::{energy, game_time, inventory, quests};
 use indexmap::IndexMap;
 use serde_json::Value;
 
 /// TS `EventPosition`: the tile entered or interacted with.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct EventPosition {
-    pub x: f64,
-    pub y: f64,
+    pub x: i32,
+    pub y: i32,
 }
 
 /// TS `PerformActionResult` minus the state (updated in place).
@@ -31,38 +32,25 @@ pub struct PerformActionResult {
 }
 
 /// Actions may perform actions; cap the chain so cycles terminate.
-const MAX_ACTION_DEPTH: f64 = 4.0;
+const MAX_ACTION_DEPTH: u32 = 4;
 
 const QUEST_STATUS_NOT_STARTED: &str = "not-started";
 
-/// JS `Math.min`: NaN propagates (Rust's `f64::min` returns the other operand).
-fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
-
-/// JS `Math.max`: NaN propagates (Rust's `f64::max` returns the other operand).
-fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.max(b)
-    }
-}
-
 /// TS `x || y` on a string: an empty (or missing) string is falsy.
+/// An outcome `amount` (thousandths) as a whole number: gold or friendship points.
+fn whole(amount: i64) -> i64 {
+    units::div_round(amount, i64::from(units::MILLI_ONE))
+}
+
 fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|text| !text.is_empty())
 }
 
-fn position_matches(x: f64, y: f64, x2: Option<f64>, y2: Option<f64>, pos: EventPosition) -> bool {
-    let min_x = js_min(x, x2.unwrap_or(x));
-    let max_x = js_max(x, x2.unwrap_or(x));
-    let min_y = js_min(y, y2.unwrap_or(y));
-    let max_y = js_max(y, y2.unwrap_or(y));
+fn position_matches(x: i32, y: i32, x2: Option<i32>, y2: Option<i32>, pos: EventPosition) -> bool {
+    let min_x = x.min(x2.unwrap_or(x));
+    let max_x = x.max(x2.unwrap_or(x));
+    let min_y = y.min(y2.unwrap_or(y));
+    let max_y = y.max(y2.unwrap_or(y));
     pos.x >= min_x && pos.x <= max_x && pos.y >= min_y && pos.y <= max_y
 }
 
@@ -81,8 +69,8 @@ pub fn condition_met(
                 .inventory
                 .iter()
                 .filter(|slot| slot.item.id == *item_id)
-                .fold(0.0, |sum, slot| sum + slot.quantity);
-            held >= *quantity
+                .fold(0_u64, |sum, slot| sum + u64::from(slot.quantity));
+            held >= u64::from(*quantity)
         }
         EventCondition::InventorySpace { item_id, quantity } => {
             let item = ctx.content.items.iter().find(|i| i.id == *item_id);
@@ -91,7 +79,7 @@ pub fn condition_met(
                     .added
             })
         }
-        EventCondition::Flag { flag, value } => js::truthy(flag_value(state, flag)) == *value,
+        EventCondition::Flag { flag, value } => text::truthy(flag_value(state, flag)) == *value,
         EventCondition::DayRange { min_day, max_day } => {
             if min_day.is_some_and(|min_day| state.clock.day < min_day) {
                 return false;
@@ -118,7 +106,7 @@ pub fn condition_met(
             state.quests.get(quest_id).map_or(QUEST_STATUS_NOT_STARTED, |progress| progress.status.as_str()) == status
         }
         EventCondition::Friendship { npc_id, min } => {
-            state.social.get(npc_id).map_or(0.0, |social| social.friendship) >= *min
+            state.social.get(npc_id).map_or(0, |social| social.friendship) >= *min
         }
         EventCondition::Weather { weather_ids } => weather_ids.contains(&state.clock.weather_id),
         EventCondition::FestivalId { festival_id } => {
@@ -133,7 +121,7 @@ pub fn flag_value<'a>(state: &'a GameState, name: &str) -> Option<&'a Value> {
     state.flags.get(name)
 }
 
-fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome, depth: f64) -> Effects {
+fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome, depth: u32) -> Effects {
     match outcome.r#type.as_str() {
         "message" => match non_empty(outcome.message.as_deref()) {
             Some(message) => vec![Effect::message(message_levels::INFO, message)],
@@ -146,11 +134,13 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
                 return vec![];
             }
             let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
-                friendship: 0.0,
-                gifts_today: 0.0,
+                friendship: 0,
+                gifts_today: 0,
                 last_gift_day: None,
             });
-            let friendship = js_max(0.0, js_min(MAX_FRIENDSHIP, current.friendship + outcome.amount.unwrap_or(0.0)));
+            // Friendship is whole points: the amount rounds.
+            let delta = whole(outcome.amount.unwrap_or(0));
+            let friendship = (i64::from(current.friendship) + delta).clamp(0, i64::from(MAX_FRIENDSHIP)) as i32;
             ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload {
                 npc_id: npc_id.to_owned(),
                 friendship,
@@ -159,20 +149,21 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
             vec![]
         }
         "modifyEnergy" => {
-            let amount = outcome.amount.unwrap_or(0.0);
+            // Thousandths of a point: the energy unit.
+            let amount = i32::try_from(outcome.amount.unwrap_or(0)).unwrap_or(0);
             if !ctx.content.settings.energy_enabled {
                 return vec![];
             }
-            if amount < 0.0 {
-                return energy::spend_energy(ctx, state, -amount).effects;
+            if amount < 0 {
+                return energy::spend_energy(ctx, state, amount.saturating_neg()).effects;
             }
-            state.player.energy = js_min(state.player.max_energy, state.player.energy + amount);
+            state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(amount));
             vec![]
         }
         "waterArea" => {
-            let radius = js_min(10.0, js_max(0.0, outcome.radius.unwrap_or(1.0).floor()));
-            let cx = state.player.x.floor();
-            let cy = state.player.y.floor();
+            let radius = i64::from(outcome.radius.unwrap_or(1).min(10));
+            let center = world_movement::player_tile(state);
+            let (cx, cy) = (i64::from(center.x), i64::from(center.y));
             let day = state.clock.day;
             let scene_id = state.player.scene_id.clone();
             for scene in &mut state.world.scenes {
@@ -181,11 +172,14 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
                 }
                 for row in &mut scene.tiles {
                     for tile in row {
-                        if (tile.x - cx).abs() > radius || (tile.y - cy).abs() > radius || tile.background != "soil" {
+                        if (i64::from(tile.x) - cx).abs() > radius
+                            || (i64::from(tile.y) - cy).abs() > radius
+                            || tile.background != "soil"
+                        {
                             continue;
                         }
                         tile.soil_state = Some("watered".to_owned());
-                        tile.soil_moisture = 100.0;
+                        tile.soil_moisture = 100;
                         if let Some(crop) = &mut tile.crop {
                             crop.watered = true;
                             crop.last_watered_day = Some(day);
@@ -198,40 +192,41 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
         "giveItem" => {
             let item = outcome.item_id.as_deref().and_then(|id| ctx.content.items.iter().find(|i| i.id == id));
             let Some(item) = item else { return vec![] };
-            let quantity = outcome.item_quantity.unwrap_or(1.0);
+            let quantity = outcome.item_quantity.unwrap_or(1);
             let result =
                 inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
             if !result.added {
                 return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
             }
             state.player.inventory = result.inventory;
-            let suffix = if quantity > 1.0 { format!(" x{}", js::num(quantity)) } else { String::new() };
+            let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
             vec![Effect::message(message_levels::SUCCESS, format!("Received {}{suffix}", item.name))]
         }
 
         "takeItem" => {
             let Some(item_id) = non_empty(outcome.item_id.as_deref()) else { return vec![] };
             state.player.inventory =
-                inventory::remove_item(&state.player.inventory, item_id, outcome.item_quantity.unwrap_or(1.0));
+                inventory::remove_item(&state.player.inventory, item_id, outcome.item_quantity.unwrap_or(1));
             vec![]
         }
 
         "giveMoney" => {
-            let amount = outcome.amount.unwrap_or(0.0);
-            if amount <= 0.0 {
+            // Money is whole gold: the amount rounds.
+            let amount = whole(outcome.amount.unwrap_or(0));
+            if amount <= 0 {
                 return vec![];
             }
-            state.player.money += amount;
-            vec![Effect::message(message_levels::SUCCESS, format!("Received ${}", js::num(amount)))]
+            state.player.money = state.player.money.saturating_add(amount);
+            vec![Effect::message(message_levels::SUCCESS, format!("Received ${amount}"))]
         }
 
         "takeMoney" => {
-            let amount = js_min(outcome.amount.unwrap_or(0.0), state.player.money);
-            if amount <= 0.0 {
+            let amount = whole(outcome.amount.unwrap_or(0)).min(state.player.money);
+            if amount <= 0 {
                 return vec![];
             }
             state.player.money -= amount;
-            vec![Effect::message(message_levels::INFO, format!("Paid ${}", js::num(amount)))]
+            vec![Effect::message(message_levels::INFO, format!("Paid ${amount}"))]
         }
 
         "setFlag" => {
@@ -260,8 +255,8 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
             let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
             let Some(npc_def) = ctx.content.npcs.iter().find(|n| n.id == npc_id) else { return vec![] };
             let npc_state = NpcState {
-                x: outcome.x.unwrap_or(npc_def.x),
-                y: outcome.y.unwrap_or(npc_def.y),
+                x: outcome.x.map_or(npc_def.x, units::tiles),
+                y: outcome.y.map_or(npc_def.y, units::tiles),
                 scene_id: outcome.scene_id.clone().unwrap_or_else(|| npc_def.scene_id.clone()),
                 path: None,
                 patrol_index: None,
@@ -285,7 +280,7 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
             let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
             let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
             let scene = &mut state.world.scenes[scene_index];
-            if tile_y < 0.0 || tile_y >= scene.height || tile_x < 0.0 || tile_x >= scene.width {
+            if tile_y < 0 || tile_y >= scene.height || tile_x < 0 || tile_x >= scene.width {
                 return vec![];
             }
             if let Some(tile) = scene.tiles.get_mut(tile_y as usize).and_then(|row| row.get_mut(tile_x as usize)) {
@@ -302,8 +297,8 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
             }
             // Warp targets are authored as tile coordinates; land on the center.
             state.player.scene_id = scene_id.to_owned();
-            state.player.x = x + 0.5;
-            state.player.y = y + 0.5;
+            state.player.x = units::tile_center(x);
+            state.player.y = units::tile_center(y);
             vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x, y }]
         }
 
@@ -339,7 +334,7 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
 
         "performAction" => {
             let Some(action_id) = non_empty(outcome.action_id.as_deref()) else { return vec![] };
-            perform_action_internal(ctx, state, action_id, depth + 1.0)
+            perform_action_internal(ctx, state, action_id, depth + 1)
         }
 
         "startMinigame" => {
@@ -367,7 +362,7 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
 
 /// Apply a sequence of outcomes (the shared executor behind events, custom actions, minigame
 /// result tiers and plugin mutations).
-pub fn apply_outcomes(ctx: &EngineContext, state: &mut GameState, outcomes: &[EventOutcome], depth: f64) -> Effects {
+pub fn apply_outcomes(ctx: &EngineContext, state: &mut GameState, outcomes: &[EventOutcome], depth: u32) -> Effects {
     let mut effects = Vec::new();
     for outcome in outcomes {
         effects.extend(apply_outcome(ctx, state, outcome, depth));
@@ -378,10 +373,10 @@ pub fn apply_outcomes(ctx: &EngineContext, state: &mut GameState, outcomes: &[Ev
 /// Run a creator-defined action (extensibility layer): check its conditions, spend energy, apply
 /// its outcomes, and notify plugins via `onAction`.
 pub fn perform_action(ctx: &EngineContext, state: &mut GameState, action_id: &str) -> PerformActionResult {
-    perform_action_detailed(ctx, state, action_id, 0.0)
+    perform_action_detailed(ctx, state, action_id, 0)
 }
 
-fn perform_action_internal(ctx: &EngineContext, state: &mut GameState, action_id: &str, depth: f64) -> Effects {
+fn perform_action_internal(ctx: &EngineContext, state: &mut GameState, action_id: &str, depth: u32) -> Effects {
     perform_action_detailed(ctx, state, action_id, depth).effects
 }
 
@@ -389,7 +384,7 @@ fn perform_action_detailed(
     ctx: &EngineContext,
     state: &mut GameState,
     action_id: &str,
-    depth: f64,
+    depth: u32,
 ) -> PerformActionResult {
     if depth > MAX_ACTION_DEPTH {
         return PerformActionResult { effects: vec![], ran: false };
@@ -415,7 +410,7 @@ fn perform_action_detailed(
 
     let mut effects = Vec::new();
 
-    if action.energy_cost > 0.0 {
+    if action.energy_cost > 0 {
         let spend = energy::spend_energy(ctx, state, action.energy_cost);
         effects.extend(spend.effects);
         if spend.collapsed {
@@ -450,7 +445,7 @@ pub fn start_minigame_session(
 pub fn fire_event(ctx: &EngineContext, state: &mut GameState, event: &GameEvent) -> Effects {
     let mut effects = Vec::new();
     for outcome in &event.outcomes {
-        effects.extend(apply_outcome(ctx, state, outcome, 0.0));
+        effects.extend(apply_outcome(ctx, state, outcome, 0));
     }
     if !event.repeatable {
         state.flags.insert(event_fired_flag(&event.id), Value::Bool(true));
@@ -475,7 +470,7 @@ pub fn evaluate_events(
         if !event.scene_id.is_empty() && event.scene_id != state.player.scene_id {
             continue;
         }
-        if !event.repeatable && js::truthy(flag_value(state, &event_fired_flag(&event.id))) {
+        if !event.repeatable && text::truthy(flag_value(state, &event_fired_flag(&event.id))) {
             continue;
         }
         if !event.conditions.iter().all(|condition| condition_met(ctx, state, condition, pos)) {

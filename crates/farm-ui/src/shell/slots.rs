@@ -2,7 +2,8 @@
 //! was saved; Load, Save (or Start for a new game) and Delete.
 
 use super::ShellAction;
-use crate::format::{capitalize, money, num, play_time, saved_ago};
+use crate::format::{money, num, play_time, saved_ago, season_name};
+use crate::i18n::Lang;
 use crate::icons::{self, Icon};
 use crate::layout::{Align, RectExt};
 use crate::theme::fade;
@@ -55,23 +56,24 @@ pub struct SlotsView {
 }
 
 /// The date line of a preview: "Day 3 of Spring, Year 1".
-pub fn date_line(preview: &SlotPreviewView) -> String {
+pub fn date_line(preview: &SlotPreviewView, lang: Lang) -> String {
     let day = preview.day_of_season.unwrap_or(preview.day);
-    format!("Day {} of {}, Year {}", num(day), capitalize(&preview.season), num(preview.year))
+    lang.format("slots.date", &[&num(day), &season_name(&preview.season, lang), &num(preview.year)])
 }
 
 pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
     let colors = ui.theme().colors;
+    let lang = ui.lang();
     let (title, icon) = match view.mode {
-        SlotsMode::Load => ("Load game", Icon::Folder),
-        SlotsMode::Save => ("Save game", Icon::Save),
-        SlotsMode::NewGame => ("New game", Icon::Play),
+        SlotsMode::Load => (lang.tr("slots.loadTitle"), Icon::Folder),
+        SlotsMode::Save => (lang.tr("slots.saveTitle"), Icon::Save),
+        SlotsMode::NewGame => (lang.tr("slots.newTitle"), Icon::Play),
     };
-    let subtitle = match view.mode {
-        SlotsMode::Load => "Choose a save to continue.",
-        SlotsMode::Save => "Choose a slot. The game also saves each morning.",
-        SlotsMode::NewGame => "Choose a slot for the new farm.",
-    };
+    let subtitle = lang.tr(match view.mode {
+        SlotsMode::Load => "slots.loadSubtitle",
+        SlotsMode::Save => "slots.saveSubtitle",
+        SlotsMode::NewGame => "slots.newSubtitle",
+    });
     let footer = ui.button_height(13.0) + 20.0;
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("slots"),
@@ -130,12 +132,12 @@ pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
         // Buttons.
         let id = WidgetId::new("slot").with(slot.slot);
         let (primary_label, primary_action, primary_enabled) = match view.mode {
-            SlotsMode::Load => ("Load", ShellAction::LoadSlot(slot.slot), slot.preview.is_some()),
-            SlotsMode::Save => ("Save", ShellAction::SaveSlot(slot.slot), true),
-            SlotsMode::NewGame => ("Start", ShellAction::NewGameInSlot(slot.slot), true),
+            SlotsMode::Load => ("slots.load", ShellAction::LoadSlot(slot.slot), slot.preview.is_some()),
+            SlotsMode::Save => ("slots.save", ShellAction::SaveSlot(slot.slot), true),
+            SlotsMode::NewGame => ("slots.start", ShellAction::NewGameInSlot(slot.slot), true),
         };
-        let primary = Button::new(primary_label).primary().enabled(primary_enabled);
-        let delete = Button::new("Delete").enabled(slot.preview.is_some() || slot.unreadable);
+        let primary = Button::new(lang.tr(primary_label)).primary().enabled(primary_enabled);
+        let delete = Button::new(lang.tr("slots.delete")).enabled(slot.preview.is_some() || slot.unreadable);
         let primary_width = ui.button_width(&primary).max(80.0);
         let delete_width = ui.button_width(&delete).max(80.0);
         let buttons = inner.cut_right(primary_width.max(delete_width));
@@ -161,15 +163,15 @@ pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
         match &slot.preview {
             Some(preview) => {
                 let lines = [
-                    (format!("Slot {} \u{00b7} {}", slot.slot, preview.farm_name), 15.0, FontId::Bold, colors.text),
-                    (date_line(preview), 13.0, FontId::Regular, colors.text),
+                    (lang.format("slots.slotFarm", &[&slot.slot, &preview.farm_name]), 15.0, FontId::Bold, colors.text),
+                    (date_line(preview, lang), 13.0, FontId::Regular, colors.text),
                     (
-                        format!("{} \u{00b7} {} played", money(preview.money), play_time(preview.play_seconds)),
+                        lang.format("slots.played", &[&money(preview.money as i64), &play_time(preview.play_seconds)]),
                         12.5,
                         FontId::Regular,
                         colors.muted,
                     ),
-                    (saved_ago(preview.saved_at, view.now), 12.0, FontId::Regular, colors.muted),
+                    (saved_ago(preview.saved_at, view.now, lang), 12.0, FontId::Regular, colors.muted),
                 ];
                 let total: f32 = lines.iter().map(|(_, size, _, _)| line(ui, *size)).sum();
                 let mut ly = inner.y + (inner.height - total) / 2.0;
@@ -180,10 +182,11 @@ pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
                 }
             }
             None => {
-                let text = if slot.unreadable { "This save could not be read." } else { "Empty slot" };
+                let text = lang.tr(if slot.unreadable { "slots.unreadable" } else { "slots.empty" });
                 let heading =
                     Rect::new(inner.x, inner.y + inner.height / 2.0 - line(ui, 15.0), inner.width, line(ui, 15.0));
-                ui.label(heading, &format!("Slot {}", slot.slot), 15.0, FontId::Bold, colors.text, Align::Start);
+                let name = lang.format("slots.slot", &[&slot.slot]);
+                ui.label(heading, &name, 15.0, FontId::Bold, colors.text, Align::Start);
                 let detail = Rect::new(inner.x, heading.bottom(), inner.width, line(ui, 13.0));
                 ui.label(
                     detail,
@@ -199,7 +202,7 @@ pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
     }
     ui.end_modal_body(y);
     if let Some(mut footer) = modal.footer {
-        let back = Button::new("Back");
+        let back = Button::new(lang.tr("common.back"));
         let width = ui.button_width(&back).max(90.0);
         let rect = footer.cut_right(width).centered(width, button_height);
         if ui.button(WidgetId::new("slots-back"), rect, back) {

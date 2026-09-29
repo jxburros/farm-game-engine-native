@@ -56,7 +56,7 @@ public sealed class MainWindowTests
         var file = menu.Items.OfType<MenuItem>().First().Items.OfType<MenuItem>().Select(m => m.Header as string);
         Assert.Equal(["_New Project", "_Open Project…", "_Import Project JSON…", "_Export Project JSON…", "Export _Game…", "E_xit"], file);
         var help = menu.Items.OfType<MenuItem>().Last().Items.OfType<MenuItem>().Select(m => m.Header as string);
-        Assert.Equal(["_Update Center…", "_About Farming RPG Maker"], help);
+        Assert.Equal(["_Welcome Tour", "_Creator Guide", "_Keyboard Shortcuts", "_Language", "_Update Center…", "_About Farming RPG Maker"], help);
     }
 
     [AvaloniaFact]

@@ -258,11 +258,15 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
     private readonly ListBox _list = new() { Name = "ProjectList" };
     private readonly Button _open;
     private readonly Button _delete;
+    private readonly Button _rename;
+    private readonly Button _duplicate;
+    private readonly TextBox _renameBox = new() { Name = "RenameProjectName", Watermark = "Project name", MinWidth = 260 };
     private readonly TextBlock _hint = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private string? _confirmDeleteId;
+    private string? _notice;
 
     public OpenProjectWindow(ProjectStore store, string? currentId)
-        : base("Open Project", 600, 500)
+        : base("Open Project", 640, 560)
     {
         Name = "OpenProjectWindow";
         _store = store;
@@ -271,6 +275,8 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
         _list.SelectionChanged += (_, _) =>
         {
             _confirmDeleteId = null;
+            _notice = null;
+            _renameBox.Text = SelectedSummary?.Name ?? "";
             UpdateButtons();
         };
         _list.DoubleTapped += (_, _) => OpenSelected();
@@ -280,9 +286,25 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
         _open.IsDefault = true;
         _delete = Ui.Button(Ui.IconLabel("IconDelete", "Delete"), DeleteSelected, "subtle");
         _delete.Name = "DeleteProjectButton";
+        _rename = Ui.Button("Rename", RenameSelected, "subtle");
+        _rename.Name = "RenameProjectButton";
+        _duplicate = Ui.Button("Duplicate", DuplicateSelected, "subtle");
+        _duplicate.Name = "DuplicateProjectButton";
+        _renameBox.TextChanged += (_, _) => UpdateButtons();
+        _renameBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Enter)
+            {
+                RenameSelected();
+                e.Handled = true;
+            }
+        };
         var cancel = Ui.Button("Cancel", () => Close(null), "subtle");
         cancel.IsCancel = true;
         _hint.Classes.Add("muted");
+        _hint.Name = "ProjectListHint";
+        var manage = Ui.HStack(8, _renameBox, _rename, _duplicate);
+        manage.Margin = new Thickness(0, 10, 0, 0);
 
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 14, 0, 0) };
         footer.Children.Add(_delete);
@@ -303,6 +325,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
                 {
                     NewProjectWindow.Docked(Ui.VStack(4, Ui.Text("Your projects", "h1"), Ui.Text($"Stored in {store.ProjectsDirectory}", "muted", "small")), Dock.Top, new Thickness(0, 0, 0, 12)),
                     NewProjectWindow.Docked(footer, Dock.Bottom),
+                    NewProjectWindow.Docked(manage, Dock.Bottom),
                     _list,
                 },
             },
@@ -310,7 +333,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
         Reload();
     }
 
-    private void Reload()
+    private void Reload(string? select = null)
     {
         _list.Items.Clear();
         foreach (var project in _store.List())
@@ -328,7 +351,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
 
         if (_list.ItemCount > 0)
         {
-            _list.SelectedIndex = 0;
+            _list.SelectedItem = _list.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, select)) ?? _list.Items[0];
         }
 
         UpdateButtons();
@@ -336,14 +359,44 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
 
     private string? SelectedId => (_list.SelectedItem as ListBoxItem)?.Tag as string;
 
+    private ProjectSummary? SelectedSummary => SelectedId is { } id ? _store.List().FirstOrDefault(p => p.Id == id) : null;
+
     private void UpdateButtons()
     {
         _open.IsEnabled = SelectedId is not null;
         _delete.IsEnabled = SelectedId is not null && SelectedId != _currentId;
         _delete.Content = Ui.IconLabel("IconDelete", _confirmDeleteId is not null ? "Confirm delete" : "Delete");
+        _rename.IsEnabled = SelectedId is not null && !string.IsNullOrWhiteSpace(_renameBox.Text);
+        _duplicate.IsEnabled = SelectedId is not null;
         _hint.Text = _confirmDeleteId is not null
             ? "Deleting can't be undone — click again to confirm."
-            : SelectedId == _currentId && SelectedId is not null ? "The open project can't be deleted." : "";
+            : _notice ?? (SelectedId == _currentId && SelectedId is not null ? "The open project can't be deleted." : "");
+    }
+
+    private void RenameSelected()
+    {
+        if (SelectedId is not { } id || string.IsNullOrWhiteSpace(_renameBox.Text))
+        {
+            return;
+        }
+
+        var renamed = _store.Rename(id, _renameBox.Text);
+        Reload(id);
+        _notice = renamed.Ok ? $"Renamed to \"{renamed.Project!.Name}\"." : string.Join("; ", renamed.Errors);
+        UpdateButtons();
+    }
+
+    private void DuplicateSelected()
+    {
+        if (SelectedId is not { } id)
+        {
+            return;
+        }
+
+        var copy = _store.Duplicate(id);
+        Reload(copy.Ok ? copy.Project!.Id : id);
+        _notice = copy.Ok ? $"Created \"{copy.Project!.Name}\"." : string.Join("; ", copy.Errors);
+        UpdateButtons();
     }
 
     private void OpenSelected()

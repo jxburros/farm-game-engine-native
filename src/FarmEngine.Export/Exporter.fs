@@ -3,6 +3,7 @@ namespace FarmEngine.Export
 open System
 open System.Globalization
 open System.IO
+open System.Net
 open System.Text
 open FarmEngine.Authoring
 open FarmEngine.Schemas
@@ -82,19 +83,16 @@ module Exporter =
         | s -> s
 
     let identity (project: GameProject) : GameIdentity =
-        let settings =
-            match project.Export with
-            | null -> Defaults.newExportSettings project
-            | settings -> settings
-        let title = match settings.Title with null -> project.Name | value -> value
-        let version = match settings.Version with null -> project.Version | value -> value
+        let settings = project.Export |> Option.defaultWith (fun () -> Defaults.newExportSettings project)
+        let title = defaultArg settings.Title project.Name
+        let version = defaultArg settings.Version project.Version
         { Title = title
-          ExecutableName = (match settings.ExecutableName with null -> Defaults.slugId title Seq.empty "game" | value -> value)
+          ExecutableName = (match settings.ExecutableName with None -> Defaults.slugId title Seq.empty "game" | Some value -> value)
           Version = version
           GameId = settings.GameId
-          Company = orNull settings.Company
-          Author = orNull settings.Author
-          IconAssetId = orNull settings.IconAssetId
+          Company = orNull (Option.toObj settings.Company)
+          Author = orNull (Option.toObj settings.Author)
+          IconAssetId = orNull (Option.toObj settings.IconAssetId)
           Targets = List.ofSeq settings.Targets }
 
     /// Problems errors (block export) and warnings, plus unused assets, as report lines.
@@ -104,7 +102,7 @@ module Exporter =
         let unused = AssetUsage.unused project
         let assetWarnings =
             [ for asset in unused ->
-                let index = project.CustomAssets.IndexOf asset
+                let index = project.CustomAssets |> List.findIndex (fun a -> obj.ReferenceEquals(a, asset) || a = asset)
                 sprintf "customAssets[%d]: Asset \"%s\" (%s) is not used by the game and is left out of it." index asset.Name asset.Id ]
         problems |> Problems.errors |> List.map line,
         (problems |> Problems.warnings |> List.map line) @ assetWarnings
@@ -152,6 +150,24 @@ module Exporter =
                   { Path = game.ExecutableName + ".desktop"; Data = Encoding.UTF8.GetBytes desktop; Executable = false } ]
                 @ common
             )
+        | ExportTarget.Web ->
+            let missing = ExportTarget.webFiles |> List.filter (fun f -> not (File.Exists(Path.Combine(template.Folder, f))))
+            if not missing.IsEmpty then
+                Error(sprintf "The %s player template has no %s." target.DisplayName (String.Join(", ", missing)))
+            else
+                let read (name: string) = File.ReadAllBytes(Path.Combine(template.Folder, name))
+                let page =
+                    File.ReadAllText(Path.Combine(template.Folder, "index.html"))
+                        .Replace("{{TITLE}}", WebUtility.HtmlEncode game.Title)
+                let icon = icons |> List.find (fun (size, _) -> size = 256) |> snd
+                Ok(
+                    [ { Path = "index.html"; Data = Encoding.UTF8.GetBytes page; Executable = false }
+                      { Path = "game.js"; Data = read "game.js"; Executable = false }
+                      { Path = "farm_wasm.js"; Data = read "farm_wasm.js"; Executable = false }
+                      { Path = target.TemplateExecutable; Data = player; Executable = false }
+                      { Path = "icon.png"; Data = icon; Executable = false } ]
+                    @ common
+                )
         |> Result.map (List.sortWith (fun a b -> String.CompareOrdinal(a.Path, b.Path)))
 
     /// Writes `files` into `folder`. A folder that already holds files export would not write
@@ -212,6 +228,8 @@ module Exporter =
                         [ "The Windows player template is signed; export changes the executable, so sign the game again." ]
                     | _ -> []
                 | ExportTarget.LinuxX64 -> []
+                | ExportTarget.Web ->
+                    [ "Browsers only run the web demo from a web server (an itch.io page, or `python3 -m http.server` in its folder), not from a file:// link." ]
             match writeFolder folder files with
             | Error e -> failedTarget target [ e ]
             | Ok() ->
@@ -222,6 +240,8 @@ module Exporter =
                             match target with
                             | ExportTarget.WindowsX64 -> Archives.zip game.ExecutableName files
                             | ExportTarget.LinuxX64 -> Archives.tarGz game.ExecutableName files
+                            // itch.io wants index.html at the root of the zip.
+                            | ExportTarget.Web -> Archives.zipFlat files
                         File.WriteAllBytes(path, bytes)
                         path, int64 bytes.Length
                     else null, 0L

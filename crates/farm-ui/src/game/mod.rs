@@ -222,8 +222,8 @@ pub(crate) fn draw_sprite(
 }
 
 /// The quantity of an item held across all slots.
-pub(crate) fn held(state: &GameState, item_id: &str) -> f64 {
-    state.player.inventory.iter().filter(|slot| slot.item.id == item_id).map(|slot| slot.quantity).sum()
+pub(crate) fn held(state: &GameState, item_id: &str) -> u64 {
+    state.player.inventory.iter().filter(|slot| slot.item.id == item_id).map(|slot| u64::from(slot.quantity)).sum()
 }
 
 /// An item's display name (its id when unknown).

@@ -48,7 +48,7 @@ fn a_dialogue_option_can_offer_a_quest() {
                 r#type: "collect".to_owned(),
                 description: "x".to_owned(),
                 target_item_id: Some("material-wood".to_owned()),
-                target_item_quantity: Some(2.0),
+                target_item_quantity: Some(2),
                 ..QuestObjective::default()
             }],
             rewards: QuestRewards::default(),
@@ -64,7 +64,7 @@ fn a_dialogue_option_can_offer_a_quest() {
         );
     });
     in_dialogue(&mut state);
-    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
     assert!(state.player.active_quests.iter().any(|id| id == "quest-offered"));
     assert!(has_message(&effects, |t| t.contains("New quest")));
 }
@@ -83,18 +83,18 @@ fn gifting_applies_taste_deltas_and_daily_limits() {
             },
         );
     });
-    give(&ctx, &mut state, "gift-flower", 2.0);
+    give(&ctx, &mut state, "gift-flower", 2);
     // npc-farmer stands at (3, 6): face it from (3, 7).
-    at(&mut state, 3.0, 7.0, "up");
+    at(&mut state, 3, 7, "up");
 
     let effects = handle_give_gift(&ctx, &mut state, "gift-flower");
-    assert_eq!(state.social[NPC].friendship, 80.0);
-    assert_eq!(quantity(&state, "gift-flower"), Some(1.0));
+    assert_eq!(state.social[NPC].friendship, 80);
+    assert_eq!(quantity(&state, "gift-flower"), Some(1));
     assert!(has_message(&effects, |t| t == "Old Farmer: They love it! (+80)"));
 
     // Second gift the same day is refused.
     let effects = handle_give_gift(&ctx, &mut state, "gift-flower");
-    assert_eq!(state.social[NPC].friendship, 80.0);
+    assert_eq!(state.social[NPC].friendship, 80);
     assert!(has_message(&effects, |t| t.contains("already received")));
 }
 
@@ -105,8 +105,8 @@ fn friendship_gates_dialogue_options_for_ui_and_engine_alike() {
             project,
             DialogueOption {
                 text: "Secret".to_owned(),
-                requires_friendship: Some(100.0),
-                give_money: Some(999.0),
+                requires_friendship: Some(100),
+                give_money: Some(999),
                 ..DialogueOption::default()
             },
         );
@@ -117,16 +117,16 @@ fn friendship_gates_dialogue_options_for_ui_and_engine_alike() {
 
     // Below the gate: index 2 does not exist among visible options → dialogue closes, no money.
     let mut blocked = state.clone();
-    let effects = handle_choose_dialogue_option(&ctx, &mut blocked, 2.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut blocked, 2);
     assert!(effects.is_empty());
-    assert_eq!(blocked.player.money, 100.0);
+    assert_eq!(blocked.player.money, 100);
     assert_eq!(blocked.dialogue, None);
 
     let mut friendly = state.clone();
-    friendly.social.insert(NPC.to_owned(), NpcSocialState { friendship: 150.0, gifts_today: 0.0, last_gift_day: None });
+    friendly.social.insert(NPC.to_owned(), NpcSocialState { friendship: 150, gifts_today: 0, last_gift_day: None });
     assert_eq!(visible_dialogue_options(&ctx, &friendly, &dialogue).len(), 3);
-    let effects = handle_choose_dialogue_option(&ctx, &mut friendly, 2.0);
-    assert_eq!(friendly.player.money, 1099.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut friendly, 2);
+    assert_eq!(friendly.player.money, 1099);
     assert_eq!(effects, vec![Effect::message("success", "Received $999")]);
     assert_eq!(friendly.dialogue, None);
 }
@@ -157,12 +157,12 @@ fn gift_reactions_follow_the_taste_tables_and_default_to_neutral() {
 #[test]
 fn hearts_floor_friendship_per_125_points_and_missing_npcs_have_none() {
     let (_, mut state) = make_engine("m4", |_| {});
-    assert_eq!(friendship_with(&state, NPC), 0.0);
-    state.social.insert(NPC.to_owned(), NpcSocialState { friendship: 260.0, gifts_today: 0.0, last_gift_day: None });
-    assert_eq!(friendship_with(&state, NPC), 260.0);
-    assert_eq!(hearts(260.0), 2.0);
-    assert_eq!(hearts(124.9), 0.0);
-    assert_eq!(hearts(1250.0), 10.0);
+    assert_eq!(friendship_with(&state, NPC), 0);
+    state.social.insert(NPC.to_owned(), NpcSocialState { friendship: 260, gifts_today: 0, last_gift_day: None });
+    assert_eq!(friendship_with(&state, NPC), 260);
+    assert_eq!(hearts(260), 2);
+    assert_eq!(hearts(124), 0);
+    assert_eq!(hearts(1250), 10);
 }
 
 #[test]
@@ -180,14 +180,14 @@ fn visible_dialogue_options_honor_required_items() {
     in_dialogue(&mut state);
     let dialogue = find_dialogue(&ctx, NPC, GREETING).expect("greeting exists").clone();
     assert_eq!(visible_dialogue_options(&ctx, &state, &dialogue).len(), 2);
-    give(&ctx, &mut state, "gift-flower", 1.0);
+    give(&ctx, &mut state, "gift-flower", 1);
     let visible = visible_dialogue_options(&ctx, &state, &dialogue);
     assert_eq!(visible.len(), 3);
     assert_eq!(visible[2].text, "Here is a flower");
     // The friendship gate only applies while a dialogue is open.
     state.dialogue = None;
     let mut gated = dialogue.clone();
-    gated.options[0].requires_friendship = Some(500.0);
+    gated.options[0].requires_friendship = Some(500);
     assert_eq!(visible_dialogue_options(&ctx, &state, &gated).len(), 3);
 }
 
@@ -217,17 +217,17 @@ fn choosing_an_option_advances_to_the_next_dialogue_or_closes() {
     let (ctx, mut state) = make_engine("m4", |_| {});
     in_dialogue(&mut state);
     // Option 1 of the greeting leads to the crops dialogue.
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 1.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 1).is_empty());
     assert_eq!(
         state.dialogue,
         Some(DialogueState { npc_id: NPC.to_owned(), dialogue_id: "dialogue-farmer-crops".to_owned() })
     );
     // Its only option has no follow-up: the dialogue closes.
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0).is_empty());
     assert_eq!(state.dialogue, None);
     // Without an open dialogue the command is a no-op.
     let before = state.clone();
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0).is_empty());
     assert_eq!(state, before);
 }
 
@@ -244,14 +244,15 @@ fn a_missing_next_dialogue_closes_the_conversation() {
         );
     });
     in_dialogue(&mut state);
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 2.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 2).is_empty());
     assert_eq!(state.dialogue, None);
 }
 
 #[test]
 fn invalid_indices_and_unknown_dialogues_close_the_dialogue() {
     let (ctx, state) = make_engine("m4", |_| {});
-    for index in [-1.0, 0.5, 2.0, 99.0, f64::NAN] {
+    // A fractional index reads as −1 (see `units::Index`).
+    for index in [-1, 2, 99] {
         let mut current = state.clone();
         in_dialogue(&mut current);
         assert!(handle_choose_dialogue_option(&ctx, &mut current, index).is_empty(), "index {index}");
@@ -260,7 +261,7 @@ fn invalid_indices_and_unknown_dialogues_close_the_dialogue() {
     }
     let mut unknown = state.clone();
     unknown.dialogue = Some(DialogueState { npc_id: NPC.to_owned(), dialogue_id: "dialogue-nope".to_owned() });
-    assert!(handle_choose_dialogue_option(&ctx, &mut unknown, 0.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut unknown, 0).is_empty());
     assert_eq!(unknown.dialogue, None);
 }
 
@@ -271,9 +272,9 @@ fn choosing_an_option_gives_money_and_items() {
             project,
             DialogueOption {
                 text: "Gift me".to_owned(),
-                give_money: Some(25.0),
+                give_money: Some(25),
                 give_item: Some("gift-flower".to_owned()),
-                give_item_quantity: Some(2.0),
+                give_item_quantity: Some(2),
                 next_dialogue_id: Some("dialogue-farmer-crops".to_owned()),
                 ..DialogueOption::default()
             },
@@ -283,8 +284,8 @@ fn choosing_an_option_gives_money_and_items() {
             DialogueOption {
                 text: "One flower".to_owned(),
                 give_item: Some("gift-flower".to_owned()),
-                give_item_quantity: Some(0.0),
-                give_money: Some(0.0),
+                give_item_quantity: Some(0),
+                give_money: Some(0),
                 ..DialogueOption::default()
             },
         );
@@ -298,37 +299,37 @@ fn choosing_an_option_gives_money_and_items() {
         );
     });
     in_dialogue(&mut state);
-    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
     assert_eq!(
         effects,
         vec![Effect::message("success", "Received $25"), Effect::message("success", "Received Flower x2")]
     );
-    assert_eq!(state.player.money, 125.0);
-    assert_eq!(quantity(&state, "gift-flower"), Some(2.0));
+    assert_eq!(state.player.money, 125);
+    assert_eq!(quantity(&state, "gift-flower"), Some(2));
     assert_eq!(state.dialogue.as_ref().map(|d| d.dialogue_id.as_str()), Some("dialogue-farmer-crops"));
 
     // `giveItemQuantity || 1` and `giveMoney` of 0 is falsy.
     in_dialogue(&mut state);
-    let effects = handle_choose_dialogue_option(&ctx, &mut state, 3.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 3);
     assert_eq!(effects, vec![Effect::message("success", "Received Flower")]);
-    assert_eq!(quantity(&state, "gift-flower"), Some(3.0));
-    assert_eq!(state.player.money, 125.0);
+    assert_eq!(quantity(&state, "gift-flower"), Some(3));
+    assert_eq!(state.player.money, 125);
     assert_eq!(state.dialogue, None);
 
     // Unknown items give nothing, silently.
     in_dialogue(&mut state);
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 4.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 4).is_empty());
 
     // A full inventory reports it and keeps the money.
     in_dialogue(&mut state);
     state.player.inventory.retain(|s| s.item.id != "gift-flower");
-    state.player.max_inventory_size = state.player.inventory.len() as f64;
-    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2.0);
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
     assert_eq!(
         effects,
         vec![Effect::message("success", "Received $25"), Effect::message("error", "Inventory is full!")]
     );
-    assert_eq!(state.player.money, 150.0);
+    assert_eq!(state.player.money, 150);
 }
 
 #[test]
@@ -339,14 +340,14 @@ fn a_shop_option_for_a_missing_shop_reports_an_error_and_still_closes_the_dialog
             DialogueOption {
                 text: "Trade".to_owned(),
                 open_shop_id: Some("shop-nope".to_owned()),
-                give_money: Some(5.0),
+                give_money: Some(5),
                 ..DialogueOption::default()
             },
         );
     });
     in_dialogue(&mut state);
     state.shop = Some(ShopSession { shop_id: "shop-general".to_owned() });
-    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2.0);
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
     assert_eq!(
         effects,
         vec![Effect::message("success", "Received $5"), Effect::message("error", "That shop does not exist.")]
@@ -361,7 +362,7 @@ fn the_merchant_greeting_opens_the_general_store() {
     let (ctx, mut state) = make_engine("m4", |_| {});
     state.dialogue =
         Some(DialogueState { npc_id: "npc-merchant".to_owned(), dialogue_id: "dialogue-merchant-greeting".to_owned() });
-    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0.0).is_empty());
+    assert!(handle_choose_dialogue_option(&ctx, &mut state, 0).is_empty());
     assert_eq!(state.shop, Some(ShopSession { shop_id: "shop-general".to_owned() }));
     assert_eq!(state.dialogue, None);
 }

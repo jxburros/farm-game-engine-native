@@ -1,8 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System.Collections.Generic
-open System.Text.Json
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 /// The Creator Workshop patterns (web `creator-patterns.ts` `CREATOR_PATTERNS`).
@@ -64,15 +62,10 @@ module Patterns =
     /// The pattern with this web id ("story", "tree", …).
     let tryFind (id: string) : PatternInfo option = all |> List.tryFind (fun p -> p.Id = id)
 
-    let private config (pairs: (string * JsonElement) list) : OrderedDictionary<string, JsonElement> =
-        let d = OrderedDictionary<string, JsonElement>()
-        for (k, v) in pairs do d[k] <- v
-        d
+    let private outcome (kind: string) (change: EventOutcome -> EventOutcome) : EventOutcome =
+        change { EventOutcome.Default with Type = kind }
 
-    let private outcome (kind: string) (changes: (string * objnull) list) : EventOutcome =
-        Records.withValues (EventOutcome(Type = kind)) changes
-
-    let private msg (text: string) = outcome EventOutcomeTypes.Message [ ("Message", box text) ]
+    let private msg (text: string) = outcome EventOutcomeTypes.Message (fun o -> { o with Message = Some text })
 
     /// The id the pattern's content will use: the slugged name (or the kind), bumped until none
     /// of `id`, `id-item`, `id-action`, `id-inside`, `id-recipe` collide with existing content.
@@ -108,125 +101,159 @@ module Patterns =
                 let id = chooseId project pattern.Id options.Name
                 let name = if System.String.IsNullOrWhiteSpace options.Name then pattern.Name else options.Name.Trim()
                 let text = options.Text
-                let tile = scene.Tiles[y][x]
+                let tile = (Proj.rows scene).[y].[x]
                 let item (itemId: string) (title: string) : Item =
-                    Item(Id = itemId, Name = title, Description = text, Type = ItemTypes.Material, Stackable = true, MaxStack = 99.0, Value = 20.0)
-                let action (changes: (string * objnull) list) : ActionDef =
-                    Records.withValues
-                        (ActionDef(Id = id + "-action", Name = name, Description = text, EnergyCost = 0.0, FailMessage = "The requirements are not met yet."))
-                        changes
+                    { Item.Default with
+                        Id = itemId; Name = title; Description = text; Type = ItemTypes.Material; Stackable = true; MaxStack = 99.0; Value = 20.0 }
+                let action : ActionDef =
+                    { ActionDef.Default with
+                        Id = id + "-action"; Name = name; Description = text; EnergyCost = 0.0; FailMessage = "The requirements are not met yet." }
                 let event (conditions: EventCondition list) (outcomes: EventOutcome list) (repeatable: bool) : GameEvent =
-                    GameEvent(Id = id, Name = name, SceneId = scene.Id, Trigger = EventTriggers.Interact, Active = true, Repeatable = repeatable,
-                              Conditions = List<EventCondition>(conditions), Outcomes = List<EventOutcome>(outcomes))
-                let interact = InteractTileCondition(X = float x, Y = float y) :> EventCondition
+                    { GameEvent.Default with
+                        Id = id; Name = name; SceneId = scene.Id; Trigger = EventTriggers.Interact; Active = true; Repeatable = repeatable
+                        Conditions = conditions; Outcomes = outcomes }
+                let interact = EventCondition.InteractTile { X = float x; Y = float y; X2 = None; Y2 = None }
                 let placeItem (i: Item) : Result<Edit list, string> =
-                    if not (isNull tile.Item) then Error "That tile already has an item. Choose an empty tile."
+                    if tile.Item.IsSome then Error "That tile already has an item. Choose an empty tile."
                     else Ok [ UpsertItem i; PlaceItem(scene.Id, x, y, i) ]
                 let ensureWood =
-                    if project.Items |> Seq.exists (fun i -> i.Id = "material-wood") then [] else [ UpsertItem(item "material-wood" "Wood") ]
-                let itemQty (kind: string) (itemId: string) (quantity: float) = outcome kind [ ("ItemId", box itemId); ("ItemQuantity", box quantity) ]
+                    if project.Items |> List.exists (fun i -> i.Id = "material-wood") then [] else [ UpsertItem(item "material-wood" "Wood") ]
+                let itemQty (kind: string) (itemId: string) (quantity: float) =
+                    outcome kind (fun o -> { o with ItemId = Some itemId; ItemQuantity = Some quantity })
+                let option (text: string) : DialogueOption = { DialogueOption.Default with Text = text }
+                let dialogue (dialogueId: string) (line: string) (options: DialogueOption list) : Dialogue =
+                    { Id = dialogueId; NpcId = id; Text = line; Options = options; Extra = [] }
                 match kind with
                 | Story ->
+                    let promise = { option "Yes, count me in." with NextDialogueId = Some(id + "-yes") }
+                    let promise = if options.Consequences then { promise with EventFlag = Some(id + "-promised") } else promise
                     let hello =
-                        Dialogue(Id = id + "-hello", NpcId = id, Text = (if text.Length = 0 then "Will you help care for this place?" else text),
-                                 Options = List<DialogueOption>(
-                                    [ Records.withValues (DialogueOption(Text = "Yes, count me in.", NextDialogueId = id + "-yes"))
-                                          (if options.Consequences then [ ("EventFlag", box (id + "-promised")) ] else [])
-                                      DialogueOption(Text = "Tell me more first.", NextDialogueId = id + "-more") ]))
-                    let yes = Dialogue(Id = id + "-yes", NpcId = id, Text = "Then we have a new beginning.", Options = List<DialogueOption>([ DialogueOption(Text = "See you soon.") ]))
+                        dialogue (id + "-hello") (if text.Length = 0 then "Will you help care for this place?" else text)
+                            [ promise; { option "Tell me more first." with NextDialogueId = Some(id + "-more") } ]
+                    let yes = dialogue (id + "-yes") "Then we have a new beginning." [ option "See you soon." ]
                     let more =
-                        Dialogue(Id = id + "-more", NpcId = id, Text = "There is no hurry. Make this place your own.",
-                                 Options = List<DialogueOption>([ DialogueOption(Text = "I understand.", NextDialogueId = id + "-hello"); DialogueOption(Text = "Goodbye.") ]))
-                    let npc = Npc(Id = id, Name = name, SceneId = scene.Id, X = float x, Y = float y, CanMove = false, Appearance = "villager", Dialogue = List<Dialogue>([ hello; yes; more ]))
+                        dialogue (id + "-more") "There is no hurry. Make this place your own."
+                            [ { option "I understand." with NextDialogueId = Some(id + "-hello") }; option "Goodbye." ]
+                    let npc =
+                        { Npc.Default with
+                            Id = id; Name = name; SceneId = scene.Id; X = float x; Y = float y; CanMove = false; Appearance = "villager"
+                            Dialogue = [ hello; yes; more ] }
                     Ok [ UpsertNpc npc ]
                 | Romance ->
-                    match project.Npcs |> Seq.tryFind (fun n -> n.Id = options.NpcId) with
-                    | Some npc when npc.Dialogue.Count > 0 ->
+                    match project.Npcs |> List.tryFind (fun n -> n.Id = options.NpcId) with
+                    | Some npc when not npc.Dialogue.IsEmpty ->
                         let flag = id + "-relationship"
                         let a =
-                            action
-                                [ ("Conditions", box (List<EventCondition>([ FriendshipCondition(NpcId = npc.Id, Min = float options.Friendship) :> EventCondition; FlagCondition(Flag = flag, Value = false) :> EventCondition ])))
-                                  ("Outcomes", box (List<EventOutcome>(
-                                      [ outcome EventOutcomeTypes.SetFlag [ ("FlagName", box flag) ]
-                                        outcome EventOutcomeTypes.ModifyFriendship [ ("NpcId", box npc.Id); ("Amount", box 125.0) ]
-                                        msg (if text.Length = 0 then "I would love to spend more time with you." else text) ]))) ]
-                        let first = npc.Dialogue[0]
-                        let invitation = DialogueOption(Text = name, RequiresFriendship = System.Nullable(float options.Friendship), ActionId = id + "-action")
-                        let updated = Records.withValue first "Options" (box (Lists.append invitation first.Options))
+                            { action with
+                                Conditions =
+                                    [ EventCondition.Friendship { NpcId = npc.Id; Min = float options.Friendship }
+                                      EventCondition.Flag { Flag = flag; Value = false } ]
+                                Outcomes =
+                                    [ outcome EventOutcomeTypes.SetFlag (fun o -> { o with FlagName = Some flag })
+                                      outcome EventOutcomeTypes.ModifyFriendship (fun o -> { o with NpcId = Some npc.Id; Amount = Some 125.0 })
+                                      msg (if text.Length = 0 then "I would love to spend more time with you." else text) ] }
+                        let first = npc.Dialogue.Head
+                        let invitation = { option name with RequiresFriendship = Some(float options.Friendship); ActionId = Some(id + "-action") }
+                        let updated = { first with Options = Lists.append invitation first.Options }
                         Ok [ UpsertAction a; UpsertDialogue updated ]
                     | _ -> Error "Choose a character with a starting dialogue."
                 | Mail ->
-                    let letter = Records.withValues (item (id + "-item") name) [ ("Type", box ItemTypes.Quest); ("UseActionId", box (id + "-action")) ]
-                    let a = action [ ("Outcomes", box (List<EventOutcome>([ msg (if text.Length = 0 then "Welcome to your new farm!" else text) ]))) ]
+                    let letter = { item (id + "-item") name with Type = ItemTypes.Quest; UseActionId = Some(id + "-action") }
+                    let a = { action with Outcomes = [ msg (if text.Length = 0 then "Welcome to your new farm!" else text) ] }
                     let e =
-                        event [ interact; DayRangeCondition(MinDay = System.Nullable(float options.Day)) :> EventCondition; InventorySpaceCondition(ItemId = letter.Id, Quantity = 1.0) :> EventCondition ]
-                              [ itemQty EventOutcomeTypes.GiveItem letter.Id 1.0 ] false
+                        event
+                            [ interact
+                              EventCondition.DayRange { MinDay = Some(float options.Day); MaxDay = None }
+                              EventCondition.InventorySpace { ItemId = letter.Id; Quantity = 1.0 } ]
+                            [ itemQty EventOutcomeTypes.GiveItem letter.Id 1.0 ] false
                     Ok [ UpsertItem letter; UpsertAction a; UpsertEvent e ]
                 | Building ->
-                    if scene.Transitions |> Seq.exists (fun t -> int t.FromX = x && int t.FromY = y) then Error "That tile already has a doorway."
+                    if scene.Transitions |> List.exists (fun t -> int t.FromX = x && int t.FromY = y) then Error "That tile already has a doorway."
                     else
                         let interior = AuthoringTiles.CreateEmptyScene(id + "-inside", name + " interior", 10.0, 8.0)
                         let interior = Proj.mapTiles (fun t -> AuthoringTiles.SetTileLayer(t, TileTypes.Floor)) interior
-                        let interior = Records.withValue interior "Transitions" (box (List<SceneTransition>([ SceneTransition(FromX = 4.0, FromY = 7.0, ToSceneId = scene.Id, ToX = float x, ToY = float y) ])))
-                        let door = SceneTransition(FromX = float x, FromY = float y, ToSceneId = interior.Id, ToX = 4.0, ToY = 6.0, Locked = System.Nullable true)
+                        let interior =
+                            { interior with
+                                Transitions =
+                                    [ { SceneTransition.Default with FromX = 4.0; FromY = 7.0; ToSceneId = scene.Id; ToX = float x; ToY = float y } ] }
+                        let door =
+                            { SceneTransition.Default with
+                                FromX = float x; FromY = float y; ToSceneId = interior.Id; ToX = 4.0; ToY = 6.0; Locked = Some true }
                         let e =
-                            event [ interact; HasItemCondition(ItemId = "material-wood", Quantity = 5.0) :> EventCondition ]
-                                  [ itemQty EventOutcomeTypes.TakeItem "material-wood" 5.0
-                                    outcome EventOutcomeTypes.UnlockTransition [ ("SceneId", box scene.Id); ("X", box (float x)); ("Y", box (float y)) ]
-                                    msg (sprintf "%s is ready. Step through the doorway." name) ] false
+                            event
+                                [ interact; EventCondition.HasItem { ItemId = "material-wood"; Quantity = 5.0 } ]
+                                [ itemQty EventOutcomeTypes.TakeItem "material-wood" 5.0
+                                  outcome EventOutcomeTypes.UnlockTransition (fun o -> { o with SceneId = Some scene.Id; X = Some(float x); Y = Some(float y) })
+                                  msg (sprintf "%s is ready. Step through the doorway." name) ] false
                         Ok(ensureWood @ [ AddScene interior; PaintTiles(scene.Id, Object, [ (x, y) ], TileTypes.Door); SetTransition(scene.Id, door); UpsertEvent e ])
                 | Magic ->
-                    let a = action [ ("EnergyCost", box 8.0); ("Outcomes", box (List<EventOutcome>([ outcome EventOutcomeTypes.WaterArea [ ("Radius", box 2.0) ] ]))) ]
-                    let spell = Records.withValues (item (id + "-item") name) [ ("UseActionId", box (id + "-action")); ("Stackable", box false); ("MaxStack", box 1.0) ]
+                    let a = { action with EnergyCost = 8.0; Outcomes = [ outcome EventOutcomeTypes.WaterArea (fun o -> { o with Radius = Some 2.0 }) ] }
+                    let spell = { item (id + "-item") name with UseActionId = Some(id + "-action"); Stackable = false; MaxStack = 1.0 }
                     placeItem spell |> Result.map (fun placed -> UpsertAction a :: placed)
                 | Fishing ->
-                    match project.Minigames |> Seq.tryFind (fun m -> m.Id = ExtensibilitySchema.FishingMinigameId) with
+                    let holdMs = JNumber 1200.0
+                    match project.Minigames |> List.tryFind (fun m -> m.Id = ExtensibilitySchema.FishingMinigameId) with
                     | Some existing ->
-                        let cfg = OrderedDictionary<string, JsonElement>(existing.Config)
-                        cfg["holdMs"] <- Js.Value 1200.0
-                        Ok [ UpsertMinigame(Records.withValues existing [ ("Kind", box "hold-to-catch"); ("Config", box cfg); ("Name", box name) ]) ]
+                        let config =
+                            if existing.Config |> List.exists (fun (key, _) -> key = "holdMs") then
+                                existing.Config |> List.map (fun (key, value) -> if key = "holdMs" then key, holdMs else key, value)
+                            else existing.Config @ [ "holdMs", holdMs ]
+                        Ok [ UpsertMinigame { existing with Kind = "hold-to-catch"; Config = config; Name = name } ]
                     | None ->
-                        Ok [ UpsertMinigame(MinigameDef(Id = ExtensibilitySchema.FishingMinigameId, Name = name, Kind = "hold-to-catch", Config = config [ ("holdMs", Js.Value 1200.0) ])) ]
+                        Ok [ UpsertMinigame { MinigameDef.Default with Id = ExtensibilitySchema.FishingMinigameId; Name = name; Kind = "hold-to-catch"; Config = [ "holdMs", holdMs ] } ]
                 | Combat | Insect ->
                     let combat = (kind = Combat)
                     let reward = item (id + "-item") (if combat then name + " trophy" else name)
-                    let cfg =
-                        if combat then config [ ("enemyName", Js.Value name); ("enemyHealth", Js.Value 24.0); ("playerHealth", Js.Value 30.0); ("enemyAttack", Js.Value 5.0); ("attack", Js.Value 7.0) ]
-                        else config [ ("prompt", Js.Value(sprintf "Catch %s!" name)); ("speed", Js.Value 1.2); ("targetSize", Js.Value 0.2) ]
+                    let config =
+                        if combat then
+                            [ "enemyName", JString name; "enemyHealth", JNumber 24.0; "playerHealth", JNumber 30.0; "enemyAttack", JNumber 5.0; "attack", JNumber 7.0 ]
+                        else [ "prompt", JString(sprintf "Catch %s!" name); "speed", JNumber 1.2; "targetSize", JNumber 0.2 ]
                     let lose =
                         [ yield msg (if combat then "You retreat to safety." else "It got away!")
-                          if combat then yield outcome EventOutcomeTypes.ModifyEnergy [ ("Amount", box -10.0) ] ]
-                    let win = [ itemQty EventOutcomeTypes.GiveItem reward.Id 1.0; outcome EventOutcomeTypes.SetFlag [ ("FlagName", box (id + "-complete")) ] ]
+                          if combat then yield outcome EventOutcomeTypes.ModifyEnergy (fun o -> { o with Amount = Some -10.0 }) ]
+                    let win =
+                        [ itemQty EventOutcomeTypes.GiveItem reward.Id 1.0
+                          outcome EventOutcomeTypes.SetFlag (fun o -> { o with FlagName = Some(id + "-complete") }) ]
                     let minigame =
-                        MinigameDef(Id = id, Name = name, Kind = (if combat then "simple-battle" else "timing-bar"), Config = cfg,
-                                    ResultTiers = List<MinigameResultTier>([ MinigameResultTier(MinScore = 0.0, Outcomes = List<EventOutcome>(lose)); MinigameResultTier(MinScore = 0.7, Outcomes = List<EventOutcome>(win)) ]))
+                        { MinigameDef.Default with
+                            Id = id; Name = name; Kind = (if combat then "simple-battle" else "timing-bar"); Config = config
+                            ResultTiers = [ { MinScore = 0.0; Outcomes = lose }; { MinScore = 0.7; Outcomes = win } ] }
                     let e =
-                        event [ interact; FlagCondition(Flag = id + "-complete", Value = false) :> EventCondition; InventorySpaceCondition(ItemId = reward.Id, Quantity = 1.0) :> EventCondition ]
-                              [ outcome EventOutcomeTypes.StartMinigame [ ("MinigameId", box id) ] ] true
+                        event
+                            [ interact
+                              EventCondition.Flag { Flag = id + "-complete"; Value = false }
+                              EventCondition.InventorySpace { ItemId = reward.Id; Quantity = 1.0 } ]
+                            [ outcome EventOutcomeTypes.StartMinigame (fun o -> { o with MinigameId = Some id }) ] true
                     Ok [ UpsertItem reward; UpsertMinigame minigame; UpsertEvent e ]
                 | Craft ->
                     let station = item (id + "-item") (name + " station")
                     let product = item (id + "-product") (name + " creation")
-                    let machine = MachineTypeDefinition(Id = id, Name = name, Description = text, Color = "#987852", ItemId = station.Id, BlocksMovement = true, StationCategories = List<string>([ id ]))
-                    let ingredient (itemId: string) (quantity: float) = RecipeIngredient(ItemId = itemId, Quantity = quantity)
+                    let machine =
+                        { MachineTypeDefinition.Default with
+                            Id = id; Name = name; Description = text; Color = "#987852"; ItemId = Some station.Id; BlocksMovement = true
+                            StationCategories = [ id ] }
+                    let ingredient (itemId: string) (quantity: float) : RecipeIngredient = { ItemId = itemId; Quantity = quantity }
                     let build =
-                        RecipeDefinition(Id = id + "-recipe", Name = sprintf "Build %s station" name, Inputs = List<RecipeIngredient>([ ingredient "material-wood" 5.0 ]),
-                                         Outputs = List<RecipeIngredient>([ ingredient station.Id 1.0 ]), Category = "construction", ProcessingMinutes = 0.0)
+                        { RecipeDefinition.Default with
+                            Id = id + "-recipe"; Name = sprintf "Build %s station" name; Inputs = [ ingredient "material-wood" 5.0 ]
+                            Outputs = [ ingredient station.Id 1.0 ]; Category = "construction"; ProcessingMinutes = 0.0 }
                     let make =
-                        RecipeDefinition(Id = id + "-product-recipe", Name = product.Name, Inputs = List<RecipeIngredient>([ ingredient "material-wood" 1.0 ]),
-                                         Outputs = List<RecipeIngredient>([ ingredient product.Id 1.0 ]), Category = name, RequiresStationCategory = id, ProcessingMinutes = 0.0)
+                        { RecipeDefinition.Default with
+                            Id = id + "-product-recipe"; Name = product.Name; Inputs = [ ingredient "material-wood" 1.0 ]
+                            Outputs = [ ingredient product.Id 1.0 ]; Category = name; RequiresStationCategory = Some id; ProcessingMinutes = 0.0 }
                     Ok(ensureWood @ [ UpsertItem station; UpsertItem product; UpsertMachineType machine; UpsertRecipe build; UpsertRecipe make ])
                 | Forage | Tree | Rock | Weed ->
-                    if not (isNull tile.Node) then Error "That tile already has a gathering node."
+                    if tile.Node.IsSome then Error "That tile already has a gathering node."
                     else
                         let resource = item (id + "-item") (name + " resource")
                         let health = match kind with Tree -> 3.0 | Rock -> 2.0 | _ -> 1.0
                         let tool = match kind with Tree -> ToolTypes.Axe | Rock -> ToolTypes.Pickaxe | _ -> ToolTypes.Scythe
                         let nodeType =
-                            NodeTypeDefinition(Id = id, Name = name, Health = health, RequiredTool = tool, RequiredToolTier = 1.0,
-                                               Drops = List<NodeDrop>([ NodeDrop(ItemId = resource.Id, Min = 1.0, Max = 3.0, Weight = 1.0) ]),
-                                               RespawnDays = System.Nullable(if kind = Tree then 5.0 else 1.0),
-                                               BlocksMovement = (kind = Tree || kind = Rock), Color = (if kind = Rock then "#898795" else "#60944b"))
+                            { NodeTypeDefinition.Default with
+                                Id = id; Name = name; Health = health; RequiredTool = tool; RequiredToolTier = 1.0
+                                Drops = [ { ItemId = resource.Id; Min = 1.0; Max = 3.0; Weight = 1.0; Extra = [] } ]
+                                RespawnDays = Some(Some(if kind = Tree then 5.0 else 1.0))
+                                BlocksMovement = (kind = Tree || kind = Rock); Color = (if kind = Rock then "#898795" else "#60944b") }
                         Ok [ UpsertItem resource; UpsertNodeType nodeType; PlaceNode(scene.Id, x, y, id) ]
 
     /// The pattern as ONE undo step (a `Batch` labelled with the pattern name).

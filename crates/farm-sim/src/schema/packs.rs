@@ -114,7 +114,8 @@ impl Default for PackManifest {
 pub struct PackStartItem {
     pub item_id: String,
     /// int, min 1.
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
 }
 
 /// Optional player-start block so a base pack can express the whole starter game.
@@ -124,13 +125,13 @@ pub struct PackPlayerStart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scene_id: Option<String>,
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::position::opt")]
+    pub x: Option<i32>,
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub y: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub money: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::position::opt")]
+    pub y: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::money::opt")]
+    pub money: Option<i64>,
     pub inventory: Vec<PackStartItem>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -208,23 +209,27 @@ pub enum PluginMutation {
     GiveItem {
         item_id: String,
         /// int, 1..999.
-        quantity: f64,
+        #[serde(with = "crate::units::count")]
+        quantity: u32,
     },
     #[serde(rename = "takeItem")]
     TakeItem {
         item_id: String,
         /// int, 1..999.
-        quantity: f64,
+        #[serde(with = "crate::units::count")]
+        quantity: u32,
     },
     #[serde(rename = "giveMoney")]
     GiveMoney {
         /// int, 1..1_000_000.
-        amount: f64,
+        #[serde(with = "crate::units::money")]
+        amount: i64,
     },
     #[serde(rename = "takeMoney")]
     TakeMoney {
         /// int, 1..1_000_000.
-        amount: f64,
+        #[serde(with = "crate::units::money")]
+        amount: i64,
     },
     #[serde(rename = "setFlag")]
     SetFlag {
@@ -243,18 +248,21 @@ pub enum PluginMutation {
     ModifyFriendship {
         npc_id: String,
         /// int, -1000..1000.
-        delta: f64,
+        #[serde(with = "crate::units::int")]
+        delta: i32,
     },
     #[serde(rename = "grantXp")]
     GrantXp {
         skill: String,
         /// int, 1..10_000.
-        amount: f64,
+        #[serde(with = "crate::units::count")]
+        amount: u32,
     },
     #[serde(rename = "modifyEnergy")]
     ModifyEnergy {
         /// int, -1000..1000.
-        delta: f64,
+        #[serde(with = "crate::units::energy")]
+        delta: i32,
     },
     #[serde(rename = "startQuest")]
     StartQuest { quest_id: String },
@@ -262,9 +270,11 @@ pub enum PluginMutation {
     WarpPlayer {
         scene_id: String,
         /// int, min 0.
-        x: f64,
+        #[serde(with = "crate::units::int")]
+        x: i32,
         /// int, min 0.
-        y: f64,
+        #[serde(with = "crate::units::int")]
+        y: i32,
     },
     #[serde(rename = "startDialogue")]
     StartDialogue {

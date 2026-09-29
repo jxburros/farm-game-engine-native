@@ -228,7 +228,7 @@ fn starter_farm_renders_with_built_in_art() {
         .iter()
         .flatten()
         .find(|t| t.node.as_ref().is_some_and(|n| n.type_id == "node-tree"))
-        .map(|t| (t.x, t.y))
+        .map(|t| (f64::from(t.x), f64::from(t.y)))
         .unwrap();
     let trunk = pixel(&bitmap, tx * TS + 16.0, ty * TS + 29.0);
     let grass = pixel(&bitmap, (tx + 2.0) * TS + 16.0, ty * TS + 29.0);

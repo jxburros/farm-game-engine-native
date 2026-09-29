@@ -1,0 +1,4733 @@
+{
+  "input": {
+    "meta": {
+      "engineSeed": "save-fixture",
+      "packs": []
+    },
+    "clock": {
+      "tick": 137,
+      "timeMinutes": 366.85,
+      "day": 2,
+      "season": "spring",
+      "year": 1,
+      "weatherId": "sun"
+    },
+    "world": {
+      "scenes": [
+        {
+          "id": "scene-farm",
+          "name": "Farm",
+          "width": 16,
+          "height": 12,
+          "tiles": [
+            [
+              {
+                "x": 0,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 0,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 1,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 1,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 1,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 2,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-tree",
+                  "remainingHealth": 4
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-rock",
+                  "remainingHealth": 3
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 2,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 2,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 3,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 3,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 3,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 4,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 4,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 4,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 4,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 5,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 5,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-weeds",
+                  "remainingHealth": 1
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 5,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 5,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 6,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-weeds",
+                  "remainingHealth": 1
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 6,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 6,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 6,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 7,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 7,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 7,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 7,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 8,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 100,
+                "crop": {
+                  "type": "wheat",
+                  "plantedAt": 0,
+                  "plantedOnDay": 1,
+                  "daysGrown": 1,
+                  "stage": 1,
+                  "watered": false,
+                  "lastWateredDay": 1,
+                  "quality": "silver",
+                  "mutation": null,
+                  "harvestCount": 0,
+                  "daysWithoutWater": 0
+                },
+                "soilState": "fertilized"
+              },
+              {
+                "x": 9,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 8,
+                "type": "soil",
+                "background": "soil",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 8,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 8,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 9,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-tree",
+                  "remainingHealth": 4
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "node": {
+                  "typeId": "node-rock",
+                  "remainingHealth": 3
+                },
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 9,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 9,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 10,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 10,
+                "type": "grass",
+                "background": "grass",
+                "overlay": null,
+                "object": null,
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 10,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ],
+            [
+              {
+                "x": 0,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 1,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 2,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 3,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 4,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 5,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 6,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 7,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 8,
+                "y": 11,
+                "type": "door",
+                "background": "grass",
+                "overlay": null,
+                "object": "door",
+                "collision": false,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 9,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 10,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 11,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 12,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 13,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 14,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              },
+              {
+                "x": 15,
+                "y": 11,
+                "type": "wall",
+                "background": "grass",
+                "overlay": null,
+                "object": "wall",
+                "collision": true,
+                "soilMoisture": 0,
+                "soilFertility": 0
+              }
+            ]
+          ],
+          "transitions": [],
+          "npcs": [],
+          "events": []
+        }
+      ]
+    },
+    "player": {
+      "x": 8.5,
+      "y": 9.5,
+      "moveIntent": {
+        "dx": 0,
+        "dy": 0
+      },
+      "direction": "up",
+      "sceneId": "scene-farm",
+      "inventory": [
+        {
+          "item": {
+            "id": "seed-wheat",
+            "name": "Wheat Seeds",
+            "description": "Plant these to grow wheat",
+            "type": "seed",
+            "stackable": true,
+            "maxStack": 99,
+            "value": 10,
+            "cropType": "wheat"
+          },
+          "quantity": 9
+        },
+        {
+          "item": {
+            "id": "seed-tomato",
+            "name": "Tomato Seeds",
+            "description": "Plant these to grow tomato",
+            "type": "seed",
+            "stackable": true,
+            "maxStack": 99,
+            "value": 20,
+            "cropType": "tomato"
+          },
+          "quantity": 5
+        },
+        {
+          "item": {
+            "id": "tool-hoe",
+            "name": "Hoe",
+            "description": "Till grass into soil for planting",
+            "type": "tool",
+            "stackable": false,
+            "maxStack": 1,
+            "value": 50,
+            "toolType": "hoe",
+            "toolPower": 1,
+            "durability": 100,
+            "maxDurability": 100
+          },
+          "quantity": 1
+        },
+        {
+          "item": {
+            "id": "tool-watering-can",
+            "name": "Watering Can",
+            "description": "Water your crops to help them grow",
+            "type": "tool",
+            "stackable": false,
+            "maxStack": 1,
+            "value": 50,
+            "toolType": "watering-can",
+            "toolPower": 1,
+            "durability": 99,
+            "maxDurability": 100
+          },
+          "quantity": 1
+        },
+        {
+          "item": {
+            "id": "fertilizer-basic",
+            "name": "Basic Fertilizer",
+            "description": "Improves soil quality and crop growth",
+            "type": "fertilizer",
+            "stackable": true,
+            "maxStack": 99,
+            "value": 10
+          },
+          "quantity": 9
+        },
+        {
+          "item": {
+            "id": "snack-trail-mix",
+            "name": "Trail Mix",
+            "description": "A foraged snack. Use it for a quick pick-me-up.",
+            "type": "material",
+            "stackable": true,
+            "maxStack": 20,
+            "value": 8,
+            "useActionId": "action-forage-snack",
+            "consumeOnUse": true
+          },
+          "quantity": 2
+        }
+      ],
+      "maxInventorySize": 20,
+      "money": 100,
+      "energy": 100,
+      "maxEnergy": 100,
+      "skills": {},
+      "activeQuests": [
+        "quest-first-harvest"
+      ],
+      "completedQuests": []
+    },
+    "npcs": {
+      "npc-farmer": {
+        "x": 3,
+        "y": 6,
+        "sceneId": "scene-farm"
+      },
+      "npc-merchant": {
+        "x": 12,
+        "y": 3,
+        "sceneId": "scene-farm"
+      }
+    },
+    "quests": {
+      "quest-first-harvest": {
+        "status": "active",
+        "objectives": {
+          "obj-harvest-wheat": {
+            "progress": 0,
+            "completed": false
+          }
+        }
+      },
+      "quest-go-shopping": {
+        "status": "not-started",
+        "objectives": {
+          "obj-talk-merchant": {
+            "progress": 0,
+            "completed": false
+          }
+        }
+      }
+    },
+    "dialogue": null,
+    "shop": null,
+    "minigame": null,
+    "shopPurchasesToday": {},
+    "social": {},
+    "animals": [],
+    "mine": {
+      "deepestFloor": 0,
+      "currentFloor": 0
+    },
+    "flags": {},
+    "quarantinedItems": [],
+    "rng": {
+      "algorithm": "xoshiro128ss",
+      "s": [
+        3725558968,
+        2932998134,
+        1822349974,
+        2041221728
+      ]
+    }
+  },
+  "result": {
+    "ok": true,
+    "data": {
+      "meta": {
+        "saveVersion": 4,
+        "engineSeed": "save-fixture",
+        "packs": []
+      },
+      "clock": {
+        "tick": 137,
+        "timeMinutes": 366.85,
+        "day": 2,
+        "season": "spring",
+        "year": 1,
+        "weatherId": "sun"
+      },
+      "world": {
+        "scenes": [
+          {
+            "id": "scene-farm",
+            "name": "Farm",
+            "width": 16,
+            "height": 12,
+            "tiles": [
+              [
+                {
+                  "x": 0,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 0,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 1,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 1,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 1,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 2,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-tree",
+                    "remainingHealth": 4
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-rock",
+                    "remainingHealth": 3
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 2,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 2,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 3,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 3,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 3,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 4,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 4,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 4,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 4,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 5,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 5,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-weeds",
+                    "remainingHealth": 1
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 5,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 5,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 6,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-weeds",
+                    "remainingHealth": 1
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 6,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 6,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 6,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 7,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 7,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 7,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 7,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 8,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "crop": {
+                    "type": "wheat",
+                    "plantedAt": 0,
+                    "plantedOnDay": 1,
+                    "daysGrown": 1,
+                    "stage": 1,
+                    "watered": false,
+                    "lastWateredDay": 1,
+                    "quality": "silver",
+                    "mutation": null,
+                    "harvestCount": 0,
+                    "daysWithoutWater": 0
+                  },
+                  "collision": false,
+                  "soilState": "fertilized",
+                  "soilMoisture": 0,
+                  "soilFertility": 100
+                },
+                {
+                  "x": 9,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 8,
+                  "type": "soil",
+                  "background": "soil",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 8,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 8,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 9,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-tree",
+                    "remainingHealth": 4
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "node": {
+                    "typeId": "node-rock",
+                    "remainingHealth": 3
+                  },
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 9,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 9,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 10,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 10,
+                  "type": "grass",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": null,
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 10,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ],
+              [
+                {
+                  "x": 0,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 1,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 2,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 3,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 4,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 5,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 6,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 7,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 8,
+                  "y": 11,
+                  "type": "door",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "door",
+                  "collision": false,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 9,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 10,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 11,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 12,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 13,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 14,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                },
+                {
+                  "x": 15,
+                  "y": 11,
+                  "type": "wall",
+                  "background": "grass",
+                  "overlay": null,
+                  "object": "wall",
+                  "collision": true,
+                  "soilMoisture": 0,
+                  "soilFertility": 0
+                }
+              ]
+            ],
+            "transitions": [],
+            "npcs": [],
+            "events": []
+          }
+        ]
+      },
+      "player": {
+        "x": 8.5,
+        "y": 9.5,
+        "moveIntent": {
+          "dx": 0,
+          "dy": 0
+        },
+        "direction": "up",
+        "sceneId": "scene-farm",
+        "inventory": [
+          {
+            "item": {
+              "id": "seed-wheat",
+              "name": "Wheat Seeds",
+              "description": "Plant these to grow wheat",
+              "type": "seed",
+              "stackable": true,
+              "maxStack": 99,
+              "value": 10,
+              "cropType": "wheat"
+            },
+            "quantity": 9
+          },
+          {
+            "item": {
+              "id": "seed-tomato",
+              "name": "Tomato Seeds",
+              "description": "Plant these to grow tomato",
+              "type": "seed",
+              "stackable": true,
+              "maxStack": 99,
+              "value": 20,
+              "cropType": "tomato"
+            },
+            "quantity": 5
+          },
+          {
+            "item": {
+              "id": "tool-hoe",
+              "name": "Hoe",
+              "description": "Till grass into soil for planting",
+              "type": "tool",
+              "stackable": false,
+              "maxStack": 1,
+              "value": 50,
+              "toolType": "hoe",
+              "toolPower": 1,
+              "durability": 100,
+              "maxDurability": 100
+            },
+            "quantity": 1
+          },
+          {
+            "item": {
+              "id": "tool-watering-can",
+              "name": "Watering Can",
+              "description": "Water your crops to help them grow",
+              "type": "tool",
+              "stackable": false,
+              "maxStack": 1,
+              "value": 50,
+              "toolType": "watering-can",
+              "toolPower": 1,
+              "durability": 99,
+              "maxDurability": 100
+            },
+            "quantity": 1
+          },
+          {
+            "item": {
+              "id": "fertilizer-basic",
+              "name": "Basic Fertilizer",
+              "description": "Improves soil quality and crop growth",
+              "type": "fertilizer",
+              "stackable": true,
+              "maxStack": 99,
+              "value": 10
+            },
+            "quantity": 9
+          },
+          {
+            "item": {
+              "id": "snack-trail-mix",
+              "name": "Trail Mix",
+              "description": "A foraged snack. Use it for a quick pick-me-up.",
+              "type": "material",
+              "stackable": true,
+              "maxStack": 20,
+              "value": 8,
+              "useActionId": "action-forage-snack",
+              "consumeOnUse": true
+            },
+            "quantity": 2
+          }
+        ],
+        "maxInventorySize": 20,
+        "money": 100,
+        "energy": 100,
+        "maxEnergy": 100,
+        "skills": {},
+        "activeQuests": [
+          "quest-first-harvest"
+        ],
+        "completedQuests": []
+      },
+      "npcs": {
+        "npc-farmer": {
+          "x": 3,
+          "y": 6,
+          "sceneId": "scene-farm"
+        },
+        "npc-merchant": {
+          "x": 12,
+          "y": 3,
+          "sceneId": "scene-farm"
+        }
+      },
+      "quests": {
+        "quest-first-harvest": {
+          "status": "active",
+          "objectives": {
+            "obj-harvest-wheat": {
+              "progress": 0,
+              "completed": false
+            }
+          }
+        },
+        "quest-go-shopping": {
+          "status": "not-started",
+          "objectives": {
+            "obj-talk-merchant": {
+              "progress": 0,
+              "completed": false
+            }
+          }
+        }
+      },
+      "dialogue": null,
+      "shop": null,
+      "minigame": null,
+      "shopPurchasesToday": {},
+      "social": {},
+      "animals": [],
+      "mine": {
+        "deepestFloor": 0,
+        "currentFloor": 0
+      },
+      "flags": {},
+      "quarantinedItems": [],
+      "rng": {
+        "algorithm": "xoshiro128ss",
+        "s": [
+          3725558968,
+          2932998134,
+          1822349974,
+          2041221728
+        ]
+      }
+    },
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": []
+  },
+  "stable": "{\"animals\":[],\"clock\":{\"day\":2,\"season\":\"spring\",\"tick\":137,\"timeMinutes\":366.85,\"weatherId\":\"sun\",\"year\":1},\"dialogue\":null,\"flags\":{},\"meta\":{\"engineSeed\":\"save-fixture\",\"packs\":[],\"saveVersion\":4},\"mine\":{\"currentFloor\":0,\"deepestFloor\":0},\"minigame\":null,\"npcs\":{\"npc-farmer\":{\"sceneId\":\"scene-farm\",\"x\":3,\"y\":6},\"npc-merchant\":{\"sceneId\":\"scene-farm\",\"x\":12,\"y\":3}},\"player\":{\"activeQuests\":[\"quest-first-harvest\"],\"completedQuests\":[],\"direction\":\"up\",\"energy\":100,\"inventory\":[{\"item\":{\"cropType\":\"wheat\",\"description\":\"Plant these to grow wheat\",\"id\":\"seed-wheat\",\"maxStack\":99,\"name\":\"Wheat Seeds\",\"stackable\":true,\"type\":\"seed\",\"value\":10},\"quantity\":9},{\"item\":{\"cropType\":\"tomato\",\"description\":\"Plant these to grow tomato\",\"id\":\"seed-tomato\",\"maxStack\":99,\"name\":\"Tomato Seeds\",\"stackable\":true,\"type\":\"seed\",\"value\":20},\"quantity\":5},{\"item\":{\"description\":\"Till grass into soil for planting\",\"durability\":100,\"id\":\"tool-hoe\",\"maxDurability\":100,\"maxStack\":1,\"name\":\"Hoe\",\"stackable\":false,\"toolPower\":1,\"toolType\":\"hoe\",\"type\":\"tool\",\"value\":50},\"quantity\":1},{\"item\":{\"description\":\"Water your crops to help them grow\",\"durability\":99,\"id\":\"tool-watering-can\",\"maxDurability\":100,\"maxStack\":1,\"name\":\"Watering Can\",\"stackable\":false,\"toolPower\":1,\"toolType\":\"watering-can\",\"type\":\"tool\",\"value\":50},\"quantity\":1},{\"item\":{\"description\":\"Improves soil quality and crop growth\",\"id\":\"fertilizer-basic\",\"maxStack\":99,\"name\":\"Basic Fertilizer\",\"stackable\":true,\"type\":\"fertilizer\",\"value\":10},\"quantity\":9},{\"item\":{\"consumeOnUse\":true,\"description\":\"A foraged snack. Use it for a quick pick-me-up.\",\"id\":\"snack-trail-mix\",\"maxStack\":20,\"name\":\"Trail Mix\",\"stackable\":true,\"type\":\"material\",\"useActionId\":\"action-forage-snack\",\"value\":8},\"quantity\":2}],\"maxEnergy\":100,\"maxInventorySize\":20,\"money\":100,\"moveIntent\":{\"dx\":0,\"dy\":0},\"sceneId\":\"scene-farm\",\"skills\":{},\"x\":8.5,\"y\":9.5},\"quarantinedItems\":[],\"quests\":{\"quest-first-harvest\":{\"objectives\":{\"obj-harvest-wheat\":{\"completed\":false,\"progress\":0}},\"status\":\"active\"},\"quest-go-shopping\":{\"objectives\":{\"obj-talk-merchant\":{\"completed\":false,\"progress\":0}},\"status\":\"not-started\"}},\"rng\":{\"algorithm\":\"xoshiro128ss\",\"s\":[3725558968,2932998134,1822349974,2041221728]},\"shop\":null,\"shopPurchasesToday\":{},\"social\":{},\"world\":{\"scenes\":[{\"events\":[],\"height\":12,\"id\":\"scene-farm\",\"name\":\"Farm\",\"npcs\":[],\"tiles\":[[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":1,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":2,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":3,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":4,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":5,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":6,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":7,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":8,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":9,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":10,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":11,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":12,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":13,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":14,\"y\":0},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":0}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":5,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":6,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":7,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":8,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":9,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":10,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":11,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":1},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":1},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":1}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":4,\"typeId\":\"node-tree\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":5,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":6,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":7,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":8,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":9,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":10,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":11,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":3,\"typeId\":\"node-rock\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":2},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":2},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":2}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":5,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":6,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":7,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":8,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":9,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":10,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":11,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":3},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":3},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":3}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":5,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":6,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":7,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":8,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":9,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":10,\"y\":4},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":11,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":4},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":4},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":4}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":5,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":6,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":7,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":8,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":9,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":10,\"y\":5},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":11,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":1,\"typeId\":\"node-weeds\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":5},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":5},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":5}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":1,\"typeId\":\"node-weeds\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":5,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":6,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":7,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":8,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":9,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":10,\"y\":6},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":11,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":6},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":6},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":6}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":5,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":6,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":7,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":8,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":9,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":10,\"y\":7},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":11,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":7},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":7},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":7}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":5,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":6,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":7,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"crop\":{\"daysGrown\":1,\"daysWithoutWater\":0,\"harvestCount\":0,\"lastWateredDay\":1,\"mutation\":null,\"plantedAt\":0,\"plantedOnDay\":1,\"quality\":\"silver\",\"stage\":1,\"type\":\"wheat\",\"watered\":false},\"object\":null,\"overlay\":null,\"soilFertility\":100,\"soilMoisture\":0,\"soilState\":\"fertilized\",\"type\":\"soil\",\"x\":8,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":9,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":10,\"y\":8},{\"background\":\"soil\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"soil\",\"x\":11,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":8},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":8},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":8}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":4,\"typeId\":\"node-tree\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":5,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":6,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":7,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":8,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":9,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":10,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":11,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"node\":{\"remainingHealth\":3,\"typeId\":\"node-rock\"},\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":9},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":9},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":9}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":1,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":2,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":3,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":4,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":5,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":6,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":7,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":8,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":9,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":10,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":11,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":12,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":13,\"y\":10},{\"background\":\"grass\",\"collision\":false,\"object\":null,\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"grass\",\"x\":14,\"y\":10},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":10}],[{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":0,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":1,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":2,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":3,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":4,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":5,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":6,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":7,\"y\":11},{\"background\":\"grass\",\"collision\":false,\"object\":\"door\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"door\",\"x\":8,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":9,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":10,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":11,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":12,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":13,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":14,\"y\":11},{\"background\":\"grass\",\"collision\":true,\"object\":\"wall\",\"overlay\":null,\"soilFertility\":0,\"soilMoisture\":0,\"type\":\"wall\",\"x\":15,\"y\":11}]],\"transitions\":[],\"width\":16}]}}",
+  "hash": "c5bab9f155ae81d1"
+}

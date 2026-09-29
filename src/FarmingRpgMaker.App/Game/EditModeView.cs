@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -211,6 +212,12 @@ public sealed partial class EditModeView : UserControl
                 mods.SelectPack(packId);
                 return;
             }
+            if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
+            {
+                tabs.SelectedIndex = 5;
+                art.SelectAsset(assetId);
+                return;
+            }
 
             var category = problem.TargetKind switch
             {
@@ -319,7 +326,7 @@ public sealed partial class EditModeView : UserControl
     public string DescribeTile(int x, int y)
     {
         var scene = CurrentScene();
-        if (scene is null || y < 0 || y >= scene.Tiles.Count || x < 0 || x >= scene.Tiles[y].Count)
+        if (scene is null || y < 0 || y >= scene.Tiles.Length || x < 0 || x >= scene.Tiles[y].Length)
         {
             return "";
         }
@@ -349,22 +356,22 @@ public sealed partial class EditModeView : UserControl
 
         if (tile.Crop is not null)
         {
-            parts.Add($"crop {tile.Crop.Type} (stage {Ui.Num(tile.Crop.Stage)})");
+            parts.Add($"crop {tile.Crop.Value.Type} (stage {Ui.Num(tile.Crop.Value.Stage)})");
         }
 
         if (tile.Node is not null)
         {
-            parts.Add($"node {tile.Node.TypeId}");
+            parts.Add($"node {tile.Node.Value.TypeId}");
         }
 
         if (tile.Machine is not null)
         {
-            parts.Add($"machine {tile.Machine.TypeId}");
+            parts.Add($"machine {tile.Machine.Value.TypeId}");
         }
 
         if (tile.Item is not null)
         {
-            parts.Add($"item {tile.Item.Name}");
+            parts.Add($"item {tile.Item.Value.Name}");
         }
 
         if (tile.Collision)
@@ -383,6 +390,11 @@ public sealed partial class EditModeView : UserControl
             parts.Add($"NPC {npc.Name}");
         }
 
+        foreach (var animal in _workspace.Current?.Animals.Where(a => a.SceneId == scene.Id && Math.Floor(a.X) == x && Math.Floor(a.Y) == y) ?? [])
+        {
+            parts.Add($"animal {animal.Name}");
+        }
+
         return string.Join(" · ", parts);
     }
 
@@ -395,7 +407,7 @@ public sealed partial class EditModeView : UserControl
     {
         var brush = _brush;
         var scene = CurrentScene();
-        if (brush is null || scene is null || y < 0 || y >= scene.Tiles.Count || x < 0 || x >= scene.Tiles[y].Count)
+        if (brush is null || scene is null || y < 0 || y >= scene.Tiles.Length || x < 0 || x >= scene.Tiles[y].Length)
         {
             return;
         }
@@ -516,7 +528,7 @@ public sealed partial class EditModeView : UserControl
         _updatingScenes = true;
         try
         {
-            var scenes = project.Scenes.Where(s => s.Extra?.ContainsKey("generated") != true).ToList();
+            var scenes = project.Scenes.Where(s => !s.Extra.ContainsKey("generated")).ToList();
             var existing = _sceneSelector.Items.OfType<ComboBoxItem>().Select(i => (string?)i.Tag).ToList();
             var ids = scenes.Select(s => (string?)s.Id).ToList();
             if (!existing.SequenceEqual(ids) || _sceneSelector.Items.OfType<ComboBoxItem>().Select(i => i.Content as string).Where((name, i) => name != $"{scenes[i].Name}  ({Ui.Num(scenes[i].Width)}×{Ui.Num(scenes[i].Height)})").Any())
@@ -551,19 +563,19 @@ public sealed partial class EditModeView : UserControl
             stats.Children.Add(box);
         }
 
-        Stat("Scenes", project.Scenes.Count(s => s.Extra?.ContainsKey("generated") != true));
-        Stat("NPCs", project.Npcs.Count);
-        Stat("Items", project.Items.Count);
-        Stat("Quests", project.Quests.Count);
-        Stat("Shops", project.Shops.Count);
-        Stat("Recipes", project.Recipes.Count);
+        Stat("Scenes", project.Scenes.Count(s => !s.Extra.ContainsKey("generated")));
+        Stat("NPCs", project.Npcs.Length);
+        Stat("Items", project.Items.Length);
+        Stat("Quests", project.Quests.Length);
+        Stat("Shops", project.Shops.Length);
+        Stat("Recipes", project.Recipes.Length);
         _info.Children.Add(stats);
 
         var scene = CurrentScene();
         if (scene is not null)
         {
             var npcs = project.Npcs.Where(n => n.SceneId == scene.Id).Select(n => n.Name).ToList();
-            var details = $"{scene.Name}: {Ui.Num(scene.Width)}×{Ui.Num(scene.Height)} tiles · {scene.Transitions.Count} exits";
+            var details = $"{scene.Name}: {Ui.Num(scene.Width)}×{Ui.Num(scene.Height)} tiles · {scene.Transitions.Length} exits";
             if (npcs.Count > 0)
             {
                 details += $" · {string.Join(", ", npcs)}";

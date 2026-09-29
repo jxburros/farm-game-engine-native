@@ -1,6 +1,5 @@
 namespace FarmEngine.Authoring
 
-open System.Collections.Generic
 open FarmEngine.Schemas
 
 /// Tile construction and layer edits from game-helpers.ts. These transform authored maps;
@@ -10,39 +9,44 @@ type AuthoringTiles =
     static member ClassifyTileType(tileType: string) =
         match tileType with "path" -> "overlay" | "wall" | "door" -> "object" | _ -> "background"
 
-    static member CreateEmptyTile(x: float, y: float, tileType: string) =
+    static member CreateEmptyTile(x: float, y: float, tileType: string) : Tile =
         let layer = AuthoringTiles.ClassifyTileType tileType
-        Tile(X = x, Y = y, Type = tileType,
-            Background = (if layer = "background" then tileType else "grass"),
-            Overlay = (if layer = "overlay" then tileType else null),
-            Object = (if layer = "object" then tileType else null),
-            Collision = (tileType = "wall"), SoilMoisture = 0.0, SoilFertility = 0.0)
+        { Tile.Default with
+            X = x; Y = y; Type = tileType
+            Background = (if layer = "background" then tileType else "grass")
+            Overlay = (if layer = "overlay" then Some tileType else None)
+            Object = (if layer = "object" then Some tileType else None)
+            Collision = (tileType = "wall"); SoilMoisture = 0.0; SoilFertility = 0.0 }
 
-    static member SetTileLayer(tile: Tile, tileType: string, visual: VisualRef | null) =
+    static member SetTileLayer(tile: Tile, tileType: string, visual: VisualRef option) : Tile =
         let layer = AuthoringTiles.ClassifyTileType tileType
-        let property = match layer with "background" -> "Background" | "overlay" -> "Overlay" | _ -> "Object"
-        let changes =
-            [ "Type", box tileType
-              property, box tileType
-              if layer = "object" then "Collision", box (tileType = "wall")
-              if not (isNull visual) then "CustomImage", null
-              if not (isNull visual) || not (isNull tile.Visuals) then
-                  let visuals = match tile.Visuals with null -> TileVisuals() | v -> v
-                  "Visuals", box (Records.withValue visuals property visual) ]
-        Records.withValues tile changes
+        let tile =
+            match layer with
+            | "background" -> { tile with Background = tileType }
+            | "overlay" -> { tile with Overlay = Some tileType }
+            | _ -> { tile with Object = Some tileType; Collision = (tileType = "wall") }
+        let tile = { tile with Type = tileType; CustomImage = (if visual.IsSome then None else tile.CustomImage) }
+        if visual.IsSome || tile.Visuals.IsSome then
+            let visuals = defaultArg tile.Visuals TileVisuals.Default
+            let visuals =
+                match layer with
+                | "background" -> { visuals with Background = visual }
+                | "overlay" -> { visuals with Overlay = visual }
+                | _ -> { visuals with Object = visual }
+            { tile with Visuals = Some visuals }
+        else
+            tile
 
-    static member SetTileLayer(tile: Tile, tileType: string) = AuthoringTiles.SetTileLayer(tile, tileType, null)
+    static member SetTileLayer(tile: Tile, tileType: string) = AuthoringTiles.SetTileLayer(tile, tileType, None)
 
-    static member CreateEmptyScene(id: string, name: string, width: float, height: float) =
-        let rows = List<List<Tile>>()
-        let mutable y = 0.0
-        while y < height do
-            let row = List<Tile>()
-            let mutable x = 0.0
-            while x < width do
-                row.Add(AuthoringTiles.CreateEmptyTile(x, y, "grass"))
-                x <- x + 1.0
-            rows.Add row
-            y <- y + 1.0
-        Scene(Id = id, Name = name, Width = width, Height = height, Tiles = rows,
-            Transitions = List(), Npcs = List(), Events = List())
+    static member CreateEmptyScene(id: string, name: string, width: float, height: float) : Scene =
+        let rows =
+            [ let mutable y = 0.0
+              while y < height do
+                  yield
+                      [ let mutable x = 0.0
+                        while x < width do
+                            yield AuthoringTiles.CreateEmptyTile(x, y, "grass")
+                            x <- x + 1.0 ]
+                  y <- y + 1.0 ]
+        { Scene.Default with Id = id; Name = name; Width = width; Height = height; Tiles = rows }

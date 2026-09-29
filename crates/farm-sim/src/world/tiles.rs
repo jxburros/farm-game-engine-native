@@ -4,7 +4,6 @@
 //! Tile layer rules — extracted from src/lib/game-helpers.ts, behavior-identical
 //! (characterization-tested).
 
-use crate::js;
 use crate::schema::{Scene, Tile, VisualRef};
 use indexmap::IndexSet;
 use std::collections::VecDeque;
@@ -18,7 +17,7 @@ pub fn classify_tile_type(tile_type: &str) -> String {
     }
 }
 
-pub fn create_empty_tile(x: f64, y: f64, tile_type: &str) -> Tile {
+pub fn create_empty_tile(x: i32, y: i32, tile_type: &str) -> Tile {
     let layer = classify_tile_type(tile_type);
     Tile {
         x,
@@ -28,8 +27,8 @@ pub fn create_empty_tile(x: f64, y: f64, tile_type: &str) -> Tile {
         overlay: if layer == "overlay" { Some(tile_type.to_owned()) } else { None },
         object: if layer == "object" { Some(tile_type.to_owned()) } else { None },
         collision: tile_type == "wall",
-        soil_moisture: 0.0,
-        soil_fertility: 0.0,
+        soil_moisture: 0,
+        soil_fertility: 0,
         ..Tile::default()
     }
 }
@@ -65,19 +64,9 @@ pub fn set_tile_layer(tile: &Tile, new_type: &str, visual: Option<&VisualRef>) -
     updated
 }
 
-pub fn create_empty_scene(id: &str, name: &str, width: f64, height: f64) -> Scene {
-    let mut tiles = Vec::new();
-    let mut y = 0.0;
-    while y < height {
-        let mut row = Vec::new();
-        let mut x = 0.0;
-        while x < width {
-            row.push(create_empty_tile(x, y, "grass"));
-            x += 1.0;
-        }
-        tiles.push(row);
-        y += 1.0;
-    }
+pub fn create_empty_scene(id: &str, name: &str, width: i32, height: i32) -> Scene {
+    let tiles =
+        (0..height.max(0)).map(|y| (0..width.max(0)).map(|x| create_empty_tile(x, y, "grass")).collect()).collect();
 
     Scene {
         id: id.to_owned(),
@@ -97,61 +86,44 @@ pub fn clone_tiles(tiles: &[Vec<Tile>]) -> Vec<Vec<Tile>> {
     tiles.to_vec()
 }
 
-/// JS `Math.min`: NaN-propagating, unlike `f64::min`.
-fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
-
-/// JS `Math.max`: NaN-propagating, unlike `f64::max`.
-fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.max(b)
-    }
-}
-
 /// TS `tiles[0]?.length ?? 0`.
-fn row_width(tiles: &[Vec<Tile>]) -> f64 {
-    tiles.first().map_or(0.0, |row| row.len() as f64)
+fn row_width(tiles: &[Vec<Tile>]) -> i64 {
+    tiles.first().map_or(0, |row| row.len() as i64)
 }
 
 /// TS `` `${x},${y}` `` (the flood-fill `seen` key).
-fn key(x: f64, y: f64) -> String {
-    format!("{},{}", js::num(x), js::num(y))
+fn key(x: i64, y: i64) -> String {
+    format!("{x},{y}")
+}
+
+/// The inclusive corner range clamped to the grid, per axis: `max(0, min(a, b))` to
+/// `min(size − 1, max(a, b))`.
+fn clamped_range(a: i32, b: i32, size: i64) -> (i64, i64) {
+    let (a, b) = (i64::from(a), i64::from(b));
+    (a.min(b).max(0), (size - 1).min(a.max(b)))
 }
 
 /// Paint a rectangle (inclusive corners) with a tile type. Returns new tiles.
 pub fn paint_rect(
     tiles: &[Vec<Tile>],
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
     tile_type: &str,
     visual: Option<&VisualRef>,
 ) -> Vec<Vec<Tile>> {
     let mut next = clone_tiles(tiles);
-    let min_x = js_max(0.0, js_min(x1, x2));
-    let max_x = js_min(row_width(tiles) - 1.0, js_max(x1, x2));
-    let min_y = js_max(0.0, js_min(y1, y2));
-    let max_y = js_min(tiles.len() as f64 - 1.0, js_max(y1, y2));
-    let mut y = min_y;
-    while y <= max_y {
-        let mut x = min_x;
-        while x <= max_x {
+    let (min_x, max_x) = clamped_range(x1, x2, row_width(tiles));
+    let (min_y, max_y) = clamped_range(y1, y2, tiles.len() as i64);
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
             let row = &mut next[y as usize];
             let mut painted = set_tile_layer(&row[x as usize], tile_type, visual);
             painted.crop = None;
             painted.node = None;
             row[x as usize] = painted;
-            x += 1.0;
         }
-        y += 1.0;
     }
     next
 }
@@ -160,14 +132,15 @@ pub fn paint_rect(
 /// (4-directional). Returns new tiles; no-op when types match.
 pub fn flood_fill(
     tiles: &[Vec<Tile>],
-    start_x: f64,
-    start_y: f64,
+    start_x: i32,
+    start_y: i32,
     tile_type: &str,
     visual: Option<&VisualRef>,
 ) -> Vec<Vec<Tile>> {
-    let height = tiles.len() as f64;
+    let height = tiles.len() as i64;
     let width = row_width(tiles);
-    if start_y < 0.0 || start_y >= height || start_x < 0.0 || start_x >= width {
+    let (start_x, start_y) = (i64::from(start_x), i64::from(start_y));
+    if start_y < 0 || start_y >= height || start_x < 0 || start_x >= width {
         return tiles.to_vec();
     }
     let source_type = tiles[start_y as usize][start_x as usize].r#type.clone();
@@ -176,11 +149,11 @@ pub fn flood_fill(
     }
 
     let mut next = clone_tiles(tiles);
-    let mut queue: VecDeque<(f64, f64)> = VecDeque::new();
+    let mut queue: VecDeque<(i64, i64)> = VecDeque::new();
     queue.push_back((start_x, start_y));
     let mut seen: IndexSet<String> = IndexSet::new();
     seen.insert(key(start_x, start_y));
-    const DIRS: [(f64, f64); 4] = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
+    const DIRS: [(i64, i64); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
     while let Some((x, y)) = queue.pop_front() {
         if next[y as usize][x as usize].r#type != source_type {
             continue;
@@ -193,7 +166,7 @@ pub fn flood_fill(
             let nx = x + dx;
             let ny = y + dy;
             let neighbor_key = key(nx, ny);
-            if nx < 0.0 || nx >= width || ny < 0.0 || ny >= height || seen.contains(&neighbor_key) {
+            if nx < 0 || nx >= width || ny < 0 || ny >= height || seen.contains(&neighbor_key) {
                 continue;
             }
             if next[ny as usize][nx as usize].r#type != source_type {
@@ -207,42 +180,32 @@ pub fn flood_fill(
 }
 
 /// Extract a deep-copied tile region (inclusive corners, clamped).
-pub fn copy_tile_region(tiles: &[Vec<Tile>], x1: f64, y1: f64, x2: f64, y2: f64) -> Vec<Vec<Tile>> {
-    let min_x = js_max(0.0, js_min(x1, x2));
-    let max_x = js_min(row_width(tiles) - 1.0, js_max(x1, x2));
-    let min_y = js_max(0.0, js_min(y1, y2));
-    let max_y = js_min(tiles.len() as f64 - 1.0, js_max(y1, y2));
+pub fn copy_tile_region(tiles: &[Vec<Tile>], x1: i32, y1: i32, x2: i32, y2: i32) -> Vec<Vec<Tile>> {
+    let (min_x, max_x) = clamped_range(x1, x2, row_width(tiles));
+    let (min_y, max_y) = clamped_range(y1, y2, tiles.len() as i64);
     let mut region = Vec::new();
-    let mut y = min_y;
-    while y <= max_y {
-        let mut row = Vec::new();
-        let mut x = min_x;
-        while x <= max_x {
-            // `JsonDefaults.DeepClone(tile)`: a Rust clone is already deep.
-            row.push(tiles[y as usize][x as usize].clone());
-            x += 1.0;
-        }
-        region.push(row);
-        y += 1.0;
+    for y in min_y..=max_y {
+        // `JsonDefaults.DeepClone(tile)`: a Rust clone is already deep.
+        region.push((min_x..=max_x).map(|x| tiles[y as usize][x as usize].clone()).collect());
     }
     region
 }
 
 /// Stamp a copied region with its top-left at (x, y), clamped to bounds.
-pub fn paste_tile_region(tiles: &[Vec<Tile>], region: &[Vec<Tile>], x: f64, y: f64) -> Vec<Vec<Tile>> {
+pub fn paste_tile_region(tiles: &[Vec<Tile>], region: &[Vec<Tile>], x: i32, y: i32) -> Vec<Vec<Tile>> {
     let mut next = clone_tiles(tiles);
-    let height = tiles.len() as f64;
+    let height = tiles.len() as i64;
     let width = row_width(tiles);
     for (dy, region_row) in region.iter().enumerate() {
         for (dx, source) in region_row.iter().enumerate() {
-            let tx = x + dx as f64;
-            let ty = y + dy as f64;
-            if tx < 0.0 || tx >= width || ty < 0.0 || ty >= height {
+            let tx = i64::from(x) + dx as i64;
+            let ty = i64::from(y) + dy as i64;
+            if tx < 0 || tx >= width || ty < 0 || ty >= height {
                 continue;
             }
             let mut pasted = source.clone();
-            pasted.x = tx;
-            pasted.y = ty;
+            pasted.x = tx as i32;
+            pasted.y = ty as i32;
             next[ty as usize][tx as usize] = pasted;
         }
     }

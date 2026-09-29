@@ -3,7 +3,8 @@
 //! the controls hint row; the "Made with" credit.
 
 use super::{GameAction, GameView, Panel};
-use crate::format::{capitalize, money, num};
+use crate::format::{money, num, season_name};
+use crate::i18n::Lang;
 use crate::icons::Icon;
 use crate::input::{GamepadButton, InputDevice};
 use crate::layout::{Align, Flow, RectExt};
@@ -80,8 +81,8 @@ fn draw_stat(ui: &mut Ui, rect: Rect, stat: &Stat) {
     }
 }
 
-/// The prompt for an action on the current device.
-pub(crate) fn prompt(view: &GameView<'_>, device: InputDevice, action: BindAction) -> String {
+/// The prompt for an action on the current device (keycap names in `lang`).
+pub(crate) fn prompt(view: &GameView<'_>, device: InputDevice, action: BindAction, lang: Lang) -> String {
     match device {
         InputDevice::Gamepad => match action {
             BindAction::MoveUp | BindAction::MoveDown | BindAction::MoveLeft | BindAction::MoveRight => "LS".to_owned(),
@@ -93,7 +94,7 @@ pub(crate) fn prompt(view: &GameView<'_>, device: InputDevice, action: BindActio
                 let keys: Vec<String> =
                     [BindAction::MoveUp, BindAction::MoveLeft, BindAction::MoveDown, BindAction::MoveRight]
                         .iter()
-                        .map(|action| view.bindings.key_label(*action))
+                        .map(|action| view.bindings.key_label_in(*action, lang))
                         .collect();
                 if keys.iter().all(|key| key.chars().count() == 1) {
                     keys.concat()
@@ -101,7 +102,7 @@ pub(crate) fn prompt(view: &GameView<'_>, device: InputDevice, action: BindActio
                     keys.join(" ")
                 }
             }
-            other => view.bindings.key_label(other),
+            other => view.bindings.key_label_in(other, lang),
         },
     }
 }
@@ -115,59 +116,68 @@ const TOOLS: [(&str, Icon); 5] = [
     ("menu", Icon::Menu),
 ];
 
-fn toolbar_labels(view: &GameView<'_>, device: InputDevice, compact: bool) -> Vec<String> {
+fn toolbar_labels(view: &GameView<'_>, device: InputDevice, compact: bool, lang: Lang) -> Vec<String> {
     let player = &view.state.player;
-    let inventory = format!("Inventory {}/{}", player.inventory.len(), num(player.max_inventory_size));
-    let with_key = |label: &str, action: BindAction| {
+    let inventory = lang.format("toolbar.inventory", &[&player.inventory.len(), &num(player.max_inventory_size)]);
+    let with_key = |key: &'static str, action: BindAction| {
         if compact {
-            label.to_owned()
+            lang.tr(key).to_owned()
         } else {
-            format!("{label} ({})", prompt(view, device, action))
+            lang.format("toolbar.withKey", &[&lang.tr(key), &prompt(view, device, action, lang)])
         }
     };
     vec![
         inventory,
-        with_key("Quests", BindAction::Quests),
-        with_key("Craft", BindAction::Craft),
-        with_key("Sleep", BindAction::Sleep),
-        with_key("Menu", BindAction::Menu),
+        with_key("toolbar.quests", BindAction::Quests),
+        with_key("toolbar.craft", BindAction::Craft),
+        with_key("toolbar.sleep", BindAction::Sleep),
+        with_key("toolbar.menu", BindAction::Menu),
     ]
 }
 
-fn stats(view: &GameView<'_>, compact: bool) -> Vec<Stat> {
+fn stats(view: &GameView<'_>, compact: bool, lang: Lang) -> Vec<Stat> {
     let state = view.state;
     let content = view.content;
     let clock = &state.clock;
     let calendar = view.calendar;
     let mut stats = vec![
-        Stat { label: if compact { "" } else { "Money:" }, value: StatValue::Chip(money(state.player.money)) },
         Stat {
-            label: "Season:",
-            value: StatValue::Primary(calendar.season_name.clone().unwrap_or_else(|| capitalize(&clock.season))),
+            label: if compact { "" } else { lang.tr("hud.money") },
+            value: StatValue::Chip(money(state.player.money)),
         },
         Stat {
-            label: "Day:",
+            label: lang.tr("hud.season"),
+            value: StatValue::Primary(calendar.season_name.clone().unwrap_or_else(|| season_name(&clock.season, lang))),
+        },
+        Stat {
+            label: lang.tr("hud.day"),
             value: StatValue::Secondary(format!("{} / {}", num(calendar.day_of_season), num(calendar.season_days))),
         },
-        Stat { label: "Year:", value: StatValue::Secondary(num(clock.year)) },
+        Stat { label: lang.tr("hud.year"), value: StatValue::Secondary(num(clock.year)) },
         Stat {
-            label: "Weather:",
+            label: lang.tr("hud.weather"),
             value: StatValue::Plain(
                 content
                     .weather
                     .types
                     .iter()
                     .find(|weather| weather.id == clock.weather_id)
-                    .map_or_else(|| "Sunny".to_owned(), |weather| weather.name.clone()),
+                    .map_or_else(|| lang.tr("hud.sunny").to_owned(), |weather| weather.name.clone()),
             ),
         },
-        Stat { label: "Time:", value: StatValue::Plain(calendar.time_text.clone()) },
+        Stat { label: lang.tr("hud.time"), value: StatValue::Plain(calendar.time_text.clone()) },
     ];
     if content.settings.energy_enabled {
-        let max = if state.player.max_energy > 0.0 { state.player.max_energy } else { content.settings.max_energy };
-        let ratio = if max > 0.0 { (state.player.energy / max) as f32 } else { 0.0 };
-        let text = if compact { String::new() } else { format!("{} / {}", num(state.player.energy.floor()), num(max)) };
-        stats.push(Stat { label: "Energy:", value: StatValue::Energy { ratio, text } });
+        let max = if state.player.max_energy > 0 { state.player.max_energy } else { content.settings.max_energy };
+        let ratio = if max > 0 { (f64::from(state.player.energy) / f64::from(max)) as f32 } else { 0.0 };
+        // Whole points, rounded down like the web HUD.
+        let point = farm_sim::units::ENERGY_POINT;
+        let text = if compact {
+            String::new()
+        } else {
+            format!("{} / {}", num(state.player.energy.div_euclid(point)), crate::format::energy(max))
+        };
+        stats.push(Stat { label: lang.tr("hud.energy"), value: StatValue::Energy { ratio, text } });
     }
     stats
 }
@@ -177,6 +187,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     let colors = ui.theme().colors;
     let screen = ui.screen();
     let device = ui.device();
+    let lang = ui.lang();
 
     // ── Stats and toolbar ──
     // Full labels when everything fits on one row; else compact labels (no "Money:", no energy
@@ -186,9 +197,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     let button_height = ui.button_height(13.0).min(ROW);
     let mut layout = None;
     for compact in [false, true] {
-        let stats = stats(view, compact);
+        let stats = stats(view, compact, lang);
         let stat_sizes: Vec<(f32, f32)> = stats.iter().map(|stat| (stat_width(ui, stat), ROW)).collect();
-        let labels = toolbar_labels(view, device, compact);
+        let labels = toolbar_labels(view, device, compact, lang);
         let widths: Vec<f32> = labels
             .iter()
             .zip(TOOLS)
@@ -261,7 +272,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         BindAction::Menu,
     ]
     .iter()
-    .map(|action| (prompt(view, device, *action), action.hint()))
+    .map(|action| (prompt(view, device, *action, lang), action.hint(lang)))
     .collect();
     let hint_sizes: Vec<(f32, f32)> = hints
         .iter()
@@ -338,7 +349,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
 
     // ── "Made with" credit ──
     if view.show_made_with {
-        let text = "Made with Farming RPG Maker";
+        let text = lang.tr("hud.madeWith");
         let width = ui.measure(text, 11.0, FontId::Regular) + 16.0;
         let rect = Rect::new(screen.right() - 12.0 - width, above_hints - 18.0, width, 18.0);
         ui.list_mut().fill_round_rect(rect, 5.0, fade(colors.hud, 0.75));

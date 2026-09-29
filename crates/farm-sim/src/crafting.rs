@@ -8,13 +8,13 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{HookEvent, RecipeCraftHookPayload};
 use crate::inventory;
-use crate::js;
 use crate::quests;
 use crate::schema::{
     GameState, InventorySlot, MachineProcessing, MachineTypeDefinition, RecipeDefinition, RecipeIngredient, Scene,
     Tile, TileMachine,
 };
 use crate::skills;
+use crate::units;
 use crate::world::world_movement;
 use indexmap::IndexSet;
 use serde::Serialize;
@@ -39,9 +39,10 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|s| !s.is_empty())
 }
 
-/// Absolute game minute since day 1, 00:00.
-pub fn absolute_minute(state: &GameState) -> f64 {
-    (state.clock.day - 1.0) * 24.0 * 60.0 + state.clock.time_minutes
+/// Absolute game time since day 1, 00:00, in micro-minutes.
+pub fn absolute_minute(state: &GameState) -> i64 {
+    (i64::from(state.clock.day) - 1) * i64::from(units::MINUTES_PER_DAY) * i64::from(units::MINUTE)
+        + i64::from(state.clock.time_minutes)
 }
 
 pub fn recipe_by_id<'a>(ctx: &'a EngineContext, recipe_id: &str) -> Option<&'a RecipeDefinition> {
@@ -73,26 +74,20 @@ pub fn is_recipe_unlocked(ctx: &EngineContext, state: &GameState, recipe: &Recip
 
 pub fn has_ingredients(state: &GameState, recipe: &RecipeDefinition) -> bool {
     recipe.inputs.iter().all(|input| {
-        let mut held = 0.0;
+        let mut held: u64 = 0;
         for slot in &state.player.inventory {
             if slot.item.id == input.item_id {
-                held += slot.quantity;
+                held += u64::from(slot.quantity);
             }
         }
-        held >= input.quantity
+        held >= u64::from(input.quantity)
     })
 }
 
 /// TS `scene.tiles[y]?.[x]`.
-fn tile_at(scene: &Scene, x: f64, y: f64) -> Option<&Tile> {
-    if !(0.0..scene.tiles.len() as f64).contains(&y) || y != y.floor() {
-        return None;
-    }
-    let row = &scene.tiles[y as usize];
-    if !(0.0..row.len() as f64).contains(&x) || x != x.floor() {
-        return None;
-    }
-    Some(&row[x as usize])
+fn tile_at(scene: &Scene, x: i32, y: i32) -> Option<&Tile> {
+    let row = scene.tiles.get(usize::try_from(y).ok()?)?;
+    row.get(usize::try_from(x).ok()?)
 }
 
 /// Station categories provided by machines within a 1-tile radius (8-
@@ -105,21 +100,16 @@ pub fn nearby_station_categories(ctx: &EngineContext, state: &GameState) -> Inde
         return categories;
     };
 
-    let px = state.player.x.floor();
-    let py = state.player.y.floor();
-    let mut y = py - 1.0;
-    while y <= py + 1.0 {
-        let mut x = px - 1.0;
-        while x <= px + 1.0 {
+    let player = world_movement::player_tile(state);
+    for y in player.y - 1..=player.y + 1 {
+        for x in player.x - 1..=player.x + 1 {
             if let Some(machine) = tile_at(scene, x, y).and_then(|tile| tile.machine.as_ref()) {
                 let machine_type = ctx.content.machine_types.iter().find(|r#type| r#type.id == machine.type_id);
                 for category in machine_type.map(|r#type| r#type.station_categories.as_slice()).unwrap_or(&[]) {
                     categories.insert(category.clone());
                 }
             }
-            x += 1.0;
         }
-        y += 1.0;
     }
     categories
 }
@@ -185,7 +175,7 @@ struct GrantOutputsResult {
 fn grant_outputs(
     ctx: &EngineContext,
     inventory: &[InventorySlot],
-    max_inventory_size: f64,
+    max_inventory_size: u32,
     outputs: &[RecipeIngredient],
 ) -> GrantOutputsResult {
     let mut inventory = inventory.to_vec();
@@ -198,10 +188,8 @@ fn grant_outputs(
         let result = inventory::add_item(&inventory, item, output.quantity, max_inventory_size, None);
         if result.added {
             inventory = result.inventory;
-            effects.push(Effect::message(
-                message_levels::SUCCESS,
-                format!("Crafted {}x {}", js::num(output.quantity), item.name),
-            ));
+            effects
+                .push(Effect::message(message_levels::SUCCESS, format!("Crafted {}x {}", output.quantity, item.name)));
         } else {
             all_added = false;
             effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
@@ -231,7 +219,7 @@ pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str)
     state.player.inventory = granted.inventory;
     ctx.emit(HookEvent::RecipeCraft(RecipeCraftHookPayload { recipe_id: recipe_id.to_owned() }));
 
-    let quest_effects = quests::progress_quests(ctx, state, "craft", recipe_id, 1.0);
+    let quest_effects = quests::progress_quests(ctx, state, "craft", recipe_id, 1);
     let mut effects = granted.effects;
     effects.extend(quest_effects);
     effects
@@ -257,7 +245,7 @@ pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_
         return Vec::new();
     };
     let world_movement::TilePoint { x, y } = world_movement::facing_target(state);
-    if x < 0.0 || x >= scene.width || y < 0.0 || y >= scene.height {
+    if x < 0 || x >= scene.width || y < 0 || y >= scene.height {
         return Vec::new();
     }
     // `scene.tiles[y][x]`: the reference engine throws when the grid is ragged; here the
@@ -277,7 +265,7 @@ pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_
         Some(TileMachine { type_id: machine_type_id.to_owned(), ..TileMachine::default() });
 
     if let Some(item_id) = non_empty(machine_type.item_id.as_deref()) {
-        state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1.0);
+        state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1);
     }
 
     vec![Effect::message(message_levels::SUCCESS, format!("Placed {}", machine_type.name))]
@@ -318,7 +306,7 @@ pub fn handle_machine_load(ctx: &EngineContext, state: &mut GameState, recipe_id
     let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else {
         return Vec::new();
     };
-    let completes_at_minute = absolute_minute(state) + recipe.processing_minutes;
+    let completes_at_minute = absolute_minute(state) + i64::from(recipe.processing_minutes) * i64::from(units::MINUTE);
     if let Some(machine) = state.world.scenes[scene_index].tiles[y as usize][x as usize].machine.as_mut() {
         machine.processing = Some(MachineProcessing { recipe_id: recipe_id.to_owned(), completes_at_minute });
     }
@@ -355,7 +343,7 @@ pub fn settle_machines(ctx: &EngineContext, state: &mut GameState) {
 }
 
 /// Collect finished machine output (invoked from interact).
-pub fn collect_machine_output(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64, y: f64) -> Effects {
+pub fn collect_machine_output(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32, y: i32) -> Effects {
     let scene = world_movement::find_scene(state, scene_id);
     let tile = scene.and_then(|scene| tile_at(scene, x, y));
     let output = tile.and_then(|tile| tile.machine.as_ref()).and_then(|machine| machine.output.as_ref());

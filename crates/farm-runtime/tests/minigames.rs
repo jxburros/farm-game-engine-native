@@ -4,8 +4,8 @@
 use farm_runtime::minigames::{
     self, MinigameConfig, MinigameImpl, MinigameMountOptions, MinigameRegistry, MinigameSession, TimingBarSession,
 };
-use farm_sim::js;
 use farm_sim::schema::MinigameDef;
+use farm_sim::units;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
@@ -89,7 +89,7 @@ fn timing_bar_scores_one_inside_the_zone_and_falls_off_linearly_outside() {
 fn timing_bar_miss_scores_by_distance_and_sweeps_back() {
     let (mut session, scores) = mount(
         &minigames::timing_bar(),
-        config(&[("speed", js::value(1.0)), ("targetSize", js::value(0.1)), ("prompt", Value::from("Go"))]),
+        config(&[("speed", units::value(1.0)), ("targetSize", units::value(0.1)), ("prompt", Value::from("Go"))]),
         0.5,
     );
     let bar = session.as_any_mut().downcast_mut::<TimingBarSession>().unwrap();
@@ -105,7 +105,7 @@ fn timing_bar_miss_scores_by_distance_and_sweeps_back() {
 fn timing_bar_clamps_config() {
     let (session, _) = mount(
         &minigames::timing_bar(),
-        config(&[("speed", js::value(0.0)), ("targetSize", js::value(5.0)), ("prompt", js::value(3.0))]),
+        config(&[("speed", units::value(0.0)), ("targetSize", units::value(5.0)), ("prompt", units::value(3.0))]),
         0.5,
     );
     let bar = session.as_any().downcast_ref::<TimingBarSession>().unwrap();

@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using FarmEngine.Authoring;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 
@@ -22,19 +22,22 @@ public sealed class ContentEditorView : UserControl
         Func<GameProject, IEnumerable<object>> Entries,
         Func<GameProject, object?> Create,
         Func<object, Edit> Upsert,
-        Func<string, Edit> Remove);
+        Func<string, Edit> Remove,
+        Func<GameProject, object, object>? Duplicate);
 
     private static Category Of<T>(string name, Func<GameProject, IEnumerable<T>> entries,
-        Func<GameProject, T?> create, Func<T, Edit> upsert, Func<string, Edit> remove) where T : class =>
+        Func<GameProject, T?> create, Func<T, Edit> upsert, Func<string, Edit> remove,
+        Func<GameProject, T, T>? duplicate = null) where T : class =>
         new(name, typeof(T), project => entries(project).Cast<object>(), project => create(project),
-            entity => upsert((T)entity), remove);
+            entity => upsert((T)entity), remove,
+            duplicate is null ? null : (project, entity) => duplicate(project, (T)entity));
 
     private static readonly Category[] Categories =
     [
         Of("NPCs", p => p.Npcs, p => Defaults.NewNpc(p, "New NPC"), Edits.UpsertNpc, Edits.RemoveNpc),
-        Of("Dialogue", p => p.Dialogues, p => p.Npcs.Count > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
+        Of("Dialogue", p => p.Dialogues, p => p.Npcs.Length > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
         Of("Items", p => p.Items, Defaults.NewItem, Edits.UpsertItem, Edits.RemoveItem),
-        Of("Crops", p => p.CustomCrops ?? [], Defaults.NewCrop, Edits.UpsertCrop, Edits.RemoveCrop),
+        Of("Crops", p => p.CustomCrops.OrEmpty(), Defaults.NewCrop, Edits.UpsertCrop, Edits.RemoveCrop, Defaults.DuplicateCrop),
         Of("Quests", p => p.Quests, Defaults.NewQuest, Edits.UpsertQuest, Edits.RemoveQuest),
         Of("Events", p => p.Events, Defaults.NewEvent, Edits.UpsertEvent, Edits.RemoveEvent),
         Of("Shops", p => p.Shops, Defaults.NewShop, Edits.UpsertShop, Edits.RemoveShop),
@@ -43,8 +46,8 @@ public sealed class ContentEditorView : UserControl
         Of("Machine types", p => p.MachineTypes, Defaults.NewMachineType, Edits.UpsertMachineType, Edits.RemoveMachineType),
         Of("Animal species", p => p.AnimalSpecies, Defaults.NewAnimalSpecies, Edits.UpsertAnimalSpecies, Edits.RemoveAnimalSpecies),
         Of("Fish tables", p => p.FishTables, Defaults.NewFishTable, Edits.UpsertFishTable, Edits.RemoveFishTable),
-        Of("Actions", p => p.Actions, Defaults.NewAction, Edits.UpsertAction, Edits.RemoveAction),
-        Of("Minigames", p => p.Minigames, Defaults.NewMinigame, Edits.UpsertMinigame, Edits.RemoveMinigame),
+        Of("Actions", p => p.Actions, Defaults.NewAction, Edits.UpsertAction, Edits.RemoveAction, Defaults.DuplicateAction),
+        Of("Minigames", p => p.Minigames, Defaults.NewMinigame, Edits.UpsertMinigame, Edits.RemoveMinigame, Defaults.DuplicateMinigame),
     ];
 
     private readonly ProjectWorkspace _workspace;
@@ -54,6 +57,8 @@ public sealed class ContentEditorView : UserControl
     private readonly TextBlock _message = Ui.Wrapped("Select an entry to edit it.", "muted", "small");
     private readonly Button _add;
     private readonly Button _delete;
+    private readonly Button _duplicate;
+    private readonly Button _addToInventory;
     private readonly Button _save;
     private readonly Button _revert;
     private Category _selectedCategory = Categories[0];
@@ -89,6 +94,11 @@ public sealed class ContentEditorView : UserControl
         _add.Name = "AddContentButton";
         _delete = Ui.Button("Delete", Delete, "tool");
         _delete.Name = "DeleteContentButton";
+        _duplicate = Ui.Button("Duplicate", Duplicate, "tool");
+        _duplicate.Name = "DuplicateContentButton";
+        _addToInventory = Ui.Button("Add to inventory", AddToInventory, "tool");
+        _addToInventory.Name = "AddToInventoryButton";
+        ToolTip.SetTip(_addToInventory, "Give the player one of this item at the start of the game");
         _save = Ui.Button("Save changes", Save, "accent");
         _save.Name = "SaveContentButton";
         _revert = Ui.Button("Revert fields", BuildForm, "tool");
@@ -99,6 +109,7 @@ public sealed class ContentEditorView : UserControl
         listSide.Children.Add(_category);
         listSide.Children.Add(_entities);
         listSide.Children.Add(Ui.HStack(8, _add, _delete));
+        listSide.Children.Add(Ui.HStack(8, _duplicate, _addToInventory));
         listSide.Children.Add(Ui.Wrapped("Select a type, then edit its fields. Every nested field also has an Edit as JSON box.", "muted", "small"));
         var editor = new StackPanel { Spacing = 12 };
         editor.Children.Add(Ui.Text("DETAILS", "section"));
@@ -178,6 +189,10 @@ public sealed class ContentEditorView : UserControl
         _save.IsEnabled = _editing is not null;
         _revert.IsEnabled = _editing is not null;
         _delete.IsEnabled = _editing is not null;
+        _duplicate.IsVisible = _selectedCategory.Duplicate is not null;
+        _duplicate.IsEnabled = _editing is not null;
+        _addToInventory.IsVisible = _selectedCategory.EntityType == typeof(Item);
+        _addToInventory.IsEnabled = _editing is not null;
         if (_editing is null || _workspace.Current is not { } current)
         {
             _message.Text = "Select an entry to edit it.";
@@ -199,6 +214,22 @@ public sealed class ContentEditorView : UserControl
         }
         _selectedId = IdOf(created);
         if (!_workspace.Apply(_selectedCategory.Upsert(created))) _message.Text = "No changes were made.";
+    }
+
+    private void Duplicate()
+    {
+        if (_editing is null || _selectedCategory.Duplicate is not { } duplicate || _workspace.Current is not { } project) return;
+        var copy = duplicate(project, _editing);
+        _selectedId = IdOf(copy);
+        if (_workspace.Apply(_selectedCategory.Upsert(copy))) _message.Text = $"Duplicated as {LabelOf(copy)}.";
+    }
+
+    private void AddToInventory()
+    {
+        if (_editing is not Item item || _workspace.Current is not { } project) return;
+        var message = ContentActions.AddToInventoryMessage(project, item.Id);
+        _workspace.Apply(Edits.AddToInventory(item.Id));
+        _message.Text = message;
     }
 
     private void Delete()

@@ -5,24 +5,15 @@ open FarmEngine.Schemas
 
 /// Authoring-side load order, conflict-aware composition, localization and project import.
 module PackMerge =
-    let private orEmpty (items: seq<'T> | null) : seq<'T> =
-        match items with
-        | null -> Seq.empty
-        | items -> items
-
     let private problem id severity message = { PackId = id; Severity = severity; Message = message }
 
     /// Install order with dependencies before dependents. Missing dependencies and cycles stay
     /// visible as errors while the pack remains inspectable, like the web editor.
-    let resolveOrder (installs: List<PackInstallation>) : ContentPack list * PackProblem list =
-        let enabled =
-            orEmpty installs
-            |> Seq.filter (fun installation -> installation.Enabled)
-            |> Seq.map (fun installation -> installation.Pack)
-            |> Seq.toList
+    let resolveOrder (installs: PackInstallation list) : ContentPack list * PackProblem list =
+        let enabled = installs |> List.filter (fun installation -> installation.Enabled) |> List.map (fun installation -> installation.Pack)
         // JavaScript Map(entries): the last duplicate id supplies dependency lookups.
         let byId = Dictionary<string, ContentPack>()
-        for pack in enabled do byId[pack.Manifest.Id] <- pack
+        for pack in enabled do byId.[pack.Manifest.Id] <- pack
 
         let ordered = ResizeArray<ContentPack>()
         let problems = ResizeArray<PackProblem>()
@@ -36,7 +27,7 @@ module PackMerge =
                 problems.Add(problem id "error" (sprintf "Dependency cycle involving pack '%s'" id))
             else
                 visiting.Add id |> ignore
-                for dependency in orEmpty pack.Manifest.Dependencies do
+                for dependency in pack.Manifest.Dependencies do
                     match byId.TryGetValue dependency.PackId with
                     | true, target -> visit target
                     | _ ->
@@ -48,149 +39,117 @@ module PackMerge =
 
         for pack in enabled do visit pack
         for pack in ordered do
-            if not (PackRules.isEngineCompatible pack.Manifest.EngineCompatibility PackRules.EngineVersion) then
+            if not (PackRules.isEngineCompatible (Some pack.Manifest.EngineCompatibility) PackRules.EngineVersion) then
                 problems.Add(problem pack.Manifest.Id "warning"
                     (sprintf "Pack '%s' targets engine %s; this engine is %s"
                         pack.Manifest.Id pack.Manifest.EngineCompatibility PackRules.EngineVersion))
         List.ofSeq ordered, List.ofSeq problems
 
+    /// Appends new definitions, replaces declared overrides and warns about undeclared collisions.
     let private mergeArray
         (pack: ContentPack)
         (problems: ResizeArray<PackProblem>)
         (overrides: HashSet<string>)
         (label: string)
         (idOf: 'T -> string)
-        (target: List<'T>)
-        (definitions: List<'T>) =
-        for definition in orEmpty definitions do
+        (target: 'T list)
+        (definitions: 'T list) : 'T list =
+        let result = ResizeArray<'T>(target)
+        for definition in definitions do
             let id = idOf definition
-            let index = target.FindIndex(fun existing -> idOf existing = id)
-            if index < 0 then target.Add definition
-            elif overrides.Contains id then target[index] <- definition
+            let index = result.FindIndex(fun existing -> idOf existing = id)
+            if index < 0 then result.Add definition
+            elif overrides.Contains id then result.[index] <- definition
             else
                 problems.Add(problem pack.Manifest.Id "warning"
                     (sprintf "Pack '%s' redefines %s '%s' without declaring it in manifest.overrides — keeping the earlier definition"
                         pack.Manifest.Id label id))
+        List.ofSeq result
 
     /// Preview enabled pack layers over base content. Collection order and override semantics
     /// match the TypeScript engine, including warnings for undeclared collisions.
-    let mergeIntoContent (baseContent: GameContent) (installs: List<PackInstallation>) : GameContent * PackProblem list =
+    let mergeIntoContent (baseContent: GameContent) (installs: PackInstallation list) : GameContent * PackProblem list =
         let packs, orderProblems = resolveOrder installs
         if List.isEmpty packs then baseContent, orderProblems
         else
             let problems = ResizeArray<PackProblem>(orderProblems)
-            let crops = OrderedDictionary<string, CropDefinition>(baseContent.Crops)
-            let items = List<Item>(baseContent.Items)
-            let recipes = List<RecipeDefinition>(baseContent.Recipes)
-            let machineTypes = List<MachineTypeDefinition>(baseContent.MachineTypes)
-            let nodeTypes = List<NodeTypeDefinition>(baseContent.NodeTypes)
-            let animalSpecies = List<AnimalSpeciesDefinition>(baseContent.AnimalSpecies)
-            let fishTables = List<FishTable>(baseContent.FishTables)
-            let weatherTypes = List<WeatherTypeDefinition>(baseContent.Weather.Types)
-            let npcs = List<Npc>(baseContent.Npcs)
-            let dialogues = List<Dialogue>(baseContent.Dialogues)
-            let scenes = List<Scene>(baseContent.Scenes)
-            let events = List<GameEvent>(baseContent.Events)
-            let quests = List<Quest>(baseContent.Quests)
-            let shops = List<ShopDefinition>(baseContent.Shops)
-            let actions = List<ActionDef>(baseContent.Actions)
-            let minigames = List<MinigameDef>(baseContent.Minigames)
-
-            for rawPack in packs do
+            let merge (content: GameContent) (rawPack: ContentPack) =
                 let pack = PackRules.namespacePack rawPack
-                let content = pack.Content
-                let overrides = HashSet<string>(orEmpty pack.Manifest.Overrides)
-                for crop in orEmpty content.Crops do
-                    if crops.ContainsKey crop.Id then
-                        if overrides.Contains crop.Id then crops[crop.Id] <- crop
+                let added = pack.Content
+                let overrides = HashSet<string>(pack.Manifest.Overrides)
+                let mutable crops = content.Crops
+                for crop in added.Crops do
+                    match crops |> List.tryFindIndex (fun (id, _) -> id = crop.Id) with
+                    | Some index ->
+                        if overrides.Contains crop.Id then crops <- crops |> List.mapi (fun i entry -> if i = index then crop.Id, crop else entry)
                         else
                             problems.Add(problem pack.Manifest.Id "warning"
                                 (sprintf "Pack '%s' redefines crop '%s' without declaring it in manifest.overrides — keeping the earlier definition"
                                     pack.Manifest.Id crop.Id))
-                    else crops[crop.Id] <- crop
-                mergeArray pack problems overrides "item" (fun (d: Item) -> d.Id) items content.Items
-                mergeArray pack problems overrides "recipe" (fun (d: RecipeDefinition) -> d.Id) recipes content.Recipes
-                mergeArray pack problems overrides "machine type" (fun (d: MachineTypeDefinition) -> d.Id) machineTypes content.MachineTypes
-                mergeArray pack problems overrides "node type" (fun (d: NodeTypeDefinition) -> d.Id) nodeTypes content.NodeTypes
-                mergeArray pack problems overrides "animal species" (fun (d: AnimalSpeciesDefinition) -> d.Id) animalSpecies content.AnimalSpecies
-                mergeArray pack problems overrides "fish table" (fun (d: FishTable) -> d.Id) fishTables content.FishTables
-                mergeArray pack problems overrides "weather type" (fun (d: WeatherTypeDefinition) -> d.Id) weatherTypes content.WeatherTypes
-                mergeArray pack problems overrides "NPC" (fun (d: Npc) -> d.Id) npcs content.Npcs
-                mergeArray pack problems overrides "dialogue" (fun (d: Dialogue) -> d.Id) dialogues content.Dialogues
-                mergeArray pack problems overrides "scene" (fun (d: Scene) -> d.Id) scenes content.Scenes
-                mergeArray pack problems overrides "event" (fun (d: GameEvent) -> d.Id) events content.Events
-                mergeArray pack problems overrides "quest" (fun (d: Quest) -> d.Id) quests content.Quests
-                mergeArray pack problems overrides "shop" (fun (d: ShopDefinition) -> d.Id) shops content.Shops
-                mergeArray pack problems overrides "action" (fun (d: ActionDef) -> d.Id) actions content.Actions
-                mergeArray pack problems overrides "minigame" (fun (d: MinigameDef) -> d.Id) minigames content.Minigames
-
-            let weather = Records.withValue baseContent.Weather "Types" (box weatherTypes)
-            let merged =
-                Records.withValues baseContent
-                    [ "Crops", box crops
-                      "Items", box items
-                      "Recipes", box recipes
-                      "MachineTypes", box machineTypes
-                      "NodeTypes", box nodeTypes
-                      "AnimalSpecies", box animalSpecies
-                      "FishTables", box fishTables
-                      "Weather", box weather
-                      "Npcs", box npcs
-                      "Dialogues", box dialogues
-                      "Scenes", box scenes
-                      "Events", box events
-                      "Quests", box quests
-                      "Shops", box shops
-                      "Actions", box actions
-                      "Minigames", box minigames ]
+                    | None -> crops <- crops @ [ crop.Id, crop ]
+                let mergeInto label idOf target definitions = mergeArray pack problems overrides label idOf target definitions
+                { content with
+                    Crops = crops
+                    Items = mergeInto "item" (fun (d: Item) -> d.Id) content.Items added.Items
+                    Recipes = mergeInto "recipe" (fun (d: RecipeDefinition) -> d.Id) content.Recipes added.Recipes
+                    MachineTypes = mergeInto "machine type" (fun (d: MachineTypeDefinition) -> d.Id) content.MachineTypes added.MachineTypes
+                    NodeTypes = mergeInto "node type" (fun (d: NodeTypeDefinition) -> d.Id) content.NodeTypes added.NodeTypes
+                    AnimalSpecies = mergeInto "animal species" (fun (d: AnimalSpeciesDefinition) -> d.Id) content.AnimalSpecies added.AnimalSpecies
+                    FishTables = mergeInto "fish table" (fun (d: FishTable) -> d.Id) content.FishTables added.FishTables
+                    Weather =
+                        { content.Weather with
+                            Types = mergeInto "weather type" (fun (d: WeatherTypeDefinition) -> d.Id) content.Weather.Types added.WeatherTypes }
+                    Npcs = mergeInto "NPC" (fun (d: Npc) -> d.Id) content.Npcs added.Npcs
+                    Dialogues = mergeInto "dialogue" (fun (d: Dialogue) -> d.Id) content.Dialogues added.Dialogues
+                    Scenes = mergeInto "scene" (fun (d: Scene) -> d.Id) content.Scenes added.Scenes
+                    Events = mergeInto "event" (fun (d: GameEvent) -> d.Id) content.Events added.Events
+                    Quests = mergeInto "quest" (fun (d: Quest) -> d.Id) content.Quests added.Quests
+                    Shops = mergeInto "shop" (fun (d: ShopDefinition) -> d.Id) content.Shops added.Shops
+                    Actions = mergeInto "action" (fun (d: ActionDef) -> d.Id) content.Actions added.Actions
+                    Minigames = mergeInto "minigame" (fun (d: MinigameDef) -> d.Id) content.Minigames added.Minigames }
+            let merged = List.fold merge baseContent packs
             merged, List.ofSeq problems
 
     /// Later enabled packs override earlier translations. Empty strings are valid translations;
     /// absent keys/locales leave authored text intact.
-    let applyLocaleStrings (content: GameContent) (installs: List<PackInstallation>) (locale: string | null) =
+    let applyLocaleStrings (content: GameContent) (installs: PackInstallation list) (locale: string) =
         if System.String.IsNullOrEmpty locale then content
         else
             let packs, _ = resolveOrder installs
             let table = Dictionary<string, string>()
             for rawPack in packs do
                 let pack = PackRules.namespacePack rawPack
-                let strings = pack.Content.Strings
-                if not (obj.ReferenceEquals(strings, null)) then
-                    let locale = match locale with null -> "" | value -> value
-                    if strings.ContainsKey locale then
-                        let values = strings[locale]
-                        if not (obj.ReferenceEquals(values, null)) then
-                            for KeyValue(key, value) in values do table[key] <- value
+                match pack.Content.Strings |> List.tryFind (fun (key, _) -> key = locale) with
+                | Some(_, values) -> for key, value in values do table.[key] <- value
+                | None -> ()
             if table.Count = 0 then content
             else
                 let lookup kind id field fallback =
                     match table.TryGetValue(kind + ":" + id + ":" + field) with
-                    | true, value when not (obj.ReferenceEquals(value, null)) -> value
+                    | true, value -> value
                     | _ -> fallback
-                let dialogue (d: Dialogue) =
-                    Records.withValue d "Text" (box (lookup "dialogue" d.Id "text" d.Text))
-                Records.withValues content
-                    [ "Items", box (List<Item>(content.Items |> Seq.map (fun i ->
-                          Records.withValues i [ "Name", box (lookup "item" i.Id "name" i.Name)
-                                                 "Description", box (lookup "item" i.Id "description" i.Description) ])))
-                      "Quests", box (List<Quest>(content.Quests |> Seq.map (fun q ->
-                          Records.withValues q [ "Name", box (lookup "quest" q.Id "name" q.Name)
-                                                 "Description", box (lookup "quest" q.Id "description" q.Description) ])))
-                      "Dialogues", box (List<Dialogue>(content.Dialogues |> Seq.map dialogue))
-                      "Npcs", box (List<Npc>(content.Npcs |> Seq.map (fun n ->
-                          Records.withValues n [ "Name", box (lookup "npc" n.Id "name" n.Name)
-                                                 "Dialogue", box (List<Dialogue>(orEmpty n.Dialogue |> Seq.map dialogue)) ]))) ]
+                let dialogue (d: Dialogue) = { d with Text = lookup "dialogue" d.Id "text" d.Text }
+                { content with
+                    Items =
+                        content.Items
+                        |> List.map (fun i -> { i with Name = lookup "item" i.Id "name" i.Name; Description = lookup "item" i.Id "description" i.Description })
+                    Quests =
+                        content.Quests
+                        |> List.map (fun q -> { q with Name = lookup "quest" q.Id "name" q.Name; Description = lookup "quest" q.Id "description" q.Description })
+                    Dialogues = content.Dialogues |> List.map dialogue
+                    Npcs =
+                        content.Npcs
+                        |> List.map (fun n -> { n with Name = lookup "npc" n.Id "name" n.Name; Dialogue = List.map dialogue n.Dialogue }) }
 
     let private customCrop (crop: CropDefinition) : CustomCropDefinition =
-        CustomCropDefinition(
-            Id = crop.Id, Name = crop.Name, Visual = crop.Visual,
-            SeedCost = crop.SeedCost, BaseHarvestValue = crop.BaseHarvestValue,
-            GrowthTime = crop.GrowthTime, GrowthDays = crop.GrowthDays,
-            Stages = crop.Stages, Seasons = crop.Seasons,
-            RegrowthTime = crop.RegrowthTime, RegrowthDays = crop.RegrowthDays,
-            CanRegrow = crop.CanRegrow, MultiTile = crop.MultiTile,
-            MutationChance = crop.MutationChance, YieldMin = crop.YieldMin,
-            YieldMax = crop.YieldMax, Extra = crop.Extra)
+        { Id = crop.Id; Name = crop.Name; Visual = crop.Visual
+          SeedCost = crop.SeedCost; BaseHarvestValue = crop.BaseHarvestValue
+          GrowthTime = crop.GrowthTime; GrowthDays = crop.GrowthDays
+          Stages = crop.Stages; Seasons = crop.Seasons
+          RegrowthTime = crop.RegrowthTime; RegrowthDays = crop.RegrowthDays
+          CanRegrow = crop.CanRegrow; MultiTile = crop.MultiTile
+          MutationChance = crop.MutationChance; YieldMin = crop.YieldMin
+          YieldMax = crop.YieldMax; CustomAsset = None; Extra = crop.Extra }
 
     /// Materialize a pack as editable project content. The Mods editor's ImportPack edit uses
     /// this F# transform, including the pack's optional player-start inventory and location.
@@ -198,83 +157,51 @@ module PackMerge =
         let pack = PackRules.namespacePack rawPack
         let content = pack.Content
         let problems = ResizeArray<PackProblem>()
-        let overrides = HashSet<string>(orEmpty pack.Manifest.Overrides)
-        let crops = List<CustomCropDefinition>(orEmpty project.CustomCrops)
-        let items = List<Item>(project.Items)
-        let recipes = List<RecipeDefinition>(orEmpty project.Recipes)
-        let machineTypes = List<MachineTypeDefinition>(orEmpty project.MachineTypes)
-        let nodeTypes = List<NodeTypeDefinition>(orEmpty project.NodeTypes)
-        let animalSpecies = List<AnimalSpeciesDefinition>(orEmpty project.AnimalSpecies)
-        let fishTables = List<FishTable>(orEmpty project.FishTables)
-        let weather = if obj.ReferenceEquals(project.Weather, null) then WeatherConfig() else project.Weather
-        let weatherTypes = List<WeatherTypeDefinition>(orEmpty weather.Types)
-        let npcs = List<Npc>(project.Npcs)
-        let dialogues = List<Dialogue>(project.Dialogues)
-        let scenes = List<Scene>(project.Scenes)
-        let events = List<GameEvent>(project.Events)
-        let quests = List<Quest>(project.Quests)
-        let shops = List<ShopDefinition>(orEmpty project.Shops)
-        let actions = List<ActionDef>(orEmpty project.Actions)
-        let minigames = List<MinigameDef>(orEmpty project.Minigames)
-
-        let cropDefinitions = List<CustomCropDefinition>(orEmpty content.Crops |> Seq.map customCrop)
-        mergeArray pack problems overrides "crop" (fun (d: CustomCropDefinition) -> d.Id) crops cropDefinitions
-        mergeArray pack problems overrides "item" (fun (d: Item) -> d.Id) items content.Items
-        mergeArray pack problems overrides "recipe" (fun (d: RecipeDefinition) -> d.Id) recipes content.Recipes
-        mergeArray pack problems overrides "machine type" (fun (d: MachineTypeDefinition) -> d.Id) machineTypes content.MachineTypes
-        mergeArray pack problems overrides "node type" (fun (d: NodeTypeDefinition) -> d.Id) nodeTypes content.NodeTypes
-        mergeArray pack problems overrides "animal species" (fun (d: AnimalSpeciesDefinition) -> d.Id) animalSpecies content.AnimalSpecies
-        mergeArray pack problems overrides "fish table" (fun (d: FishTable) -> d.Id) fishTables content.FishTables
-        mergeArray pack problems overrides "weather type" (fun (d: WeatherTypeDefinition) -> d.Id) weatherTypes content.WeatherTypes
-        mergeArray pack problems overrides "NPC" (fun (d: Npc) -> d.Id) npcs content.Npcs
-        mergeArray pack problems overrides "dialogue" (fun (d: Dialogue) -> d.Id) dialogues content.Dialogues
-        mergeArray pack problems overrides "scene" (fun (d: Scene) -> d.Id) scenes content.Scenes
-        mergeArray pack problems overrides "event" (fun (d: GameEvent) -> d.Id) events content.Events
-        mergeArray pack problems overrides "quest" (fun (d: Quest) -> d.Id) quests content.Quests
-        mergeArray pack problems overrides "shop" (fun (d: ShopDefinition) -> d.Id) shops content.Shops
-        mergeArray pack problems overrides "action" (fun (d: ActionDef) -> d.Id) actions content.Actions
-        mergeArray pack problems overrides "minigame" (fun (d: MinigameDef) -> d.Id) minigames content.Minigames
-
-        let updatedWeather = Records.withValue weather "Types" (box weatherTypes)
+        let overrides = HashSet<string>(pack.Manifest.Overrides)
+        let merge label idOf target definitions = mergeArray pack problems overrides label idOf target definitions
         let next =
-            Records.withValues project
-                [ "CustomCrops", box crops
-                  "Items", box items
-                  "Recipes", box recipes
-                  "MachineTypes", box machineTypes
-                  "NodeTypes", box nodeTypes
-                  "AnimalSpecies", box animalSpecies
-                  "FishTables", box fishTables
-                  "Weather", box updatedWeather
-                  "Npcs", box npcs
-                  "Dialogues", box dialogues
-                  "Scenes", box scenes
-                  "Events", box events
-                  "Quests", box quests
-                  "Shops", box shops
-                  "Actions", box actions
-                  "Minigames", box minigames ]
+            { project with
+                CustomCrops =
+                    Some(merge "crop" (fun (d: CustomCropDefinition) -> d.Id) (Option.defaultValue [] project.CustomCrops) (List.map customCrop content.Crops))
+                Items = merge "item" (fun (d: Item) -> d.Id) project.Items content.Items
+                Recipes = merge "recipe" (fun (d: RecipeDefinition) -> d.Id) project.Recipes content.Recipes
+                MachineTypes = merge "machine type" (fun (d: MachineTypeDefinition) -> d.Id) project.MachineTypes content.MachineTypes
+                NodeTypes = merge "node type" (fun (d: NodeTypeDefinition) -> d.Id) project.NodeTypes content.NodeTypes
+                AnimalSpecies = merge "animal species" (fun (d: AnimalSpeciesDefinition) -> d.Id) project.AnimalSpecies content.AnimalSpecies
+                FishTables = merge "fish table" (fun (d: FishTable) -> d.Id) project.FishTables content.FishTables
+                Weather =
+                    { project.Weather with
+                        Types = merge "weather type" (fun (d: WeatherTypeDefinition) -> d.Id) project.Weather.Types content.WeatherTypes }
+                Npcs = merge "NPC" (fun (d: Npc) -> d.Id) project.Npcs content.Npcs
+                Dialogues = merge "dialogue" (fun (d: Dialogue) -> d.Id) project.Dialogues content.Dialogues
+                Scenes = merge "scene" (fun (d: Scene) -> d.Id) project.Scenes content.Scenes
+                Events = merge "event" (fun (d: GameEvent) -> d.Id) project.Events content.Events
+                Quests = merge "quest" (fun (d: Quest) -> d.Id) project.Quests content.Quests
+                Shops = merge "shop" (fun (d: ShopDefinition) -> d.Id) project.Shops content.Shops
+                Actions = merge "action" (fun (d: ActionDef) -> d.Id) project.Actions content.Actions
+                Minigames = merge "minigame" (fun (d: MinigameDef) -> d.Id) project.Minigames content.Minigames }
 
         match content.PlayerStart with
-        | null -> next, List.ofSeq problems
-        | start ->
+        | None -> next, List.ofSeq problems
+        | Some start ->
             // JavaScript Map(entries): later duplicate ids win inventory resolution.
             let byItemId = Dictionary<string, Item>()
-            for item in next.Items do byItemId[item.Id] <- item
-            let inventory = List<InventorySlot>(next.Player.Inventory)
-            for slot in orEmpty start.Inventory do
-                match byItemId.TryGetValue slot.ItemId with
-                | true, item -> inventory.Add(InventorySlot(Item = item, Quantity = slot.Quantity))
-                | _ -> problems.Add(problem pack.Manifest.Id "error" (sprintf "playerStart references unknown item '%s'" slot.ItemId))
-            let changes : (string * objnull) list =
-                [ "Inventory", box inventory
-                  "Money", box (if start.Money.HasValue then start.Money.Value else next.Player.Money)
-                  "SceneId", box (match start.SceneId with null -> next.Player.SceneId | id -> id)
-                  "X", box (if start.X.HasValue then start.X.Value else next.Player.X)
-                  "Y", box (if start.Y.HasValue then start.Y.Value else next.Player.Y) ]
-            let player = Records.withValues next.Player changes
-            let next = Records.withValue next "Player" (box player)
+            for item in next.Items do byItemId.[item.Id] <- item
+            let added =
+                [ for slot in start.Inventory do
+                      match byItemId.TryGetValue slot.ItemId with
+                      | true, item -> yield ({ Item = item; Quantity = slot.Quantity } : InventorySlot)
+                      | _ -> problems.Add(problem pack.Manifest.Id "error" (sprintf "playerStart references unknown item '%s'" slot.ItemId)) ]
+            let player =
+                { next.Player with
+                    Inventory = next.Player.Inventory @ added
+                    Money = defaultArg start.Money next.Player.Money
+                    SceneId = defaultArg start.SceneId next.Player.SceneId
+                    X = defaultArg start.X next.Player.X
+                    Y = defaultArg start.Y next.Player.Y }
+            let next = { next with Player = player }
             let next =
-                if System.String.IsNullOrEmpty start.SceneId then next
-                else Records.withValue next "StartSceneId" (box start.SceneId)
+                match start.SceneId with
+                | Some sceneId when sceneId <> "" -> { next with StartSceneId = sceneId }
+                | _ -> next
             next, List.ofSeq problems

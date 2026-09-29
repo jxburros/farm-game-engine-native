@@ -2,8 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
-using FarmEngine.Json;
 using FarmEngine.Schemas;
+using Microsoft.FSharp.Collections;
 
 namespace FarmingRpgMaker.App.Projects;
 
@@ -123,6 +123,55 @@ public sealed class ProjectStore
         }
     }
 
+    /// <summary>
+    /// Project list "Rename" (web <c>renameProject</c>): rewrites the stored project with the new
+    /// name. Blank names are refused. Never throws.
+    /// </summary>
+    public ProjectLoadResult Rename(string id, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return ProjectLoadResult.Fail("A project needs a name.");
+        }
+
+        var loaded = Load(id);
+        if (!loaded.Ok)
+        {
+            return loaded;
+        }
+
+        var renamed = ProjectList.Rename(loaded.Project!, name);
+        return TrySave(renamed);
+    }
+
+    /// <summary>
+    /// Project list "Duplicate" (web <c>duplicateProject</c>): a copy under a fresh id, named
+    /// "Name (copy)" unless <paramref name="name"/> is given. Never throws.
+    /// </summary>
+    public ProjectLoadResult Duplicate(string id, string? name = null)
+    {
+        var loaded = Load(id);
+        if (!loaded.Ok)
+        {
+            return loaded;
+        }
+
+        return TrySave(ProjectList.Duplicate(loaded.Project!, NewId(), name));
+    }
+
+    private ProjectLoadResult TrySave(GameProject project)
+    {
+        try
+        {
+            Save(project);
+            return new ProjectLoadResult(project, []);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ProjectLoadResult.Fail($"Could not write the project file: {ex.Message}");
+        }
+    }
+
     /// <summary>A fresh unique project id (web <c>proj-&lt;base36 time&gt;</c>).</summary>
     public string NewId()
     {
@@ -138,15 +187,15 @@ public sealed class ProjectStore
     }
 
     /// <summary>Web-compatible project JSON (indented, camelCase, like the web export).</summary>
-    public static string ToJson(GameProject project) => JsonDefaults.Serialize(project, indented: true);
+    public static string ToJson(GameProject project) => ProjectLoad.toText(project);
 
     /// <summary>Parses + migrates stored project JSON. Never throws.</summary>
     public static ProjectLoadResult Parse(string json)
     {
         var result = ProjectMigrations.migrateProjectText(json);
-        return result.Ok && result.Data is not null
-            ? new ProjectLoadResult(result.Data, [], result.Migrated ? result.FromVersion : null)
-            : ProjectLoadResult.Fail(result.Errors.Count > 0 ? [.. result.Errors] : ["Invalid project data"]);
+        return result.Ok && result.Data.OrNull() is { } data
+            ? new ProjectLoadResult(data, [], result.Migrated ? result.FromVersion : null)
+            : ProjectLoadResult.Fail(result.Errors.Length > 0 ? [.. result.Errors] : ["Invalid project data"]);
     }
 
     /// <summary>
@@ -174,23 +223,23 @@ public sealed class ProjectStore
         var asProject = ProjectMigrations.migrateProject(node);
         GameProject project;
         double? migratedFrom;
-        if (asProject.Ok && asProject.Data is not null)
+        if (asProject.Ok && asProject.Data.OrNull() is { } loaded)
         {
-            project = asProject.Data;
+            project = loaded;
             migratedFrom = asProject.Migrated ? asProject.FromVersion : null;
         }
         else
         {
             var exported = ProjectMigrations.migrateExportedGame(node);
-            if (!exported.Ok || exported.Data is null)
+            if (!exported.Ok || exported.Data.OrNull() is not { } game)
             {
-                var errors = asProject.Errors.Count > 0 ? asProject.Errors : exported.Errors;
-                return ProjectLoadResult.Fail(errors.Count > 0 ? [.. errors] : ["Invalid project data"]);
+                var errors = asProject.Errors.Length > 0 ? asProject.Errors : exported.Errors;
+                return ProjectLoadResult.Fail(errors.Length > 0 ? [.. errors] : ["Invalid project data"]);
             }
 
             // { ...createBlankProject(), ...exportedGame } at the JSON level, then re-validate.
-            var merged = JsonSerializer.SerializeToNode(ProjectCatalog.CreateBlankProject(_time.GetUtcNow().ToUnixTimeMilliseconds()), JsonDefaults.Options)!.AsObject();
-            var data = JsonSerializer.SerializeToNode(exported.Data, JsonDefaults.Options)!.AsObject();
+            var merged = RecordJson.ToNode(ProjectCatalog.CreateBlankProject(_time.GetUtcNow().ToUnixTimeMilliseconds())).AsObject();
+            var data = RecordJson.ToNode(game).AsObject();
             foreach (var (key, value) in data)
             {
                 merged[key] = value?.DeepClone();
@@ -198,26 +247,17 @@ public sealed class ProjectStore
 
             merged["schemaVersion"] = ProjectSchema.CurrentProjectSchemaVersion;
             var reparsed = ProjectMigrations.migrateProject(merged);
-            if (!reparsed.Ok || reparsed.Data is null)
+            if (!reparsed.Ok || reparsed.Data.OrNull() is not { } imported)
             {
-                return ProjectLoadResult.Fail(reparsed.Errors.Count > 0 ? [.. reparsed.Errors] : ["Invalid project data"]);
+                return ProjectLoadResult.Fail(reparsed.Errors.Length > 0 ? [.. reparsed.Errors] : ["Invalid project data"]);
             }
 
-            project = reparsed.Data;
+            project = imported;
             migratedFrom = exported.Migrated ? exported.FromVersion : null;
         }
 
         var name = string.IsNullOrWhiteSpace(project.Name) ? "Imported Game" : project.Name.Trim();
-        project = project with
-        {
-            Id = NewId(),
-            Name = name,
-            Mode = "tiles",
-            SelectedTileType = "grass",
-            SelectedNpcId = null,
-            SelectedItemId = null,
-            EventFlags = [],
-        };
+        project = project.WithId(NewId()).WithName(name).WithMode("tiles").WithSelectedTileType("grass").WithSelectedNpcId(null).WithSelectedItemId(null).WithEventFlags(FSharpList<Tuple<string, bool>>.Empty);
         return new ProjectLoadResult(project, [], migratedFrom);
     }
 

@@ -17,17 +17,38 @@ pub enum Effect {
     #[serde(rename = "message")]
     Message { level: String, text: String },
     #[serde(rename = "sceneChanged")]
-    SceneChanged { scene_id: String, x: f64, y: f64 },
+    SceneChanged {
+        scene_id: String,
+        #[serde(with = "crate::units::int")]
+        x: i32,
+        #[serde(with = "crate::units::int")]
+        y: i32,
+    },
     #[serde(rename = "playerMoved")]
-    PlayerMoved { x: f64, y: f64 },
+    PlayerMoved {
+        #[serde(with = "crate::units::int")]
+        x: i32,
+        #[serde(with = "crate::units::int")]
+        y: i32,
+    },
     #[serde(rename = "sound")]
     Sound { id: String },
     #[serde(rename = "questCompleted")]
     QuestCompleted { quest_id: String },
     #[serde(rename = "cropHarvested")]
-    CropHarvested { crop_type: String, quantity: f64 },
+    CropHarvested {
+        crop_type: String,
+        #[serde(with = "crate::units::count")]
+        quantity: u32,
+    },
     #[serde(rename = "dayStarted")]
-    DayStarted { day: f64, season: String, year: f64 },
+    DayStarted {
+        #[serde(with = "crate::units::count")]
+        day: u32,
+        season: String,
+        #[serde(with = "crate::units::count")]
+        year: u32,
+    },
 }
 
 impl Effect {
@@ -61,6 +82,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&effect).unwrap(), json!({"type": "message", "level": "info", "text": "hi"}));
         let parsed: Effect =
             serde_json::from_value(json!({"type": "dayStarted", "day": 2, "season": "spring", "year": 1})).unwrap();
-        assert_eq!(parsed, Effect::DayStarted { day: 2.0, season: "spring".to_owned(), year: 1.0 });
+        assert_eq!(parsed, Effect::DayStarted { day: 2, season: "spring".to_owned(), year: 1 });
     }
 }

@@ -1,8 +1,6 @@
 namespace FarmEngine.Authoring
 
-open System
 open System.Collections.Generic
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 /// A New Project choice; the desktop host only displays these authored labels.
@@ -10,48 +8,61 @@ type ProjectTemplateInfo = { Id: string; Name: string; Description: string }
 
 /// Sample transformations from src/lib/templates.ts, with time supplied by the host.
 module SampleProjects =
-    let private list (xs: seq<'T>) = List<'T>(xs)
-
-    let cozy now =
+    let cozy now : GameProject =
         let project = StarterContent.initial now
-        let time = Records.withValue project.Settings.Time "MinutesPerRealSecond" (box 0.5)
-        let settings = Records.withValues project.Settings ["EnergyEnabled", box false; "CollapseMoneyPenalty", box 0.0; "Time", box time]
-        let inventory = project.Player.Inventory |> Seq.map (fun slot ->
-            if slot.Item.Type = "seed" then Records.withValue slot "Quantity" (box (slot.Quantity + 10.0)) else slot) |> list
-        let player = Records.withValues project.Player ["Money", box 250.0; "Inventory", box inventory]
-        Records.withValues project ["Name", box "Cozy Garden"; "Settings", box settings; "Player", box player]
+        let settings =
+            { project.Settings with
+                EnergyEnabled = false
+                CollapseMoneyPenalty = 0.0
+                Time = { project.Settings.Time with MinutesPerRealSecond = 0.5 } }
+        let inventory =
+            project.Player.Inventory
+            |> List.map (fun slot -> if slot.Item.Type = "seed" then { slot with Quantity = slot.Quantity + 10.0 } else slot)
+        { project with
+            Name = "Cozy Garden"
+            Settings = settings
+            Player = { project.Player with Money = 250.0; Inventory = inventory } }
 
-    let quest now =
+    let quest now : GameProject =
         let project = StarterContent.initial now
-        let dialogue = Dialogue(Id = "dialogue-elder-intro", NpcId = "npc-elder",
-            Text = "Our village once glowed with festival lanterns. Bring me wood and stone, and we will rebuild the square.",
-            Options = list [DialogueOption(Text = "I will help.", OfferQuestId = "quest-rebuild-square")
-                            DialogueOption(Text = "Maybe later.")])
-        let elder = Npc(Id = "npc-elder", Name = "Elder Rowan", X = 2.0, Y = 3.0, SceneId = "scene-farm",
-                        Dialogue = list [dialogue], CanMove = false, MovePattern = "stationary", Appearance = "farmer")
+        let dialogue : Dialogue =
+            { Id = "dialogue-elder-intro"; NpcId = "npc-elder"
+              Text = "Our village once glowed with festival lanterns. Bring me wood and stone, and we will rebuild the square."
+              Options =
+                [ { DialogueOption.Default with Text = "I will help."; OfferQuestId = Some "quest-rebuild-square" }
+                  { DialogueOption.Default with Text = "Maybe later." } ]
+              Extra = [] }
+        let elder : Npc =
+            { Npc.Default with
+                Id = "npc-elder"; Name = "Elder Rowan"; X = 2.0; Y = 3.0; SceneId = "scene-farm"
+                Dialogue = [ dialogue ]; CanMove = false; MovePattern = Some "stationary"; Appearance = "farmer" }
         // The reference sample writes targetQuantity as an extension field, not
         // targetItemQuantity. Preserve its JSON shape during the compatibility phase.
-        let collect id description item quantity =
-            let extra = Dictionary<string, System.Text.Json.JsonElement>()
-            extra["targetQuantity"] <- Js.Value(quantity: float)
-            QuestObjective(Id = id, Type = "collect", Description = description, TargetItemId = item,
-                           Extra = extra, Completed = false, Progress = 0.0)
-        let quests =
-            [Quest(Id = "quest-rebuild-square", Name = "Rebuild the Square",
-                   Description = "Gather 5 wood and 3 stone for Elder Rowan.", Giver = "npc-elder", Status = "not-started",
-                   Objectives = list [collect "obj-wood" "Collect 5 wood" "material-wood" 5.0
-                                      collect "obj-stone" "Collect 3 stone" "material-stone" 3.0],
-                   Rewards = QuestRewards(Money = Nullable 200.0), AutoStart = false, Repeatable = false)
-             Quest(Id = "quest-festival-feast", Name = "Festival Feast",
-                   Description = "Grow the harvest for the festival: 5 wheat.", Giver = "npc-elder", Status = "not-started",
-                   Objectives = list [QuestObjective(Id = "obj-feast-wheat", Type = "harvest", Description = "Harvest 5 wheat",
-                       TargetCropType = "wheat", TargetCropQuantity = Nullable 5.0, Completed = false, Progress = 0.0)],
-                   Rewards = QuestRewards(Money = Nullable 300.0, Items = list [QuestRewardItem(ItemId = "gift-flower", Quantity = 3.0)]),
-                   Prerequisites = list ["quest-rebuild-square"], AutoStart = true, Repeatable = false)]
-        Records.withValues project
-            ["Name", box "Quest RPG"; "Npcs", box (list (Seq.append project.Npcs [elder]))
-             "Dialogues", box (list (Seq.append project.Dialogues [dialogue]))
-             "Quests", box (list (Seq.append project.Quests quests))]
+        let collect id description item (quantity: float) : QuestObjective =
+            { QuestObjective.Default with
+                Id = id; Type = "collect"; Description = description; TargetItemId = Some item
+                Extra = [ "targetQuantity", JNumber quantity ]; Completed = false; Progress = 0.0 }
+        let quests : Quest list =
+            [ { Quest.Default with
+                  Id = "quest-rebuild-square"; Name = "Rebuild the Square"
+                  Description = "Gather 5 wood and 3 stone for Elder Rowan."; Giver = Some "npc-elder"; Status = "not-started"
+                  Objectives = [ collect "obj-wood" "Collect 5 wood" "material-wood" 5.0
+                                 collect "obj-stone" "Collect 3 stone" "material-stone" 3.0 ]
+                  Rewards = { QuestRewards.Default with Money = Some 200.0 }; AutoStart = Some false; Repeatable = Some false }
+              { Quest.Default with
+                  Id = "quest-festival-feast"; Name = "Festival Feast"
+                  Description = "Grow the harvest for the festival: 5 wheat."; Giver = Some "npc-elder"; Status = "not-started"
+                  Objectives =
+                    [ { QuestObjective.Default with
+                          Id = "obj-feast-wheat"; Type = "harvest"; Description = "Harvest 5 wheat"
+                          TargetCropType = Some "wheat"; TargetCropQuantity = Some 5.0; Completed = false; Progress = 0.0 } ]
+                  Rewards = { QuestRewards.Default with Money = Some 300.0; Items = Some [ { ItemId = "gift-flower"; Quantity = 3.0 } ] }
+                  Prerequisites = Some [ "quest-rebuild-square" ]; AutoStart = Some true; Repeatable = Some false } ]
+        { project with
+            Name = "Quest RPG"
+            Npcs = project.Npcs @ [ elder ]
+            Dialogues = project.Dialogues @ [ dialogue ]
+            Quests = project.Quests @ quests }
 
 /// Project creation boundary for C#. Time is explicit: reading the OS clock belongs to the
 /// desktop host, so sample generation and replay tests remain deterministic.
@@ -72,15 +83,14 @@ type ProjectCatalog =
     static member CreateCozyFarmProject(now: float) = SampleProjects.cozy now
     static member CreateQuestRpgProject(now: float) = SampleProjects.quest now
 
-    static member CreateProjectFromTemplate(template: string, now: float) : GameProject | null =
-        match template with "cozy" -> SampleProjects.cozy now | "quest" -> SampleProjects.quest now | _ -> null
-
     static member CreateProjectForTemplate(template: string, now: float) =
-        match ProjectCatalog.CreateProjectFromTemplate(template, now) with
-        | null -> if template = "starter" then StarterContent.initial now else StarterContent.blank now
-        | project -> project
+        match template with
+        | "cozy" -> SampleProjects.cozy now
+        | "quest" -> SampleProjects.quest now
+        | "starter" -> StarterContent.initial now
+        | _ -> StarterContent.blank now
 
-    static member CreateSampleProject(sampleId: string | null, now: float) =
+    static member CreateSampleProject(sampleId: string, now: float) =
         match sampleId with
         | "cozy" -> SampleProjects.cozy now
         | "quest" -> SampleProjects.quest now
@@ -98,4 +108,4 @@ type ProjectCatalog =
     static member CreateNewProject(template: string, name: string, id: string | null, now: float) =
         let project = ProjectCatalog.CreateProjectForTemplate(template, now)
         let id = match id with null -> ProjectCatalog.NewProjectId now | value -> value
-        Records.withValues project ["Id", box id; "Name", box name]
+        { project with Id = id; Name = name }

@@ -30,7 +30,7 @@ type TempDir() =
 let v8Project () : GameProject =
     let result = ProjectMigrations.migrateProjectText (File.ReadAllText(fixture "project-v8.json"))
     Assert.True(result.Ok, String.Join("\n", result.Errors))
-    result.Data
+    result.Data.Value
 
 let starter () = ProjectCatalog.CreateInitialProject(0.0)
 
@@ -56,6 +56,10 @@ let fakeLinuxPlayer = Text.Encoding.UTF8.GetBytes "#!/bin/sh\necho fake player\n
 let fakeTemplates (root: string) (version: string) =
     writeTemplate root ExportTarget.WindowsX64 version (File.ReadAllBytes(fixture "player-fixture.exe")) |> ignore
     writeTemplate root ExportTarget.LinuxX64 version fakeLinuxPlayer |> ignore
+    let web = writeTemplate root ExportTarget.Web version (Text.Encoding.UTF8.GetBytes "\000asm fake module")
+    File.WriteAllText(Path.Combine(web, "farm_wasm.js"), "export default async function init() {}\n")
+    File.WriteAllText(Path.Combine(web, "game.js"), "import init from './farm_wasm.js';\n")
+    File.WriteAllText(Path.Combine(web, "index.html"), "<title>{{TITLE}}</title><script type=module src=game.js></script>\n")
     root
 
 let options (templates: string) (output: string) (targets: string list) : ExportOptions =
@@ -98,14 +102,11 @@ let dataUrl (png: byte[]) = "data:image/png;base64," + Convert.ToBase64String pn
 
 let asset (id: string) (png: byte[]) : CustomAsset =
     let width, height = pngSize png
-    CustomAsset(Id = id, Name = id, Type = CustomAssetTypes.Art, Width = Nullable(float width), Height = Nullable(float height), DataUrl = dataUrl png)
+    { CustomAsset.Default with Id = id; Name = id; Type = CustomAssetTypes.Art; Width = Some(float width); Height = Some(float height); DataUrl = dataUrl png }
 
 let withAssets (assets: CustomAsset list) (project: GameProject) =
-    Records.withValue project "CustomAssets" (box (Collections.Generic.List<CustomAsset>(Seq.append project.CustomAssets assets)))
+    { project with CustomAssets = project.CustomAssets @ assets }
 
 let withExport (change: ExportSettings -> ExportSettings) (project: GameProject) =
-    let settings =
-        match project.Export with
-        | null -> Defaults.newExportSettings project
-        | s -> s
-    Records.withValue project "Export" (box (change settings))
+    let settings = project.Export |> Option.defaultWith (fun () -> Defaults.newExportSettings project)
+    { project with Export = Some(change settings) }

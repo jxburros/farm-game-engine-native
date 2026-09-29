@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using FarmingRpgMaker.App.Hosting;
+using FarmingRpgMaker.App.Localization;
 using FarmingRpgMaker.App.Services;
 using FarmingRpgMaker.App.ViewModels;
 using FarmingRpgMaker.App.Views;
@@ -32,6 +33,8 @@ public sealed class App : Application
             var service = CreateUpdateService(store.Load().Channel);
             var coordinator = new UpdateCoordinator(service, store);
             var composition = ShellComposition.CreateDefault();
+            // The editor's language: the creator's choice (Help → Language), else the system's.
+            EditorStrings.SetLanguage(EditorStrings.ResolveForSystem(composition.Workspace?.Settings.Load().EditorLanguage));
             var viewModel = new MainWindowViewModel(coordinator, composition);
             var window = new MainWindow(new ShellUrlLauncher()) { DataContext = viewModel };
             desktop.MainWindow = window;
@@ -61,6 +64,8 @@ public sealed class App : Application
             window.Opened += (_, _) => DispatcherTimer.RunOnce(
                 () => _ = RunStartupCheckAsync(coordinator),
                 StartupCheckDelay);
+            // First launch: the welcome tour (it remembers when it was dismissed).
+            window.Opened += (_, _) => Dispatcher.UIThread.Post(() => window.ShowWelcomeIfFirstRun());
         }
 
         base.OnFrameworkInitializationCompleted();

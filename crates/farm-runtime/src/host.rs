@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct CalendarView {
     pub season_name: Option<String>,
-    pub season_days: f64,
-    pub day_of_season: f64,
+    pub season_days: u32,
+    pub day_of_season: u32,
     pub time_text: String,
     pub seasons: Vec<farm_sim::schema::CalendarSeason>,
 }
@@ -26,7 +26,7 @@ pub fn calendar_view(content: &farm_sim::GameContent, state: &GameState) -> Cale
         season_name: season.map(|s| s.name.clone()),
         season_days: season.map_or(farm_sim::content_builtin::DAYS_PER_SEASON, |s| s.days),
         day_of_season: farm_sim::game_time::day_of_season(calendar, state.clock.day),
-        time_text: farm_sim::game_time::format_time_of_day(state.clock.time_minutes.floor()),
+        time_text: farm_sim::game_time::format_time_of_day(state.clock.time_minutes),
         seasons: farm_sim::game_time::calendar_seasons(calendar),
     }
 }

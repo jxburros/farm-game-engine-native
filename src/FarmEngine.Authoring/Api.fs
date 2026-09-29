@@ -40,6 +40,10 @@ type Edits =
     static member RemovePlacedItem(sceneId: string, x: int, y: int) : Edit = RemovePlacedItem(sceneId, x, y)
     static member PlaceMachine(sceneId: string, x: int, y: int, machineTypeId: string) : Edit = PlaceMachine(sceneId, x, y, machineTypeId)
     static member RemoveMachine(sceneId: string, x: int, y: int) : Edit = RemoveMachine(sceneId, x, y)
+    static member ClearTile(sceneId: string, x: int, y: int) : Edit = ClearTile(sceneId, x, y)
+    /// Eyedropper: the brush the tile at (x, y) picks up, or null outside the scene.
+    static member PickBrush(project: GameProject, sceneId: string, x: int, y: int) : Edit | null =
+        EditScenes.brushAt project sceneId x y |> Option.map SelectBrush |> Option.toObj
     static member ClearCropsAndItems(sceneId: string) : Edit = ClearCropsAndItems sceneId
     static member ResetSoil(sceneId: string) : Edit = ResetSoil sceneId
     static member FillScene(sceneId: string, tileType: string) : Edit = FillScene(sceneId, tileType)
@@ -98,6 +102,8 @@ type Edits =
     static member SetSettings(settings: ProjectSettings) : Edit = SetSettings settings
     static member SetExportSettings(settings: ExportSettings | null) : Edit = SetExportSettings(Option.ofObj settings)
     static member RemoveSeason(seasonId: string) : Edit = RemoveSeason seasonId
+    /// Season arrows: swap with the season `delta` places away (festivals and weather follow by id).
+    static member MoveSeason(seasonId: string, delta: int) : Edit = MoveSeason(seasonId, delta)
     static member SetGraphics(graphics: GraphicsSettings) : Edit = SetGraphics graphics
     static member SetPlayerVisual(visual: VisualRef | null) : Edit = SetPlayerVisual(Edits.Visual visual)
     static member BindPlayerVisual(visual: VisualRef | null) : Edit = BindVisual(PlayerVisual, Edits.Visual visual)
@@ -123,8 +129,8 @@ type Edits =
         match Array.tryFindIndex (fun id -> id = packId) ids with
         | Some index when index + delta >= 0 && index + delta < ids.Length ->
             let swapped = Array.copy ids
-            swapped[index] <- ids[index + delta]
-            swapped[index + delta] <- ids[index]
+            swapped.[index] <- ids.[index + delta]
+            swapped.[index + delta] <- ids.[index]
             ReorderPacks(List.ofArray swapped)
         | _ -> ReorderPacks(List.ofArray ids)
     static member RemovePack(packId: string) : Edit = RemovePack packId
@@ -148,6 +154,19 @@ type Documents =
     static member Redo(document: Document) : Document = Document.redo document
 
 /// `Problems` for C#: a read-only list with nullable-friendly members.
+/// Keep changes (see `Playtest`).
+[<AbstractClass; Sealed>]
+type Playtests =
+    /// The cartridge Play Mode runs (compiled even when Problems reports errors).
+    static member Cartridge(project: GameProject) : byte[] = CartridgeCompiler.CompileForPlaytest project
+
+    /// The project with a playtest's final state (the engine's `GameState` JSON text) written
+    /// back. Throws `FormatException` when the text is not a state the project can take.
+    static member ApplyState(project: GameProject, stateJson: string) : GameProject =
+        match Json.parse stateJson |> Result.bind (Playtest.applyState project) with
+        | Ok kept -> kept
+        | Error message -> raise (System.FormatException message)
+
 [<AbstractClass; Sealed>]
 type Problems =
     static member Collect(project: GameProject) : IReadOnlyList<Problem> = Problems.collect project |> Array.ofList :> IReadOnlyList<Problem>
@@ -197,6 +216,45 @@ type Defaults =
     static member NewFestival(project: GameProject, calendar: CalendarConfig) : CalendarFestival | null = Defaults.newFestival project calendar |> Option.toObj
     static member MineEnabled(project: GameProject, enabled: bool) : MineConfig = Defaults.mineEnabled project enabled
     static member NewGamePanel(project: GameProject) : GamePanel = Defaults.newGamePanel project
+
+/// The map's Place tools for C# (web App.tsx `handleTileClick` placement modes and the Place
+/// buttons of NPCEditor, NodeTypeEditor, ItemEditor and WildlifeEditor): what each tool offers
+/// and the edit a click on a tile makes. Kinds: "npc", "nodeType", "item", "machineType",
+/// "animalSpecies".
+[<AbstractClass; Sealed>]
+type MapPlacement =
+    static member private Entries(entries: seq<string * string>) : IReadOnlyList<PickerOption> =
+        entries
+        |> Seq.distinctBy fst
+        |> Seq.map (fun (id, name) -> { Id = id; Label = (if System.String.IsNullOrWhiteSpace name then id else name); Missing = false })
+        |> Array.ofSeq
+        :> IReadOnlyList<PickerOption>
+
+    /// What the Place tool of `kind` offers, in project order (node types: the built-in ones,
+    /// mine rocks included, then the project's own); empty for an unknown kind.
+    static member Choices(kind: string, project: GameProject) : IReadOnlyList<PickerOption> =
+        match kind with
+        | "npc" -> project.Npcs |> Seq.map (fun n -> n.Id, n.Name) |> MapPlacement.Entries
+        | "nodeType" -> EditScenes.placeableNodeTypes project |> Seq.map (fun n -> n.Id, n.Name) |> MapPlacement.Entries
+        | "item" -> project.Items |> Seq.map (fun i -> i.Id, i.Name) |> MapPlacement.Entries
+        | "machineType" -> project.MachineTypes |> Seq.map (fun m -> m.Id, m.Name) |> MapPlacement.Entries
+        | "animalSpecies" -> project.AnimalSpecies |> Seq.map (fun s -> s.Id, s.Name) |> MapPlacement.Entries
+        | _ -> [||] :> IReadOnlyList<PickerOption>
+
+    /// The edit a click of the Place tool of `kind` makes on (x, y): an NPC moves there, a node,
+    /// item or machine is put on the tile, a newborn animal of the species is added. Null when
+    /// `id` is not one of `Choices(kind, project)`.
+    static member Place(project: GameProject, kind: string, id: string, sceneId: string, x: int, y: int) : Edit | null =
+        let edit =
+            if not (MapPlacement.Choices(kind, project) |> Seq.exists (fun o -> o.Id = id)) then None
+            else
+                match kind with
+                | "npc" -> Some(MoveNpc(id, sceneId, x, y))
+                | "nodeType" -> Some(PlaceNode(sceneId, x, y, id))
+                | "item" -> Some(PlaceItem(sceneId, x, y, project.Items |> Seq.find (fun i -> i.Id = id)))
+                | "machineType" -> Some(PlaceMachine(sceneId, x, y, id))
+                | _ -> Some(UpsertAnimal(Defaults.newAnimal project id sceneId x y))
+        Option.toObj edit
 
 /// A form field for C#: what a property or vocabulary field holds, as strings and read-only
 /// lists instead of F# unions (docs/LANGUAGES.md "C# friendliness at the boundary").
@@ -276,7 +334,7 @@ type ContentForms =
     /// A picker's entries for `field` holding `current`: the empty entry when allowed, a
     /// "(missing: id)" entry for an unknown id, then `available` (from `Options`, or the choices).
     static member Entries(field: FormField, available: seq<PickerOption>, current: string | null) : IReadOnlyList<PickerOption> =
-        References.pickerEntries (List.ofSeq available) (Option.ofObj field.EmptyLabel) current |> ContentForms.List
+        References.pickerEntries (List.ofSeq available) (Option.ofObj field.EmptyLabel) (Option.ofObj current) |> ContentForms.List
 
     /// Chips of a reference list: each id with its label, or "(missing: id)" when unknown.
     static member ListEntries(available: seq<PickerOption>, ids: seq<string>) : IReadOnlyList<PickerOption> =
@@ -312,15 +370,13 @@ type ContentForms =
 type ExportSettingsForm =
     /// The project's export settings, or the ones export would start from.
     static member Current(project: GameProject) : ExportSettings =
-        match project.Export with
-        | null -> Defaults.newExportSettings project
-        | settings -> settings
+        defaultArg project.Export (Defaults.newExportSettings project)
 
     /// Assets that can be the icon (PNG, at least 256×256), with "(none)" first and a
     /// "(missing: id)" entry when `current` is not one of them.
     static member IconOptions(project: GameProject, current: string | null) : IReadOnlyList<PickerOption> =
         let icons = project.CustomAssets |> Seq.filter ChecksExport.suitableIcon |> Seq.map (fun a -> { Id = a.Id; Label = (if a.Name = a.Id then a.Id else sprintf "%s (%s)" a.Name a.Id); Missing = false })
-        References.pickerEntries (List.ofSeq icons) (Some "(none)") current |> Array.ofList :> IReadOnlyList<PickerOption>
+        References.pickerEntries (List.ofSeq icons) (Some "(none)") (Option.ofObj current) |> Array.ofList :> IReadOnlyList<PickerOption>
 
     static member PixelScales: IReadOnlyList<PickerOption> =
         match References.roleOf "ExportSettings" "PixelScale" with
@@ -332,6 +388,91 @@ type ExportSettingsForm =
         let sink = Sink()
         ChecksExport.run (Document.run project (SetExportSettings(Some settings))) sink
         sink.ToList() |> Array.ofList :> IReadOnlyList<Problem>
+
+/// Content list actions beyond add/save/delete (ItemEditor, CropEditor, ActionsEditor).
+[<AbstractClass; Sealed>]
+type ContentActions =
+    /// What `Edits.AddToInventory(itemId)` does to `project`, as ItemEditor's toast.
+    static member AddToInventoryMessage(project: GameProject, itemId: string) : string =
+        let name () = project.Items |> List.tryFind (fun i -> i.Id = itemId) |> Option.map (fun i -> i.Name) |> Option.defaultValue itemId
+        match fst (EditContent.inventoryAdd itemId project) with
+        | InventoryAddResult.Added -> sprintf "Added %s to inventory" (name ())
+        | InventoryAddResult.StackFull -> sprintf "%s stack is full" (name ())
+        | InventoryAddResult.InventoryFull -> "Inventory is full!"
+        | InventoryAddResult.UnknownItem -> sprintf "Save %s before adding it to the inventory." itemId
+
+/// The art studio's list actions (`ArtLibrary`).
+[<AbstractClass; Sealed>]
+type ArtLibrary =
+    /// Several imported images as one undo step; colliding ids become the next free `art-N`.
+    static member Import(project: GameProject, assets: seq<CustomAsset>) : Edit = ArtLibrary.importAssets project (List.ofSeq assets)
+    /// What "Remove unused art" would delete, for the confirmation.
+    static member Unused(project: GameProject) : IReadOnlyList<CustomAsset> = ArtLibrary.unused project |> Array.ofList :> IReadOnlyList<CustomAsset>
+    /// Every unused asset removed as one undo step.
+    static member RemoveUnused(project: GameProject) : Edit = ArtLibrary.removeUnused project
+
+/// The project list's Rename and Duplicate (web ProjectManager.tsx, projects.ts).
+[<AbstractClass; Sealed>]
+type ProjectList =
+    /// The name a duplicate gets ("Name (copy)").
+    static member CopyName(name: string) : string = Defaults.copyName name
+    /// A copy under `newId` (from `ProjectCatalog.NewProjectId`) named `name` (the copy name when blank).
+    static member Duplicate(project: GameProject, newId: string, name: string | null) : GameProject =
+        Defaults.duplicateProject project newId (match name with null -> "" | value -> value)
+    /// The project renamed (trimmed); the same instance for a blank or unchanged name.
+    static member Rename(project: GameProject, name: string) : GameProject =
+        if System.String.IsNullOrWhiteSpace name then project
+        else Document.run project (SetProjectInfo(name, project.Version))
+
+/// What `Mods.ExportPack` hands to C#: the validated pack and its file, or why there is none.
+[<Sealed>]
+type PackExportResult internal (pack: ContentPack option, errors: string list) =
+    member _.Ok = pack.IsSome
+    member _.Pack: ContentPack | null = Option.toObj pack
+    member _.Errors: IReadOnlyList<string> = errors |> Array.ofList :> IReadOnlyList<string>
+    /// The pack as indented JSON (empty when there is no pack).
+    member _.Text: string = match pack with Some p -> PackExport.toText p | None -> ""
+    /// The suggested file name (`{id}.json`).
+    member _.FileName: string = match pack with Some p -> PackExport.fileName p | None -> ""
+
+/// The Mods view's registry and "Export selection as pack" (`ModRegistry`, `PackExport`).
+[<AbstractClass; Sealed>]
+type Mods =
+    /// The curated packs that ship with the editor, validated.
+    static member Registry: IReadOnlyList<RegistryEntry> = ModRegistry.entries () |> Array.ofList :> IReadOnlyList<RegistryEntry>
+    static member IsInstalled(project: GameProject, packId: string) : bool = ModRegistry.isInstalled project packId
+    /// The exportable content types with their entries, in pack order.
+    static member ExportCategories(project: GameProject) : IReadOnlyList<PackExportCategory> =
+        PackExport.categories project |> Array.ofList :> IReadOnlyList<PackExportCategory>
+    /// The types ticked at first (web: items and recipes).
+    static member DefaultExportKeys: IReadOnlyList<string> = PackExport.defaultKeys |> Array.ofList :> IReadOnlyList<string>
+    /// The pack id a name becomes.
+    static member PackId(name: string) : string = PackExport.packId name
+    /// A validated pack of the chosen entries: content key → ids.
+    static member ExportPack(project: GameProject, name: string, selection: IReadOnlyDictionary<string, IReadOnlyList<string>>) : PackExportResult =
+        let pairs = [ for pair in selection -> pair.Key, List.ofSeq pair.Value ]
+        match PackExport.build project name pairs with
+        | Ok pack -> PackExportResult(Some pack, [])
+        | Error errors -> PackExportResult(None, errors)
+
+/// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
+[<AbstractClass; Sealed>]
+type SettingsForm =
+    /// The weight shown for one season and weather type (0 without an entry).
+    static member WeatherWeight(project: GameProject, seasonId: string, weatherId: string) : float =
+        SettingsForms.weatherWeight project seasonId weatherId
+
+    /// The weather table as one undo step: (season id, weather id, weight) per cell; only the
+    /// changed cells become edits, negative and non-finite weights read as 0 (no entry).
+    static member WeatherOdds(project: GameProject, weights: seq<struct (string * string * float)>) : Edit =
+        SettingsForms.weatherOdds project (weights |> Seq.map (fun (struct (s, w, v)) -> (s, w, v)) |> List.ofSeq)
+
+    /// The mine config from the card's fields, clamped like the web inputs.
+    static member Mine(project: GameProject, enabled: bool, entranceSceneId: string, x: float, y: float, floors: float, ladderChance: float) : MineConfig =
+        SettingsForms.mine project enabled entranceSceneId x y floors ladderChance
+
+    static member CanMoveSeason(project: GameProject, seasonId: string, delta: int) : bool =
+        SettingsForms.canMoveSeason project seasonId delta
 
 /// What `Patterns.Build` hands to C#: the edit to apply, or the message to show.
 [<Sealed>]

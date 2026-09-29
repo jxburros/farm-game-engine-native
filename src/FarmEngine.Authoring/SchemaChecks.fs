@@ -1,9 +1,6 @@
 namespace FarmEngine.Authoring
 
 open System
-open System.Collections.Generic
-open System.Text.Json
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 /// One failed schema check: zod's dotted issue path (`scenes.0.tiles.1.2.background`) and the
@@ -17,16 +14,14 @@ type SchemaIssue =
 
 /// Port of `SchemaValidation.cs` (`ValidateProject`, `LintProject`, `ValidateExportedGame`).
 ///
-/// The C# schema records don't enforce zod refinements (int, positive, min/max, enum
-/// membership, …). `projectIssues` re-checks exactly the constraints the web's zod schemas
-/// enforce on parse, so a project the web version accepts loads here too. `projectLints` adds
+/// Decoding (SchemaJson.fs) checks value kinds; it does not enforce zod refinements (int,
+/// positive, min/max, enum membership, …). `projectIssues` re-checks exactly the constraints the
+/// web's zod schemas enforce on parse, so a project the web version accepts loads here too. `projectLints` adds
 /// the structural checks zod does not have (empty ids, duplicate scene ids, tile grid vs.
 /// width/height, a dangling start scene, inverted regions and ranges): problems for the Problems
 /// panel, never reasons to refuse a file. Not exhaustive.
 ///
-/// The checks read the records exactly as the C# does (list counts and indexers, LINQ-style
-/// sequence functions where the C# uses LINQ), so a `null` where the schema has none fails with
-/// the same exception as the C# version. Saves (`ValidateGameState`) are Rust-owned and not here.
+/// Saves (`ValidateGameState`) are Rust-owned and not here.
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module SchemaChecks =
     /// Parse-level (what zod rejects) or lint-level (what the web editor lets a creator save).
@@ -40,23 +35,28 @@ module SchemaChecks =
     let private parse (path: string) (message: string) : Finding list = [ Level.Parse, { Path = path; Message = message } ]
     let private lint (path: string) (message: string) : Finding list = [ Level.Lint, { Path = path; Message = message } ]
 
-    /// `x is null` for a record or list the C# declares non-nullable (JSON `null` still gets there).
-    let private missing (value: 'T) = obj.ReferenceEquals(value, null)
+    /// The checks for every element of a list, in order.
+    let private each (list: 'T list) (check: int -> 'T -> Finding list) : Finding list =
+        list |> List.mapi check |> List.concat
 
-    /// The checks for every element of a list, in order (a `for` over `Count`, as in the C#).
-    let private each (list: List<'T>) (check: int -> 'T -> Finding list) : Finding list =
-        [ for i in 0 .. list.Count - 1 do yield! check i list[i] ]
+    let private whenSome (value: float option) (check: float -> Finding list) : Finding list =
+        match value with
+        | Some v -> check v
+        | None -> []
 
-    let private whenSome (value: Nullable<float>) (check: float -> Finding list) : Finding list =
-        if value.HasValue then check value.Value else []
+    /// `Number.isInteger`.
+    let isInteger (value: float) =
+        not (Double.IsNaN value || Double.IsInfinity value) && Math.Floor value = value
+
+    let private num (value: float) = JsNumber.format value
 
     // ── zod refinements ──────────────────────────────────────────────────────
 
     let private integer path (value: float) =
-        if Js.IsInteger value then [] else parse path $"Expected integer, received {Js.Num value}"
+        if isInteger value then [] else parse path $"Expected integer, received {num value}"
 
     let private positiveInt path (value: float) =
-        if not (Js.IsInteger value) then parse path $"Expected integer, received {Js.Num value}"
+        if not (isInteger value) then parse path $"Expected integer, received {num value}"
         elif value <= 0.0 then parse path "Number must be greater than 0"
         else []
 
@@ -68,119 +68,115 @@ module SchemaChecks =
         if not (value >= 0.0) then parse path "Number must be greater than or equal to 0" else []
 
     let private range path (value: float) (min: float) (max: float) =
-        if not (value >= min && value <= max) then parse path $"Number must be between {Js.Num min} and {Js.Num max}" else []
+        if not (value >= min && value <= max) then parse path $"Number must be between {num min} and {num max}" else []
 
     /// zod `z.string()` accepts "": an empty id is a lint problem, not a parse error.
-    let private nonEmpty path (value: string | null) =
+    let private nonEmpty path (value: string) =
         if String.IsNullOrEmpty value then lint path "Required id must be a non-empty string" else []
 
-    let private enumValue path (value: string) (allowed: IReadOnlyList<string>) =
-        if Seq.contains value allowed then []
+    let private enumValue path (value: string) (allowed: string list) =
+        if List.contains value allowed then []
         else
-            let expected = allowed |> Seq.map (fun a -> $"'{a}'") |> String.concat " | "
+            let expected = allowed |> List.map (fun a -> $"'{a}'") |> String.concat " | "
             parse path $"Invalid enum value. Expected {expected}, received '{value}'"
 
     /// A required `z.enum`.
-    let private oneOf path (value: string | null) (allowed: IReadOnlyList<string>) =
-        match value with
-        | null -> parse path "Required"
-        | value -> enumValue path value allowed
+    let private oneOf path (value: string) (allowed: string list) = enumValue path value allowed
 
     /// An `.optional()` `z.enum`.
-    let private optionalOneOf path (value: string | null) (allowed: IReadOnlyList<string>) =
+    let private optionalOneOf path (value: string option) (allowed: string list) =
         match value with
-        | null -> []
-        | value -> enumValue path value allowed
+        | None -> []
+        | Some value -> enumValue path value allowed
 
     // ── Events, actions and minigames ────────────────────────────────────────
 
-    let private region path (x: float) (y: float) (x2: Nullable<float>) (y2: Nullable<float>) =
-        [ if x2.HasValue && x2.Value < x then yield! lint (path + ".x2") "x2 must be >= x"
-          if y2.HasValue && y2.Value < y then yield! lint (path + ".y2") "y2 must be >= y" ]
+    let private region path (x: float) (y: float) (x2: float option) (y2: float option) =
+        [ match x2 with
+          | Some x2 when x2 < x -> yield! lint (path + ".x2") "x2 must be >= x"
+          | _ -> ()
+          match y2 with
+          | Some y2 when y2 < y -> yield! lint (path + ".y2") "y2 must be >= y"
+          | _ -> () ]
 
-    let private conditions (basePath: string) (list: List<EventCondition>) =
+    let private conditions (basePath: string) (list: EventCondition list) =
         each list (fun c condition ->
             let cp = $"{basePath}.conditions.{c}"
             match condition with
-            | condition when missing condition -> parse cp "Expected object, received null"
-            | :? EnterTileCondition as t -> region cp t.X t.Y t.X2 t.Y2
-            | :? InteractTileCondition as t -> region cp t.X t.Y t.X2 t.Y2
-            | :? HasItemCondition as h -> nonEmpty (cp + ".itemId") h.ItemId
-            | :? InventorySpaceCondition as s -> nonEmpty (cp + ".itemId") s.ItemId @ positiveInt (cp + ".quantity") s.Quantity
-            | :? FlagCondition as f ->
+            | EventCondition.EnterTile t -> region cp t.X t.Y t.X2 t.Y2
+            | EventCondition.InteractTile t -> region cp t.X t.Y t.X2 t.Y2
+            | EventCondition.HasItem h -> nonEmpty (cp + ".itemId") h.ItemId
+            | EventCondition.InventorySpace s -> nonEmpty (cp + ".itemId") s.ItemId @ positiveInt (cp + ".quantity") s.Quantity
+            | EventCondition.Flag f ->
                 if String.IsNullOrEmpty f.Flag then lint (cp + ".flag") "Flag name must be a non-empty string" else []
-            | :? DayRangeCondition as d ->
-                if d.MinDay.HasValue && d.MaxDay.HasValue && d.MinDay.Value > d.MaxDay.Value then lint cp "minDay is greater than maxDay" else []
-            | :? YearRangeCondition as y ->
-                if y.MinYear.HasValue && y.MaxYear.HasValue && y.MinYear.Value > y.MaxYear.Value then lint cp "minYear is greater than maxYear" else []
-            | :? TimeOfDayCondition as t -> if t.MinMinute > t.MaxMinute then lint cp "minMinute is greater than maxMinute" else []
-            | :? QuestStatusCondition as q -> nonEmpty (cp + ".questId") q.QuestId @ oneOf (cp + ".status") q.Status QuestStatuses.All
-            | :? FriendshipCondition as f -> nonEmpty (cp + ".npcId") f.NpcId
-            | :? FestivalIdCondition as f -> nonEmpty (cp + ".festivalId") f.FestivalId
-            | _ -> [])
+            | EventCondition.DayRange d ->
+                match d.MinDay, d.MaxDay with
+                | Some minDay, Some maxDay when minDay > maxDay -> lint cp "minDay is greater than maxDay"
+                | _ -> []
+            | EventCondition.YearRange y ->
+                match y.MinYear, y.MaxYear with
+                | Some minYear, Some maxYear when minYear > maxYear -> lint cp "minYear is greater than maxYear"
+                | _ -> []
+            | EventCondition.TimeOfDay t -> if t.MinMinute > t.MaxMinute then lint cp "minMinute is greater than maxMinute" else []
+            | EventCondition.QuestStatus q -> nonEmpty (cp + ".questId") q.QuestId @ oneOf (cp + ".status") q.Status QuestStatuses.All
+            | EventCondition.Friendship f -> nonEmpty (cp + ".npcId") f.NpcId
+            | EventCondition.FestivalId f -> nonEmpty (cp + ".festivalId") f.FestivalId
+            | EventCondition.Season _
+            | EventCondition.Weather _ -> [])
 
-    let private outcomes (basePath: string) (list: List<EventOutcome>) =
+    let private outcomes (basePath: string) (list: EventOutcome list) =
         each list (fun o outcome ->
             let op = $"{basePath}.outcomes.{o}"
-            if missing outcome then
-                parse op "Expected object, received null"
-            else
-                [ yield! oneOf (op + ".type") outcome.Type EventOutcomeTypes.All
-                  if outcome.Amount.HasValue && not (Double.IsFinite outcome.Amount.Value) then
-                      yield! parse (op + ".amount") "Number must be finite"
-                  yield! whenSome outcome.Radius (fun radius -> integer (op + ".radius") radius @ range (op + ".radius") radius 0.0 10.0)
-                  yield! optionalOneOf (op + ".newTileType") outcome.NewTileType TileTypes.All ])
+            [ yield! oneOf (op + ".type") outcome.Type EventOutcomeTypes.All
+              match outcome.Amount with
+              | Some amount when Double.IsNaN amount || Double.IsInfinity amount -> yield! parse (op + ".amount") "Number must be finite"
+              | _ -> ()
+              yield! whenSome outcome.Radius (fun radius -> integer (op + ".radius") radius @ range (op + ".radius") radius 0.0 10.0)
+              yield! optionalOneOf (op + ".newTileType") outcome.NewTileType TileTypes.All ])
 
     // ── Project sections, in the C# order ───────────────────────────────────
 
     let private tile (tp: string) (tile: Tile) =
-        if missing tile then
-            parse tp "Expected object, received null"
-        else
-            [ yield! oneOf (tp + ".type") tile.Type TileTypes.All
-              yield! oneOf (tp + ".background") tile.Background TileTypes.All
-              yield! optionalOneOf (tp + ".overlay") tile.Overlay TileTypes.All
-              yield! optionalOneOf (tp + ".object") tile.Object TileTypes.All
-              yield! optionalOneOf (tp + ".soilState") tile.SoilState SoilStates.All
-              match Option.ofObj tile.Crop with
-              | None -> ()
-              | Some crop ->
-                  yield! oneOf (tp + ".crop.quality") crop.Quality CropQualities.All
-                  yield! optionalOneOf (tp + ".crop.mutation") crop.Mutation CropMutations.All ]
+        [ yield! oneOf (tp + ".type") tile.Type TileTypes.All
+          yield! oneOf (tp + ".background") tile.Background TileTypes.All
+          yield! optionalOneOf (tp + ".overlay") tile.Overlay TileTypes.All
+          yield! optionalOneOf (tp + ".object") tile.Object TileTypes.All
+          yield! optionalOneOf (tp + ".soilState") tile.SoilState SoilStates.All
+          match tile.Crop with
+          | None -> ()
+          | Some crop ->
+              yield! oneOf (tp + ".crop.quality") crop.Quality CropQualities.All
+              yield! optionalOneOf (tp + ".crop.mutation") crop.Mutation CropMutations.All ]
 
-    let private scene (scenes: List<Scene>) (s: int) (scene: Scene) =
+    let private scene (scenes: Scene list) (s: int) (scene: Scene) =
         let sp = $"scenes.{s}"
         let duplicate =
-            not (String.IsNullOrEmpty scene.Id) && scenes |> Seq.take s |> Seq.exists (fun earlier -> earlier.Id = scene.Id)
-        let validWidth = Js.IsInteger scene.Width && scene.Width > 0.0
-        let validHeight = Js.IsInteger scene.Height && scene.Height > 0.0
+            not (String.IsNullOrEmpty scene.Id) && scenes |> List.take s |> List.exists (fun earlier -> earlier.Id = scene.Id)
+        let validWidth = isInteger scene.Width && scene.Width > 0.0
+        let validHeight = isInteger scene.Height && scene.Height > 0.0
         [ yield! nonEmpty (sp + ".id") scene.Id
           if duplicate then yield! lint (sp + ".id") $"Duplicate scene id '{scene.Id}'"
           yield! positiveInt (sp + ".width") scene.Width
           yield! positiveInt (sp + ".height") scene.Height
-          if validHeight && float scene.Tiles.Count <> scene.Height then
-              yield! lint (sp + ".tiles") $"Expected {Js.Num scene.Height} rows (scene height), found {scene.Tiles.Count}"
+          if validHeight && float scene.Tiles.Length <> scene.Height then
+              yield! lint (sp + ".tiles") $"Expected {num scene.Height} rows (scene height), found {scene.Tiles.Length}"
           yield!
               each scene.Tiles (fun y row ->
                   let rp = $"{sp}.tiles.{y}"
-                  if missing row then
-                      parse rp "Expected array, received null"
-                  else
-                      [ if validWidth && float row.Count <> scene.Width then
-                            yield! lint rp $"Expected {Js.Num scene.Width} tiles (scene width), found {row.Count}"
-                        yield! each row (fun x t -> tile $"{rp}.{x}" t) ])
+                  [ if validWidth && float row.Length <> scene.Width then
+                        yield! lint rp $"Expected {num scene.Width} tiles (scene width), found {row.Length}"
+                    yield! each row (fun x t -> tile $"{rp}.{x}" t) ])
           yield! each scene.Transitions (fun t transition -> nonEmpty $"{sp}.transitions.{t}.toSceneId" transition.ToSceneId) ]
 
     let private scenes (p: GameProject) =
         [ yield! each p.Scenes (scene p.Scenes)
-          let known = p.Scenes |> Seq.exists (fun s -> not (String.IsNullOrEmpty s.Id) && s.Id = p.StartSceneId)
-          if p.Scenes.Count > 0 && not known then yield! lint "startSceneId" $"No scene with id '{p.StartSceneId}'" ]
+          let known = p.Scenes |> List.exists (fun s -> not (String.IsNullOrEmpty s.Id) && s.Id = p.StartSceneId)
+          if not p.Scenes.IsEmpty && not known then yield! lint "startSceneId" $"No scene with id '{p.StartSceneId}'" ]
 
     let private player (p: GameProject) =
-        let itemId (slot: InventorySlot) : string | null = if missing slot.Item then null else slot.Item.Id
         [ yield! oneOf "player.direction" p.Player.Direction Directions.All
           yield! nonEmpty "player.sceneId" p.Player.SceneId
-          yield! each p.Player.Inventory (fun i slot -> nonEmpty $"player.inventory.{i}.item.id" (itemId slot)) ]
+          yield! each p.Player.Inventory (fun i slot -> nonEmpty $"player.inventory.{i}.item.id" slot.Item.Id) ]
 
     let private items (p: GameProject) =
         each p.Items (fun i item ->
@@ -196,13 +192,13 @@ module SchemaChecks =
             [ yield! nonEmpty (np + ".id") npc.Id
               yield! optionalOneOf (np + ".movePattern") npc.MovePattern NpcMovePatterns.All
               yield! whenSome npc.WanderRadius (positiveInt (np + ".wanderRadius"))
-              match Option.ofObj npc.PatrolPoints with
+              match npc.PatrolPoints with
               | None -> ()
               | Some points ->
                   yield!
                       each points (fun k point ->
                           integer $"{np}.patrolPoints.{k}.x" point.X @ integer $"{np}.patrolPoints.{k}.y" point.Y)
-              match Option.ofObj npc.Birthday with
+              match npc.Birthday with
               | None -> ()
               | Some birthday ->
                   yield! oneOf (np + ".birthday.season") birthday.Season PrimitivesSchema.ClassicSeasons
@@ -233,7 +229,7 @@ module SchemaChecks =
                   let ap = $"actions.{a}"
                   [ yield! nonEmpty (ap + ".id") action.Id
                     yield! nonNegative (ap + ".energyCost") action.EnergyCost
-                    match Option.ofObj action.Hotkey with
+                    match action.Hotkey with
                     | Some hotkey when hotkey.Length > 1 -> yield! parse (ap + ".hotkey") "String must contain at most 1 character(s)"
                     | _ -> ()
                     yield! conditions ap action.Conditions
@@ -247,16 +243,15 @@ module SchemaChecks =
                             range (tp + ".minScore") tier.MinScore 0.0 1.0 @ outcomes tp tier.Outcomes) ]) ]
 
     let private definitions (p: GameProject) =
-        // The C# projects the ids of all six lists before walking any of them (LINQ `Select`).
         let idLists =
-            [ "shops", p.Shops |> Seq.map (fun x -> x.Id)
-              "recipes", p.Recipes |> Seq.map (fun x -> x.Id)
-              "machineTypes", p.MachineTypes |> Seq.map (fun x -> x.Id)
-              "animalSpecies", p.AnimalSpecies |> Seq.map (fun x -> x.Id)
-              "fishTables", p.FishTables |> Seq.map (fun x -> x.Id)
-              "animals", p.Animals |> Seq.map (fun x -> x.Id) ]
+            [ "shops", p.Shops |> List.map (fun x -> x.Id)
+              "recipes", p.Recipes |> List.map (fun x -> x.Id)
+              "machineTypes", p.MachineTypes |> List.map (fun x -> x.Id)
+              "animalSpecies", p.AnimalSpecies |> List.map (fun x -> x.Id)
+              "fishTables", p.FishTables |> List.map (fun x -> x.Id)
+              "animals", p.Animals |> List.map (fun x -> x.Id) ]
         [ for name, ids in idLists do
-              for index, id in Seq.indexed ids do
+              for index, id in List.indexed ids do
                   yield! nonEmpty $"{name}.{index}.id" id
           yield!
               each p.NodeTypes (fun n node ->
@@ -265,7 +260,7 @@ module SchemaChecks =
                     yield! positiveInt (np + ".health") node.Health
                     yield! oneOf (np + ".requiredTool") node.RequiredTool ToolTypes.All
                     yield! positiveInt (np + ".requiredToolTier") node.RequiredToolTier
-                    yield! whenSome node.RespawnDays (positiveInt (np + ".respawnDays")) ])
+                    yield! whenSome (Option.flatten node.RespawnDays) (positiveInt (np + ".respawnDays")) ])
           yield!
               each p.Recipes (fun r recipe ->
                   [ yield! nonNegative $"recipes.{r}.processingMinutes" recipe.ProcessingMinutes
@@ -275,7 +270,7 @@ module SchemaChecks =
               each p.Weather.Types (fun w weather ->
                   nonEmpty $"weather.types.{w}.id" weather.Id
                   @ range $"weather.types.{w}.cropDamageChance" weather.CropDamageChance 0.0 1.0)
-          for KeyValue(season, entries) in p.Weather.Table do
+          for season, entries in p.Weather.Table do
               yield! each entries (fun k entry -> positive $"weather.table.{season}.{k}.weight" entry.Weight) ]
 
     let private settings (p: GameProject) =
@@ -311,22 +306,22 @@ module SchemaChecks =
           yield! whenSome p.MineDeepestFloor (fun deepest -> integer "mineDeepestFloor" deepest @ nonNegative "mineDeepestFloor" deepest) ]
 
     /// The `rngState` literal and tuple, from its algorithm and state words.
-    let private rngState (algorithm: string | null) (words: uint32 array | null) =
-        [ if algorithm <> "xoshiro128ss" then yield! parse "rngState.algorithm" "Invalid literal value, expected \"xoshiro128ss\""
+    let private rngState (algorithm: string option) (words: uint32 list option) =
+        [ if algorithm <> Some "xoshiro128ss" then yield! parse "rngState.algorithm" "Invalid literal value, expected \"xoshiro128ss\""
           let isTuple =
               match words with
-              | null -> false
-              | words -> words.Length = 4
+              | None -> false
+              | Some words -> words.Length = 4
           if not isTuple then yield! parse "rngState.s" "Expected a tuple of 4 integers" ]
 
     let private packsAndRng (p: GameProject) =
         [ yield!
               each p.ContentPacks (fun i install ->
-                  if PacksSchema.IsValidPackId install.Pack.Manifest.Id then []
+                  if PackRules.isValidPackId install.Pack.Manifest.Id then []
                   else parse $"contentPacks.{i}.pack.manifest.id" "pack ids must be lowercase letters, digits and dashes")
-          match Option.ofObj p.RngState with
+          match p.RngState with
           | None -> ()
-          | Some rng -> yield! rngState rng.Algorithm rng.S ]
+          | Some rng -> yield! rngState (Some rng.Algorithm) (Some rng.S) ]
 
     /// Every finding, parse- and lint-level interleaved in the C# order.
     let private findings (p: GameProject) : Finding list =
@@ -361,95 +356,84 @@ module SchemaChecks =
 
     // ── Exported games ───────────────────────────────────────────────────────
 
-    /// The checks on a `rngState` key an exported game carries as an unknown (passthrough) key.
-    /// The C# checks it because its JSON round trip turns the key into `GameProject.RngState`
-    /// (the last check, so appending keeps the order); this reads it the way that round trip does.
-    /// A value the round trip cannot deserialize (the C# throws) is skipped.
-    let private passthroughRngState (extra: Dictionary<string, JsonElement> | null) : Finding list =
-        let word (element: JsonElement) : uint32 option =
-            if element.ValueKind <> JsonValueKind.Number then None
-            else
-                match element.TryGetUInt32() with
-                | true, value -> Some value
+    /// The checks on a `rngState` key an exported game carries as an undeclared (passthrough) key:
+    /// the same checks as the project's own `rngState`, the last check, so appending keeps the
+    /// order. A value that is not an object, or whose fields have the wrong kind, is skipped (the
+    /// export keeps it as it is).
+    let private passthroughRngState (extra: (string * Json) list) : Finding list =
+        let word (value: Json) : uint32 option =
+            match value with
+            | JNumber n when n = Math.Floor n && n >= 0.0 && n <= 4294967295.0 -> Some(uint32 n)
+            | _ -> None
+        let words (items: Json list) : uint32 list option =
+            let values = items |> List.map word
+            if List.forall Option.isSome values then Some(List.choose id values) else None
+        match extra |> List.tryFind (fun (key, _) -> key = "rngState") with
+        | Some(_, (JObject _ as rng)) ->
+            let algorithm : string option option =
+                match Json.tryGet "algorithm" rng with
+                | None -> Some(Some "xoshiro128ss")
+                | Some(JString value) -> Some(Some value)
+                | Some JNull -> Some None
                 | _ -> None
-        let words (element: JsonElement) : (uint32 array | null) option =
-            let values = [ for e in element.EnumerateArray() -> word e ]
-            if List.forall Option.isSome values then Some(values |> List.choose id |> Array.ofList) else None
-        let rng =
-            match extra with
-            | null -> None
-            | extra ->
-                match extra.TryGetValue "rngState" with
-                | true, element when element.ValueKind = JsonValueKind.Object ->
-                    let algorithm : (string | null) option =
-                        match element.TryGetProperty "algorithm" with
-                        | false, _ -> Some "xoshiro128ss"
-                        | true, value when value.ValueKind = JsonValueKind.String -> Some(value.GetString())
-                        | true, value when value.ValueKind = JsonValueKind.Null -> Some null
-                        | _ -> None
-                    let s : (uint32 array | null) option =
-                        match element.TryGetProperty "s" with
-                        | false, _ -> Some(Array.zeroCreate 4)
-                        | true, value when value.ValueKind = JsonValueKind.Array -> words value
-                        | true, value when value.ValueKind = JsonValueKind.Null -> Some null
-                        | _ -> None
-                    Option.map2 (fun algorithm s -> algorithm, s) algorithm s
+            let s : uint32 list option option =
+                match Json.tryGet "s" rng with
+                | None -> Some(Some [ 0u; 0u; 0u; 0u ])
+                | Some(JArray items) -> words items |> Option.map Some
+                | Some JNull -> Some None
                 | _ -> None
-        match rng with
-        | Some(algorithm, s) -> rngState algorithm s
-        | None -> []
+            match algorithm, s with
+            | Some algorithm, Some s -> rngState algorithm s
+            | _ -> []
+        | _ -> []
 
-    /// The exported game as the project the C# validates: its own fields plus fixed editor-only
+    /// The exported game as the project it is validated as: its own fields plus fixed editor-only
     /// fields and, when it carries no player, a skeleton player (`rngState` is checked by
     /// `passthroughRngState`).
     let private asProject (game: ExportedGame) : GameProject =
-        GameProject(
-            SchemaVersion = (if game.SchemaVersion.HasValue then game.SchemaVersion.Value else 0.0),
-            Id = "exported-game",
-            Mode = EditorModes.Play,
-            SelectedTileType = TileTypes.Grass,
-            Version = game.Version,
-            Name = game.Name,
-            Scenes = game.Scenes,
-            Npcs = game.Npcs,
-            Items = game.Items,
-            Events = game.Events,
-            Dialogues = game.Dialogues,
-            Quests = game.Quests,
-            StartSceneId = game.StartSceneId,
-            CustomAssets = game.CustomAssets,
-            CustomCrops = game.CustomCrops,
-            PlayerCustomImage = game.PlayerCustomImage,
-            PlayerVisual = game.PlayerVisual,
-            Graphics = game.Graphics,
-            GamePanels = game.GamePanels,
-            CurrentSeason = game.CurrentSeason,
-            CurrentDay = game.CurrentDay,
-            CurrentTimeMinutes = game.CurrentTimeMinutes,
-            CurrentYear = game.CurrentYear,
-            GameStartTime = game.GameStartTime,
-            Shops = game.Shops,
-            NodeTypes = game.NodeTypes,
-            Settings = game.Settings,
-            Recipes = game.Recipes,
-            MachineTypes = game.MachineTypes,
-            Weather = game.Weather,
-            AnimalSpecies = game.AnimalSpecies,
-            Animals = game.Animals,
-            FishTables = game.FishTables,
-            Mine = game.Mine,
-            Actions = game.Actions,
-            Minigames = game.Minigames,
-            ContentPacks = game.ContentPacks,
-            Player =
-                (match game.Player with
-                 | null -> Player(Direction = Directions.Down, SceneId = "exported-game")
-                 | player -> player),
-            CurrentWeatherId = game.CurrentWeatherId,
-            SocialState = game.SocialState,
-            MineDeepestFloor = game.MineDeepestFloor,
-            QuarantinedItems = game.QuarantinedItems
-        )
+        { GameProject.Default with
+            SchemaVersion = defaultArg game.SchemaVersion 0.0
+            Id = "exported-game"
+            Mode = EditorModes.Play
+            SelectedTileType = TileTypes.Grass
+            Version = game.Version
+            Name = game.Name
+            Scenes = game.Scenes
+            Npcs = game.Npcs
+            Items = game.Items
+            Events = game.Events
+            Dialogues = game.Dialogues
+            Quests = game.Quests
+            StartSceneId = game.StartSceneId
+            CustomAssets = game.CustomAssets
+            CustomCrops = game.CustomCrops
+            PlayerCustomImage = game.PlayerCustomImage
+            PlayerVisual = game.PlayerVisual
+            Graphics = game.Graphics
+            GamePanels = game.GamePanels
+            CurrentSeason = game.CurrentSeason
+            CurrentDay = game.CurrentDay
+            CurrentTimeMinutes = game.CurrentTimeMinutes
+            CurrentYear = game.CurrentYear
+            GameStartTime = game.GameStartTime
+            Shops = game.Shops
+            NodeTypes = game.NodeTypes
+            Settings = game.Settings
+            Recipes = game.Recipes
+            MachineTypes = game.MachineTypes
+            Weather = game.Weather
+            AnimalSpecies = game.AnimalSpecies
+            Animals = game.Animals
+            FishTables = game.FishTables
+            Mine = game.Mine
+            Actions = game.Actions
+            Minigames = game.Minigames
+            ContentPacks = game.ContentPacks
+            Player = defaultArg game.Player { Player.Default with Direction = Directions.Down; SceneId = "exported-game" }
+            CurrentWeatherId = game.CurrentWeatherId
+            SocialState = game.SocialState
+            MineDeepestFloor = game.MineDeepestFloor
+            QuarantinedItems = game.QuarantinedItems }
 
     /// The checks of the project an exported game is validated as: `projectIssues` minus the
     /// editor-only fields (`id`, `mode`, `selectedTileType`) and, when the game carries no player,
@@ -461,20 +445,14 @@ module SchemaChecks =
             | path -> not hasPlayer && path.StartsWith("player.", StringComparison.Ordinal)
         projectIssues project |> List.filter (editorOnly >> not)
 
-    /// `projectIssues` for an `ExportedGame` (C# `SchemaValidation.ValidateExportedGame`): the
-    /// same checks minus the editor-only fields and the player when the export carries none.
-    ///
-    /// The C# builds the project with a JSON round trip, which also turns a `null` in a required
-    /// field into its default and throws on NaN or a mistyped passthrough key; this reads the
-    /// fields as they are (a `null` enum is "Required", as in `projectIssues`). On .NET,
-    /// `FarmEngine.Authoring.Net.ProjectMigrations.validateExportedGame` runs these checks on the
-    /// C# round trip and matches the C# in those cases too.
+    /// `projectIssues` for an `ExportedGame` (web `validateExportedGame`): the same checks minus
+    /// the editor-only fields and the player when the export carries none.
     let exportedGameIssues (game: ExportedGame) : SchemaIssue list =
-        exportedProjectIssues (not (isNull game.Player)) (asProject game) @ (passthroughRngState game.Extra |> at Level.Parse)
+        exportedProjectIssues game.Player.IsSome (asProject game) @ (passthroughRngState game.Extra |> at Level.Parse)
 
     let private strings (issues: SchemaIssue list) = issues |> List.map string
 
-    /// `projectIssues` as `path: message` strings (C# `SchemaValidation.ValidateProject`).
+    /// `projectIssues` as `path: message` strings .
     let validateProject (project: GameProject) : string list = projectIssues project |> strings
 
     /// `projectLints` as `path: message` strings (C# `SchemaValidation.LintProject`).

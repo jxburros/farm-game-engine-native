@@ -4,19 +4,25 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmingRpgMaker.App.Game;
 
 public enum MapTool
 {
-    Inspect, Brush, Rectangle, Fill, Select, Paste, Erase, Block, Unblock, Door, PlayerStart,
+    Inspect, Brush, Rectangle, Fill, Pick, Select, Paste, Erase, Block, Unblock, Door, PlayerStart,
+    PlaceNpc, PlaceNode, PlaceItem, PlaceMachine, PlaceAnimal, Remove,
 }
 
 /// <summary>The creator-facing map tools. All mutations go through the F# document.</summary>
 public sealed partial class EditModeView
 {
     private readonly WrapPanel _tools = new() { Name = "MapTools" };
+    private readonly WrapPanel _placeTools = new() { Name = "PlaceTools" };
+    private readonly ComboBox _placeChoice = new() { Name = "PlaceChoice", MinWidth = 200, IsEnabled = false, PlaceholderText = "Choose a Place tool" };
+    private readonly StackPanel _sceneAnimals = new() { Name = "SceneAnimals", Spacing = 6 };
+    private readonly ComboBox _newSceneTile = new() { Name = "NewSceneTile", MinWidth = 110 };
     private readonly ComboBox _layerSelector = new() { Name = "LayerSelector", MinWidth = 140 };
     private readonly TextBox _sceneName = new() { Name = "SceneName", Watermark = "Scene name" };
     private readonly TextBox _sceneWidth = new() { Name = "SceneWidth", Width = 58, Watermark = "Width" };
@@ -31,6 +37,9 @@ public sealed partial class EditModeView
     private readonly TextBox _doorY = new() { Name = "DoorY", Width = 58, Text = "0" };
     private readonly CheckBox _doorReturn = new() { Name = "DoorReturn", Content = "Return door" };
     private readonly Button _removeDoor = new() { Name = "RemoveDoorButton", Content = "Remove door" };
+    private readonly StackPanel _transitionList = new() { Name = "TransitionList", Spacing = 6 };
+    private readonly TextBlock _transitionCount = Ui.Text("", "muted", "small");
+    private readonly Button _clearTransitions = new() { Name = "ClearTransitionsButton", Content = "Clear all" };
     private readonly TextBlock _doorFrom = Ui.Wrapped("Choose Door, then click a departure tile.", "muted", "small");
     private readonly TextBlock _editorMessage = Ui.Wrapped("", "muted", "small");
     private TileLayer _selectedLayer = Edits.LayerFor(TileTypes.Grass);
@@ -43,6 +52,12 @@ public sealed partial class EditModeView
     private string? _shownSceneName;
     private string? _shownSceneWidth;
     private string? _shownSceneHeight;
+    /// <summary>The last choice of each Place tool, by placement kind.</summary>
+    private readonly Dictionary<string, string> _placeChoices = new(StringComparer.Ordinal);
+    private string? _placeKind;
+    private bool _updatingPlaceChoice;
+    private List<string> _shownTransitions = [];
+    private List<string> _shownAnimals = [];
 
     public MapTool Tool
     {
@@ -50,10 +65,11 @@ public sealed partial class EditModeView
         set
         {
             _tool = value;
-            foreach (var button in _tools.Children.OfType<ToggleButton>())
+            foreach (var button in _tools.Children.Concat(_placeTools.Children).OfType<ToggleButton>())
             {
                 button.IsChecked = Equals(button.Tag, value);
             }
+            if (_workspace.Current is { } project) RefreshPlaceChoice(project);
             _canvas.Cursor = new Avalonia.Input.Cursor(value == MapTool.Inspect ? Avalonia.Input.StandardCursorType.Arrow : Avalonia.Input.StandardCursorType.Hand);
         }
     }
@@ -70,30 +86,55 @@ public sealed partial class EditModeView
 
     public (int X0, int Y0, int X1, int Y1)? Selection => _selection;
 
+    /// <summary>What the Place tool puts down (an id from <see cref="MapPlacement.Choices"/>), or null.</summary>
+    public string? PlaceChoice
+    {
+        get => (_placeChoice.SelectedItem as ComboBoxItem)?.Tag as string;
+        set => _placeChoice.SelectedItem = _placeChoice.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, value));
+    }
+
+    /// <summary>The placement kind of a Place tool (see <see cref="MapPlacement"/>), or null.</summary>
+    private static string? PlacementKind(MapTool tool) => tool switch
+    {
+        MapTool.PlaceNpc => "npc",
+        MapTool.PlaceNode => "nodeType",
+        MapTool.PlaceItem => "item",
+        MapTool.PlaceMachine => "machineType",
+        MapTool.PlaceAnimal => "animalSpecies",
+        _ => null,
+    };
+
     private void BuildEditorPanels(StackPanel side)
     {
-        void ToolButton(MapTool tool, string label)
+        void ToolButton(MapTool tool, string label, Panel? panel = null)
         {
             var button = new ToggleButton { Name = $"Tool_{tool}", Tag = tool, Content = label, Margin = new Thickness(0, 0, 6, 6) };
             button.Classes.Add("tool");
             button.Click += (_, _) => Tool = tool;
-            _tools.Children.Add(button);
+            (panel ?? _tools).Children.Add(button);
         }
 
         ToolButton(MapTool.Inspect, "Inspect");
         ToolButton(MapTool.Brush, "Brush");
         ToolButton(MapTool.Rectangle, "Rectangle");
         ToolButton(MapTool.Fill, "Fill area");
+        ToolButton(MapTool.Pick, "Pick");
         ToolButton(MapTool.Select, "Select");
         ToolButton(MapTool.Erase, "Erase layer");
         ToolButton(MapTool.Block, "Block");
         ToolButton(MapTool.Unblock, "Unblock");
         ToolButton(MapTool.Door, "Door");
         ToolButton(MapTool.PlayerStart, "Player start");
+        ToolButton(MapTool.PlaceNpc, "NPC", _placeTools);
+        ToolButton(MapTool.PlaceNode, "Node", _placeTools);
+        ToolButton(MapTool.PlaceItem, "Item", _placeTools);
+        ToolButton(MapTool.PlaceMachine, "Machine", _placeTools);
+        ToolButton(MapTool.PlaceAnimal, "Animal", _placeTools);
+        ToolButton(MapTool.Remove, "Remove", _placeTools);
         Tool = MapTool.Inspect;
         side.Children.Add(Ui.Text("MAP TOOLS", "section"));
         side.Children.Add(_tools);
-        side.Children.Add(Ui.Wrapped("Drag with Brush, Erase, Block or Unblock. Drag a rectangle to paint or select an area.", "muted", "small"));
+        side.Children.Add(Ui.Wrapped("Drag with Brush, Erase, Block or Unblock. Drag a rectangle to paint or select an area. Pick takes a tile's type as the brush.", "muted", "small"));
 
         foreach (var (label, layer) in new[]
                  {
@@ -118,9 +159,26 @@ public sealed partial class EditModeView
         _paste.Click += (_, _) => Tool = MapTool.Paste;
         side.Children.Add(Ui.HStack(8, _copy, _paste));
 
+        side.Children.Add(Ui.Text("PLACE", "section"));
+        side.Children.Add(_placeTools);
+        _placeChoice.SelectionChanged += (_, _) =>
+        {
+            if (!_updatingPlaceChoice && _placeKind is not null && PlaceChoice is { } id) _placeChoices[_placeKind] = id;
+        };
+        side.Children.Add(_placeChoice);
+        side.Children.Add(Ui.Wrapped("Choose what to place, then click a tile. Remove clears a tile's node, item, machine, crop and animals.", "muted", "small"));
+        side.Children.Add(Ui.Text("Animals in this scene", "muted", "small"));
+        side.Children.Add(_sceneAnimals);
+
         side.Children.Add(Ui.Text("SCENE", "section"));
         side.Children.Add(_sceneName);
         side.Children.Add(Ui.HStack(8, Ui.Text("Size", "muted", "small"), _sceneWidth, Ui.Text("×"), _sceneHeight));
+        foreach (var type in TileTypes.All)
+        {
+            _newSceneTile.Items.Add(new ComboBoxItem { Content = Ui.Capitalize(type), Tag = type });
+        }
+        _newSceneTile.SelectedItem = _newSceneTile.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, TileTypes.Grass));
+        side.Children.Add(Ui.HStack(8, Ui.Text("New scene tile", "muted", "small"), _newSceneTile));
         side.Children.Add(WrapButtons(
             NamedButton("AddSceneButton", "Add", AddScene),
             NamedButton("RenameSceneButton", "Rename", RenameScene),
@@ -137,7 +195,12 @@ public sealed partial class EditModeView
             NamedButton("ClearCropsItemsButton", "Clear crops/items", () => ApplyToScene(Edits.ClearCropsAndItems)),
             NamedButton("ResetSoilButton", "Reset soil", () => ApplyToScene(Edits.ResetSoil))));
 
-        side.Children.Add(Ui.Text("TRANSITION", "section"));
+        side.Children.Add(Ui.Text("TRANSITIONS", "section"));
+        _transitionCount.Name = "TransitionCount";
+        _clearTransitions.Classes.Add("tool");
+        _clearTransitions.Click += (_, _) => ApplyToScene(Edits.ClearTransitions);
+        side.Children.Add(Ui.HStack(8, _transitionCount, _clearTransitions));
+        side.Children.Add(_transitionList);
         _doorFrom.Name = "DoorFrom";
         side.Children.Add(_doorFrom);
         side.Children.Add(Ui.HStack(8, Ui.Text("To", "muted", "small"), _doorDestination));
@@ -176,9 +239,12 @@ public sealed partial class EditModeView
         _copy.IsEnabled = _selection is not null;
         _paste.IsEnabled = _copiedTiles is not null;
         _fillScene.IsEnabled = _brush is not null;
-        _deleteScene.IsEnabled = scene is not null && project.Scenes.Count > 1 && scene.Id != project.StartSceneId;
+        _deleteScene.IsEnabled = scene is not null && project.Scenes.Length > 1 && scene.Id != project.StartSceneId;
         _startScene.IsEnabled = scene is not null && scene.Id != project.StartSceneId;
+        RefreshPlaceChoice(project);
         if (scene is null) return;
+        RefreshSceneAnimals(project, scene);
+        RefreshTransitionList(project, scene);
 
         if (_sceneControlsSceneId != scene.Id)
         {
@@ -222,12 +288,103 @@ public sealed partial class EditModeView
         }
     }
 
+    /// <summary>
+    /// Fills the Place picker with what the current Place tool offers (from F#), keeping the
+    /// creator's last choice for that tool.
+    /// </summary>
+    private void RefreshPlaceChoice(GameProject project)
+    {
+        var kind = PlacementKind(Tool);
+        IReadOnlyList<PickerOption> options = kind is null ? [] : MapPlacement.Choices(kind, project);
+        var shown = _placeChoice.Items.OfType<ComboBoxItem>().Select(item => ((string?)item.Tag, item.Content as string));
+        if (kind == _placeKind && shown.SequenceEqual(options.Select(option => ((string?)option.Id, (string?)option.Label)))) return;
+
+        _updatingPlaceChoice = true;
+        try
+        {
+            _placeKind = kind;
+            _placeChoice.Items.Clear();
+            foreach (var option in options)
+            {
+                _placeChoice.Items.Add(new ComboBoxItem { Content = option.Label, Tag = option.Id });
+            }
+            _placeChoice.IsEnabled = kind is not null;
+            _placeChoice.PlaceholderText = kind is null ? "Choose a Place tool" : options.Count == 0 ? "Nothing to place yet" : "Choose what to place";
+            PlaceChoice = kind is not null && _placeChoices.TryGetValue(kind, out var previous) ? previous : null;
+            if (PlaceChoice is null && _placeChoice.ItemCount > 0) _placeChoice.SelectedIndex = 0;
+        }
+        finally
+        {
+            _updatingPlaceChoice = false;
+        }
+    }
+
+    /// <summary>The animals placed in this scene, each with a button that removes it.</summary>
+    private void RefreshSceneAnimals(GameProject project, Scene scene)
+    {
+        var animals = project.Animals.Where(a => a.SceneId == scene.Id).ToList();
+        var labels = animals.Select(a => $"{a.Id}|{a.Name} ({Ui.Num(Math.Floor(a.X))}, {Ui.Num(Math.Floor(a.Y))})").ToList();
+        if (labels.SequenceEqual(_shownAnimals)) return;
+        _shownAnimals = labels;
+        _sceneAnimals.Children.Clear();
+        if (animals.Count == 0)
+        {
+            _sceneAnimals.Children.Add(Ui.Wrapped("None yet. Choose Animal and click a tile.", "muted", "small"));
+            return;
+        }
+        foreach (var animal in animals)
+        {
+            var id = animal.Id;
+            var remove = NamedButton($"RemoveAnimal_{id}", "Remove", () => _workspace.Apply(Edits.RemoveAnimal(id)));
+            _sceneAnimals.Children.Add(Ui.Row(Ui.Wrapped($"{animal.Name} ({Ui.Num(Math.Floor(animal.X))}, {Ui.Num(Math.Floor(animal.Y))})", "small"), remove));
+        }
+    }
+
+    /// <summary>The doors leaving this scene (web TransitionEditor list); a click edits one.</summary>
+    private void RefreshTransitionList(GameProject project, Scene scene)
+    {
+        string SceneName(string id) => project.Scenes.FirstOrDefault(s => s.Id == id)?.Name ?? $"(missing: {id})";
+        var labels = scene.Transitions
+            .Select(t => $"({Ui.Num(t.FromX)}, {Ui.Num(t.FromY)}) → {SceneName(t.ToSceneId)} ({Ui.Num(t.ToX)}, {Ui.Num(t.ToY)})")
+            .ToList();
+        _transitionCount.Text = $"{labels.Count} transition(s) from this scene";
+        _clearTransitions.IsEnabled = labels.Count > 0;
+        if (labels.SequenceEqual(_shownTransitions)) return;
+        _shownTransitions = labels;
+        _transitionList.Children.Clear();
+        for (var index = 0; index < labels.Count; index++)
+        {
+            var transition = scene.Transitions[index];
+            var (x, y) = ((int)transition.FromX, (int)transition.FromY);
+            var button = NamedButton($"Transition_{index}", labels[index], () =>
+            {
+                Tool = MapTool.Door;
+                ChooseDoor(x, y);
+            });
+            button.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            _transitionList.Children.Add(button);
+        }
+    }
+
     private bool BeginToolAt((int X, int Y) tile)
     {
         var scene = CurrentScene();
         if (scene is null) return false;
         switch (Tool)
         {
+            case MapTool.Pick:
+                PickAt(tile.X, tile.Y);
+                return true;
+            case MapTool.PlaceNpc:
+            case MapTool.PlaceNode:
+            case MapTool.PlaceItem:
+            case MapTool.PlaceMachine:
+            case MapTool.PlaceAnimal:
+                PlaceAt(tile.X, tile.Y);
+                return true;
+            case MapTool.Remove:
+                _workspace.Apply(Edits.ClearTile(scene.Id, tile.X, tile.Y));
+                return true;
             case MapTool.Brush when _brush is not null:
             case MapTool.Erase:
             case MapTool.Block:
@@ -316,7 +473,7 @@ public sealed partial class EditModeView
     {
         var scene = CurrentScene();
         if (scene is null || _selection is not { } area) return;
-        if (area.Y1 >= scene.Tiles.Count || scene.Tiles.Skip(area.Y0).Take(area.Y1 - area.Y0 + 1).Any(row => area.X1 >= row.Count))
+        if (area.Y1 >= scene.Tiles.Length || scene.Tiles.Skip(area.Y0).Take(area.Y1 - area.Y0 + 1).Any(row => area.X1 >= row.Length))
         {
             ClearSelection();
             _editorMessage.Text = "The selection no longer fits this scene; select an area again.";
@@ -338,6 +495,31 @@ public sealed partial class EditModeView
         _workspace.Apply(Edits.PasteTiles(scene.Id, x, y, _copiedTiles));
     }
 
+    /// <summary>Eyedropper: the tile's type (and that layer's art) becomes the brush.</summary>
+    public void PickAt(int x, int y)
+    {
+        var scene = CurrentScene();
+        if (_workspace.Current is not { } project || scene is null || Edits.PickBrush(project, scene.Id, x, y) is not { } pick) return;
+        _workspace.Apply(pick);
+        var picked = _workspace.Current!;
+        SetBrush(picked.SelectedTileType, picked.SelectedTileVisual.OrNull());
+        _editorMessage.Text = $"Picked {picked.SelectedTileType}.";
+    }
+
+    /// <summary>The current Place tool puts its chosen NPC, node, item, machine or animal on the tile.</summary>
+    public void PlaceAt(int x, int y)
+    {
+        var scene = CurrentScene();
+        if (_workspace.Current is not { } project || scene is null || PlacementKind(Tool) is not { } kind) return;
+        if (_placeChoice.SelectedItem is not ComboBoxItem { Tag: string id, Content: string label }
+            || MapPlacement.Place(project, kind, id, scene.Id, x, y) is not { } edit)
+        {
+            _editorMessage.Text = "Choose what to place first.";
+            return;
+        }
+        if (_workspace.Apply(edit)) _editorMessage.Text = $"Placed {label} at ({x}, {y}).";
+    }
+
     private void ApplyToScene(Func<string, Edit> createEdit)
     {
         if (CurrentScene() is { } scene) _workspace.Apply(createEdit(scene.Id));
@@ -356,7 +538,8 @@ public sealed partial class EditModeView
     private void AddScene()
     {
         if (_workspace.Current is not { } project || !SceneSize(out var width, out var height)) return;
-        var scene = Defaults.NewScene(project, _sceneName.Text ?? "", width, height);
+        var tile = (_newSceneTile.SelectedItem as ComboBoxItem)?.Tag as string ?? TileTypes.Grass;
+        var scene = Defaults.NewScene(project, _sceneName.Text ?? "", width, height, tile);
         if (_workspace.Apply(Edits.AddScene(scene))) SelectScene(scene.Id);
     }
 
@@ -436,10 +619,7 @@ public sealed partial class EditModeView
             return;
         }
         var old = scene.Transitions.FirstOrDefault(t => t.FromX == from.X && t.FromY == from.Y);
-        var transition = (old ?? new SceneTransition()) with
-        {
-            FromX = from.X, FromY = from.Y, ToSceneId = destinationId, ToX = x, ToY = y,
-        };
+        var transition = (old ?? SceneTransition.Default).WithFromX(from.X).WithFromY(from.Y).WithToSceneId(destinationId).WithToX(x).WithToY(y);
         _workspace.Apply(_doorReturn.IsChecked == true ? Edits.LinkScenes(scene.Id, transition) : Edits.SetTransition(scene.Id, transition));
         _editorMessage.Text = $"Door saved to {destination.Name} ({x}, {y}).";
     }

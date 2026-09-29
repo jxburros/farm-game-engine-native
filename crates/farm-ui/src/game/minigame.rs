@@ -100,7 +100,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             actions.push(GameAction::Minigame(MinigameInput::Release));
         }
         y += height + 6.0;
-        let hint = if ui.device() == InputDevice::Gamepad { "A" } else { "Space / Enter" };
+        let hint = if ui.device() == InputDevice::Gamepad { "A" } else { ui.tr("minigame.keys") };
         ui.label(
             Rect::new(area.x, y, area.width, ui.line_height(12.0)),
             hint,
@@ -113,7 +113,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     }
     ui.end_modal_body(y);
     if let Some(mut footer) = modal.footer {
-        let give_up = Button::new("Give up").kind(ButtonKind::Secondary);
+        let give_up = Button::new(ui.tr("minigame.giveUp")).kind(ButtonKind::Secondary);
         let width = ui.button_width(&give_up);
         let rect = footer.cut_right(width).centered(width, ui.button_height(13.0));
         if ui.button(WidgetId::new("minigame-give-up"), rect, give_up.focusable(battle)) {

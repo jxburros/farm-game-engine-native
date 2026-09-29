@@ -7,8 +7,7 @@ namespace FarmEngine.Authoring
 // Versioned, pure project migrations. Every migration is a pure `(vN) => vN+1` function over
 // raw JSON (`Json`). They never touch wall-clock time, RNG or I/O, so the same input always
 // yields the same output. This file stops at the migrated raw JSON: parsing it into the typed
-// schema and validating it happens in FarmEngine.Authoring.Net (`ProjectMigrations`), which
-// keeps this project Fable-safe.
+// schema and validating it happens in `ProjectLoad`.
 
 /// The raw half of the TS `MigrationResult<T>`: `Data` is the migrated JSON, before the typed
 /// parse and validation. `Ok` is false when the data could not be migrated at all.
@@ -19,13 +18,14 @@ type RawMigrationResult =
       Migrated: bool
       Errors: string list }
 
-/// Project migrations v1 → v8 (TS `MIGRATIONS`, `detectProjectVersion`, and the migration
-/// halves of `migrateProject` / `migrateExportedGame`).
+/// Project migrations v1 → v9 (TS `MIGRATIONS` up to v8, `detectProjectVersion`, and the
+/// migration halves of `migrateProject` / `migrateExportedGame`; v8 → v9 is docs/NUMERICS.md).
 module Migrations =
 
-    /// TS `CURRENT_PROJECT_SCHEMA_VERSION`.
+    /// The current project schema (TS `CURRENT_PROJECT_SCHEMA_VERSION` was 8; v9 is the native
+    /// numerics grid, docs/NUMERICS.md).
     [<Literal>]
-    let CurrentProjectSchemaVersion = 8.0
+    let CurrentProjectSchemaVersion = 9.0
 
     /// Default weather set every pre-v6 project receives (tunable afterwards). TS
     /// `defaultWeatherConfig`.
@@ -304,6 +304,52 @@ module Migrations =
     let migrateV7ToV8 (project: Json) : Json =
         project |> Json.withDefault "graphics" (fun () -> JObject [ "pixelArt", JBool true ])
 
+    /// `f64::round`: to the nearest integer, ties away from zero (exact for every double).
+    let roundAway (x: float) : float =
+        let t = System.Math.Truncate x
+        if abs (x - t) >= 0.5 then t + (if x < 0.0 then -1.0 else 1.0) else t
+
+    /// A number moved to the nearest multiple of `1 / scale` (other JSON stays as it is).
+    let private onGrid (scale: float) (value: Json) : Json =
+        match value with
+        | JNumber n when not (System.Double.IsNaN n || System.Double.IsInfinity n) -> JNumber(roundAway (n * scale) / scale)
+        | other -> other
+
+    let private gridMembers (grids: (string * float) list) (value: Json) : Json =
+        match value with
+        | JObject _ ->
+            grids |> List.fold (fun acc (key, scale) -> if Json.has key acc then Json.set key (onGrid scale (Json.get key acc)) acc else acc) value
+        | other -> other
+
+    let private gridEach (key: string) (grids: (string * float) list) (project: Json) : Json =
+        match Json.get key project with
+        | JArray items -> Json.set key (JArray(List.map (gridMembers grids) items)) project
+        | _ -> project
+
+    /// Positions in 1/8192 tile, energy in 1/1000 point, the time of day in 1/1000000 minute.
+    let private positionGrid = 8192.0
+
+    /// v8 → v9 (docs/NUMERICS.md): the values a project carries into play move to the integer
+    /// grid the engine keeps them on, so the editor shows what the game runs. Content
+    /// definitions keep what the creator typed (Problems warns where the engine rounds).
+    let migrateV8ToV9 (project: Json) : Json =
+        let project =
+            match Json.get "player" project with
+            | JObject _ as player ->
+                Json.set
+                    "player"
+                    (gridMembers [ "x", positionGrid; "y", positionGrid; "money", 1.0; "energy", 1000.0; "maxEnergy", 1000.0 ] player)
+                    project
+            | _ -> project
+        let project =
+            if Json.has "currentTimeMinutes" project then
+                Json.set "currentTimeMinutes" (onGrid 1_000_000.0 (Json.get "currentTimeMinutes" project)) project
+            else
+                project
+        project
+        |> gridEach "npcs" [ "x", positionGrid; "y", positionGrid ]
+        |> gridEach "animals" [ "x", positionGrid; "y", positionGrid; "mood", 1.0 ]
+
     // ── Pipeline ───────────────────────────────────────────────────────────
 
     /// Registry of migrations (TS `MIGRATIONS`): `registry.[n]` upgrades a version-n project to
@@ -316,7 +362,8 @@ module Migrations =
               4.0, migrateV4ToV5
               5.0, migrateV5ToV6
               6.0, migrateV6ToV7
-              7.0, migrateV7ToV8 ]
+              7.0, migrateV7ToV8
+              8.0, migrateV8ToV9 ]
 
     /// Detect the schema version of a raw (possibly legacy) project object.
     let detectProjectVersion (raw: Json) : float =

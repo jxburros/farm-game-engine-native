@@ -16,12 +16,13 @@ use farm_sim::Command;
 pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, actions: &mut Vec<GameAction>) {
     let colors = ui.theme().colors;
     let player = &view.state.player;
-    let subtitle = format!("{} / {} slots used", player.inventory.len(), num(player.max_inventory_size));
+    let lang = ui.lang();
+    let subtitle = lang.format("inventory.slotsUsed", &[&player.inventory.len(), &num(player.max_inventory_size)]);
     let footer_height = ui.button_height(13.0) + 20.0;
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("inventory"),
         icon: Icon::Package,
-        title: "Inventory",
+        title: lang.tr("inventory.title"),
         subtitle: Some(&subtitle),
         width: 680.0,
         max_height: 640.0,
@@ -34,7 +35,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     let area = modal.body;
     let mut y = modal.top;
     if player.inventory.is_empty() {
-        y += ui.empty_state(area, y, Icon::Package, "Your inventory is empty", "Explore the world to find items!");
+        y += ui.empty_state(area, y, Icon::Package, lang.tr("inventory.empty"), lang.tr("inventory.emptyDetail"));
     } else {
         let columns = if area.width >= 560.0 { 2 } else { 1 };
         let gap = 8.0;
@@ -49,8 +50,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             let mut inner = rect.inset_xy(10.0, 8.0);
 
             // Buttons: Use (bound action), Gift (to the faced NPC; not tools).
-            let use_button = Button::new("Use").size(12.0);
-            let gift_button = Button::new("Gift").size(12.0);
+            let use_button = Button::new(lang.tr("inventory.use")).size(12.0);
+            let gift_button = Button::new(lang.tr("inventory.gift")).size(12.0);
             let can_use = item.use_action_id.as_deref().is_some_and(|id| !id.is_empty());
             let can_gift = item.r#type != item_types::TOOL;
             let mut widths = Vec::new();
@@ -130,12 +131,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     }
     ui.end_modal_body(y);
     if let Some(footer) = modal.footer {
-        let total: f64 = player.inventory.iter().map(|slot| slot.item.value * slot.quantity).sum();
+        let total: i64 =
+            player.inventory.iter().map(|slot| slot.item.value.saturating_mul(i64::from(slot.quantity))).sum();
         let mut footer = footer;
-        let close = Button::new("Close").primary();
+        let close = Button::new(lang.tr("common.close")).primary();
         let width = ui.button_width(&close);
         let close_rect = footer.cut_right(width).centered(width, ui.button_height(13.0));
-        ui.label(footer, &format!("Total value: {}", money(total)), 13.5, FontId::Regular, colors.muted, Align::Start);
+        let text = lang.format("inventory.totalValue", &[&money(total)]);
+        ui.label(footer, &text, 13.5, FontId::Regular, colors.muted, Align::Start);
         if ui.button(WidgetId::new("inventory-close"), close_rect, close) {
             actions.push(GameAction::ClosePanel);
         }

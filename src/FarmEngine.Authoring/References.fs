@@ -90,8 +90,8 @@ type FieldRole =
     /// Named like a reference but deliberately not one: the reason says what it holds.
     | NotReference of reason: string
 
-/// A property of a C# schema record (`Owner` is the record type name, `Property` the C#
-/// property name) and what it holds.
+/// A field of a schema record (`Owner` is the record type name, `Property` the field name) and
+/// what it holds.
 type FieldDeclaration =
     { Owner: string
       Property: string
@@ -99,7 +99,7 @@ type FieldDeclaration =
 
 /// Every schema property that holds an id of another thing, and the enum-like strings the editor
 /// shows as choices. The `Id` property of a record is its own id and is never declared. A test
-/// walks the C# records reachable from `GameProject` and fails when an id-like property has no
+/// walks the records reachable from `GameProject` and fails when an id-like property has no
 /// entry here, so a new reference field cannot slip into the schema without a picker.
 module References =
     let private none = Some "(none)"
@@ -279,44 +279,38 @@ module References =
           plain "ExportSettings" "GameId" "the stable save-folder identity of the exported game"
           optional "ExportSettings" "IconAssetId" ReferenceKind.Asset
           oneOf "ExportSettings" "PixelScale" [ "integer", "Whole-number scaling (crisp)"; "fit", "Fit the window" ]
-          plain "ExportSettings" "Targets" "export target names (windows-x64, linux-x64)" ]
+          plain "ExportSettings" "Targets" "export target names (windows-x64, linux-x64, web)" ]
 
     let private byProperty =
-        let table = Dictionary<struct (string * string), FieldDeclaration>()
+        let table = Dictionary<string, FieldDeclaration>()
         for declaration in declarations do
-            table[struct (declaration.Owner, declaration.Property)] <- declaration
+            table.[declaration.Owner + "." + declaration.Property] <- declaration
         table
 
     /// What `owner.property` holds, when it is declared.
     let roleOf (owner: string) (property: string) : FieldRole option =
-        match byProperty.TryGetValue(struct (owner, property)) with
+        match byProperty.TryGetValue(owner + "." + property) with
         | true, declaration -> Some declaration.Role
         | _ -> None
 
-    let private orEmpty (items: List<'T> | null) : seq<'T> =
-        match items with
-        | null -> Seq.empty
-        | items -> items :> seq<'T>
-
-    let private label (name: string | null) (id: string) =
+    let private label (name: string option) (id: string) =
         match name with
-        | null -> id
-        | name when String.IsNullOrWhiteSpace name || name = id -> id
-        | name when String.Equals(name, id, StringComparison.OrdinalIgnoreCase) -> name
-        | name -> sprintf "%s (%s)" name id
+        | None -> id
+        | Some name when String.IsNullOrWhiteSpace name || name = id -> id
+        | Some name when name.ToLowerInvariant() = id.ToLowerInvariant() -> name
+        | Some name -> sprintf "%s (%s)" name id
 
-    let private entries (idOf: 'T -> string) (nameOf: 'T -> string | null) (items: seq<'T>) : PickerOption list =
+    let private entries (idOf: 'T -> string) (nameOf: 'T -> string option) (items: 'T list) : PickerOption list =
         let seen = HashSet<string>()
         [ for item in items do
               let id = idOf item
-              if not (obj.ReferenceEquals(id, null)) && seen.Add id then
+              if seen.Add id then
                   { Id = id; Label = label (nameOf item) id; Missing = false } ]
 
-    let private shorten (text: string | null) =
-        match text with
-        | null -> ""
-        | text when text.Length > 40 -> text.Substring(0, 39) + "…"
-        | text -> text
+    let private named (name: string) = Some name
+
+    let private shorten (text: string) =
+        if text.Length > 40 then text.Substring(0, 39) + "…" else text
 
     /// The ids a picker of `kind` offers, in project order. Items, crops, node types, weather and
     /// the calendar come from the content compiler, so the list holds exactly what the game
@@ -324,44 +318,44 @@ module References =
     /// offered: packs stay separate layers until they are imported.
     let options (kind: ReferenceKind) (project: GameProject) : PickerOption list =
         match kind with
-        | ReferenceKind.Item -> ContentCompiler.items project |> entries (fun i -> i.Id) (fun i -> i.Name)
-        | ReferenceKind.Npc -> orEmpty project.Npcs |> entries (fun n -> n.Id) (fun n -> n.Name)
-        | ReferenceKind.Scene -> orEmpty project.Scenes |> entries (fun s -> s.Id) (fun s -> s.Name)
-        | ReferenceKind.Quest -> orEmpty project.Quests |> entries (fun q -> q.Id) (fun q -> q.Name)
+        | ReferenceKind.Item -> ContentCompiler.items project |> entries (fun i -> i.Id) (fun i -> named i.Name)
+        | ReferenceKind.Npc -> project.Npcs |> entries (fun n -> n.Id) (fun n -> named n.Name)
+        | ReferenceKind.Scene -> project.Scenes |> entries (fun s -> s.Id) (fun s -> named s.Name)
+        | ReferenceKind.Quest -> project.Quests |> entries (fun q -> q.Id) (fun q -> named q.Name)
         | ReferenceKind.Dialogue ->
             let names = Dictionary<string, string>()
-            for npc in orEmpty project.Npcs do
-                names[npc.Id] <- npc.Name
+            for npc in project.Npcs do
+                names.[npc.Id] <- npc.Name
             let owner (d: Dialogue) =
                 match names.TryGetValue d.NpcId with
                 | true, name -> name
                 | _ -> d.NpcId
-            Seq.append (orEmpty project.Npcs |> Seq.collect (fun n -> orEmpty n.Dialogue)) (orEmpty project.Dialogues)
-            |> entries (fun d -> d.Id) (fun d -> sprintf "%s: %s" (owner d) (shorten d.Text))
-        | ReferenceKind.Shop -> orEmpty project.Shops |> entries (fun s -> s.Id) (fun s -> s.Name)
-        | ReferenceKind.Recipe -> orEmpty project.Recipes |> entries (fun r -> r.Id) (fun r -> r.Name)
-        | ReferenceKind.Crop -> (ContentCompiler.mergeCrops project.CustomCrops).Values |> entries (fun c -> c.Id) (fun c -> c.Name)
-        | ReferenceKind.NodeType -> ContentCompiler.nodeTypes project |> entries (fun n -> n.Id) (fun n -> n.Name)
-        | ReferenceKind.MachineType -> orEmpty project.MachineTypes |> entries (fun m -> m.Id) (fun m -> m.Name)
-        | ReferenceKind.AnimalSpecies -> orEmpty project.AnimalSpecies |> entries (fun s -> s.Id) (fun s -> s.Name)
-        | ReferenceKind.Animal -> orEmpty project.Animals |> entries (fun a -> a.Id) (fun a -> a.Name)
-        | ReferenceKind.FishTable -> orEmpty project.FishTables |> entries (fun f -> f.Id) (fun f -> f.Name)
-        | ReferenceKind.Action -> orEmpty project.Actions |> entries (fun a -> a.Id) (fun a -> a.Name)
-        | ReferenceKind.Minigame -> orEmpty project.Minigames |> entries (fun m -> m.Id) (fun m -> m.Name)
-        | ReferenceKind.Event -> orEmpty project.Events |> entries (fun e -> e.Id) (fun e -> e.Name)
-        | ReferenceKind.Weather -> (ContentCompiler.weather project).Types |> entries (fun w -> w.Id) (fun w -> w.Name)
-        | ReferenceKind.Season -> (ContentCompiler.settings project).Calendar.Seasons |> entries (fun s -> s.Id) (fun s -> s.Name)
-        | ReferenceKind.Festival -> (ContentCompiler.settings project).Calendar.Festivals |> entries (fun f -> f.Id) (fun f -> f.Name)
-        | ReferenceKind.Skill -> SaveSchema.SkillNames |> entries id (fun _ -> (null: string | null))
-        | ReferenceKind.Asset -> orEmpty project.CustomAssets |> entries (fun a -> a.Id) (fun a -> a.Name)
-        | ReferenceKind.Pack -> orEmpty project.ContentPacks |> entries (fun p -> p.Pack.Manifest.Id) (fun p -> p.Pack.Manifest.Name)
+            (project.Npcs |> List.collect (fun n -> n.Dialogue)) @ project.Dialogues
+            |> entries (fun d -> d.Id) (fun d -> named (sprintf "%s: %s" (owner d) (shorten d.Text)))
+        | ReferenceKind.Shop -> project.Shops |> entries (fun s -> s.Id) (fun s -> named s.Name)
+        | ReferenceKind.Recipe -> project.Recipes |> entries (fun r -> r.Id) (fun r -> named r.Name)
+        | ReferenceKind.Crop -> ContentCompiler.mergeCrops project.CustomCrops |> List.map snd |> entries (fun c -> c.Id) (fun c -> named c.Name)
+        | ReferenceKind.NodeType -> ContentCompiler.nodeTypes project |> entries (fun n -> n.Id) (fun n -> named n.Name)
+        | ReferenceKind.MachineType -> project.MachineTypes |> entries (fun m -> m.Id) (fun m -> named m.Name)
+        | ReferenceKind.AnimalSpecies -> project.AnimalSpecies |> entries (fun s -> s.Id) (fun s -> named s.Name)
+        | ReferenceKind.Animal -> project.Animals |> entries (fun a -> a.Id) (fun a -> named a.Name)
+        | ReferenceKind.FishTable -> project.FishTables |> entries (fun f -> f.Id) (fun f -> named f.Name)
+        | ReferenceKind.Action -> project.Actions |> entries (fun a -> a.Id) (fun a -> named a.Name)
+        | ReferenceKind.Minigame -> project.Minigames |> entries (fun m -> m.Id) (fun m -> named m.Name)
+        | ReferenceKind.Event -> project.Events |> entries (fun e -> e.Id) (fun e -> named e.Name)
+        | ReferenceKind.Weather -> (ContentCompiler.weather project).Types |> entries (fun w -> w.Id) (fun w -> named w.Name)
+        | ReferenceKind.Season -> (ContentCompiler.settings project).Calendar.Seasons |> entries (fun s -> s.Id) (fun s -> named s.Name)
+        | ReferenceKind.Festival -> (ContentCompiler.settings project).Calendar.Festivals |> entries (fun f -> f.Id) (fun f -> named f.Name)
+        | ReferenceKind.Skill -> SaveSchema.SkillNames |> entries id (fun _ -> None)
+        | ReferenceKind.Asset -> project.CustomAssets |> entries (fun a -> a.Id) (fun a -> named a.Name)
+        | ReferenceKind.Pack -> project.ContentPacks |> entries (fun p -> p.Pack.Manifest.Id) (fun p -> named p.Pack.Manifest.Name)
         | ReferenceKind.StationCategory ->
-            orEmpty project.MachineTypes |> Seq.collect (fun m -> orEmpty m.StationCategories) |> entries id (fun _ -> (null: string | null))
+            project.MachineTypes |> List.collect (fun m -> m.StationCategories) |> entries id (fun _ -> None)
 
     /// A picker's entries: the "nothing chosen" entry when `empty` allows it, a "(missing: id)"
     /// entry when `current` names something that is not among `available`, then `available`.
-    let pickerEntries (available: PickerOption list) (empty: string option) (current: string | null) : PickerOption list =
-        let currentId = match current with null -> "" | s -> s
+    let pickerEntries (available: PickerOption list) (empty: string option) (current: string option) : PickerOption list =
+        let currentId = defaultArg current ""
         let known = currentId.Length = 0 || available |> List.exists (fun o -> o.Id = currentId)
         [ match empty with
           | Some text -> { Id = ""; Label = text; Missing = false }
@@ -370,7 +364,7 @@ module References =
           yield! available ]
 
     /// Picker entries for a reference of `kind` holding `current`.
-    let picker (kind: ReferenceKind) (empty: string option) (project: GameProject) (current: string | null) =
+    let picker (kind: ReferenceKind) (empty: string option) (project: GameProject) (current: string option) =
         pickerEntries (options kind project) empty current
 
     /// Choice entries as picker options (value, label).

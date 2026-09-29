@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using SkiaSharp;
 using Svg.Skia;
@@ -39,15 +40,7 @@ internal static partial class ArtImport
         var (png, width, height) = extension == ".svg" ? RasterizeSvg(bytes, svgSide) : Reencode(bytes);
         if (png.Length > MaxBytes) throw new ArgumentException("The converted image exceeds 16 MB.", nameof(bytes));
         var id = Defaults.NextId("art", project.CustomAssets.Select(asset => asset.Id));
-        return new CustomAsset
-        {
-            Id = id,
-            Name = fileName,
-            Type = CustomAssetTypes.Art,
-            DataUrl = "data:image/png;base64," + Convert.ToBase64String(png),
-            Width = width,
-            Height = height,
-        };
+        return CustomAsset.Default.WithId(id).WithName(fileName).WithType(CustomAssetTypes.Art).WithDataUrl("data:image/png;base64," + Convert.ToBase64String(png)).WithWidth(width).WithHeight(height);
     }
 
     private static (byte[] Png, int Width, int Height) Reencode(byte[] bytes)

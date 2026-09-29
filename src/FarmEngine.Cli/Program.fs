@@ -10,7 +10,7 @@ open FarmEngine.Schemas
 let private usage () =
     eprintfn "Usage:"
     eprintfn "  farmc compile <project.json> --out <game.cart>"
-    eprintfn "  farmc export <project.json> [--target windows-x64|linux-x64]... --out <dir> [--templates <dir>] [--no-archive]"
+    eprintfn "  farmc export <project.json> [--target windows-x64|linux-x64|web]... --out <dir> [--templates <dir>] [--no-archive]"
     eprintfn ""
     eprintfn "export does what Export Game does in the editor (docs/EXPORT.md). Without --target it"
     eprintfn "exports the project's saved targets. Templates come from --templates, then the"
@@ -23,8 +23,8 @@ let private load (projectPath: string) : Result<GameProject, string list> =
     if not migrated.Ok then Error(List.ofSeq migrated.Errors)
     else
         match migrated.Data with
-        | null -> Error [ "Migration succeeded without project data." ]
-        | project -> Ok project
+        | None -> Error [ "Migration succeeded without project data." ]
+        | Some project -> Ok project
 
 type private ExportArgs =
     { Project: string option

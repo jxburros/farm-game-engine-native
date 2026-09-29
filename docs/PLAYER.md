@@ -96,7 +96,11 @@ default, so a partial or older file loads; an unreadable file is ignored.
   synthesized farm-runtime presets; there is no music content yet.
 - **Controls:** keyboard bindings and the gamepad layout.
 - **Accessibility:** text size (90–140 %), reduced motion (no floating pops,
-  fades or flashes).
+  fades or flashes), a readable font (Atkinson Hyperlegible, SIL OFL 1.1, for
+  the interface; text drawn in the world stays in Inter) and the language
+  (English or Spanish). Until the player picks a language the game follows
+  the system's, then the game's `settings.locale`, then English; in the
+  editor's Play Mode the editor's language comes first.
 
 The first run takes fullscreen and integer scaling from the cartridge's
 `GameInfo` (`window.fullscreen`, `pixelScale`).
@@ -190,13 +194,20 @@ thread so the player can move between threads).
 Play Mode embeds an `Embedded` player through `fe_player_*`
 (`crates/farm-ffi/src/player.rs`, `RustPlayer` in `FarmEngine.Interop`):
 
-- `fe_player_new` takes the project JSON (or a cartridge) and
-  `{seed, reducedMotion, uiScale, audio}`.
+- `fe_player_new` takes a cartridge (or project JSON) and
+  `{seed, reducedMotion, uiScale, audio, locale}`. Play Mode passes the
+  cartridge the F# compiler makes for the playtest
+  (`CartridgeCompiler.CompileForPlaytest`: the export bytes, even while
+  Problems still lists errors), so a playtest runs what Export Game ships;
+  `locale` is the editor's language, which the game interface follows until
+  the player picks one in Settings.
 - `fe_player_frame` takes `{dt, events, width, height, render}` and returns
   the frame size, a small JSON block (sounds, requests, screen, whether a
   panel or modal is open) and the premultiplied RGBA pixels.
 - `fe_player_debug` runs the debug drawer's actions (`DebugAction`),
-  `fe_player_synced_project` is "keep changes", and `fe_player_query_json`
+  `fe_player_state_json` feeds "keep changes" (F# `Playtest.applyState`
+  writes the state back into the project; `fe_player_synced_project` does the
+  same in Rust for a player started from project JSON), and `fe_player_query_json`
   answers the drawer's summary, widget rectangles, toasts and plugin errors
   (the last three for tests).
 - An engine failure or panic poisons the handle: every later call fails, and

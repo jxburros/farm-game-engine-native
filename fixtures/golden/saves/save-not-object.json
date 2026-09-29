@@ -2,13 +2,10 @@
   "input": "nope",
   "result": {
     "ok": false,
-    "data": null,
-    "fromVersion": 0,
+    "fromVersion": 0.0,
     "migrated": false,
     "errors": [
       "Save state is not an object"
     ]
-  },
-  "stable": null,
-  "hash": null
+  }
 }

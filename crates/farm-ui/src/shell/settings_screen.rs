@@ -1,12 +1,14 @@
-//! The settings screen: Display, Audio, Controls and Accessibility tabs. It edits [`Settings`] in
+//! The settings screen: Display, Audio, Controls and Accessibility (with the language and the
+//! readable font) tabs. It edits [`Settings`] in
 //! place and reports [`ShellAction::SettingsChanged`]; the player applies and stores them.
 //! Rebinding captures the next raw key press (Escape cancels).
 
 use super::ShellAction;
+use crate::i18n::Lang;
 use crate::icons::Icon;
 use crate::input::GamepadButton;
 use crate::layout::{Align, RectExt};
-use crate::settings::{key_label, nearest_option, BindAction, Bindings, Settings, TEXT_SIZES, UI_SCALES};
+use crate::settings::{key_label_in, nearest_option, BindAction, Bindings, Settings, TEXT_SIZES, UI_SCALES};
 use crate::ui::{Ui, WidgetId};
 use crate::widgets::{Button, ButtonKind, ModalSpec};
 use farm_render::{FontId, Rect};
@@ -24,13 +26,24 @@ impl SettingsTab {
     pub const ALL: [SettingsTab; 4] =
         [SettingsTab::Display, SettingsTab::Audio, SettingsTab::Controls, SettingsTab::Accessibility];
 
-    pub fn label(self) -> &'static str {
+    /// The tab's stable name (widget ids, tests).
+    pub fn name(self) -> &'static str {
         match self {
             SettingsTab::Display => "Display",
             SettingsTab::Audio => "Audio",
             SettingsTab::Controls => "Controls",
             SettingsTab::Accessibility => "Accessibility",
         }
+    }
+
+    /// The tab's title in `lang`.
+    pub fn label(self, lang: Lang) -> &'static str {
+        lang.tr(match self {
+            SettingsTab::Display => "settings.tabDisplay",
+            SettingsTab::Audio => "settings.tabAudio",
+            SettingsTab::Controls => "settings.tabControls",
+            SettingsTab::Accessibility => "settings.tabAccessibility",
+        })
     }
 }
 
@@ -42,21 +55,22 @@ pub struct SettingsScreen {
     pub capture: Option<BindAction>,
 }
 
-fn keys_text(bindings: &Bindings, action: BindAction) -> String {
+fn keys_text(bindings: &Bindings, action: BindAction, lang: Lang) -> String {
     let keys = bindings.keys(action);
     if keys.is_empty() {
-        "Not bound".to_owned()
+        lang.tr("settings.notBound").to_owned()
     } else {
-        keys.iter().map(|key| key_label(key)).collect::<Vec<_>>().join(" / ")
+        keys.iter().map(|key| key_label_in(key, lang)).collect::<Vec<_>>().join(" / ")
     }
 }
 
+/// The fixed gamepad buttons and what they do (i18n keys).
 const GAMEPAD_LAYOUT: [(GamepadButton, &str); 5] = [
-    (GamepadButton::DpadUp, "Move (or the left stick)"),
-    (GamepadButton::South, "Interact, confirm"),
-    (GamepadButton::East, "Close, back"),
-    (GamepadButton::LeftShoulder, "Previous tab in menus"),
-    (GamepadButton::RightShoulder, "Next tab in menus"),
+    (GamepadButton::DpadUp, "settings.padMove"),
+    (GamepadButton::South, "settings.padInteract"),
+    (GamepadButton::East, "settings.padBack"),
+    (GamepadButton::LeftShoulder, "settings.padPreviousTab"),
+    (GamepadButton::RightShoulder, "settings.padNextTab"),
 ];
 
 /// Draws the settings; `embedded` hides the display options the editor controls itself.
@@ -67,6 +81,7 @@ pub fn settings(
     embedded: bool,
 ) -> Option<ShellAction> {
     let colors = ui.theme().colors;
+    let lang = ui.lang();
     let tabs: Vec<SettingsTab> =
         SettingsTab::ALL.iter().copied().filter(|tab| !(embedded && *tab == SettingsTab::Display)).collect();
     if !tabs.contains(&screen.tab) {
@@ -94,8 +109,8 @@ pub fn settings(
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("settings"),
         icon: Icon::Gear,
-        title: "Settings",
-        subtitle: Some("Saved automatically"),
+        title: lang.tr("settings.title"),
+        subtitle: Some(lang.tr("settings.subtitle")),
         width: 660.0,
         max_height: 660.0,
         footer,
@@ -111,9 +126,9 @@ pub fn settings(
     let tab_height = ui.button_height(13.0);
     let mut x = area.x;
     for tab in &tabs {
-        let button = Button::new(tab.label()).kind(ButtonKind::Tab { selected: *tab == screen.tab });
+        let button = Button::new(tab.label(lang)).kind(ButtonKind::Tab { selected: *tab == screen.tab });
         let width = ui.button_width(&button).max(84.0);
-        if ui.button(WidgetId::new("settings-tab").with(tab.label()), Rect::new(x, y, width, tab_height), button) {
+        if ui.button(WidgetId::new("settings-tab").with(tab.name()), Rect::new(x, y, width, tab_height), button) {
             screen.tab = *tab;
             screen.capture = None;
         }
@@ -127,14 +142,15 @@ pub fn settings(
     match screen.tab {
         SettingsTab::Display => {
             let display = &mut settings.display;
+            let label = lang.tr("settings.fullscreen");
             if let Some(value) =
-                ui.toggle(id("fullscreen"), Rect::new(area.x, y, area.width, row), "Fullscreen", display.fullscreen)
+                ui.toggle(id("fullscreen"), Rect::new(area.x, y, area.width, row), label, display.fullscreen)
             {
                 display.fullscreen = value;
                 changed = true;
             }
             y += row + 4.0;
-            let label = "Integer scaling (sharpest pixels)";
+            let label = lang.tr("settings.integerScaling");
             if let Some(value) =
                 ui.toggle(id("integer"), Rect::new(area.x, y, area.width, row), label, display.integer_scaling)
             {
@@ -144,14 +160,14 @@ pub fn settings(
             y += row + 4.0;
             let names: Vec<&str> = UI_SCALES.iter().map(|(name, _)| *name).collect();
             let index = nearest_option(&UI_SCALES, display.ui_scale);
-            if let Some(next) =
-                ui.stepper(id("ui-scale"), Rect::new(area.x, y, area.width, row), "Interface size", &names, index)
+            let label = lang.tr("settings.interfaceSize");
+            if let Some(next) = ui.stepper(id("ui-scale"), Rect::new(area.x, y, area.width, row), label, &names, index)
             {
                 display.ui_scale = UI_SCALES[next].1;
                 changed = true;
             }
             y += row + 4.0;
-            let hint = "Fullscreen also toggles with F11 or Alt+Enter.";
+            let hint = lang.tr("settings.fullscreenHint");
             ui.label(
                 Rect::new(area.x + 10.0, y, area.width - 20.0, ui.line_height(12.5)),
                 hint,
@@ -165,9 +181,9 @@ pub fn settings(
         SettingsTab::Audio => {
             let audio = &mut settings.audio;
             for (name, label, value) in [
-                ("master", "Master volume", &mut audio.master),
-                ("music", "Music", &mut audio.music),
-                ("effects", "Sound effects", &mut audio.effects),
+                ("master", lang.tr("settings.masterVolume"), &mut audio.master),
+                ("music", lang.tr("settings.music"), &mut audio.music),
+                ("effects", lang.tr("settings.effects"), &mut audio.effects),
             ] {
                 if let Some(next) = ui.slider(id(name), Rect::new(area.x, y, area.width, row), label, *value, 0.1) {
                     *value = next;
@@ -175,36 +191,37 @@ pub fn settings(
                 }
                 y += row + 4.0;
             }
-            if let Some(value) = ui.toggle(id("mute"), Rect::new(area.x, y, area.width, row), "Mute", audio.muted) {
+            let label = lang.tr("settings.mute");
+            if let Some(value) = ui.toggle(id("mute"), Rect::new(area.x, y, area.width, row), label, audio.muted) {
                 audio.muted = value;
                 changed = true;
             }
             y += row + 4.0;
         }
         SettingsTab::Controls => {
-            y += ui.section(area, y, "Keyboard", None);
+            y += ui.section(area, y, lang.tr("settings.keyboard"), None);
             let key_row = ui.button_height(13.0) + 8.0;
             for bind in BindAction::ALL {
                 let rect = Rect::new(area.x, y, area.width, key_row);
                 let mut inner = rect.inset_xy(10.0, 0.0);
                 let capturing = screen.capture == Some(bind);
                 let text = if capturing {
-                    "Press a key\u{2026} (Esc cancels)".to_owned()
+                    lang.tr("settings.pressKey").to_owned()
                 } else {
-                    keys_text(&settings.controls, bind)
+                    keys_text(&settings.controls, bind, lang)
                 };
                 let button =
                     Button::new(&text).kind(if capturing { ButtonKind::Primary } else { ButtonKind::Secondary });
                 let width = ui.button_width(&button).clamp(150.0, inner.width * 0.55);
                 let button_rect = inner.cut_right(width).centered(width, ui.button_height(13.0));
-                ui.label(inner, bind.label(), 14.0, FontId::Regular, colors.text, Align::Start);
+                ui.label(inner, bind.label(lang), 14.0, FontId::Regular, colors.text, Align::Start);
                 if ui.button(WidgetId::new("rebind").with(bind.canonical_key()), button_rect, button) && !capturing {
                     screen.capture = Some(bind);
                     action = Some(ShellAction::StartCapture(bind));
                 }
                 y += key_row;
             }
-            let reset = Button::new("Reset to defaults");
+            let reset = Button::new(lang.tr("settings.resetControls"));
             let width = ui.button_width(&reset);
             y += 6.0;
             if ui.button(
@@ -217,10 +234,12 @@ pub fn settings(
                 changed = true;
             }
             y += ui.button_height(13.0) + 16.0;
-            y += ui.section(area, y, "Gamepad", None);
+            y += ui.section(area, y, lang.tr("settings.gamepad"), None);
             let line = ui.line_height(13.5) + 8.0;
-            let mut layout: Vec<(String, String)> =
-                GAMEPAD_LAYOUT.iter().map(|(button, what)| (button.label().to_owned(), (*what).to_owned())).collect();
+            let mut layout: Vec<(String, String)> = GAMEPAD_LAYOUT
+                .iter()
+                .map(|(button, what)| (button.label().to_owned(), lang.tr(what).to_owned()))
+                .collect();
             for (button, bind) in &settings.controls.gamepad {
                 if matches!(
                     bind,
@@ -232,7 +251,7 @@ pub fn settings(
                 ) {
                     continue;
                 }
-                layout.push((button.label().to_owned(), bind.label().to_owned()));
+                layout.push((button.label().to_owned(), bind.label(lang).to_owned()));
             }
             for (button, what) in layout {
                 let mut inner = Rect::new(area.x + 10.0, y, area.width - 20.0, line);
@@ -244,16 +263,24 @@ pub fn settings(
         }
         SettingsTab::Accessibility => {
             let access = &mut settings.accessibility;
-            let names: Vec<&str> = TEXT_SIZES.iter().map(|(name, _)| *name).collect();
+            let names: Vec<&str> = TEXT_SIZES.iter().map(|(name, _)| lang.tr(name)).collect();
             let index = nearest_option(&TEXT_SIZES, access.text_size);
-            if let Some(next) =
-                ui.stepper(id("text-size"), Rect::new(area.x, y, area.width, row), "Text size", &names, index)
+            let label = lang.tr("settings.textSize");
+            if let Some(next) = ui.stepper(id("text-size"), Rect::new(area.x, y, area.width, row), label, &names, index)
             {
                 access.text_size = TEXT_SIZES[next].1;
                 changed = true;
             }
             y += row + 4.0;
-            let label = "Reduced motion (no pops, fades or flashes)";
+            let label = lang.tr("settings.readableFont");
+            if let Some(value) =
+                ui.toggle(id("readable-font"), Rect::new(area.x, y, area.width, row), label, access.readable_font)
+            {
+                access.readable_font = value;
+                changed = true;
+            }
+            y += row + 4.0;
+            let label = lang.tr("settings.reducedMotion");
             if let Some(value) =
                 ui.toggle(id("reduced-motion"), Rect::new(area.x, y, area.width, row), label, access.reduced_motion)
             {
@@ -261,18 +288,31 @@ pub fn settings(
                 changed = true;
             }
             y += row + 4.0;
+            // Language: automatic, then each table by its own name.
+            let mut names = vec![lang.tr("settings.languageAuto")];
+            names.extend(Lang::ALL.iter().map(|option| option.native_name()));
+            let chosen = Lang::from_tag(&settings.language);
+            let index = Lang::ALL.iter().position(|option| chosen == Some(*option)).map_or(0, |index| index + 1);
+            let label = lang.tr("settings.language");
+            if let Some(next) = ui.stepper(id("language"), Rect::new(area.x, y, area.width, row), label, &names, index)
+            {
+                settings.language =
+                    next.checked_sub(1).map_or_else(String::new, |index| Lang::ALL[index].code().to_owned());
+                changed = true;
+            }
+            y += row + 4.0;
         }
     }
     ui.end_modal_body(y);
     if let Some(mut footer) = modal.footer {
-        let back = Button::new("Back").primary();
+        let back = Button::new(lang.tr("common.back")).primary();
         let width = ui.button_width(&back).max(90.0);
         let rect = footer.cut_right(width).centered(width, ui.button_height(13.0));
         if ui.button(WidgetId::new("settings-back"), rect, back) {
             action = Some(ShellAction::Back);
             screen.capture = None;
         }
-        let hint = "LB / RB or Tab switch tabs";
+        let hint = lang.tr("settings.tabsHint");
         ui.label(footer, hint, 12.0, FontId::Regular, colors.muted, Align::Start);
     }
     ui.close_modal();

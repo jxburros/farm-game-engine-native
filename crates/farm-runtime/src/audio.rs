@@ -8,7 +8,7 @@
 //! that just play buffers.
 
 use farm_sim::effects::message_levels;
-use farm_sim::{js, Effect};
+use farm_sim::{units, Effect};
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -45,9 +45,9 @@ impl AudioSettings {
         }
         Some(format!(
             "{{\"master\":{},\"sfx\":{},\"music\":{},\"muted\":{}}}",
-            js::num(self.master),
-            js::num(self.sfx),
-            js::num(self.music),
+            units::format_number(self.master),
+            units::format_number(self.sfx),
+            units::format_number(self.music),
             self.muted
         ))
     }

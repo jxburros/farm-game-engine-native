@@ -167,6 +167,34 @@ fn frames_are_identical_across_runs() {
     assert_eq!((frame.width(), frame.height()), (320, 200));
 }
 
+/// Spanish and the readable font render every golden screen (not compared with an image: the
+/// goldens stay English in Inter). The frames differ from the defaults and stay deterministic;
+/// `FARM_PLAYER_SCREENSHOTS` writes them for a look.
+#[test]
+fn spanish_and_the_readable_font_render() {
+    let localized = |name: &str| {
+        let mut player = scene(name);
+        let mut settings = player.settings().clone();
+        settings.language = "es".into();
+        settings.accessibility.readable_font = true;
+        player.set_settings(settings);
+        player
+    };
+    for name in ["title", "settings", "hud", "dialogue", "shop"] {
+        let (width, height) = (1280, 800);
+        let default = render(scene(name), width, height);
+        let spanish = render(localized(name), width, height);
+        assert_ne!(default.data(), spanish.data(), "{name}");
+        assert_eq!(spanish.data(), render(localized(name), width, height).data(), "{name} is deterministic");
+        if let Some(folder) = std::env::var_os("FARM_PLAYER_SCREENSHOTS") {
+            let folder = PathBuf::from(folder);
+            std::fs::create_dir_all(&folder).unwrap();
+            let path = folder.join(format!("{name}-es-readable-{width}x{height}.png"));
+            std::fs::write(path, farm_render::encode_png(&spanish)).unwrap();
+        }
+    }
+}
+
 /// Every other screen, for a look (not compared): `FARM_PLAYER_SCREENSHOTS=<dir> cargo test -p
 /// farm-player --test screenshots -- --ignored`.
 #[test]

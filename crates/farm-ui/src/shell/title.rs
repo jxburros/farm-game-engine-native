@@ -36,6 +36,7 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
     let title_size = (screen.width / 16.0).clamp(34.0, 64.0);
     let title_px = ui.font_size(title_size);
     let lines = ui.wrap(&view.title, title_size, FontId::Bold, screen.width - 96.0);
+    let title_font = ui.face(FontId::Bold, &view.title);
     let line_height = ui.line_height(title_size) * 0.92;
     let block = lines.len() as f32 * line_height;
     let mut y = (screen.height * 0.26 - block / 2.0).max(24.0);
@@ -45,7 +46,7 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
             text: line.clone(),
             x: screen.width / 2.0,
             y: baseline + 3.0,
-            font: FontId::Bold,
+            font: title_font,
             size: title_px,
             color: fade(Color::BLACK, 0.6),
             stroke: None,
@@ -55,7 +56,7 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
             text: line.clone(),
             x: screen.width / 2.0,
             y: baseline,
-            font: FontId::Bold,
+            font: title_font,
             size: title_px,
             color: colors.accent_text,
             stroke: None,
@@ -69,16 +70,16 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
         y = rect.bottom();
     }
 
-    // Menu.
-    let mut entries: Vec<(&str, Icon, ShellAction, bool)> = vec![
-        ("New Game", Icon::Play, ShellAction::NewGame, true),
-        ("Continue", Icon::Book, ShellAction::Continue, view.can_continue),
-        ("Load", Icon::Folder, ShellAction::OpenLoad, view.has_saves),
-        ("Settings", Icon::Gear, ShellAction::OpenSettings, true),
-        ("Credits", Icon::Heart, ShellAction::OpenCredits, true),
+    // Menu: (widget name, label key, icon, action, enabled).
+    let mut entries: Vec<(&str, &'static str, Icon, ShellAction, bool)> = vec![
+        ("New Game", "title.newGame", Icon::Play, ShellAction::NewGame, true),
+        ("Continue", "title.continue", Icon::Book, ShellAction::Continue, view.can_continue),
+        ("Load", "title.load", Icon::Folder, ShellAction::OpenLoad, view.has_saves),
+        ("Settings", "title.settings", Icon::Gear, ShellAction::OpenSettings, true),
+        ("Credits", "title.credits", Icon::Heart, ShellAction::OpenCredits, true),
     ];
     if view.can_quit {
-        entries.push(("Quit", Icon::Exit, ShellAction::Quit, true));
+        entries.push(("Quit", "title.quit", Icon::Exit, ShellAction::Quit, true));
     }
     let button_height = ui.button_height(16.0).max(42.0);
     let gap = 10.0;
@@ -89,25 +90,27 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
     let top = (y + 28.0).max((screen.height - menu_height - detail_height - footer_room) * 0.62);
     let mut action = None;
     let default = if view.can_continue { "Continue" } else { "New Game" };
-    for (index, (label, icon, entry, enabled)) in entries.into_iter().enumerate() {
+    for (index, (name, key, icon, entry, enabled)) in entries.into_iter().enumerate() {
         let rect =
             Rect::new((screen.width - width) / 2.0, top + index as f32 * (button_height + gap), width, button_height);
-        let mut button = Button::new(label).kind(ButtonKind::Menu).icon(icon).size(16.0).enabled(enabled);
-        if label == default {
+        let mut button = Button::new(ui.tr(key)).kind(ButtonKind::Menu).icon(icon).size(16.0).enabled(enabled);
+        if name == default {
             button = button.default_focus();
         }
-        if ui.button(WidgetId::new("title").with(label), rect, button) {
+        if ui.button(WidgetId::new("title").with(name), rect, button) {
             action = Some(entry);
         }
     }
     if let Some(detail) = &view.continue_detail {
         let rect = Rect::new(0.0, top + menu_height + 10.0, screen.width, ui.line_height(12.5));
-        ui.label(rect, &format!("Continue: {detail}"), 12.5, FontId::Regular, fade(colors.text, 0.75), Align::Center);
+        let text = ui.tr_format("title.continueDetail", &[detail]);
+        ui.label(rect, &text, 12.5, FontId::Regular, fade(colors.text, 0.75), Align::Center);
     }
 
     if view.show_made_with {
         let rect = Rect::new(0.0, screen.bottom() - 30.0, screen.width, 20.0);
-        ui.label(rect, "Made with Farming RPG Maker", 12.0, FontId::Regular, fade(colors.text, 0.6), Align::Center);
+        let text = ui.tr("hud.madeWith");
+        ui.label(rect, text, 12.0, FontId::Regular, fade(colors.text, 0.6), Align::Center);
     }
     action
 }

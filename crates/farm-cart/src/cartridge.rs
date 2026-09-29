@@ -83,7 +83,7 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
             crate::CART_FORMAT
         ));
     }
-    if cart.project_schema_version() as f64 > farm_sim::schema::CURRENT_PROJECT_SCHEMA_VERSION {
+    if cart.project_schema_version() > farm_sim::schema::CURRENT_PROJECT_SCHEMA_VERSION {
         return Err(format!("Project schema {} is newer than this player supports.", cart.project_schema_version()));
     }
     let info = cart.info();
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn fsharp_compiled_cartridge_matches_the_project() {
         let cart = read_cartridge(CART).expect("F# cartridge parses in Rust");
-        assert_eq!(cart.project_schema_version, 8);
+        assert_eq!(cart.project_schema_version, 9);
         assert_eq!(cart.info.game_id, "local.project-1");
         assert_eq!(cart.info.title, "Current V7 Farm");
         let loaded = load_cartridge(CART).unwrap();

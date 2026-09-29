@@ -2,9 +2,10 @@
 
 The native app is a phased port of the web version,
 [`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine),
-which stays the reference implementation. The port is complete: phases 1–6
-below are done, and phase 7 (one engine for the web and native versions) is
-what's next. Each phase ships as a normal release through the Update Center.
+which was the reference implementation until both apps moved onto one engine.
+The port is complete: phases 1–7 below are done, including phase 7, one
+engine for the web and native versions (see [Phase 7](#phase-7-one-engine)). Each
+phase ships as a normal release through the Update Center.
 
 ## Done — foundation (v0.1)
 
@@ -63,26 +64,27 @@ phase 5 below):
 Described in [docs/LANGUAGES.md](docs/LANGUAGES.md), which has the details
 and exit criteria for each phase.
 
-1. [x] Scaffolding: Cargo workspace, FFI, F# projects, Interop, CI (FlatBuffers
-   schemas still to write: see [Remaining work](#remaining-work))
+1. [x] Scaffolding: Cargo workspace, FFI, F# projects, Interop, CI and the
+   FlatBuffers schemas (`schemas/cart.fbs`, `schemas/save.fbs`)
 2. [x] Rust core in compatibility mode: all 23 replay, content, save, RNG
    and hash goldens pass in Rust, a differential test agrees with the C#
    engine, and `farm-runtime` has input, minigames, panels and the audio
    model.
 3. [x] F# authoring: migrations, validation, packs, compiler, cartridges,
-   undo. The schema records stay C# for now (moving them to F# is the first
-   step of phase 7).
+   undo. (The schema records moved from C# to F# in phase 7.)
 4. [x] Switch the app to F# + Rust; the C# engine projects are deleted
 5. [x] Editor port on the new stack (the list above)
 6. [x] Rust player and plugin sandbox, embedded in Play Mode; Export Game for
-   Windows and Linux. The optional web demo target and a GPU renderer come
-   later.
-7. [ ] Native numerics (v9): one engine for web and native
+   Windows and Linux, and (with `farm-wasm`) the web demo. A GPU renderer
+   comes later.
+7. [x] One engine for web and native: F# schema records and the authoring core
+   under Fable, `farm-wasm`, the web editor on both, native numerics (schema
+   v9)
 
 ## Remaining work
 
-Status at the end of September 2026: phases 1–6 are done. What's left is
-phase 7 and the items under [Later](#later).
+Status at the end of September 2026: phases 1–7 are done
+([Phase 7](#phase-7-one-engine) below). What's left is under [Later](#later).
 
 **Rust core (phase 2)**: done.
 - [x] `SaveMigrations.cs` ported to `farm-cart::save`; all eight save
@@ -115,17 +117,17 @@ phase 7 and the items under [Later](#later).
   compiles in about 15 seconds and `DefaultsTests.fs` is back (68 F# tests).
 - [x] Project migrations in F#: `Migrations.fs` (v1→v8 and exported games)
   runs on a Fable-safe immutable JSON type (`Json.fs`) with JavaScript
-  semantics; `FarmEngine.Authoring.Net` converts to and from
-  `System.Text.Json` and still parses and validates the result with the C#
-  schema. Every migration golden passes, and a differential test agrees
-  with the C# `Migrations.MigrateProject` on 25 inputs, step by step (150 F#
-  tests). `ProjectStore` (open and import) now uses the F# migrations.
+  semantics. Every migration golden passes, and a differential test agreed
+  with the C# `Migrations.MigrateProject` on 25 inputs, step by step, until
+  the C# code was deleted in phase 7. `ProjectStore` (open and import) uses
+  the F# migrations.
 - [x] Validation in F#: `SchemaChecks.fs` (the schema checks of
   `SchemaValidation.cs`, project and exported game) and `ContentLints.fs`
   (`Validation.cs`, the web `validateProjectContent`). The Problems panel
-  and the F# migrations use them. A parity test compares them with the C#
+  and the F# migrations use them. A parity test compared them with the C#
   on every golden and sample project and on 111 broken projects that
-  together hit every check (467 F# tests).
+  together hit every check; since phase 7 those broken projects are
+  expectation tests, and the content-lint findings are recorded.
 - [x] F# pack namespacing, compatibility checks, load order, conflict-aware
   merge, localization and project import. The built-in authored catalog and
   project-to-content compiler now also run in F#. Cartridge exports, editor
@@ -133,18 +135,17 @@ phase 7 and the items under [Later](#later).
   tests preserve TypeScript behavior, including absent/null fields and ordering.
 - [x] Remove `FarmEngine.Authoring`'s dependency on the C# simulation project:
   map construction and layer edits use F# authoring helpers, and the assembly
-  dependency is guarded by a test. C# schema records remain a compatibility bridge.
+  dependency is guarded by a test.
 - [x] Port the Farm Essentials starter pack, blank project, Cozy Garden and
   Quest RPG factories to F#. New Project, first launch and imported-game
   defaults use the F# catalog. Time is supplied by the desktop host. The app
-  no longer references `FarmEngine.Content`; its C# factories remain only as
-  test references while the full schema migration continues.
+  no longer references `FarmEngine.Content`.
 - [x] Cartridge format 2: compiled content, the new-game start state and
   presentation data as separate sections, and an asset table that stores each
   embedded file once. The player no longer reads project JSON. Binary saves
   (`save.fbs`) carry a slot preview and a zstd-compressed state; JSON saves
-  still load. Content keeps string ids until phase 7, when interned indexed
-  tables start to pay off.
+  still load. Content keeps string ids; interned indexed tables only pay off
+  once the simulation indexes by integer.
 - [x] `farmc compile` writes a deterministic cartridge; Rust verifies and
   loads it, and cross-language tests compare its content, start state,
   presentation and play state with the project path.
@@ -153,45 +154,23 @@ phase 7 and the items under [Later](#later).
   compiler and Export Game consume them.
 - [x] Editor controls for the export settings (title, executable name,
   version, company, icon), in Project Settings.
-- [ ] Move the rest of `FarmEngine.Authoring` off the C# schema records so
-  the project compiles under Fable (only `Json.fs` and `Migrations.fs` are
-  Fable-safe today). **Moved to phase 7:** it only pays off once the web
-  version compiles the F# core, and it changes the data model every editor
-  view binds to.
+- [x] Move the rest of `FarmEngine.Authoring` off the C# schema records so
+  the project compiles under Fable. Done in phase 7 (below).
 
 **Switch the app (phase 4)**: done; the C# engine projects are deleted.
-- [x] Play Mode runs the Rust engine (`RustPlayEngine` behind `IPlayEngine`)
-  whenever the library is available, with the C# engine as the fallback
-  (`FARM_ENGINE=csharp` forces it). Rust sends only the state sections
-  that changed (`fe_session_state_changes`); `GameStateMirror` keeps a C#
-  copy for the overlays and reuses unchanged objects, so views that compare
-  by reference don't rebuild. Plugins get the Rust hook events through the
-  existing Jint bridge. A scripted play with a plugin pack matches the C#
-  engine after every step. A walking frame costs about 0.03 ms.
-- [x] Play overlays ask Rust for dialogue, visible options, shop stock limits,
-  recipe availability, ingredients and facing tile in one batched query.
-  The debug drawer's skip day uses Rust's overnight pass. A scripted play
-  compares these results with the C# engine after every step.
-- [x] Connect Rust runtime logic to Play Mode: fixed timestep, movement and
-  one-shot bindings, all built-in minigames and fallback, creator panels,
-  calendar displays and sound-cue mapping. C# collects raw host events and
-  draws returned views. Minigame results still enter the command log exactly
-  once; expired mounts cannot score a replacement session.
-- [x] `farm-render` builds Play Mode's world snapshots in Rust, including crop
-  maturity, soil, machine status, live NPC movement, animals and atmosphere.
-  Template and scripted-play differential tests compare the entire snapshot
-  with the C# reference. Art decoration and Skia drawing remain managed.
+- [x] Play Mode moved to the Rust engine, first behind a C# fallback and a
+  differential test against the C# engine after every step, then (phase 6)
+  to the embedded Rust player; the fallback, the C# overlays and the state
+  mirror are gone.
 - [x] `farm-render` ports all of `FarmEngine.Rendering`: typed snapshots,
   Edit Mode snapshots, art decoration, the built-in art pack, draw lists, a
-  CPU rasterizer and embedded fonts. Differential tests match the decorated
-  Edit Mode snapshots exactly and the raster within a small pixel tolerance.
-  `RustPreview` renders an Edit Mode viewport.
-- [x] Edit Mode's map and art previews draw with `farm-render` (only the
-  visible region), Play Mode embeds the Rust player (below), and the C#
-  simulation, runtime, renderer and content projects are deleted along with
-  their tests (the Rust and F# suites carry ports; the shared fixtures moved
-  to `fixtures/projects`). `FarmEngine.Interop` keeps a JSON-only headless
-  session for tools and tests.
+  CPU rasterizer and embedded fonts, checked against the C# reference before
+  it was deleted. Edit Mode's map and art previews draw with it (only the
+  visible region; `RustPreview`).
+- [x] The C# simulation, runtime, renderer and content projects are deleted
+  along with their tests (the Rust and F# suites carry ports; the shared
+  fixtures live in `fixtures/projects`). `FarmEngine.Interop` keeps a
+  JSON-only headless session (`RustSession`) for tools and tests.
 
 **Editor port (phase 5)**: map tools and a broad content workspace are now
 available as native views.
@@ -221,6 +200,13 @@ available as native views.
   problems shown inline.
 - [x] SVG import (Svg.Skia, self-contained files only, optional size), frame
   duplication and frame durations (one frame or every frame), as F# edits.
+- [x] Map placement tools (items, nodes, machines, NPCs, animals, remove),
+  the eyedropper, the transitions list with Clear all, a default tile for new
+  scenes, and "Go to asset" in Problems.
+- [x] Welcome tour on first launch, Help menu (Creator Guide on F1, keyboard
+  shortcuts, language), the game interface in English and Spanish with a
+  readable-font option (Atkinson Hyperlegible), and the editor's mode names,
+  Play Mode toolbar and help in Spanish.
 
 **Player and export (phase 6)**: done. `farm-plugins` (QuickJS in wasmi),
 `farm-ui`, `farm-player`, game shell, Export Game, and the player embedded in
@@ -276,29 +262,72 @@ Play Mode.
   web version (content golden `packs-nodes`).
 - [x] Both `settings.json` stores share `JsonSettingsStore.JsonOptions`.
 
+## Phase 7: one engine
+
+The web editor ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
+and this app now run the same code: Rust plays the game, F# understands the
+project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
+
+- [x] **Schema records in F#.** `src/FarmEngine.Authoring/Schema.fs` holds
+  the project, content and save shapes as immutable F# records (options,
+  lists, ordered maps and the `EventCondition` union) with generated JSON
+  codecs (`SchemaJson.fs`). The C# `FarmEngine.Schemas` project and its
+  migrations, validation and generated FlatBuffers readers are deleted. The
+  editor builds and updates records through generated `WithField` extensions
+  (`RecordWith`), and reads them through `FSharpInterop`.
+- [x] **The authoring core compiles under Fable.** No reflection,
+  System.Text.Json or .NET-only APIs in `FarmEngine.Authoring`: JSON, UTF-8,
+  base64, SHA-256 and the FlatBuffers builder are plain F#. `WebApi.fs` is the
+  JavaScript entry point. CI compiles it (`tools/fable/build.sh`) and checks
+  in Node that it reproduces the .NET cartridges byte for byte and every
+  migration golden (`tools/fable/smoke.mjs`).
+- [x] **`farm-wasm`**: the player, headless sessions and previews for web
+  pages, sharing the host protocol (`farm-host`) with `farm-ffi`. It replays
+  every golden in Node, and CI builds and smoke-tests it.
+- [x] **The web editor on the shared core**: its Play Mode runs `farm-wasm`,
+  and opening, importing, the Problems panel and a cartridge export run the
+  Fable build (vendored in the web repo's `packages/engine-native`).
+- [x] **Play Mode runs cartridges.** The editor playtests the cartridge the
+  F# compiler makes, like an exported game, and Keep changes writes the final
+  state back in F# (`Playtest.applyState`), checked against Rust's own
+  write-back.
+- [x] **Benchmarks and property tests**: `farm-bench` checks the time budgets
+  in CI (saving is over its 1 ms target and held to a regression ceiling until
+  the stable-JSON writer is replaced); proptest covers replay determinism and
+  save round trips, FsCheck covers migrations and compiling.
+- [x] **Native numerics (v9)**: every quantity in `farm-sim` is an integer in
+  a fixed unit (float arithmetic is denied outside the JSON adapters), JSON
+  stays in authoring units, the state hash is xxh3-64 over a canonical binary
+  encoding, saves are version 5 and projects schema 9 (both migrate on load),
+  and the goldens are re-recorded from Rust; the TypeScript goldens stay in
+  `fixtures/golden/v8` as migration inputs. Before re-recording, every v8
+  replay was checked to give the same player-visible outcome at every step.
+  See [docs/NUMERICS.md](docs/NUMERICS.md).
+- [x] **Web demo export**: Export Game's web target runs `farm-wasm`'s
+  standalone player in a page for itch.io.
+
 ## Export Game
 
 Export makes real desktop games, not browser games. It copies a prebuilt
 `farm-player` for the target, renames it, and puts the compiled `game.cart`
-next to it. Windows and Linux (including Steam Deck) come first. A web demo
-build for itch.io pages is optional and comes after them, and macOS comes
-later. The web version's single-file HTML export is not ported.
+next to it. Windows and Linux (including Steam Deck) came first; a web demo
+for itch.io pages (the `farm-wasm` player in a page) is done too, and macOS
+comes later. The web version's single-file HTML export is not ported.
 
 Packaging works now: **File → Export Game…** and `farmc export` build the
-Windows and Linux folders and archives from the prebuilt templates. The games
+Windows, Linux and web folders and archives from the prebuilt templates. The games
 it makes run the graphical player, with a title screen, save slots, settings
 and gamepad support ([docs/PLAYER.md](docs/PLAYER.md)).
 [docs/EXPORT.md](docs/EXPORT.md) has the design, what is done and what is left.
 
 ## Later
 
-- **Localization** of the editor UI (`src/lib/i18n.ts`).
+- **Localization** of the rest of the editor UI (forms and menus; the mode
+  names, Play Mode toolbar and help are translated) and of the Creator Guide.
+- **Retire the web version's TypeScript engine** once playtesting on
+  `farm-wasm` has proven itself, and move its HTML export to `farm-wasm`'s
+  standalone player (as the native editor's web demo export does).
 - **Code signing** for the Windows installer (see `docs/RELEASING.md`).
-- **Phase 7: one engine for web and native.** F# schema records so the
-  authoring core compiles under Fable, `farm-wasm` for the web version's play
-  mode and an optional web demo export, then native numerics (v9) with
-  migrations and re-recorded goldens. See
-  [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
 - **Player polish.** A GPU renderer (wgpu) for lighting, palette swaps and
   particles; gamepad rebinding in the controls menu (keys are rebindable
   today); a message box when the game crashes (it writes a crash log today).

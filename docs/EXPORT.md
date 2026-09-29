@@ -13,14 +13,14 @@ earlier phases must get right.
 
 Export makes real desktop games that a creator can sell or give away. A player
 unzips a folder and runs it. The game has a title screen, save slots, settings
-and controller support, and it's ready to upload to Steam or itch.io. Export
-does not make browser games.
+and controller support, and it's ready to upload to Steam or itch.io. A web
+demo of the same game can go on an itch.io page.
 
 | Target | Priority | Output |
 |---|---|---|
 | **Windows x64** | First | A folder (and zip) with `<Game>.exe` |
 | **Linux x64**, including Steam Deck | First | A folder (and `.tar.gz`) with a `<Game>` binary |
-| Web demo | Optional, after the first two | `index.html` + wasm + `game.cart`, for itch.io pages |
+| Web demo | Done | `index.html` + the `farm-wasm` player + `game.cart`, for itch.io pages |
 | macOS | Later | An `.app`; needs signing and notarization |
 | Consoles, mobile | Not planned | Keep the player portable (see [open questions](#open-questions)) |
 
@@ -39,10 +39,9 @@ player template for the target ─────────┘    (renamed exe, i
 
 - **Player templates.** On every release, CI builds `farm-player` for each
   target and publishes the builds as release assets (`player-windows-x64.zip`,
-  `player-linux-x64.tar.gz`, and later `player-web`). The installer ships the
-  Windows and Linux templates, so export works offline. The web template will
-  download on first use, through the same GitHub Releases client as the Update
-  Center. A template's version must match the editor's version exactly. The
+  `player-linux-x64.tar.gz`, `player-web.tar.gz`). The installer ships all
+  three, so export works offline. A template's version must match the
+  editor's version exactly. The
   editor refuses a template that doesn't match. See
   [Player templates](#player-templates).
 - **No toolchain on the creator's machine.** Export never compiles Rust or
@@ -118,15 +117,25 @@ WillowCreek/
   licenses/THIRD-PARTY.txt
 ```
 
-Web demo:
+Web demo (`web/WillowCreek/`, and `WillowCreek-web.zip` with the files at its
+root, which is what itch.io expects):
 
 ```
-WillowCreek-web/
-  index.html
-  farm_player.js
-  farm_player_bg.wasm
-  game.cart
+index.html            the page (the game's title filled in)
+game.js               canvas loop, input, sound, saves in localStorage
+farm_wasm.js          farm-wasm's bindings
+farm_wasm_bg.wasm     the player
+game.cart
+icon.png
+licenses/THIRD-PARTY.txt
 ```
+
+The page runs `farm-wasm`'s standalone player: the same title screen, save
+slots, settings and game UI as the desktop game, drawn into a canvas. Saves and
+settings live in the browser's `localStorage`, one entry per game id. Browsers
+only load WebAssembly modules from a web server, so the export report reminds
+you to test it with `python3 -m http.server` in the folder (itch.io serves it
+for you).
 
 On Windows, export writes the icon and the `VERSIONINFO` resource (product
 name, version, company) into the renamed executable's PE resources, from .NET,
@@ -162,15 +171,21 @@ target only; the other targets still export.
 
 Export looks in `--templates` (farmc) or `ProjectCommandHandler.PlayerTemplatesFolder`
 (the app), then `FARM_PLAYER_TEMPLATES`, then `players/` next to the running
-executable. The release workflow builds both templates (the Linux one in the
-Steam Runtime "sniper" SDK container), ships them in the app's `players/`
-folder through `-p:FarmPlayerTemplatesDir`, and attaches them to the release
-as `player-windows-x64.zip` and `player-linux-x64.tar.gz`
-(`tools/player-templates/package.sh` stages them). Development builds get the
+executable. The release workflow builds the three templates (the Linux one in
+the Steam Runtime "sniper" SDK container, the web one with
+`tools/wasm/build.sh`), ships them in the app's `players/` folder through
+`-p:FarmPlayerTemplatesDir`, and attaches them to the release as
+`player-windows-x64.zip`, `player-linux-x64.tar.gz` and `player-web.tar.gz`
+(`tools/player-templates/package.sh` stages them; the web template's checksum
+covers `farm_wasm_bg.wasm`, and its page files come from
+`tools/wasm/web-template`). Development builds get the
 host template from the `FarmPlayerTemplates` target in
 `src/FarmEngine.Export/FarmEngine.Export.fsproj`, which runs
 `cargo build -p farm-player` and writes `template.json` with the build's
-version. The app, farmc and the tests all get it in their output.
+version. The app, farmc and the tests all get it in their output. For the web
+template in a development build, run `tools/wasm/build.sh`, then
+`tools/player-templates/package.sh web <editor version> tools/wasm/dist <dir>`
+and point `FARM_PLAYER_TEMPLATES` (or `--templates`) at `<dir>`.
 
 ### Windows icon and version info
 
@@ -374,7 +389,10 @@ The player's own tests cover the screenshot goldens (title screen, settings,
 gameplay HUD, dialogue and shop at 1280×800 and 1920×1080, in
 `fixtures/player/`), the shell flow from New Game to Continue, and the real
 window under Xvfb in CI. The standalone and embedded players draw with the
-same code. The web player does not exist yet.
+same code, and so does the web player (`farm-wasm` builds the same `Player`).
+`tests/FarmEngine.Export.Tests` checks the web demo's files, its escaped title
+and the flat zip; a manual run in headless Chromium played an exported sample
+from the title screen into the game.
 
 ## Notes for creators
 
@@ -402,8 +420,9 @@ This material goes in the in-app help later.
   start state with state kept from playtests (`ApplyStateToProject` writes the
   day, season, animals, friendships and more back into the project). An
   exported game needs an explicit "a new game starts here" state, so that a
-  kept playtest doesn't ship as the opening of the game. Decide in phase 3,
-  when the F# schema is designed (possibly in v9).
+  kept playtest doesn't ship as the opening of the game. Still open: the
+  cartridge's start section is today built from the project as it is, kept
+  playtest state included.
 - **Player-installed mods** for exported games: see
   [LANGUAGES.md](LANGUAGES.md#open-questions).
 - **Plugin sandbox without a JIT.** Settled: `farm-plugins` runs plugins in

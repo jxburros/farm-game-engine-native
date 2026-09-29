@@ -1,0 +1,23 @@
+[package]
+name = "farm-host"
+description = "The JSON protocol of the embeddable player, headless sessions and previews, shared by farm-ffi (C ABI) and farm-wasm (wasm-bindgen)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+farm-sim = { path = "../farm-sim" }
+farm-cart = { path = "../farm-cart" }
+farm-runtime = { path = "../farm-runtime" }
+farm-render = { path = "../farm-render" }
+# The embeddable player without the desktop window/audio/gamepad layer (builds for wasm32).
+farm-player = { path = "../farm-player", default-features = false }
+farm-ui = { path = "../farm-ui" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

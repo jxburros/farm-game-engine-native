@@ -13,6 +13,7 @@ use farm_sim::schema::{
     AnimalState, GameProject, GameState, InventorySlot, MineConfig, Scene, SkillState, WeatherConfig,
     WeatherTableEntry, WeatherTypeDefinition,
 };
+use farm_sim::units;
 use farm_sim::{
     animals, energy, game_time, mines, skills, stable_json, state, weather, Command, Effect, Effects, EngineContext,
     HookBus, Rng,
@@ -46,9 +47,9 @@ fn with_m4_content(mut project: GameProject, entrance_scene: &str) -> GameProjec
     project.mine = MineConfig {
         enabled: true,
         entrance_scene_id: Some(entrance_scene.to_owned()),
-        entrance_x: Some(5.0),
-        entrance_y: Some(5.0),
-        floors: 10.0,
+        entrance_x: Some(5),
+        entrance_y: Some(5),
+        floors: 10,
         bands: content_builtin::create_default_mine_bands(),
         ..MineConfig::default()
     };
@@ -74,18 +75,18 @@ fn make_engine(mutate: impl FnOnce(&mut GameProject)) -> (EngineContext, GameSta
     (ctx, state)
 }
 
-fn give(state: &mut GameState, item_id: &str, quantity: f64, ctx: &EngineContext) {
+fn give(state: &mut GameState, item_id: &str, quantity: u32, ctx: &EngineContext) {
     let item = ctx.content.items.iter().find(|i| i.id == item_id).unwrap_or_else(|| panic!("item {item_id}")).clone();
     state.player.inventory.push(InventorySlot { item, quantity });
 }
 
-fn quantity(state: &GameState, item_id: &str) -> Option<f64> {
+fn quantity(state: &GameState, item_id: &str) -> Option<u32> {
     state.player.inventory.iter().find(|s| s.item.id == item_id).map(|s| s.quantity)
 }
 
-fn at(state: &mut GameState, x: f64, y: f64, direction: &str) {
-    state.player.x = x;
-    state.player.y = y;
+fn at(state: &mut GameState, x: i32, y: i32, direction: &str) {
+    state.player.x = farm_sim::units::tiles(x);
+    state.player.y = farm_sim::units::tiles(y);
     state.player.direction = direction.to_owned();
 }
 
@@ -94,7 +95,7 @@ fn has_message(effects: &Effects, predicate: impl Fn(&str) -> bool) -> bool {
 }
 
 fn only(weather_id: &str) -> Vec<WeatherTableEntry> {
-    vec![WeatherTableEntry { weather_id: weather_id.to_owned(), weight: 1.0 }]
+    vec![WeatherTableEntry { weather_id: weather_id.to_owned(), weight: 1 }]
 }
 
 fn always_weather(weather_id: &str, types: Vec<WeatherTypeDefinition>) -> WeatherConfig {
@@ -110,7 +111,7 @@ fn weather_type(id: &str, name: &str, waters: bool, damage: f64) -> WeatherTypeD
         id: id.to_owned(),
         name: name.to_owned(),
         waters_outdoor_soil: waters,
-        crop_damage_chance: damage,
+        crop_damage_chance: units::chance(damage),
         ..WeatherTypeDefinition::default()
     }
 }
@@ -119,22 +120,22 @@ fn weather_type(id: &str, name: &str, waters: bool, damage: f64) -> WeatherTypeD
 
 #[test]
 fn formats_time_of_day() {
-    assert_eq!(game_time::format_time_of_day(6.0 * 60.0), "6:00 AM");
-    assert_eq!(game_time::format_time_of_day(12.0 * 60.0), "12:00 PM");
-    assert_eq!(game_time::format_time_of_day(13.0 * 60.0 + 30.0), "1:30 PM");
-    assert_eq!(game_time::format_time_of_day(0.0), "12:00 AM");
-    assert_eq!(game_time::format_time_of_day(25.0 * 60.0), "1:00 AM"); // past-midnight wrap
-    assert_eq!(game_time::format_time_of_day(9.0 * 60.0 + 5.5), "9:05 AM");
+    assert_eq!(game_time::format_time_of_day(units::minutes(6 * 60)), "6:00 AM");
+    assert_eq!(game_time::format_time_of_day(units::minutes(12 * 60)), "12:00 PM");
+    assert_eq!(game_time::format_time_of_day(units::minutes(13 * 60 + 30)), "1:30 PM");
+    assert_eq!(game_time::format_time_of_day(units::minutes(0)), "12:00 AM");
+    assert_eq!(game_time::format_time_of_day(units::minutes(25 * 60)), "1:00 AM"); // past-midnight wrap
+    assert_eq!(game_time::format_time_of_day(units::time_of_day(9.0 * 60.0 + 5.5)), "9:05 AM");
 }
 
 #[test]
 fn classifies_day_phases() {
-    assert_eq!(game_time::day_phase(6.0 * 60.0), "morning");
-    assert_eq!(game_time::day_phase(12.0 * 60.0), "day");
-    assert_eq!(game_time::day_phase(18.0 * 60.0), "evening");
-    assert_eq!(game_time::day_phase(23.0 * 60.0), "night");
-    assert_eq!(game_time::day_phase(4.0 * 60.0), "night");
-    assert_eq!(game_time::day_phase(26.0 * 60.0), "night");
+    assert_eq!(game_time::day_phase(units::minutes(6 * 60)), "morning");
+    assert_eq!(game_time::day_phase(units::minutes(12 * 60)), "day");
+    assert_eq!(game_time::day_phase(units::minutes(18 * 60)), "evening");
+    assert_eq!(game_time::day_phase(units::minutes(23 * 60)), "night");
+    assert_eq!(game_time::day_phase(units::minutes(4 * 60)), "night");
+    assert_eq!(game_time::day_phase(units::minutes(26 * 60)), "night");
 }
 
 // --- weather (M4b) ---
@@ -147,7 +148,7 @@ fn rain_waters_soil_and_crops_at_day_start() {
             vec![weather_type("rain", "Rain", true, 0.0), weather_type("storm", "Storm", true, 1.0)],
         );
     });
-    at(&mut current, 3.0, 3.0, "up");
+    at(&mut current, 3, 3, "up");
     farm_sim::apply_command(&ctx, &mut current, &Command::Interact); // plant wheat on (3,2)
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
     assert_eq!(current.clock.weather_id, "rain");
@@ -156,7 +157,7 @@ fn rain_waters_soil_and_crops_at_day_start() {
     assert!(tile.crop.as_ref().is_some_and(|c| c.watered));
     // Rainy day 2: sleeping again grows the crop without manual watering.
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
-    assert_eq!(current.world.scenes[0].tiles[2][3].crop.as_ref().and_then(|c| c.days_grown), Some(1.0));
+    assert_eq!(current.world.scenes[0].tiles[2][3].crop.as_ref().and_then(|c| c.days_grown), Some(1));
 }
 
 #[test]
@@ -164,7 +165,7 @@ fn storms_can_destroy_crops_overnight() {
     let (ctx, mut current) = make_engine(|project| {
         project.weather = always_weather("storm", vec![weather_type("storm", "Storm", true, 1.0)]);
     });
-    at(&mut current, 8.0, 5.0, "up");
+    at(&mut current, 8, 5, "up");
     farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
     // First sleep rolls storm for day 2; second sleep's overnight pass damages with p=1.
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
@@ -189,7 +190,7 @@ fn roll_weather_draws_once_from_the_seasons_table() {
     assert_eq!(weather::roll_weather(&ctx, "spring", &mut rng), "rain");
     // Exactly one draw: the state advanced by a single float.
     let mut expected = Rng::new(state.rng.clone());
-    expected.float();
+    expected.next_u32();
     assert_eq!(rng.state, expected.state);
     // Same seed, same roll.
     let mut again = Rng::new(state.rng.clone());
@@ -220,13 +221,13 @@ fn clucky() -> AnimalState {
         species_id: "animal-chicken".to_owned(),
         name: "Clucky".to_owned(),
         scene_id: SCENE.to_owned(),
-        x: 3.0,
-        y: 3.0,
-        mood: 70.0,
+        x: units::tiles(3),
+        y: units::tiles(3),
+        mood: 70,
         fed_today: false,
         petted_today: false,
-        age_days: 5.0,
-        days_since_product: 0.0,
+        age_days: 5,
+        days_since_product: 0,
         product_ready: false,
         ..AnimalState::default()
     }
@@ -242,12 +243,12 @@ fn feeding_petting_and_daily_product_flow() {
     let (ctx, mut current) = make_csharp_engine(|project| {
         project.animals = vec![AnimalState { scene_id: "scene-test".to_owned(), ..clucky() }]
     });
-    give(&mut current, "feed-hay", 2.0, &ctx);
+    give(&mut current, "feed-hay", 2, &ctx);
 
     // Interact 1: feeds (consumes hay)
     let step = farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
     assert!(has_message(&step, |t| t.contains("Fed Clucky")));
-    assert_eq!(quantity(&current, "feed-hay"), Some(1.0));
+    assert_eq!(quantity(&current, "feed-hay"), Some(1));
 
     // Interact 2: pets
     let step = farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
@@ -271,7 +272,7 @@ fn feeding_petting_and_daily_product_flow() {
 fn neglected_animals_lose_mood_and_produce_nothing() {
     let (ctx, mut current) = ranch_engine();
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
-    assert_eq!(current.animals[0].mood, 55.0); // -15 unfed
+    assert_eq!(current.animals[0].mood, 55); // -15 unfed
     assert!(!current.animals[0].product_ready);
 }
 
@@ -279,10 +280,10 @@ fn neglected_animals_lose_mood_and_produce_nothing() {
 fn advance_animals_nightly_neglect_lowers_mood_and_produces_nothing() {
     let (ctx, mut current) = ranch_engine();
     animals::advance_animals_nightly(&ctx, &mut current);
-    assert_eq!(current.animals[0].mood, 55.0); // -15 unfed
+    assert_eq!(current.animals[0].mood, 55); // -15 unfed
     assert!(!current.animals[0].product_ready);
-    assert_eq!(current.animals[0].age_days, 6.0);
-    assert_eq!(current.animals[0].days_since_product, 0.0);
+    assert_eq!(current.animals[0].age_days, 6);
+    assert_eq!(current.animals[0].days_since_product, 0);
 }
 
 #[test]
@@ -292,18 +293,18 @@ fn advance_animals_nightly_fed_adult_rolls_a_product_and_resets_the_day_flags() 
     current.animals[0].petted_today = true;
     animals::advance_animals_nightly(&ctx, &mut current);
     let animal = &current.animals[0];
-    assert_eq!(animal.mood, 78.0); // +4 fed, +4 petted
+    assert_eq!(animal.mood, 78); // +4 fed, +4 petted
     assert!(animal.product_ready);
-    assert_eq!(animal.days_since_product, 1.0);
+    assert_eq!(animal.days_since_product, 1);
     assert!(!animal.fed_today);
     assert!(!animal.petted_today);
 
     // A second night with the product still waiting: no further roll, mood clamps at 100.
     current.animals[0].fed_today = true;
-    current.animals[0].mood = 99.0;
+    current.animals[0].mood = 99;
     animals::advance_animals_nightly(&ctx, &mut current);
-    assert_eq!(current.animals[0].mood, 100.0);
-    assert_eq!(current.animals[0].days_since_product, 1.0);
+    assert_eq!(current.animals[0].mood, 100);
+    assert_eq!(current.animals[0].days_since_product, 1);
 }
 
 #[test]
@@ -323,19 +324,19 @@ fn advance_animals_nightly_skips_unknown_species_and_empty_herds() {
 #[test]
 fn petting_raises_mood_once_per_day() {
     let (ctx, mut current) = ranch_engine();
-    let animal = animals::animal_at(&current, SCENE, 3.0, 3.0).expect("Clucky at (3,3)").clone();
-    assert!(animals::animal_at(&current, SCENE, 4.0, 3.0).is_none());
+    let animal = animals::animal_at(&current, SCENE, 3, 3).expect("Clucky at (3,3)").clone();
+    assert!(animals::animal_at(&current, SCENE, 4, 3).is_none());
 
     // No hay in the inventory and no product: petting is the interaction.
     let effects = animals::handle_animal_interaction(&ctx, &mut current, &animal);
     assert_eq!(effects, vec![Effect::message("success", "Clucky looks happy! ♥")]);
     assert!(current.animals[0].petted_today);
-    assert_eq!(current.animals[0].mood, 78.0);
+    assert_eq!(current.animals[0].mood, 78);
 
     let petted = current.animals[0].clone();
     let effects = animals::handle_animal_interaction(&ctx, &mut current, &petted);
     assert_eq!(effects, vec![Effect::message("info", "Clucky is content.")]);
-    assert_eq!(current.animals[0].mood, 78.0);
+    assert_eq!(current.animals[0].mood, 78);
 }
 
 #[test]
@@ -350,13 +351,13 @@ fn interacting_with_an_unknown_species_does_nothing() {
 #[test]
 fn feeding_consumes_hay_and_collecting_takes_the_product() {
     let (ctx, mut current) = ranch_engine();
-    give(&mut current, "feed-hay", 2.0, &ctx);
+    give(&mut current, "feed-hay", 2, &ctx);
     let animal = current.animals[0].clone();
     let effects = animals::handle_animal_interaction(&ctx, &mut current, &animal);
     assert_eq!(effects, vec![Effect::message("success", "Fed Clucky")]);
-    assert_eq!(quantity(&current, "feed-hay"), Some(1.0));
+    assert_eq!(quantity(&current, "feed-hay"), Some(1));
     assert!(current.animals[0].fed_today);
-    assert_eq!(current.animals[0].mood, 75.0);
+    assert_eq!(current.animals[0].mood, 75);
 
     current.animals[0].product_ready = true;
     current.animals[0].fed_today = true;
@@ -371,8 +372,8 @@ fn feeding_consumes_hay_and_collecting_takes_the_product() {
 
 #[test]
 fn mine_scene_ids_round_trip() {
-    assert_eq!(mines::mine_floor_scene_id(3.0), "mine-floor-3");
-    assert_eq!(mines::mine_floor_scene_id(10.0), "mine-floor-10");
+    assert_eq!(mines::mine_floor_scene_id(3), "mine-floor-3");
+    assert_eq!(mines::mine_floor_scene_id(10), "mine-floor-10");
     assert!(mines::is_mine_scene("mine-floor-1"));
     assert!(!mines::is_mine_scene(SCENE));
     assert!(!mines::is_mine_scene(""));
@@ -381,9 +382,9 @@ fn mine_scene_ids_round_trip() {
 #[test]
 fn floors_generate_deterministically_from_seed_plus_floor() {
     let (ctx, _) = make_engine(|_| {});
-    let a = mines::generate_mine_floor(&ctx, "seed-x", 3.0);
-    let b = mines::generate_mine_floor(&ctx, "seed-x", 3.0);
-    let c = mines::generate_mine_floor(&ctx, "seed-y", 3.0);
+    let a = mines::generate_mine_floor(&ctx, "seed-x", 3);
+    let b = mines::generate_mine_floor(&ctx, "seed-x", 3);
+    let c = mines::generate_mine_floor(&ctx, "seed-y", 3);
     assert_eq!(stable_json::stringify(&a), stable_json::stringify(&b));
     assert_ne!(stable_json::stringify(&a), stable_json::stringify(&c));
     // Has rocks from the band table
@@ -396,14 +397,14 @@ fn floors_generate_deterministically_from_seed_plus_floor() {
 fn entrance_interaction_descends_exit_returns_to_the_surface_and_drops_floors() {
     let (ctx, mut current) = make_engine(|_| {});
     // Entrance at (5,5). Stand at (5,4) facing down → (5,5).
-    at(&mut current, 5.0, 4.0, "down");
+    at(&mut current, 5, 4, "down");
     farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
     assert_eq!(current.player.scene_id, "mine-floor-1");
-    assert_eq!(current.mine.current_floor, 1.0);
+    assert_eq!(current.mine.current_floor, 1);
     assert!(current.world.scenes.iter().any(|s| s.id == "mine-floor-1"));
 
     // The exit check triggers when facing/at the entry — face up from (1,2).
-    at(&mut current, 1.0, 2.0, "up");
+    at(&mut current, 1, 2, "up");
     farm_sim::apply_command(&ctx, &mut current, &Command::ExitMine);
     assert_eq!(current.player.scene_id, SCENE);
     assert!(!current.world.scenes.iter().any(|s| s.id == "mine-floor-1"));
@@ -412,13 +413,13 @@ fn entrance_interaction_descends_exit_returns_to_the_surface_and_drops_floors() 
 #[test]
 fn descend_command_respects_floor_bounds_and_records_depth() {
     let (ctx, mut current) = make_engine(|_| {});
-    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 99.0 });
-    assert_eq!(current.mine.current_floor, 10.0); // clamped to config.floors
-    assert_eq!(current.mine.deepest_floor, 10.0);
+    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 99 });
+    assert_eq!(current.mine.current_floor, 10); // clamped to config.floors
+    assert_eq!(current.mine.deepest_floor, 10);
 }
 
 /// A stand-in generated floor so descend/exit can be exercised without `create_empty_scene`.
-fn stub_floor(floor: f64) -> Scene {
+fn stub_floor(floor: u32) -> Scene {
     Scene { id: mines::mine_floor_scene_id(floor), name: format!("Mine — Floor {floor}"), ..Scene::default() }
 }
 
@@ -426,26 +427,26 @@ fn stub_floor(floor: f64) -> Scene {
 fn descend_mine_clamps_to_the_floor_count_and_reuses_an_existing_floor() {
     let (ctx, mut current) = make_engine(|_| {});
     // Floor 10 already exists, so no generation is needed to reach it.
-    current.world.scenes.push(stub_floor(10.0));
-    let effects = mines::descend_mine(&ctx, &mut current, 99.0);
-    assert_eq!(current.mine.current_floor, 10.0); // clamped to config.floors
-    assert_eq!(current.mine.deepest_floor, 10.0);
+    current.world.scenes.push(stub_floor(10));
+    let effects = mines::descend_mine(&ctx, &mut current, 99);
+    assert_eq!(current.mine.current_floor, 10); // clamped to config.floors
+    assert_eq!(current.mine.deepest_floor, 10);
     assert_eq!(current.player.scene_id, "mine-floor-10");
-    assert_eq!((current.player.x, current.player.y), (1.5, 1.5));
+    assert_eq!((current.player.x, current.player.y), (units::pos(1.5), units::pos(1.5)));
     assert_eq!(current.world.scenes.len(), 2, "the existing floor is reused");
     assert_eq!(
         effects,
         vec![
-            Effect::SceneChanged { scene_id: "mine-floor-10".to_owned(), x: 1.0, y: 1.0 },
+            Effect::SceneChanged { scene_id: "mine-floor-10".to_owned(), x: 1, y: 1 },
             Effect::message("info", "Mine — floor 10 (elevator checkpoint)"),
         ]
     );
 
     // Going back up to an existing shallower floor keeps the deepest record.
-    current.world.scenes.push(stub_floor(1.0));
-    let effects = mines::descend_mine(&ctx, &mut current, 0.0);
-    assert_eq!(current.mine.current_floor, 1.0);
-    assert_eq!(current.mine.deepest_floor, 10.0);
+    current.world.scenes.push(stub_floor(1));
+    let effects = mines::descend_mine(&ctx, &mut current, 0);
+    assert_eq!(current.mine.current_floor, 1);
+    assert_eq!(current.mine.deepest_floor, 10);
     assert!(has_message(&effects, |t| t == "Mine — floor 1"));
 }
 
@@ -453,28 +454,28 @@ fn descend_mine_clamps_to_the_floor_count_and_reuses_an_existing_floor() {
 fn descend_mine_is_a_no_op_when_mining_is_disabled() {
     let (ctx, mut current) = make_engine(|project| project.mine.enabled = false);
     let before = current.clone();
-    assert!(mines::descend_mine(&ctx, &mut current, 1.0).is_empty());
+    assert!(mines::descend_mine(&ctx, &mut current, 1).is_empty());
     assert_eq!(current, before);
 }
 
 #[test]
 fn exit_mine_returns_to_the_entrance_and_drops_generated_floors() {
     let (ctx, mut current) = make_engine(|_| {});
-    current.world.scenes.push(stub_floor(1.0));
+    current.world.scenes.push(stub_floor(1));
     current.player.scene_id = "mine-floor-1".to_owned();
-    current.mine.current_floor = 1.0;
-    current.mine.deepest_floor = 1.0;
+    current.mine.current_floor = 1;
+    current.mine.deepest_floor = 1;
 
     let effects = mines::exit_mine(&ctx, &mut current);
     assert_eq!(current.player.scene_id, SCENE);
-    assert_eq!((current.player.x, current.player.y), (5.5, 5.5));
-    assert_eq!(current.mine.current_floor, 0.0);
-    assert_eq!(current.mine.deepest_floor, 1.0);
+    assert_eq!((current.player.x, current.player.y), (units::pos(5.5), units::pos(5.5)));
+    assert_eq!(current.mine.current_floor, 0);
+    assert_eq!(current.mine.deepest_floor, 1);
     assert!(!current.world.scenes.iter().any(|s| mines::is_mine_scene(&s.id)));
     assert_eq!(
         effects,
         vec![
-            Effect::SceneChanged { scene_id: SCENE.to_owned(), x: 5.0, y: 5.0 },
+            Effect::SceneChanged { scene_id: SCENE.to_owned(), x: 5, y: 5 },
             Effect::message("info", "You climb back to the surface."),
         ]
     );
@@ -491,10 +492,8 @@ fn exit_mine_defaults_to_the_start_scene_center() {
     let effects = mines::exit_mine(&ctx, &mut current);
     // The starter farm is 16×12: floor(16/2) = 8, floor(12/2) = 6.
     assert_eq!(current.player.scene_id, SCENE);
-    assert_eq!((current.player.x, current.player.y), (8.5, 6.5));
-    assert!(
-        matches!(&effects[0], Effect::SceneChanged { scene_id, x, y } if scene_id == SCENE && *x == 8.0 && *y == 6.0)
-    );
+    assert_eq!((current.player.x, current.player.y), (units::pos(8.5), units::pos(6.5)));
+    assert!(matches!(&effects[0], Effect::SceneChanged { scene_id, x, y } if scene_id == SCENE && *x == 8 && *y == 6));
 
     // No such entrance scene: nothing happens.
     let (ctx, mut current) = make_engine(|project| project.mine.entrance_scene_id = Some("nowhere".to_owned()));
@@ -505,39 +504,39 @@ fn exit_mine_defaults_to_the_start_scene_center() {
 
 #[test]
 fn maybe_reveal_ladder_rolls_the_rng_and_marks_the_tile() {
-    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = 1.0);
-    let mut floor = stub_floor(1.0);
+    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = units::PROBABILITY_ONE);
+    let mut floor = stub_floor(1);
     floor.tiles = vec![vec![Default::default(); 3]; 3];
     current.world.scenes.push(floor);
     let rng_before = current.rng.clone();
 
-    let effects = mines::maybe_reveal_ladder(&ctx, &mut current, "mine-floor-1", 2.0, 1.0);
+    let effects = mines::maybe_reveal_ladder(&ctx, &mut current, "mine-floor-1", 2, 1);
     assert_eq!(effects, vec![Effect::message("success", "A ladder to the next floor appears!")]);
     assert_eq!(current.world.scenes[1].tiles[1][2].ladder_down, Some(true));
     let mut expected = Rng::new(rng_before);
-    expected.float();
+    expected.next_u32();
     assert_eq!(current.rng, expected.state, "exactly one draw");
 }
 
 #[test]
 fn maybe_reveal_ladder_still_draws_when_the_roll_fails() {
-    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = 0.0);
-    let mut floor = stub_floor(1.0);
+    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = 0);
+    let mut floor = stub_floor(1);
     floor.tiles = vec![vec![Default::default(); 3]; 3];
     current.world.scenes.push(floor);
     let mut expected = Rng::new(current.rng.clone());
-    expected.float();
+    expected.next_u32();
 
-    assert!(mines::maybe_reveal_ladder(&ctx, &mut current, "mine-floor-1", 2.0, 1.0).is_empty());
+    assert!(mines::maybe_reveal_ladder(&ctx, &mut current, "mine-floor-1", 2, 1).is_empty());
     assert_eq!(current.world.scenes[1].tiles[1][2].ladder_down, None);
     assert_eq!(current.rng, expected.state);
 }
 
 #[test]
 fn maybe_reveal_ladder_ignores_surface_scenes() {
-    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = 1.0);
+    let (ctx, mut current) = make_engine(|project| project.mine.ladder_chance = units::PROBABILITY_ONE);
     let before = current.clone();
-    assert!(mines::maybe_reveal_ladder(&ctx, &mut current, SCENE, 2.0, 2.0).is_empty());
+    assert!(mines::maybe_reveal_ladder(&ctx, &mut current, SCENE, 2, 2).is_empty());
     assert_eq!(current, before, "no draw, no change outside the mine");
 }
 
@@ -546,22 +545,22 @@ fn maybe_reveal_ladder_ignores_surface_scenes() {
 #[test]
 fn harvesting_grants_farming_xp_and_levels_up_at_thresholds() {
     let (ctx, mut current) = make_engine(|_| {});
-    at(&mut current, 8.0, 5.0, "up");
-    current.player.skills = IndexMap::from([("farming".to_owned(), SkillState { xp: 45.0, level: 0.0 })]);
+    at(&mut current, 8, 5, "up");
+    current.player.skills = IndexMap::from([("farming".to_owned(), SkillState { xp: 45, level: 0 })]);
     farm_sim::apply_command(&ctx, &mut current, &Command::Interact); // plant
     for _ in 0..3 {
         farm_sim::apply_command(&ctx, &mut current, &Command::UseTool { tool: "watering-can".to_owned() });
         farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
     }
     let step = farm_sim::apply_command(&ctx, &mut current, &Command::Interact); // harvest: +8 xp → 53 ≥ 50
-    assert_eq!(current.player.skills["farming"].level, 1.0);
+    assert_eq!(current.player.skills["farming"].level, 1);
     assert!(has_message(&step, |t| t.contains("Farming level 1")));
 }
 
 #[test]
 fn skills_can_be_disabled_per_project() {
     let (ctx, mut current) = make_engine(|project| project.settings.skills_enabled = false);
-    at(&mut current, 8.0, 5.0, "up");
+    at(&mut current, 8, 5, "up");
     farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
     for _ in 0..3 {
         farm_sim::apply_command(&ctx, &mut current, &Command::UseTool { tool: "watering-can".to_owned() });
@@ -573,104 +572,104 @@ fn skills_can_be_disabled_per_project() {
 
 #[test]
 fn skill_level_for_xp_walks_the_curve() {
-    let curve = [0.0, 50.0, 150.0, 300.0];
-    assert_eq!(skills::skill_level_for_xp(&curve, 0.0), 0.0);
-    assert_eq!(skills::skill_level_for_xp(&curve, 49.0), 0.0);
-    assert_eq!(skills::skill_level_for_xp(&curve, 50.0), 1.0);
-    assert_eq!(skills::skill_level_for_xp(&curve, 299.0), 2.0);
-    assert_eq!(skills::skill_level_for_xp(&curve, 10_000.0), 3.0);
-    assert_eq!(skills::skill_level_for_xp(&[], 10_000.0), 0.0);
+    let curve = [0, 50, 150, 300];
+    assert_eq!(skills::skill_level_for_xp(&curve, 0), 0);
+    assert_eq!(skills::skill_level_for_xp(&curve, 49), 0);
+    assert_eq!(skills::skill_level_for_xp(&curve, 50), 1);
+    assert_eq!(skills::skill_level_for_xp(&curve, 299), 2);
+    assert_eq!(skills::skill_level_for_xp(&curve, 10_000), 3);
+    assert_eq!(skills::skill_level_for_xp(&[], 10_000), 0);
 }
 
 #[test]
 fn grant_xp_levels_up_at_the_threshold_with_a_message() {
     let (ctx, mut current) = make_engine(|_| {});
-    current.player.skills = IndexMap::from([("farming".to_owned(), SkillState { xp: 45.0, level: 0.0 })]);
-    let effects = skills::grant_xp(&ctx, &mut current, "farming", 8.0); // 53 ≥ 50
+    current.player.skills = IndexMap::from([("farming".to_owned(), SkillState { xp: 45, level: 0 })]);
+    let effects = skills::grant_xp(&ctx, &mut current, "farming", 8); // 53 ≥ 50
     assert_eq!(effects, vec![Effect::message("success", "Farming level 1!")]);
-    assert_eq!(current.player.skills["farming"], SkillState { xp: 53.0, level: 1.0 });
-    assert_eq!(skills::skill_level(&current, "farming"), 1.0);
+    assert_eq!(current.player.skills["farming"], SkillState { xp: 53, level: 1 });
+    assert_eq!(skills::skill_level(&current, "farming"), 1);
 
     // Below the next threshold: XP accrues silently, and a new skill starts from zero.
-    assert!(skills::grant_xp(&ctx, &mut current, "farming", 1.0).is_empty());
-    assert!(skills::grant_xp(&ctx, &mut current, "mining", 10.0).is_empty());
-    assert_eq!(current.player.skills["mining"], SkillState { xp: 10.0, level: 0.0 });
+    assert!(skills::grant_xp(&ctx, &mut current, "farming", 1).is_empty());
+    assert!(skills::grant_xp(&ctx, &mut current, "mining", 10).is_empty());
+    assert_eq!(current.player.skills["mining"], SkillState { xp: 10, level: 0 });
     assert_eq!(current.player.skills.keys().collect::<Vec<_>>(), ["farming", "mining"]);
 }
 
 #[test]
 fn grant_xp_is_a_no_op_when_disabled_or_for_non_positive_xp() {
     let (ctx, mut current) = make_engine(|project| project.settings.skills_enabled = false);
-    assert!(skills::grant_xp(&ctx, &mut current, "farming", 8.0).is_empty());
+    assert!(skills::grant_xp(&ctx, &mut current, "farming", 8).is_empty());
     assert!(!current.player.skills.contains_key("farming"));
 
     let (ctx, mut current) = make_engine(|_| {});
-    assert!(skills::grant_xp(&ctx, &mut current, "farming", 0.0).is_empty());
+    assert!(skills::grant_xp(&ctx, &mut current, "farming", 0).is_empty());
     assert!(!current.player.skills.contains_key("farming"));
 }
 
 #[test]
 fn farming_yield_bonus_is_one_per_four_levels() {
     let (_, mut current) = make_engine(|_| {});
-    assert_eq!(skills::skill_level(&current, "farming"), 0.0);
-    assert_eq!(skills::farming_yield_bonus(&current), 0.0);
-    current.player.skills.insert("farming".to_owned(), SkillState { xp: 9_999.0, level: 9.0 });
-    assert_eq!(skills::farming_yield_bonus(&current), 2.0);
+    assert_eq!(skills::skill_level(&current, "farming"), 0);
+    assert_eq!(skills::farming_yield_bonus(&current), 0);
+    current.player.skills.insert("farming".to_owned(), SkillState { xp: 9_999, level: 9 });
+    assert_eq!(skills::farming_yield_bonus(&current), 2);
 }
 
 // --- energy (M2) ---
 
 #[test]
 fn effective_energy_cost_discounts_higher_tiers_down_to_one() {
-    let hoe = ToolDefinition { energy_cost: 10.0, ..ToolDefinition::default() };
-    assert_eq!(energy::effective_energy_cost(&hoe, 1.0), 10.0);
-    assert_eq!(energy::effective_energy_cost(&hoe, 2.0), 9.0); // round(8.5) rounds half up
-    assert_eq!(energy::effective_energy_cost(&hoe, 3.0), 7.0);
-    assert_eq!(energy::effective_energy_cost(&hoe, 20.0), 1.0);
+    let hoe = ToolDefinition { energy_cost: units::points(10), ..ToolDefinition::default() };
+    assert_eq!(energy::effective_energy_cost(&hoe, 1), units::points(10));
+    assert_eq!(energy::effective_energy_cost(&hoe, 2), units::points(9)); // round(8.5) rounds half up
+    assert_eq!(energy::effective_energy_cost(&hoe, 3), units::points(7));
+    assert_eq!(energy::effective_energy_cost(&hoe, 20), units::points(1));
 }
 
 #[test]
 fn spend_energy_deducts_and_warns_when_crossing_the_low_threshold() {
     let (ctx, mut current) = make_engine(|_| {});
-    let result = energy::spend_energy(&ctx, &mut current, 30.0);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(30));
     assert_eq!(result, energy::EnergySpendResult { effects: vec![], collapsed: false });
-    assert_eq!(current.player.energy, 70.0);
+    assert_eq!(current.player.energy, units::points(70));
 
-    current.player.energy = 25.0;
-    let result = energy::spend_energy(&ctx, &mut current, 6.0); // 25 → 19 crosses 20
+    current.player.energy = units::points(25);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(6)); // 25 → 19 crosses 20
     assert!(!result.collapsed);
     assert_eq!(result.effects, vec![Effect::message("info", "You are getting exhausted — consider sleeping.")]);
-    assert_eq!(current.player.energy, 19.0);
+    assert_eq!(current.player.energy, units::points(19));
 
     // Already below the threshold: no second warning.
-    let result = energy::spend_energy(&ctx, &mut current, 1.0);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(1));
     assert!(result.effects.is_empty());
-    assert_eq!(current.player.energy, 18.0);
+    assert_eq!(current.player.energy, units::points(18));
 }
 
 #[test]
 fn spend_energy_is_a_no_op_when_disabled_or_free() {
     let (ctx, mut current) = make_engine(|project| project.settings.energy_enabled = false);
-    let result = energy::spend_energy(&ctx, &mut current, 500.0);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(500));
     assert!(!result.collapsed && result.effects.is_empty());
-    assert_eq!(current.player.energy, 100.0);
+    assert_eq!(current.player.energy, units::points(100));
 
     let (ctx, mut current) = make_engine(|_| {});
-    let result = energy::spend_energy(&ctx, &mut current, 0.0);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(0));
     assert!(!result.collapsed && result.effects.is_empty());
-    assert_eq!(current.player.energy, 100.0);
+    assert_eq!(current.player.energy, units::points(100));
 }
 
 #[test]
 fn spend_energy_collapses_the_player_and_ends_the_day() {
     let (ctx, mut current) = make_engine(|_| {});
-    current.player.energy = 5.0;
-    let result = energy::spend_energy(&ctx, &mut current, 5.0);
+    current.player.energy = units::points(5);
+    let result = energy::spend_energy(&ctx, &mut current, units::points(5));
     assert!(result.collapsed);
     assert!(has_message(&result.effects, |t| t == "You collapsed from exhaustion! Lost $50."));
-    assert_eq!(current.clock.day, 2.0);
-    assert_eq!(current.player.energy, 50.0);
-    assert_eq!(current.player.money, 50.0);
+    assert_eq!(current.clock.day, 2);
+    assert_eq!(current.player.energy, units::points(50));
+    assert_eq!(current.player.money, 50);
 }
 
 // --- onWeatherRoll reroll capability (M5SystemsTests) ---

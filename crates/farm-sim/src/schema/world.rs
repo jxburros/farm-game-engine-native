@@ -10,11 +10,15 @@ use serde_json::{Map, Value};
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SceneTransition {
-    pub from_x: f64,
-    pub from_y: f64,
+    #[serde(with = "crate::units::int")]
+    pub from_x: i32,
+    #[serde(with = "crate::units::int")]
+    pub from_y: i32,
     pub to_scene_id: String,
-    pub to_x: f64,
-    pub to_y: f64,
+    #[serde(with = "crate::units::int")]
+    pub to_x: i32,
+    #[serde(with = "crate::units::int")]
+    pub to_y: i32,
     /// Locked transitions don't fire; events can lock/unlock them (M3).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locked: Option<bool>,
@@ -37,8 +41,10 @@ pub struct TileVisuals {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Tile {
-    pub x: f64,
-    pub y: f64,
+    #[serde(with = "crate::units::int")]
+    pub x: i32,
+    #[serde(with = "crate::units::int")]
+    pub y: i32,
     /// One of [`super::tile_types`].
     pub r#type: String,
     /// Background layer: grass, soil, water, floor
@@ -68,8 +74,10 @@ pub struct Tile {
     /// One of [`super::soil_states`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soil_state: Option<String>,
-    pub soil_moisture: f64,
-    pub soil_fertility: f64,
+    #[serde(with = "crate::units::int")]
+    pub soil_moisture: i32,
+    #[serde(with = "crate::units::int")]
+    pub soil_fertility: i32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -80,9 +88,11 @@ pub struct Scene {
     pub id: String,
     pub name: String,
     /// int, positive.
-    pub width: f64,
+    #[serde(with = "crate::units::int")]
+    pub width: i32,
     /// int, positive.
-    pub height: f64,
+    #[serde(with = "crate::units::int")]
+    pub height: i32,
     /// Row-major: `tiles[y][x]`.
     pub tiles: Vec<Vec<Tile>>,
     pub transitions: Vec<SceneTransition>,

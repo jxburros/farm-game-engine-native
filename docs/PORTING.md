@@ -14,13 +14,13 @@ literally and let the golden tests tell you.
 > `.Rendering`, `.Content`). It was the stepping stone to the Rust core and
 > has been retired; [LANGUAGES.md](LANGUAGES.md) describes the split that
 > replaced it. The JavaScript-semantics rules it followed carry over to Rust
-> until the native-numerics switch (phase 7).
+> until the native-numerics switch (phase 7, [NUMERICS.md](NUMERICS.md)).
 
 ## Project map
 
 | TypeScript package / folder             | Native home                                   |
 |-----------------------------------------|-----------------------------------------------|
-| `packages/engine-schemas/src`           | `crates/farm-sim/src/schema` (Rust), `src/FarmEngine.Schemas` (C# records for the editor), F# migrations and checks in `src/FarmEngine.Authoring` |
+| `packages/engine-schemas/src`           | `crates/farm-sim/src/schema` (Rust), F# records, migrations and checks in `src/FarmEngine.Authoring` (`Schema.fs`, `SchemaJson.fs`) |
 | `packages/engine-core/src` (+ subdirs)  | `crates/farm-sim`                             |
 | `packages/content-default/src`, `src/lib/templates.ts` | `src/FarmEngine.Authoring` (`StarterContent`, `SampleProjects`, `ProjectCatalog`) |
 | `packages/engine-runtime/src`           | `crates/farm-runtime`, plugins in `crates/farm-plugins` |
@@ -40,49 +40,45 @@ literally and let the golden tests tell you.
 ## Types (schemas)
 
 The schema exists twice: as Rust types in `farm-sim::schema` (serde, the
-engine's own) and as C# records in `FarmEngine.Schemas` (the editor's data
-model, also used by F#). Both must round-trip the same JSON. The rules for the
-C# records:
+engine's own) and as F# records in `src/FarmEngine.Authoring/Schema.fs` (the
+editor's data model, also compiled to JavaScript for the web editor), with
+their JSON in `SchemaJson.fs`. Both must round-trip the same JSON. The rules
+for the F# records:
 
-
-- A zod object → `public sealed record Xxx` with `{ get; init; }` properties
-  in PascalCase. JSON names are camelCase via `JsonDefaults.Options`; add
-  `[JsonPropertyName("…")]` whenever the camelCase conversion would not
-  reproduce the TS key exactly (acronyms such as `selectedNPCId`, or when the
-  C# name must differ because it collides with the type name).
-- `.passthrough()` → add
-  `[JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; init; }`.
-  Objects **without** passthrough have no `Extra` (zod strips unknown keys).
-- `z.number()` (including `.int()`) → **`double`**. Always. JS has only
-  doubles; C# `int` math (integer division, overflow) silently diverges.
-  Convert with `(int)` only at the point of indexing a list.
-- Optional (`.optional()`, TS `undefined`) → nullable (`double?`, `string?`,
-  `Foo?`), default `null`, omitted from JSON when null.
-- `.nullable()` (key present with value `null`) → nullable **plus**
-  `[JsonIgnore(Condition = JsonIgnoreCondition.Never)]` so `null` is written.
-- `.default(x)` → property initializer `= x` (applied when the key is
-  missing on deserialize, like zod). Required non-defaulted strings/lists get
-  `= ""` / `= []` initializers so records are always constructible.
-- `z.enum([...])` of strings → plain `string` plus a static class of
-  constants (`public static class Directions { public const string Up = "up"; … }`).
-  Keep them strings — content is open-ended and JSON must round-trip.
-- `z.array(T)` → `List<T>`. `z.tuple` → `List<T>` / array.
-- `z.record(z.string(), T)` → `OrderedDictionary<string, T>` (JS objects
-  iterate in insertion order; `Dictionary` does not guarantee it).
-- `z.unknown()`, `z.any()`, and scalar unions (`boolean | number | string`)
-  → `JsonElement` (use `Js.Value(...)` to create, `Js.Truthy` to test).
-- `z.discriminatedUnion('type', …)` → abstract record with
-  `[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]` and one
-  `[JsonDerivedType(typeof(Sub), "literal")]` per case. Expose the tag as
-  `[JsonIgnore] public abstract string Type { get; }` in the base and
-  `[JsonIgnore] public override string Type => "literal";` in each subtype
-  (the `[JsonIgnore]` on the override is required).
+- A zod object → an F# record in PascalCase with a `static member Default`
+  (every field at its schema default). The decoder and encoder in
+  `SchemaJson.fs` name each JSON key explicitly, so acronyms such as
+  `selectedNPCId` need nothing special.
+- `.passthrough()` → an `Extra: (string * Json) list` field: undeclared keys in
+  order, written back after the declared ones. Records **without** passthrough
+  have no `Extra` (zod strips unknown keys).
+- `z.number()` (including `.int()`) → **`float`**, like the TypeScript. The
+  engine keeps its own integer units (docs/NUMERICS.md); the project keeps what
+  the creator typed.
+- Optional (`.optional()`, TS `undefined`) → `option`, omitted from JSON when
+  `None`.
+- `.nullable()` (key present with value `null`) → `option`, and the encoder
+  writes `null` for `None`. `.nullable().optional()` → `'T option option`
+  (`None` absent, `Some None` null).
+- `.default(x)` → the decoder's value for a missing key (and the record's
+  `Default`).
+- `z.enum([...])` of strings → plain `string` plus a module of `[<Literal>]`
+  constants with an `All` list (`Directions.Up`, `SchemaConstants.fs`).
+- `z.array(T)` → `'T list`. `z.record(z.string(), T)` → `(string * 'T) list`
+  (JS objects iterate in insertion order).
+- `z.unknown()`, `z.any()`, and scalar unions → `Json`.
+- `z.discriminatedUnion('type', …)` → an F# union whose cases carry one
+  record each (`EventCondition.Flag of FlagCondition`), with a `Type` member
+  for the tag.
 - A single object with a `type: z.enum(...)` field that is **not** a
   discriminated union (e.g. `EventOutcome`) stays a plain record with a
-  `string Type` property.
+  `Type: string` field.
 - `z.infer` helper functions in schema files (e.g. `eventFiredFlag`,
-  `centerCoordinate`, `classicCalendarSeasons`) → static methods on a static
-  class named after the schema file (`EventsSchema.EventFiredFlag`, …).
+  `centerCoordinate`, `classicCalendarSeasons`) → functions in a module named
+  after the schema file (`EventsSchema.EventFiredFlag`, …).
+- After changing a record, regenerate the C# helpers:
+  `tools/codegen/record-with.fsx` (the `WithField` extensions) and
+  `tools/codegen/record-json.py` (codec and key tables).
 
 ## State and numbers (Rust)
 
@@ -115,7 +111,7 @@ C# records:
 
 Port each `*.test.ts` next to the module to the Rust crate's tests
 (`crates/<crate>/tests/<name>.rs`, one `#[test]` per `it(...)`, same test names
-in snake_case); schema-only tests go to `tests/FarmEngine.Schemas.Tests`. Golden
-parity fixtures live in `fixtures/golden/` (generated, never hand-edited) and the
-shared project fixtures in `fixtures/projects/`; the Rust, F# and C# schema tests
-all read both.
+in snake_case); schema-only tests go to `tests/FarmEngine.Authoring.Tests`
+(`SchemaRecordTests.fs`). Golden parity fixtures live in `fixtures/golden/`
+(generated, never hand-edited) and the shared project fixtures in
+`fixtures/projects/`; the Rust and F# tests both read them.

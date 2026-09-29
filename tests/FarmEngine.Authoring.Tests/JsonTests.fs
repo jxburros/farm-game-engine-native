@@ -38,12 +38,37 @@ let ``Number() follows JS for strings, arrays and objects`` () =
         Assert.True(System.Double.IsNaN(Json.toNumber value), sprintf "%A" value)
 
 [<Fact>]
-let ``number formatting matches C# Js.Num`` () =
-    let values =
-        [ 0.0; -0.0; 1.0; -1.5; 0.1; 0.3 - 0.1; 1e21; 1e20; 123456789012345680000.0; 1e-6; 1e-7; 1.5e-7; 5e-324
-          1.7976931348623157e308; 4294967295.0; 0.000123; 12345.678; nan; infinity; -infinity ]
-    for value in values do
-        Assert.Equal(FarmEngine.Json.Js.Num value, JsNumber.format value)
+let ``number formatting matches JS Number.prototype.toString`` () =
+    let cases =
+        [ 0.0, "0"; -0.0, "0"; 1.0, "1"; -1.5, "-1.5"; 0.1, "0.1"; 0.3 - 0.1, "0.19999999999999998"
+          1e21, "1e+21"; 1e20, "100000000000000000000"; 123456789012345680000.0, "123456789012345680000"
+          1e-6, "0.000001"; 1e-7, "1e-7"; 1.5e-7, "1.5e-7"; 5e-324, "5e-324"
+          1.7976931348623157e308, "1.7976931348623157e+308"; 4294967295.0, "4294967295"; 0.000123, "0.000123"
+          12345.678, "12345.678"; nan, "NaN"; infinity, "Infinity"; -infinity, "-Infinity" ]
+    for value, expected in cases do
+        Assert.Equal(expected, JsNumber.format value)
+
+[<Fact>]
+let ``parse reads JSON like JSON.parse, with comments and trailing commas`` () =
+    let text = """{ "a": [1, 2.5e1, -0.5, true, null, "x\"\u00e9\n"], /* note */ "b": {}, "a2": [], // end
+      "c": { "d": "e", }, }"""
+    let expected =
+        JObject
+            [ "a", JArray [ JNumber 1.0; JNumber 25.0; JNumber -0.5; JBool true; JNull; JString "x\"é\n" ]
+              "b", JObject []
+              "a2", JArray []
+              "c", JObject [ "d", JString "e" ] ]
+    Assert.Equal(Ok expected, Json.parse text)
+    Assert.Equal(Ok(JObject [ "k", JNumber 2.0 ]), Json.parse """{"k":1,"k":2}""")
+    for bad in [ ""; "{"; "[1,,2]"; "01"; "1.e5"; "{\"a\" 1}"; "tru"; "\"unterminated"; "[1] 2" ] do
+        match Json.parse bad with
+        | Ok value -> failwithf "%s parsed as %A" bad value
+        | Error _ -> ()
+
+[<Fact>]
+let ``stringifyIndented matches JSON.stringify with two spaces`` () =
+    let value = JObject [ "a", JArray [ JNumber 1.0; JObject [] ]; "b", JArray []; "c", JObject [ "d", JString "é" ] ]
+    Assert.Equal("{\n  \"a\": [\n    1,\n    {}\n  ],\n  \"b\": [],\n  \"c\": {\n    \"d\": \"é\"\n  }\n}", Json.stringifyIndented value)
 
 [<Fact>]
 let ``x + n concatenates for strings, arrays and objects`` () =

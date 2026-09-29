@@ -8,7 +8,7 @@ name: Release
 # windows-x64 on Windows (with the placeholder icon/version resources) and for
 # linux-x64 in the Steam Runtime 3 "sniper" SDK (old glibc, runs on Steam Deck).
 # Both ship inside the app under players/ and are attached to the release as
-# player-windows-x64.zip and player-linux-x64.tar.gz.
+# player-windows-x64.zip, player-linux-x64.tar.gz and player-web.tar.gz.
 
 on:
   push:
@@ -153,9 +153,54 @@ jobs:
           path: player-linux-x64.tar.gz
           retention-days: 7
 
+  player-web:
+    name: Player template (web demo)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94"
+          targets: wasm32-unknown-unknown
+
+      # The wasm-bindgen CLI must match the wasm-bindgen crate in Cargo.lock exactly.
+      - name: wasm-bindgen version
+        id: wasm-bindgen
+        run: echo "version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; exit }' Cargo.lock)" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build and check farm-wasm
+        run: |
+          tools/wasm/build.sh
+          node tools/wasm/smoke.mjs
+
+      - name: Stage template
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tools/player-templates/package.sh web "$VERSION" tools/wasm/dist players
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='1980-01-01 00:00Z' \
+            -czf player-web.tar.gz -C players web
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player-web
+          path: player-web.tar.gz
+          retention-days: 7
+
   release:
     name: Build, pack & publish
-    needs: [version, player-windows, player-linux]
+    needs: [version, player-windows, player-linux, player-web]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -187,7 +232,9 @@ jobs:
           Expand-Archive player-templates/player-windows-x64.zip -DestinationPath players
           tar -xzf player-templates/player-linux-x64.tar.gz -C players
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($target in 'windows-x64', 'linux-x64') {
+          tar -xzf player-templates/player-web.tar.gz -C players
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($target in 'windows-x64', 'linux-x64', 'web') {
             $manifest = Get-Content "players/$target/template.json" -Raw | ConvertFrom-Json
             if ($manifest.version -ne $env:VERSION) { throw "$target template is version $($manifest.version), expected $env:VERSION" }
           }
@@ -330,7 +377,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          gh release upload $env:TAG player-templates/player-windows-x64.zip player-templates/player-linux-x64.tar.gz --clobber --repo "${{ github.repository }}"
+          gh release upload $env:TAG player-templates/player-windows-x64.zip player-templates/player-linux-x64.tar.gz player-templates/player-web.tar.gz --clobber --repo "${{ github.repository }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Keep build output

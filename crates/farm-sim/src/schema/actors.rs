@@ -16,12 +16,12 @@ pub struct DialogueOption {
     pub next_dialogue_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub give_item: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub give_item_quantity: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub take_money: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub give_money: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub give_item_quantity: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::money::opt")]
+    pub take_money: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::money::opt")]
+    pub give_money: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_flag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,8 +35,8 @@ pub struct DialogueOption {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offer_quest_id: Option<String>,
     /// Option only shown at/above this friendship (M4 heart-gated dialogue).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub requires_friendship: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub requires_friendship: Option<i32>,
     /// Choosing this option performs a creator-defined action.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_id: Option<String>,
@@ -59,12 +59,15 @@ pub struct Dialogue {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NpcScheduleEntry {
-    pub minute: f64,
+    #[serde(with = "crate::units::count")]
+    pub minute: u32,
     pub scene_id: String,
     /// int.
-    pub x: f64,
+    #[serde(with = "crate::units::int")]
+    pub x: i32,
     /// int.
-    pub y: f64,
+    #[serde(with = "crate::units::int")]
+    pub y: i32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -75,9 +78,11 @@ pub struct NpcScheduleEntry {
 #[serde(rename_all = "camelCase", default)]
 pub struct GridPoint {
     /// int.
-    pub x: f64,
+    #[serde(with = "crate::units::int")]
+    pub x: i32,
     /// int.
-    pub y: f64,
+    #[serde(with = "crate::units::int")]
+    pub y: i32,
 }
 
 /// TS `NPCSchema.movePattern` enum.
@@ -96,7 +101,8 @@ pub struct NpcBirthday {
     /// One of the classic seasons ('spring' | 'summer' | 'fall' | 'winter').
     pub season: String,
     /// int.
-    pub day: f64,
+    #[serde(with = "crate::units::count")]
+    pub day: u32,
 }
 
 /// TS `NPC` (`NPCSchema`).
@@ -107,8 +113,10 @@ pub struct Npc {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual: Option<VisualRef>,
-    pub x: f64,
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     pub scene_id: String,
     pub dialogue: Vec<Dialogue>,
     pub can_move: bool,
@@ -116,8 +124,8 @@ pub struct Npc {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub move_pattern: Option<String>,
     /// Max tiles from home for the wander pattern (default 3). int, positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wander_radius: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub wander_radius: Option<u32>,
     /// Waypoints for the patrol pattern (visited in order, looping).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patrol_points: Option<Vec<GridPoint>>,
@@ -141,18 +149,22 @@ pub struct Npc {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Player {
-    pub x: f64,
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     /// One of [`super::directions`].
     pub direction: String,
     pub scene_id: String,
     pub inventory: Vec<InventorySlot>,
-    pub max_inventory_size: f64,
-    pub money: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub energy: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_energy: Option<f64>,
+    #[serde(with = "crate::units::count")]
+    pub max_inventory_size: u32,
+    #[serde(with = "crate::units::money")]
+    pub money: i64,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::energy::opt")]
+    pub energy: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::energy::opt")]
+    pub max_energy: Option<i32>,
     /// Per-category skill XP/levels (M4g); mirrored from GameState on save.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skills: Option<IndexMap<String, SkillState>>,
@@ -161,12 +173,16 @@ pub struct Player {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub equipped_tool: Option<String>,
     /// Pixel X position for smooth movement interpolation
+    #[serde(with = "crate::units::screen")]
     pub pixel_x: f64,
     /// Pixel Y position for smooth movement interpolation
+    #[serde(with = "crate::units::screen")]
     pub pixel_y: f64,
     /// Target pixel X for interpolation
+    #[serde(with = "crate::units::screen")]
     pub target_x: f64,
     /// Target pixel Y for interpolation
+    #[serde(with = "crate::units::screen")]
     pub target_y: f64,
     #[serde(flatten)]
     pub extra: Map<String, Value>,

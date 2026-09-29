@@ -38,14 +38,14 @@ use farm_render::{
 use farm_runtime::host::{calendar_view, MinigameInput};
 use farm_runtime::panels::{self, PanelState};
 use farm_sim::schema::{GameContent, GameProject, GameState};
-use farm_sim::{overlay, state, Presentation, StartState};
+use farm_sim::{overlay, state, units, Presentation, StartState};
 use farm_ui::game::{GameAction, GameUi, GameView, ItemArt, Panel, ToastKind};
 use farm_ui::settings::BindAction;
 use farm_ui::shell::{
     self, ConfirmView, CreditsView, PauseView, SettingsScreen, ShellAction, SlotPreviewView, SlotView, SlotsMode,
     SlotsView, TitleView,
 };
-use farm_ui::{Settings, Theme, Ui};
+use farm_ui::{Lang, Settings, Theme, Ui};
 use serde_json::Value;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -142,6 +142,10 @@ pub struct PlayerOptions {
     pub plugins: PluginHostOptions,
     /// Offer Quit buttons (desktop games).
     pub can_quit: bool,
+    /// The system's locale (`es-MX`), which picks the interface language while the player's
+    /// language setting is automatic. Hosts that know it set it; `None` skips to the game's own
+    /// locale (screenshot runs and tests stay in English).
+    pub system_locale: Option<String>,
 }
 
 impl std::fmt::Debug for PlayerOptions {
@@ -162,6 +166,7 @@ impl PlayerOptions {
             theme: Theme::cozy(),
             plugins: PluginHostOptions::default(),
             can_quit: true,
+            system_locale: None,
         }
     }
 
@@ -226,6 +231,7 @@ pub struct Player {
     seed: Option<String>,
     plugin_options: PluginHostOptions,
     can_quit: bool,
+    system_locale: Option<String>,
     game: Option<Game>,
     screens: Vec<Screen>,
     ui: Ui,
@@ -345,12 +351,15 @@ impl Player {
         });
         let mut ui = Ui::new(options.theme);
         ui.set_reduced_motion(settings.accessibility.reduced_motion);
+        ui.set_readable_font(settings.accessibility.readable_font);
+        ui.set_lang(Lang::resolve(&settings.language, options.system_locale.as_deref(), &def.content.settings.locale));
         let mut player = Self {
             mode: options.mode,
             def,
             seed: options.seed,
             plugin_options: options.plugins,
             can_quit: options.can_quit,
+            system_locale: options.system_locale,
             game: None,
             screens: Vec::new(),
             ui,
@@ -626,8 +635,8 @@ impl Player {
             }
         }
         graphics.set_live_state(content, state);
-        let moving = state.player.move_intent.dx != 0.0 || state.player.move_intent.dy != 0.0;
-        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick, moving);
+        let moving = state.player.move_intent.dx != 0 || state.player.move_intent.dy != 0;
+        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick as f64, moving);
         Some((snapshot, session.world_size(), (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)))
     }
 
@@ -657,7 +666,8 @@ impl Player {
             else {
                 return;
             };
-            let (px, py) = (PADDING + (state.player.x - 0.5) * TILE_SIZE, PADDING + (state.player.y - 0.5) * TILE_SIZE);
+            let (x, y) = (units::position_to_tiles(state.player.x), units::position_to_tiles(state.player.y));
+            let (px, py) = (PADDING + (x - 0.5) * TILE_SIZE, PADDING + (y - 0.5) * TILE_SIZE);
             let options = SnapshotOptions {
                 tile_size: TILE_SIZE,
                 padding: PADDING,
@@ -671,7 +681,10 @@ impl Player {
             let mut graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, state);
             graphics.set_live_state(&self.def.content, state);
             apply_graphics(&mut snapshot, &graphics, scene, tick, false);
-            let world = (scene.width * TILE_SIZE + PADDING * 2.0, scene.height * TILE_SIZE + PADDING * 2.0);
+            let world = (
+                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
+                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
+            );
             self.world = Some((
                 snapshot,
                 world_view(width, height, integer, world, (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)),
@@ -700,9 +713,16 @@ impl Player {
         fit * self.settings.display.ui_scale.clamp(0.5, 2.0)
     }
 
+    /// The interface language: the setting, else the system's, else the game's, else English.
+    pub fn lang(&self) -> Lang {
+        Lang::resolve(&self.settings.language, self.system_locale.as_deref(), &self.def.content.settings.locale)
+    }
+
     fn draw_ui(&mut self, input: farm_ui::UiInput, width: u32, height: u32, playing: bool, game_modal: bool) {
         let scale = self.ui_scale(width, height);
         self.ui.set_reduced_motion(self.settings.accessibility.reduced_motion);
+        self.ui.set_readable_font(self.settings.accessibility.readable_font);
+        self.ui.set_lang(self.lang());
         self.ui.begin_frame(
             input,
             (width as f32, height as f32),
@@ -781,7 +801,7 @@ impl Player {
                 shell::slots(&mut self.ui, &view)
             }
             Some(Screen::Confirm(kind)) => {
-                let view = confirm_view(kind);
+                let view = confirm_view(kind, self.ui.lang());
                 shell::confirm(&mut self.ui, &view)
             }
         };
@@ -826,14 +846,16 @@ impl Player {
 
     fn title_view(&self) -> TitleView {
         let info = &self.def.info;
-        let mut subtitle = format!("Version {}", info.version);
-        if let Some(author) = info.author.as_deref().or(info.company.as_deref()).filter(|s| !s.is_empty()) {
-            subtitle.push_str(&format!(" \u{00b7} by {author}"));
-        }
+        let lang = self.ui.lang();
+        let subtitle = match info.author.as_deref().or(info.company.as_deref()).filter(|s| !s.is_empty()) {
+            Some(author) => lang.format("title.versionBy", &[&info.version, &author]),
+            None => lang.format("title.version", &[&info.version]),
+        };
         let latest = self.latest_slot();
         let continue_detail = latest.and_then(|slot| {
             let preview = self.slots.get(slot as usize - 1)?.preview.as_ref()?;
-            Some(format!("{} \u{00b7} slot {slot}", shell::date_line(&self.slot_preview_view(preview, None))))
+            let date = shell::date_line(&self.slot_preview_view(preview, None), lang);
+            Some(lang.format("title.dateInSlot", &[&date, &slot]))
         });
         TitleView {
             title: info.title.clone(),
@@ -861,7 +883,8 @@ impl Player {
             play_seconds: preview.play_seconds,
             saved_at: preview.saved_at,
             thumbnail,
-            day_of_season: Some(farm_sim::game_time::day_of_season(calendar, preview.day)),
+            // Preview days are whole numbers (the FlatBuffers field is a double).
+            day_of_season: Some(f64::from(farm_sim::game_time::day_of_season(calendar, preview.day as u32))),
         }
     }
 
@@ -974,6 +997,9 @@ impl Player {
     }
 
     fn apply_settings(&mut self) {
+        // Messages sent before the next frame (an autosave toast) use the new language already.
+        self.ui.set_lang(self.lang());
+        self.ui.set_readable_font(self.settings.accessibility.readable_font);
         let fullscreen = self.settings.display.fullscreen;
         if self.mode == PlayerMode::Standalone {
             self.requests.retain(|request| !matches!(request, PlayerRequest::SetFullscreen(_)));
@@ -987,7 +1013,8 @@ impl Player {
 
     fn store_settings(&mut self) {
         if let Err(error) = self.settings_store.save(&settings_to_toml(&self.settings)) {
-            self.game_ui.toasts.push(format!("Settings were not saved: {error}"), ToastKind::Error);
+            let message = self.ui.lang().format("toast.settingsNotSaved", &[&error]);
+            self.game_ui.toasts.push(message, ToastKind::Error);
         }
     }
 
@@ -1002,7 +1029,8 @@ impl Player {
         session.set_reduced_motion(self.settings.accessibility.reduced_motion);
         let graphics = GraphicsSource::from_state(&self.def.presentation, session.content(), session.state());
         for error in session.plugin_errors() {
-            self.game_ui.toasts.push(format!("Plugin error: {error}"), ToastKind::Error);
+            let message = self.ui.lang().format("toast.pluginError", &[&error]);
+            self.game_ui.toasts.push(message, ToastKind::Error);
         }
         self.game = Some(Game { session, graphics, slot, play_seconds });
         self.game_ui = GameUi { toasts: std::mem::take(&mut self.game_ui.toasts), ..GameUi::new() };
@@ -1073,13 +1101,14 @@ impl Player {
 
     fn load_slot(&mut self, slot: u32) {
         let Some(bytes) = self.saves.read(slot) else {
-            self.game_ui.toasts.push(format!("Slot {slot} is empty."), ToastKind::Error);
+            let message = self.ui.lang().format("toast.slotEmpty", &[&slot]);
+            self.game_ui.toasts.push(message, ToastKind::Error);
             return;
         };
         let loaded = save_file::load_save_bytes(&bytes, &self.def.target, &self.def.content);
         let Some(state) = loaded.state.filter(|_| loaded.ok) else {
             let message = if loaded.errors.is_empty() {
-                "This save could not be loaded.".to_owned()
+                self.ui.lang().tr("toast.loadFailed").to_owned()
             } else {
                 loaded.errors.join(" ")
             };
@@ -1091,12 +1120,14 @@ impl Player {
         for warning in loaded.warnings {
             self.game_ui.toasts.push(warning, ToastKind::Info);
         }
-        self.game_ui.toasts.push(format!("Loaded slot {slot}"), ToastKind::Info);
+        let message = self.ui.lang().format("toast.loaded", &[&slot]);
+        self.game_ui.toasts.push(message, ToastKind::Info);
     }
 
     /// Writes the running game to `slot` (with a thumbnail of the scene).
     fn save_to(&mut self, slot: u32, autosave: bool) {
         let background = self.ui.theme().colors.background;
+        let lang = self.ui.lang();
         let Some(game) = self.game.as_mut() else { return };
         let mut preview = SavePreview::of_state(game.session.state());
         preview.farm_name = self.def.info.title.clone();
@@ -1113,10 +1144,10 @@ impl Player {
         match self.saves.write(slot, &bytes) {
             Ok(()) => {
                 game.slot = slot;
-                let what = if autosave { "Autosaved" } else { "Saved" };
-                self.game_ui.toasts.push(format!("{what} (slot {slot})"), ToastKind::Success);
+                let key = if autosave { "toast.autosaved" } else { "toast.saved" };
+                self.game_ui.toasts.push(lang.format(key, &[&slot]), ToastKind::Success);
             }
-            Err(error) => self.game_ui.toasts.push(format!("Could not save: {error}"), ToastKind::Error),
+            Err(error) => self.game_ui.toasts.push(lang.format("toast.saveFailed", &[&error]), ToastKind::Error),
         }
         self.refresh_slots();
     }
@@ -1233,6 +1264,12 @@ impl Player {
         self.slots.iter().map(|info| info.preview.clone()).collect()
     }
 
+    /// Reads the save slots again after the host changed its store behind the player's back
+    /// (the web version restoring saves from browser storage).
+    pub fn reload_saves(&mut self) {
+        self.refresh_slots();
+    }
+
     /// The slot the running game saves to.
     pub fn current_slot(&self) -> Option<u32> {
         self.game.as_ref().map(|game| game.slot).filter(|slot| *slot > 0)
@@ -1277,10 +1314,10 @@ impl Player {
             report.push_str(&format!(
                 "Slot: {}\nTick: {}\nDay: {} ({} year {})\nScene: {}\nState hash: {}\nRecent commands (oldest first):\n",
                 game.slot,
-                farm_sim::js::num(state.clock.tick),
-                farm_sim::js::num(state.clock.day),
+                state.clock.tick,
+                state.clock.day,
                 state.clock.season,
-                farm_sim::js::num(state.clock.year),
+                state.clock.year,
                 state.player.scene_id,
                 farm_sim::hash_state(state)
             ));
@@ -1304,31 +1341,25 @@ fn over(base: farm_render::Color, top: farm_render::Color) -> farm_render::Color
     farm_render::Color::rgb(blend(base.r, top.r), blend(base.g, top.g), blend(base.b, top.b))
 }
 
-fn confirm_view(kind: Confirmation) -> ConfirmView {
+fn confirm_view(kind: Confirmation, lang: Lang) -> ConfirmView {
     let (title, message, confirm) = match kind {
-        Confirmation::QuitToTitle => (
-            "Quit to title?",
-            "Progress since your last save will be lost. The game saves each morning.".to_owned(),
-            "Quit to title",
-        ),
-        Confirmation::QuitGame => (
-            "Quit the game?",
-            "Progress since your last save will be lost. The game saves each morning.".to_owned(),
-            "Quit",
-        ),
+        Confirmation::QuitToTitle => {
+            ("confirm.quitToTitleTitle", lang.tr("confirm.lostProgress").to_owned(), "confirm.quitToTitle")
+        }
+        Confirmation::QuitGame => {
+            ("confirm.quitGameTitle", lang.tr("confirm.lostProgress").to_owned(), "confirm.quitGame")
+        }
         Confirmation::Overwrite(slot) => {
-            ("Overwrite save?", format!("Slot {slot} already holds a save. Replace it?"), "Overwrite")
+            ("confirm.overwriteTitle", lang.format("confirm.overwriteMessage", &[&slot]), "confirm.overwrite")
         }
         Confirmation::Delete(slot) => {
-            ("Delete save?", format!("The save in slot {slot} will be gone for good."), "Delete")
+            ("confirm.deleteTitle", lang.format("confirm.deleteMessage", &[&slot]), "confirm.delete")
         }
-        Confirmation::NewGameOver(slot) => (
-            "Start over in this slot?",
-            format!("Slot {slot} already holds a save. A new game here replaces it at its first save."),
-            "Start new game",
-        ),
+        Confirmation::NewGameOver(slot) => {
+            ("confirm.newGameTitle", lang.format("confirm.newGameMessage", &[&slot]), "confirm.newGame")
+        }
     };
-    ConfirmView { title: title.to_owned(), message, confirm: confirm.to_owned() }
+    ConfirmView { title: lang.tr(title).to_owned(), message, confirm: lang.tr(confirm).to_owned() }
 }
 
 #[cfg(test)]

@@ -10,10 +10,11 @@ publish.workspace = true
 
 [features]
 default = ["desktop"]
-# The desktop game: a window (winit + softbuffer), gamepads (gilrs), audio (cpal) and user
-# folders (directories). Without it the crate is the platform-independent player library (what
-# farm-ffi embeds in the editor, and what builds for wasm32).
-desktop = ["audio-out", "dep:winit", "dep:softbuffer", "dep:gilrs", "dep:directories"]
+# The desktop game: a window (winit + softbuffer), gamepads (gilrs), audio (cpal), user folders
+# (directories) and the system language (sys-locale). Without it the crate is the
+# platform-independent player library (what farm-ffi embeds in the editor, and what builds for
+# wasm32).
+desktop = ["audio-out", "dep:winit", "dep:softbuffer", "dep:gilrs", "dep:directories", "dep:sys-locale"]
 # Sound output on the default device (cpal), without the rest of the desktop game: the editor's
 # Play Mode.
 audio-out = ["dep:cpal"]
@@ -33,6 +34,7 @@ softbuffer = { version = "0.4", optional = true }
 gilrs = { version = "0.11", optional = true }
 cpal = { version = "0.18", optional = true }
 directories = { version = "6", optional = true }
+sys-locale = { version = "0.3", optional = true }
 
 # build.rs embeds placeholder icon and version resources when the target is Windows;
 # Export Game patches them (docs/EXPORT.md).

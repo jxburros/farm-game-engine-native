@@ -8,14 +8,18 @@
 //!
 //! `lib.rs` has the primitives (version, stable hash, buffers); [`session`] has the engine
 //! sessions (create from project JSON, apply commands, tick, read state/hash/views); [`render`]
-//! has `farm-render` requests and the Edit Mode map preview.
+//! has `farm-render` requests and the Edit Mode map preview; [`player`] the graphical player.
+//!
+//! The requests and answers themselves live in `farm-host`, which farm-wasm shares: this crate
+//! only moves bytes across the C ABI and maps [`farm_host::HostError`]s to [`FeResult`]s.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod player;
 pub mod render;
 pub mod session;
-pub mod view_json;
+/// JSON for host views in engine order (moved to `farm-host`, shared with farm-wasm).
+pub use farm_host::view_json;
 pub use render::FePreview;
 pub use session::FeSession;
 
@@ -49,6 +53,38 @@ pub enum FeResult {
     Panic = 2,
     /// A previous call on this session panicked; its state is not trustworthy.
     Poisoned = 3,
+}
+
+impl From<farm_host::ErrorKind> for FeResult {
+    fn from(kind: farm_host::ErrorKind) -> Self {
+        match kind {
+            farm_host::ErrorKind::Invalid => FeResult::InvalidArgument,
+            farm_host::ErrorKind::Panic => FeResult::Panic,
+            farm_host::ErrorKind::Poisoned => FeResult::Poisoned,
+        }
+    }
+}
+
+/// The `len` bytes at `ptr`; null is accepted only with length 0.
+pub(crate) unsafe fn bytes_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+    if ptr.is_null() {
+        (len == 0).then_some(&[])
+    } else {
+        Some(std::slice::from_raw_parts(ptr, len))
+    }
+}
+
+/// Hands `bytes` to the caller through `out` (ignored when `out` is null).
+pub(crate) unsafe fn write(out: *mut FeBytes, bytes: Vec<u8>) {
+    if !out.is_null() {
+        *out = FeBytes::from_vec(bytes);
+    }
+}
+
+pub(crate) unsafe fn write_empty(out: *mut FeBytes) {
+    if !out.is_null() {
+        *out = FeBytes::empty();
+    }
 }
 
 /// The crate version as a NUL-terminated UTF-8 string (static; do not free).

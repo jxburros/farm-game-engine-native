@@ -337,8 +337,8 @@ module Json =
         let code = int c
         "\\u" + hexDigit ((code >>> 12) &&& 0xF) + hexDigit ((code >>> 8) &&& 0xF) + hexDigit ((code >>> 4) &&& 0xF) + hexDigit (code &&& 0xF)
 
-    let private isHighSurrogate (c: char) = c >= '\uD800' && c <= '\uDBFF'
-    let private isLowSurrogate (c: char) = c >= '\uDC00' && c <= '\uDFFF'
+    let private isHighSurrogate (c: char) = int c >= 0xD800 && int c <= 0xDBFF
+    let private isLowSurrogate (c: char) = int c >= 0xDC00 && int c <= 0xDFFF
 
     /// `JSON.stringify` of a string, quotes included (well-formed: lone surrogates escaped).
     let quote (s: string) : string =
@@ -419,6 +419,179 @@ module Json =
         let sb = System.Text.StringBuilder()
         write false sb value
         sb.ToString()
+
+    let rec private writeIndented (sb: System.Text.StringBuilder) (indent: string) (value: Json) : unit =
+        match value with
+        | JArray [] -> sb.Append "[]" |> ignore
+        | JObject [] -> sb.Append "{}" |> ignore
+        | JArray items ->
+            let inner = indent + "  "
+            sb.Append "[\n" |> ignore
+            items
+            |> List.iteri (fun i item ->
+                if i > 0 then sb.Append ",\n" |> ignore
+                sb.Append inner |> ignore
+                writeIndented sb inner item)
+            sb.Append('\n').Append(indent).Append(']') |> ignore
+        | JObject members ->
+            let inner = indent + "  "
+            sb.Append "{\n" |> ignore
+            jsKeyOrder members
+            |> List.iteri (fun i (k, v) ->
+                if i > 0 then sb.Append ",\n" |> ignore
+                sb.Append(inner).Append(quote k).Append(": ") |> ignore
+                writeIndented sb inner v)
+            sb.Append('\n').Append(indent).Append('}') |> ignore
+        | scalar -> write false sb scalar
+
+    /// `JSON.stringify(value, null, 2)`: two-space indentation, members in JS enumeration order.
+    let stringifyIndented (value: Json) : string =
+        let sb = System.Text.StringBuilder()
+        writeIndented sb "" value
+        sb.ToString()
+
+    // ── Reading text ───────────────────────────────────────────────────────
+
+    exception private ParseFailure of string
+
+    /// Parses JSON text (`JSON.parse`, plus line and block comments and trailing commas, which
+    /// hand-edited project files sometimes carry). Duplicate keys keep the last value in the
+    /// first key's position, like a JS object.
+    let parse (text: string) : Result<Json, string> =
+        let mutable i = 0
+        let fail (message: string) : 'T = raise (ParseFailure(sprintf "%s at position %d" message i))
+        let rec skip () =
+            while i < text.Length && (text.[i] = ' ' || text.[i] = '\t' || text.[i] = '\n' || text.[i] = '\r') do
+                i <- i + 1
+            if i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '/' then
+                while i < text.Length && text.[i] <> '\n' do
+                    i <- i + 1
+                skip ()
+            elif i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '*' then
+                let close = text.IndexOf("*/", i + 2)
+                if close < 0 then fail "Unterminated comment"
+                i <- close + 2
+                skip ()
+        let expect (c: char) =
+            if i < text.Length && text.[i] = c then i <- i + 1 else fail (sprintf "Expected '%c'" c)
+        let hex (c: char) =
+            if c >= '0' && c <= '9' then int c - int '0'
+            elif c >= 'a' && c <= 'f' then int c - int 'a' + 10
+            elif c >= 'A' && c <= 'F' then int c - int 'A' + 10
+            else fail "Invalid \\u escape"
+        let readString () : string =
+            expect '"'
+            let sb = System.Text.StringBuilder()
+            let mutable closed = false
+            while not closed do
+                if i >= text.Length then fail "Unterminated string"
+                let c = text.[i]
+                i <- i + 1
+                if c = '"' then closed <- true
+                elif c = '\\' then
+                    if i >= text.Length then fail "Unterminated string"
+                    let e = text.[i]
+                    i <- i + 1
+                    match e with
+                    | '"' -> sb.Append '"' |> ignore
+                    | '\\' -> sb.Append '\\' |> ignore
+                    | '/' -> sb.Append '/' |> ignore
+                    | 'b' -> sb.Append '\b' |> ignore
+                    | 'f' -> sb.Append '\f' |> ignore
+                    | 'n' -> sb.Append '\n' |> ignore
+                    | 'r' -> sb.Append '\r' |> ignore
+                    | 't' -> sb.Append '\t' |> ignore
+                    | 'u' ->
+                        if i + 4 > text.Length then fail "Invalid \\u escape"
+                        let code = (hex text.[i] <<< 12) ||| (hex text.[i + 1] <<< 8) ||| (hex text.[i + 2] <<< 4) ||| hex text.[i + 3]
+                        sb.Append(char code) |> ignore
+                        i <- i + 4
+                    | _ -> fail "Invalid escape"
+                elif c < ' ' then fail "Control character in string"
+                else sb.Append c |> ignore
+            sb.ToString()
+        let readNumber () : Json =
+            let start = i
+            if i < text.Length && text.[i] = '-' then i <- i + 1
+            let digits () =
+                let from = i
+                while i < text.Length && text.[i] >= '0' && text.[i] <= '9' do
+                    i <- i + 1
+                i - from
+            let intStart = i
+            let intDigits = digits ()
+            if intDigits = 0 then fail "Invalid number"
+            // No leading zeros: `01` is not JSON.
+            if intDigits > 1 && text.[intStart] = '0' then fail "Invalid number"
+            if i < text.Length && text.[i] = '.' then
+                i <- i + 1
+                if digits () = 0 then fail "Invalid number"
+            if i < text.Length && (text.[i] = 'e' || text.[i] = 'E') then
+                i <- i + 1
+                if i < text.Length && (text.[i] = '+' || text.[i] = '-') then i <- i + 1
+                if digits () = 0 then fail "Invalid number"
+            JNumber(JsNumber.parse (text.Substring(start, i - start)))
+        let literal (word: string) (value: Json) =
+            if i + word.Length <= text.Length && text.Substring(i, word.Length) = word then
+                i <- i + word.Length
+                value
+            else fail "Unexpected token"
+        let rec readValue () : Json =
+            skip ()
+            if i >= text.Length then fail "Unexpected end of JSON input"
+            match text.[i] with
+            | '{' ->
+                i <- i + 1
+                let members = ResizeArray<string * Json>()
+                skip ()
+                let mutable closed = false
+                while not closed do
+                    skip ()
+                    if i < text.Length && text.[i] = '}' then
+                        i <- i + 1
+                        closed <- true
+                    else
+                        let key = readString ()
+                        skip ()
+                        expect ':'
+                        let value = readValue ()
+                        match Seq.tryFindIndex (fun (k, _) -> k = key) members with
+                        | Some index -> members.[index] <- (key, value)
+                        | None -> members.Add((key, value))
+                        skip ()
+                        if i < text.Length && text.[i] = ',' then i <- i + 1
+                        elif i < text.Length && text.[i] = '}' then ()
+                        else fail "Expected ',' or '}'"
+                JObject(List.ofSeq members)
+            | '[' ->
+                i <- i + 1
+                let items = ResizeArray<Json>()
+                let mutable closed = false
+                while not closed do
+                    skip ()
+                    if i < text.Length && text.[i] = ']' then
+                        i <- i + 1
+                        closed <- true
+                    else
+                        items.Add(readValue ())
+                        skip ()
+                        if i < text.Length && text.[i] = ',' then i <- i + 1
+                        elif i < text.Length && text.[i] = ']' then ()
+                        else fail "Expected ',' or ']'"
+                JArray(List.ofSeq items)
+            | '"' -> JString(readString ())
+            | 't' -> literal "true" (JBool true)
+            | 'f' -> literal "false" (JBool false)
+            | 'n' -> literal "null" JNull
+            | c when c = '-' || (c >= '0' && c <= '9') -> readNumber ()
+            | _ -> fail "Unexpected token"
+        try
+            let value = readValue ()
+            skip ()
+            if i < text.Length then fail "Unexpected text after JSON"
+            Ok value
+        with ParseFailure message ->
+            Error message
 
     /// `stableStringify` (engine-core hash.ts): keys sorted by UTF-16 code unit, then index keys
     /// first as a JS object enumerates them. The same text as C# `StableJStringify`.

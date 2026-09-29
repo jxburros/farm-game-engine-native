@@ -1,6 +1,7 @@
 //! Port of `Fishing.cs` (packages/engine-schemas/src/fishing.ts).
 //! Fishing (M4e).
 
+use crate::units;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -9,14 +10,16 @@ use serde_json::{Map, Value};
 pub struct FishTableEntry {
     pub item_id: String,
     /// positive.
-    pub weight: f64,
+    #[serde(with = "crate::units::count")]
+    pub weight: u32,
     /// 0..1 — harder fish escape low-tier rods more often.
-    pub difficulty: f64,
+    #[serde(with = "crate::units::probability")]
+    pub difficulty: u64,
 }
 
 impl Default for FishTableEntry {
     fn default() -> Self {
-        Self { item_id: String::new(), weight: 0.0, difficulty: 0.3 }
+        Self { item_id: String::new(), weight: 0, difficulty: units::from_authoring::<units::Probability>(0.3) }
     }
 }
 
@@ -33,7 +36,8 @@ pub struct FishTable {
     pub scene_ids: Option<Vec<String>>,
     pub entries: Vec<FishTableEntry>,
     /// Chance (0..1) a cast catches junk instead of rolling the table.
-    pub junk_chance: f64,
+    #[serde(with = "crate::units::probability")]
+    pub junk_chance: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub junk_item_id: Option<String>,
     #[serde(flatten)]
@@ -48,7 +52,7 @@ impl Default for FishTable {
             seasons: None,
             scene_ids: None,
             entries: Vec::new(),
-            junk_chance: 0.15,
+            junk_chance: units::from_authoring::<units::Probability>(0.15),
             junk_item_id: None,
             extra: Map::new(),
         }

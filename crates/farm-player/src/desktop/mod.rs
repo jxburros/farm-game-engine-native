@@ -70,6 +70,8 @@ pub fn run(cart: &[u8], options: DesktopOptions) -> Result<(), String> {
     let folders = folders::UserFolders::for_game(&loaded.info.game_id, loaded.info.company.as_deref());
     let mut player_options = PlayerOptions::standalone();
     player_options.clock = Box::new(unix_now);
+    // The interface follows the system's language until the player picks one.
+    player_options.system_locale = sys_locale::get_locale();
     match &folders {
         Some(folders) => {
             player_options.saves = Box::new(FsSaveStore::new(&folders.saves));

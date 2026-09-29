@@ -2,14 +2,12 @@ module FarmEngine.Authoring.Tests.ContentCompilerTests
 
 open System
 open System.IO
-open System.Text.Json
 open Xunit
 open FarmEngine.Authoring
-open FarmEngine.Json
 open FarmEngine.Schemas
 open FarmEngine.Authoring.Tests.TestProjects
 
-let private same (expected: 'T) (actual: 'U) = Assert.Equal(StableJson.Stringify<'T> expected, StableJson.Stringify<'U> actual)
+let private same (encode: 'T -> Json) (expected: 'T) (actual: 'T) = Assert.Equal(stableOf encode expected, stableOf encode actual)
 
 [<Fact>]
 let ``authoring has no reference to the C sharp engine assemblies`` () =
@@ -21,28 +19,19 @@ let ``authoring has no reference to the C sharp engine assemblies`` () =
 /// TypeScript engine (the Rust `packs_and_state` tests check the same file).
 [<Fact>]
 let ``all built in content definitions match TypeScript`` () =
-    let expected = readElement [ "Fixtures"; "content-builtin.json" ]
-    let check (key: string) (actual: 'T) =
-        assertSameStable key (StableJson.Stringify(expected.GetProperty key: JsonElement)) (StableJson.Stringify<'T> actual)
-    check "crops" (Builtin.crops ())
-    check "items" (Builtin.items ())
-    check "nodes" (Builtin.nodeTypes ())
-    check "mineNodes" (Builtin.mineNodeTypes ())
-    check "bands" (Builtin.mineBands ())
-    check "recipes" (Builtin.recipes ())
-    check "machineTypes" (Builtin.machineTypes ())
-    check "animals" (Builtin.animalSpecies ())
-    check "fish" (Builtin.fishTables ())
-    check "shop" (Builtin.shop ())
-
-[<Fact>]
-let ``built in factories do not share mutable collections between projects`` () =
-    let crops = Builtin.crops ()
-    crops["wheat"].Seasons.Clear()
-    Assert.NotEmpty((Builtin.crops ()).["wheat"].Seasons)
-    let nodes = Builtin.nodeTypes ()
-    nodes[0].Drops.Clear()
-    Assert.NotEmpty((Builtin.nodeTypes ()).[0].Drops)
+    let expected = readJson [ "Fixtures"; "content-builtin.json" ]
+    let check (key: string) (actual: Json) =
+        assertSameStable key (Json.stableStringify (Json.get key expected)) (Json.stableStringify actual)
+    check "crops" (Encode.dict SchemaJson.encodeCropDefinition (Builtin.crops ()))
+    check "items" (Encode.list SchemaJson.encodeItem (Builtin.items ()))
+    check "nodes" (Encode.list SchemaJson.encodeNodeTypeDefinition (Builtin.nodeTypes ()))
+    check "mineNodes" (Encode.list SchemaJson.encodeNodeTypeDefinition (Builtin.mineNodeTypes ()))
+    check "bands" (Encode.list SchemaJson.encodeMineBand (Builtin.mineBands ()))
+    check "recipes" (Encode.list SchemaJson.encodeRecipeDefinition (Builtin.recipes ()))
+    check "machineTypes" (Encode.list SchemaJson.encodeMachineTypeDefinition (Builtin.machineTypes ()))
+    check "animals" (Encode.list SchemaJson.encodeAnimalSpeciesDefinition (Builtin.animalSpecies ()))
+    check "fish" (Encode.list SchemaJson.encodeFishTable (Builtin.fishTables ()))
+    check "shop" (SchemaJson.encodeShopDefinition (Builtin.shop ()))
 
 let contentGoldens : obj[] seq =
     Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Golden", "content"), "*.json")
@@ -50,14 +39,13 @@ let contentGoldens : obj[] seq =
 
 [<Theory; MemberData(nameof contentGoldens)>]
 let ``F sharp content matches TypeScript stable JSON and hash`` (path: string) =
-    use fixture = JsonDocument.Parse(File.ReadAllText path)
-    let root = fixture.RootElement
-    let project = root.GetProperty("project").Deserialize<GameProject>(JsonDefaults.Options)
-    let before = StableJson.Stringify project
-    let content = ContentCompiler.compile project
-    Assert.Equal(root.GetProperty("stable").GetString(), StableJson.Stringify content)
-    Assert.Equal(root.GetProperty("contentHash").GetString(), hashState content)
-    Assert.Equal(before, StableJson.Stringify project)
+    let root = readJson [ path ]
+    let project = projectOf (Json.get "project" root)
+    let before = stableOf SchemaJson.encodeGameProject project
+    let content = SchemaJson.encodeGameContent (ContentCompiler.compile project)
+    Assert.Equal(Json.asString (Json.get "stable" root), Some(Json.stableStringify content))
+    Assert.Equal(Json.asString (Json.get "contentHash" root), Some(hashJson content))
+    Assert.Equal(before, stableOf SchemaJson.encodeGameProject project)
 
 let replayProjects : obj[] seq =
     Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Golden", "replays"), "*.json")
@@ -67,48 +55,48 @@ let replayProjects : obj[] seq =
 /// Every replay records the hash of the content the TypeScript engine assembled for its project.
 [<Theory; MemberData(nameof replayProjects)>]
 let ``F sharp content matches the TypeScript content hash of every replay project`` (path: string) =
-    use fixture = JsonDocument.Parse(File.ReadAllText path)
-    let project = fixture.RootElement.GetProperty("project").Deserialize<GameProject>(JsonDefaults.Options)
-    Assert.Equal(fixture.RootElement.GetProperty("contentHash").GetString(), hashState (ContentCompiler.compile project))
+    let root = readJson [ path ]
+    let project = projectOf (Json.get "project" root)
+    Assert.Equal(Json.asString (Json.get "contentHash" root), Some(hashJson (SchemaJson.encodeGameContent (ContentCompiler.compile project))))
 
 [<Fact>]
 let ``compiler falls back to the defaults for missing or unloadable settings`` () =
     let project = blank ()
-    let baseOf (name: string) (value: objnull) = ContentCompiler.baseContent (Records.withValue project name value)
     // No items: the built-in catalog.
-    same (Builtin.items ()) (baseOf "Items" (box (System.Collections.Generic.List<Item>()))).Items
+    Assert.Equal<Item list>(Builtin.items (), (ContentCompiler.baseContent { project with Items = [] }).Items)
     // Settings that would not load: the defaults.
-    same SettingsSchema.DefaultProjectSettings (baseOf "Settings" null).Settings
-    same SettingsSchema.DefaultProjectSettings (baseOf "Settings" (box (ProjectSettings(MaxEnergy = -1.0)))).Settings
+    let settingsOf (settings: ProjectSettings) = (ContentCompiler.baseContent { project with Settings = settings }).Settings
+    same SchemaJson.encodeProjectSettings SettingsSchema.DefaultProjectSettings (settingsOf { ProjectSettings.Default with MaxEnergy = -1.0 })
     // Weather that would not load: the default weather.
-    same (MigrationsSchema.DefaultWeatherConfig()) (baseOf "Weather" null).Weather
-    same (MigrationsSchema.DefaultWeatherConfig())
-        (baseOf "Weather" (box (WeatherConfig(Types = listOf [ WeatherTypeDefinition(CropDamageChance = 2.0) ])))).Weather
+    let broken = { WeatherConfig.Default with Types = [ { WeatherTypeDefinition.Default with CropDamageChance = 2.0 } ] }
+    same SchemaJson.encodeWeatherConfig (MigrationsSchema.DefaultWeatherConfig()) (ContentCompiler.baseContent { project with Weather = broken }).Weather
     // Valid project settings are kept as authored.
-    let settings = Records.withValue project.Settings "MaxEnergy" (box 42.0)
-    Assert.Equal(42.0, (baseOf "Settings" (box settings)).Settings.MaxEnergy)
+    Assert.Equal(42.0, (settingsOf { project.Settings with MaxEnergy = 42.0 }).MaxEnergy)
 
 [<Fact>]
 let ``project node types and custom crops replace the built in ones`` () =
     let project = blank ()
     let nodes =
-        (ContentCompiler.baseContent (Records.withValue project "NodeTypes" (box (listOf [ NodeTypeDefinition(Id = "node-tree", Name = "Custom tree") ])))).NodeTypes
-    let builtIn = Seq.append (Builtin.nodeTypes ()) (Builtin.mineNodeTypes ()) |> Seq.map (fun d -> d.Id) |> List.ofSeq
+        (ContentCompiler.baseContent ({ project with NodeTypes = ([ { NodeTypeDefinition.Default with Id = "node-tree"; Name = "Custom tree" } ]) })).NodeTypes
+    let builtIn = Builtin.nodeTypes () @ Builtin.mineNodeTypes () |> List.map (fun d -> d.Id)
     // Built-in and mine node types the project does not replace, then the project's own.
     Assert.Equal<string list>((builtIn |> List.filter ((<>) "node-tree")) @ [ "node-tree" ], nodes |> Seq.map (fun d -> d.Id) |> List.ofSeq)
     Assert.Equal("Custom tree", (nodes |> Seq.last).Name)
     let crops =
         (ContentCompiler.baseContent
-            (Records.withValue project "CustomCrops" (box (listOf [ CustomCropDefinition(Id = "wheat", Name = "Custom wheat", CustomAsset = "art") ])))).Crops
-    Assert.Equal<string list>((Builtin.crops ()).Keys |> List.ofSeq, crops.Keys |> List.ofSeq)
-    Assert.Equal("Custom wheat", crops.["wheat"].Name)
+            ({ project with CustomCrops = Some [ { CustomCropDefinition.Default with Id = "wheat"; Name = "Custom wheat"; CustomAsset = Some("art") } ] })).Crops
+    Assert.Equal<string list>(Builtin.crops () |> List.map fst, crops |> List.map fst)
+    let wheat = crops |> List.find (fst >> (=) "wheat") |> snd
+    Assert.Equal("Custom wheat", wheat.Name)
     // The custom crop's own fields (customAsset included) carry over.
-    Assert.Contains("\"customAsset\":\"art\"", StableJson.Stringify crops.["wheat"])
+    Assert.Contains("\"customAsset\":\"art\"", stableOf SchemaJson.encodeCropDefinition wheat)
 
 // ── Authored tiles (game-helpers.ts, characterized by the C# GameHelpersCharacterizationTests) ──
 
-let private assertJson (expected: string) (actual: 'T) =
-    Assert.Equal(StableJson.Stringify(JsonDocument.Parse(expected).RootElement: JsonElement), StableJson.Stringify<'T> actual)
+let private assertTile (expected: string) (actual: Tile) =
+    match Json.parse expected with
+    | Ok json -> Assert.Equal(Json.stableStringify json, stableOf SchemaJson.encodeTile actual)
+    | Error message -> failwith message
 
 [<Theory>]
 [<InlineData("grass", "background"); InlineData("soil", "background"); InlineData("water", "background"); InlineData("floor", "background")>]
@@ -118,66 +106,69 @@ let ``tile types classify onto their layer`` (tileType: string, layer: string) =
 
 [<Fact>]
 let ``empty tiles route each type to its layer and only walls collide`` () =
-    assertJson
+    assertTile
         """{"x":3,"y":7,"type":"grass","background":"grass","overlay":null,"object":null,"collision":false,"soilMoisture":0,"soilFertility":0}"""
         (AuthoringTiles.CreateEmptyTile(3.0, 7.0, "grass"))
     for tileType in [ "soil"; "water"; "floor" ] do
         let tile = AuthoringTiles.CreateEmptyTile(0.0, 0.0, tileType)
         Assert.Equal((tileType, tileType), (tile.Type, tile.Background))
-        Assert.Null tile.Overlay
-        Assert.Null tile.Object
+        Assert.Equal(None, tile.Overlay)
+        Assert.Equal(None, tile.Object)
         Assert.False tile.Collision
     let path = AuthoringTiles.CreateEmptyTile(1.0, 2.0, "path")
-    Assert.Equal(("path", "grass", "path", false), (path.Type, path.Background, path.Overlay, path.Collision))
-    Assert.Null path.Object
+    Assert.Equal(("path", "grass", Some "path", false), (path.Type, path.Background, path.Overlay, path.Collision))
+    Assert.Equal(None, path.Object)
     let wall = AuthoringTiles.CreateEmptyTile(1.0, 2.0, "wall")
-    Assert.Equal(("grass", "wall", true), (wall.Background, wall.Object, wall.Collision))
-    Assert.Null wall.Overlay
+    Assert.Equal(("grass", Some "wall", true), (wall.Background, wall.Object, wall.Collision))
+    Assert.Equal(None, wall.Overlay)
     // Quirk: doors are walkable.
     let door = AuthoringTiles.CreateEmptyTile(1.0, 2.0, "door")
-    Assert.Equal(("grass", "door", false), (door.Background, door.Object, door.Collision))
+    Assert.Equal(("grass", Some "door", false), (door.Background, door.Object, door.Collision))
 
 [<Fact>]
 let ``set tile layer paints one layer and returns a new tile`` () =
     let grass = AuthoringTiles.CreateEmptyTile(0.0, 0.0, "grass")
-    let before = StableJson.Stringify grass
+    let before = stableOf SchemaJson.encodeTile grass
     let soil = AuthoringTiles.SetTileLayer(grass, "soil")
     Assert.NotSame(grass, soil)
-    Assert.Equal(before, StableJson.Stringify grass)
+    Assert.Equal(before, stableOf SchemaJson.encodeTile grass)
     // Quirk: painting a background under a wall keeps the wall object and its collision.
     let underWall = AuthoringTiles.SetTileLayer(AuthoringTiles.CreateEmptyTile(0.0, 0.0, "wall"), "soil")
-    Assert.Equal(("soil", "soil", "wall", true), (underWall.Type, underWall.Background, underWall.Object, underWall.Collision))
+    Assert.Equal(("soil", "soil", Some "wall", true), (underWall.Type, underWall.Background, underWall.Object, underWall.Collision))
     let path = AuthoringTiles.SetTileLayer(grass, "path")
-    Assert.Equal(("path", "grass", "path", false), (path.Type, path.Background, path.Overlay, path.Collision))
-    Assert.Null path.Object
+    Assert.Equal(("path", "grass", Some "path", false), (path.Type, path.Background, path.Overlay, path.Collision))
+    Assert.Equal(None, path.Object)
     let wall = AuthoringTiles.SetTileLayer(AuthoringTiles.CreateEmptyTile(0.0, 0.0, "soil"), "wall")
-    Assert.Equal(("wall", "soil", "wall", true), (wall.Type, wall.Background, wall.Object, wall.Collision))
+    Assert.Equal(("wall", "soil", Some "wall", true), (wall.Type, wall.Background, wall.Object, wall.Collision))
     let door = AuthoringTiles.SetTileLayer(AuthoringTiles.CreateEmptyTile(0.0, 0.0, "wall"), "door")
-    Assert.Equal(("door", "door", false), (door.Type, door.Object, door.Collision))
+    Assert.Equal(("door", Some "door", false), (door.Type, door.Object, door.Collision))
 
 [<Fact>]
 let ``set tile layer with a visual binds it to the painted layer`` () =
-    let tile = Records.withValues (AuthoringTiles.CreateEmptyTile(3.0, 4.0, "grass")) [ "CustomImage", box "legacy.png"; "Visuals", box (TileVisuals(Overlay = VisualRef(AssetId = "old"))) ]
-    let before = StableJson.Stringify tile
-    let painted = AuthoringTiles.SetTileLayer(tile, "wall", VisualRef(AssetId = "art"))
-    Assert.Null painted.CustomImage
-    Assert.Equal("art", painted.Visuals.Object.AssetId)
-    Assert.Equal("old", painted.Visuals.Overlay.AssetId)
+    let tile =
+        { AuthoringTiles.CreateEmptyTile(3.0, 4.0, "grass") with
+            CustomImage = Some "legacy.png"
+            Visuals = Some { TileVisuals.Default with Overlay = Some { VisualRef.Default with AssetId = "old" } } }
+    let before = stableOf SchemaJson.encodeTile tile
+    let painted = AuthoringTiles.SetTileLayer(tile, "wall", Some { VisualRef.Default with AssetId = "art" })
+    Assert.Equal(None, painted.CustomImage)
+    Assert.Equal("art", painted.Visuals.Value.Object.Value.AssetId)
+    Assert.Equal("old", painted.Visuals.Value.Overlay.Value.AssetId)
     // Without a visual the legacy image stays and the layer's binding clears.
     let plain = AuthoringTiles.SetTileLayer(tile, "path")
-    Assert.Equal("legacy.png", plain.CustomImage)
-    Assert.Null plain.Visuals.Overlay
-    Assert.Equal(before, StableJson.Stringify tile)
+    Assert.Equal(Some "legacy.png", plain.CustomImage)
+    Assert.Equal(None, plain.Visuals.Value.Overlay)
+    Assert.Equal(before, stableOf SchemaJson.encodeTile tile)
 
 [<Fact>]
 let ``empty scenes are rows of grass tiles with nothing placed`` () =
     let scene = AuthoringTiles.CreateEmptyScene("scene-x", "X", 4.0, 3.0)
     Assert.Equal(("scene-x", "X", 4.0, 3.0), (scene.Id, scene.Name, scene.Width, scene.Height))
-    Assert.Equal(3, scene.Tiles.Count)
+    Assert.Equal(3, scene.Tiles.Length)
     for y in 0 .. 2 do
-        Assert.Equal(4, scene.Tiles.[y].Count)
+        Assert.Equal(4, scene.Tiles.[y].Length)
         for x in 0 .. 3 do
-            same (AuthoringTiles.CreateEmptyTile(float x, float y, "grass")) scene.Tiles.[y].[x]
+            Assert.Equal(AuthoringTiles.CreateEmptyTile(float x, float y, "grass"), scene.Tiles.[y].[x])
     Assert.Empty scene.Transitions
     Assert.Empty scene.Npcs
     Assert.Empty scene.Events

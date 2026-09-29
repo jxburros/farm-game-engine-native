@@ -15,6 +15,7 @@ use farm_sim::schema::{
     GameProject, GameState, MachineProcessing, MachineTypeDefinition, RecipeDefinition, RecipeIngredient, RecipeUnlock,
     TileMachine,
 };
+use farm_sim::units;
 use farm_sim::{EngineContext, HookBus};
 use fixture_project::{at, give, has_message, make_engine, quantity, starter_farm_project};
 
@@ -53,9 +54,9 @@ fn with_cooking_station() -> (EngineContext, GameState) {
         project.recipes.push(RecipeDefinition {
             id: "recipe-test-soup".to_owned(),
             name: "Test Soup".to_owned(),
-            inputs: vec![RecipeIngredient { item_id: "material-fiber".to_owned(), quantity: 1.0 }],
-            outputs: vec![RecipeIngredient { item_id: "feed-hay".to_owned(), quantity: 1.0 }],
-            processing_minutes: 0.0,
+            inputs: vec![RecipeIngredient { item_id: "material-fiber".to_owned(), quantity: 1 }],
+            outputs: vec![RecipeIngredient { item_id: "feed-hay".to_owned(), quantity: 1 }],
+            processing_minutes: 0,
             category: "cooking".to_owned(),
             requires_station_category: Some("cooking".to_owned()),
             ..RecipeDefinition::default()
@@ -68,10 +69,10 @@ fn with_cooking_station() -> (EngineContext, GameState) {
 #[test]
 fn hand_crafts_an_instant_recipe_consuming_inputs() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "material-fiber", 6.0);
+    give(&ctx, &mut state, "material-fiber", 6);
     let effects = handle_craft(&ctx, &mut state, "recipe-craft-hay");
-    assert_eq!(quantity(&state, "feed-hay"), Some(2.0));
-    assert_eq!(quantity(&state, "material-fiber"), Some(3.0));
+    assert_eq!(quantity(&state, "feed-hay"), Some(2));
+    assert_eq!(quantity(&state, "material-fiber"), Some(3));
     assert!(has_message(&effects, |t| t == "Crafted 2x Hay"));
 }
 
@@ -90,8 +91,8 @@ fn rejects_crafting_without_ingredients() {
 #[test]
 fn rejects_crafting_below_skill_unlocks() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "material-wood", 20.0);
-    give(&ctx, &mut state, "material-stone", 20.0);
+    give(&ctx, &mut state, "material-wood", 20);
+    give(&ctx, &mut state, "material-stone", 20);
     let locked = handle_craft(&ctx, &mut state, "recipe-craft-preserves-jar");
     assert!(has_message(&locked, |t| t == "Recipe not unlocked yet."));
 }
@@ -99,12 +100,12 @@ fn rejects_crafting_below_skill_unlocks() {
 #[test]
 fn places_a_machine_loads_a_job_and_finishes_it_after_processing_time() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "machine-furnace", 1.0);
-    give(&ctx, &mut state, "ore-copper", 3.0);
-    give(&ctx, &mut state, "material-wood", 1.0);
+    give(&ctx, &mut state, "machine-furnace", 1);
+    give(&ctx, &mut state, "ore-copper", 3);
+    give(&ctx, &mut state, "material-wood", 1);
 
     // Facing up from (3,4) at the C# test farm; the starter farm's (8,9) faces (8,8).
-    at(&mut state, 8.0, 9.0, "up");
+    at(&mut state, 8, 9, "up");
     handle_place_machine(&ctx, &mut state, "machine-furnace");
     let machine = state.world.scenes[0].tiles[8][8].machine.clone();
     assert_eq!(machine.map(|m| m.type_id), Some("machine-furnace".to_owned()));
@@ -119,22 +120,22 @@ fn places_a_machine_loads_a_job_and_finishes_it_after_processing_time() {
     farm_sim::game_time::perform_sleep(&ctx, &mut state, farm_sim::game_time::SleepOptions::default());
     let machine = state.world.scenes[0].tiles[8][8].machine.clone().expect("machine stays");
     assert_eq!(machine.processing, None);
-    assert_eq!(machine.output, Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1.0 }]));
+    assert_eq!(machine.output, Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1 }]));
 
     // Interact collects.
-    collect_machine_output(&ctx, &mut state, "scene-farm", 8.0, 8.0);
-    assert_eq!(quantity(&state, "bar-copper"), Some(1.0));
+    collect_machine_output(&ctx, &mut state, "scene-farm", 8, 8);
+    assert_eq!(quantity(&state, "bar-copper"), Some(1));
     assert_eq!(state.world.scenes[0].tiles[8][8].machine.as_ref().and_then(|m| m.output.clone()), None);
 }
 
 #[test]
 fn machines_block_movement() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "machine-furnace", 1.0);
-    at(&mut state, 8.0, 9.0, "up");
+    give(&ctx, &mut state, "machine-furnace", 1);
+    at(&mut state, 8, 9, "up");
     handle_place_machine(&ctx, &mut state, "machine-furnace");
     farm_sim::world::world_movement::handle_move(&ctx, &mut state, "up");
-    assert_eq!(state.player.y, 9.0); // blocked by the furnace at (8,8)
+    assert_eq!(state.player.y, units::tiles(9)); // blocked by the furnace at (8,8)
 }
 
 // --- crafting stations & categories ---
@@ -142,25 +143,25 @@ fn machines_block_movement() {
 #[test]
 fn fails_a_station_gated_recipe_away_from_the_station_naming_it_in_the_message() {
     let (ctx, mut state) = with_cooking_station();
-    give(&ctx, &mut state, "material-fiber", 5.0);
+    give(&ctx, &mut state, "material-fiber", 5);
 
     let away = handle_craft(&ctx, &mut state, "recipe-test-soup");
     assert!(away.contains(&Effect::message("error", "You need to be near a Test Kitchen to craft that.")));
     // Nothing consumed on failure.
-    assert_eq!(quantity(&state, "material-fiber"), Some(5.0));
+    assert_eq!(quantity(&state, "material-fiber"), Some(5));
     assert_eq!(quantity(&state, "feed-hay"), None);
 }
 
 #[test]
 fn succeeds_once_a_machine_providing_the_station_category_is_within_1_tile() {
     let (ctx, mut state) = with_cooking_station();
-    give(&ctx, &mut state, "material-fiber", 5.0);
+    give(&ctx, &mut state, "material-fiber", 5);
 
     // Player sits at (8,9); a kitchen at (7,9) is an 8-neighborhood tile away.
     place_machine_at(&mut state, "scene-farm", 7, 9, "machine-test-kitchen");
     handle_craft(&ctx, &mut state, "recipe-test-soup");
-    assert_eq!(quantity(&state, "feed-hay"), Some(1.0));
-    assert_eq!(quantity(&state, "material-fiber"), Some(4.0));
+    assert_eq!(quantity(&state, "feed-hay"), Some(1));
+    assert_eq!(quantity(&state, "material-fiber"), Some(4));
 }
 
 #[test]
@@ -168,14 +169,14 @@ fn nearby_station_categories_floors_fractional_player_coordinates_onto_the_right
     let (ctx, mut state) = with_cooking_station();
     place_machine_at(&mut state, "scene-farm", 7, 9, "machine-test-kitchen");
     let mut fractional = state.clone();
-    fractional.player.x = 8.7;
-    fractional.player.y = 9.2;
+    fractional.player.x = units::pos(8.7);
+    fractional.player.y = units::pos(9.2);
     // floor(8.7)=8, floor(9.2)=9 → still adjacent to the kitchen at (7,9).
     assert!(nearby_station_categories(&ctx, &fractional).contains("cooking"));
 
     let mut far_away = state.clone();
-    far_away.player.x = 0.1;
-    far_away.player.y = 0.1;
+    far_away.player.x = units::pos(0.1);
+    far_away.player.y = units::pos(0.1);
     assert!(!nearby_station_categories(&ctx, &far_away).contains("cooking"));
 }
 
@@ -196,8 +197,8 @@ fn craftable_status_reports_ingredients_when_short_on_inputs() {
 #[test]
 fn craftable_status_reports_locked_when_unlock_conditions_are_not_met() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "material-wood", 20.0);
-    give(&ctx, &mut state, "material-stone", 20.0);
+    give(&ctx, &mut state, "material-wood", 20);
+    give(&ctx, &mut state, "material-stone", 20);
     let status = craftable_status(&ctx, &state, recipe(&ctx, "recipe-craft-preserves-jar"));
     assert_eq!(
         status,
@@ -212,7 +213,7 @@ fn craftable_status_reports_locked_when_unlock_conditions_are_not_met() {
 #[test]
 fn craftable_status_reports_station_when_ingredients_and_unlocks_are_fine_but_no_station_is_nearby() {
     let (ctx, mut state) = with_cooking_station();
-    give(&ctx, &mut state, "material-fiber", 5.0);
+    give(&ctx, &mut state, "material-fiber", 5);
     let status = craftable_status(&ctx, &state, recipe(&ctx, "recipe-test-soup"));
     assert_eq!(
         status,
@@ -227,7 +228,7 @@ fn craftable_status_reports_station_when_ingredients_and_unlocks_are_fine_but_no
 #[test]
 fn craftable_status_reports_craftable_true_once_every_condition_is_satisfied() {
     let (ctx, mut state) = with_cooking_station();
-    give(&ctx, &mut state, "material-fiber", 5.0);
+    give(&ctx, &mut state, "material-fiber", 5);
     place_machine_at(&mut state, "scene-farm", 7, 9, "machine-test-kitchen");
     let status = craftable_status(&ctx, &state, recipe(&ctx, "recipe-test-soup"));
     assert_eq!(status, CraftableStatus { craftable: true, reason: None, message: None });
@@ -238,12 +239,14 @@ fn craftable_status_reports_craftable_true_once_every_condition_is_satisfied() {
 #[test]
 fn absolute_minute_counts_from_day_one_midnight() {
     let (_, mut state) = make_m4_engine(|_| {});
-    assert_eq!(state.clock.day, 1.0);
-    assert_eq!(state.clock.time_minutes, 360.0);
-    assert_eq!(absolute_minute(&state), 360.0);
-    state.clock.day = 3.0;
-    state.clock.time_minutes = 90.0;
-    assert_eq!(absolute_minute(&state), 2.0 * 24.0 * 60.0 + 90.0);
+    assert_eq!(state.clock.day, 1);
+    assert_eq!(state.clock.time_minutes, units::minutes(360));
+    // In micro-minutes.
+    let minute = i64::from(units::MINUTE);
+    assert_eq!(absolute_minute(&state), 360 * minute);
+    state.clock.day = 3;
+    state.clock.time_minutes = units::minutes(90);
+    assert_eq!(absolute_minute(&state), (2 * 24 * 60 + 90) * minute);
 }
 
 #[test]
@@ -251,9 +254,9 @@ fn has_ingredients_counts_across_every_slot_of_the_same_item() {
     let (ctx, mut state) = make_m4_engine(|_| {});
     let hay = recipe(&ctx, "recipe-craft-hay");
     assert!(!has_ingredients(&state, hay));
-    give(&ctx, &mut state, "material-fiber", 2.0);
+    give(&ctx, &mut state, "material-fiber", 2);
     assert!(!has_ingredients(&state, hay));
-    give(&ctx, &mut state, "material-fiber", 1.0);
+    give(&ctx, &mut state, "material-fiber", 1);
     assert!(has_ingredients(&state, hay));
 }
 
@@ -286,8 +289,8 @@ fn recipe_unlocks_gate_on_completed_quests_and_seasons() {
 #[test]
 fn craft_rejects_unknown_and_machine_recipes_without_touching_state() {
     let (ctx, mut state) = make_m4_engine(|_| {});
-    give(&ctx, &mut state, "ore-copper", 3.0);
-    give(&ctx, &mut state, "material-wood", 1.0);
+    give(&ctx, &mut state, "ore-copper", 3);
+    give(&ctx, &mut state, "material-wood", 1);
     let before = state.clone();
     assert_eq!(handle_craft(&ctx, &mut state, "recipe-nope"), vec![Effect::message("error", "Unknown recipe.")]);
     assert_eq!(
@@ -316,12 +319,13 @@ fn settle_machines_finishes_due_jobs_and_leaves_running_ones() {
     place_machine_at(&mut state, "scene-farm", 1, 1, "machine-furnace");
     place_machine_at(&mut state, "scene-farm", 2, 1, "machine-furnace");
     place_machine_at(&mut state, "scene-farm", 3, 1, "machine-preserves");
-    let set_processing = |state: &mut GameState, x: usize, recipe_id: &str, completes_at_minute: f64| {
+    let set_processing = |state: &mut GameState, x: usize, recipe_id: &str, completes_at_minute: i64| {
         let machine = state.world.scenes[0].tiles[1][x].machine.as_mut().expect("machine stamped");
         machine.processing = Some(MachineProcessing { recipe_id: recipe_id.to_owned(), completes_at_minute });
     };
-    set_processing(&mut state, 1, "recipe-smelt-copper", start + 120.0);
-    set_processing(&mut state, 2, "recipe-smelt-iron", start + 180.0);
+    let minute = i64::from(units::MINUTE);
+    set_processing(&mut state, 1, "recipe-smelt-copper", start + 120 * minute);
+    set_processing(&mut state, 2, "recipe-smelt-iron", start + 180 * minute);
     set_processing(&mut state, 3, "recipe-gone", start);
 
     // Nothing but the already-due unknown recipe settles at the start minute.
@@ -334,21 +338,21 @@ fn settle_machines_finishes_due_jobs_and_leaves_running_ones() {
     assert_eq!(machine_at(&state, 3).output, Some(Vec::new()));
 
     // 120 minutes later the copper job completes; the iron job keeps running.
-    state.clock.time_minutes += 120.0;
+    state.clock.time_minutes += units::minutes(120);
     settle_machines(&ctx, &mut state);
     let copper = machine_at(&state, 1);
     assert_eq!(copper.processing, None);
-    assert_eq!(copper.output, Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1.0 }]));
+    assert_eq!(copper.output, Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1 }]));
     assert_eq!(copper.type_id, "machine-furnace");
     assert!(machine_at(&state, 2).processing.is_some());
     assert_eq!(machine_at(&state, 2).output, None);
 
     // The overnight catch-up is an absolute-minute comparison: a new day settles the rest.
-    state.clock.day += 1.0;
+    state.clock.day += 1;
     settle_machines(&ctx, &mut state);
     assert_eq!(
         machine_at(&state, 2).output,
-        Some(vec![RecipeIngredient { item_id: "bar-iron".to_owned(), quantity: 1.0 }])
+        Some(vec![RecipeIngredient { item_id: "bar-iron".to_owned(), quantity: 1 }])
     );
     // Player state is untouched by settling.
     assert_eq!(state.player, before.player);
@@ -359,10 +363,10 @@ fn collect_machine_output_leaves_a_full_inventory_and_the_output_alone() {
     let (ctx, mut state) = make_m4_engine(|_| {});
     place_machine_at(&mut state, "scene-farm", 1, 1, "machine-furnace");
     state.world.scenes[0].tiles[1][1].machine.as_mut().expect("machine").output =
-        Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1.0 }]);
-    state.player.max_inventory_size = state.player.inventory.len() as f64;
+        Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1 }]);
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
     let before = state.clone();
-    let effects = collect_machine_output(&ctx, &mut state, "scene-farm", 1.0, 1.0);
+    let effects = collect_machine_output(&ctx, &mut state, "scene-farm", 1, 1);
     assert_eq!(effects, vec![Effect::message("error", "Inventory is full!")]);
     assert_eq!(state, before);
 }

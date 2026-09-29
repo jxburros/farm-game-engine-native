@@ -13,6 +13,7 @@
 //! Coordinates are logical units: the host passes a scale (UI scale × display density) and the
 //! draw list starts with that scale, so text stays crisp at any size.
 
+use crate::i18n::Lang;
 use crate::input::{InputDevice, NavAction, UiInput};
 use crate::layout::RectExt;
 use crate::theme::Theme;
@@ -183,6 +184,8 @@ pub struct Ui {
     scroll_stack: Vec<OpenScroll>,
     scrolls: BTreeMap<WidgetId, ScrollState>,
     reduced_motion: bool,
+    lang: Lang,
+    readable_font: bool,
     time: f64,
     tints: Vec<(Color, Color)>,
 }
@@ -222,6 +225,8 @@ impl Ui {
             scroll_stack: Vec::new(),
             scrolls: BTreeMap::new(),
             reduced_motion: false,
+            lang: Lang::En,
+            readable_font: false,
             time: 0.0,
             tints: Vec::new(),
         }
@@ -489,6 +494,49 @@ impl Ui {
         self.reduced_motion
     }
 
+    /// The language of the interface's own strings ([`Ui::tr`]).
+    pub fn lang(&self) -> Lang {
+        self.lang
+    }
+
+    pub fn set_lang(&mut self, lang: Lang) {
+        self.lang = lang;
+    }
+
+    /// An interface string in the current language (see [`crate::i18n`]).
+    pub fn tr(&self, key: &'static str) -> &'static str {
+        self.lang.tr(key)
+    }
+
+    /// An interface template in the current language with `{0}`, `{1}`… filled in.
+    pub fn tr_format(&self, key: &'static str, args: &[&dyn std::fmt::Display]) -> String {
+        self.lang.format(key, args)
+    }
+
+    /// Draw text in Atkinson Hyperlegible instead of Inter (the "Readable font" setting).
+    pub fn set_readable_font(&mut self, readable: bool) {
+        self.readable_font = readable;
+    }
+
+    pub fn readable_font(&self) -> bool {
+        self.readable_font
+    }
+
+    /// The face `font` stands for when drawing `content`: its readable face with the readable
+    /// font setting, unless that face lacks a character of `content` (then Inter, which has
+    /// more). Measuring and drawing go through here, so layouts match what is drawn.
+    pub fn face(&self, font: FontId, content: &str) -> FontId {
+        if !self.readable_font {
+            return font;
+        }
+        let readable = font.readable();
+        if text::font(readable).covers(content) {
+            readable
+        } else {
+            font
+        }
+    }
+
     pub fn input(&self) -> &UiInput {
         &self.input
     }
@@ -717,7 +765,7 @@ impl Ui {
     }
 
     pub fn measure(&self, text: &str, size: f32, font: FontId) -> f32 {
-        text::measure(font, self.font_size(size), text)
+        text::measure(self.face(font, text), self.font_size(size), text)
     }
 
     /// Baseline-to-baseline distance for text of `size` (before scaling).
@@ -735,7 +783,7 @@ impl Ui {
             text: content.to_owned(),
             x,
             y,
-            font,
+            font: self.face(font, content),
             size: self.font_size(size),
             color,
             stroke: None,
@@ -756,6 +804,7 @@ impl Ui {
         align: crate::layout::Align,
     ) -> f32 {
         let px = self.font_size(size);
+        let font = self.face(font, content);
         let fitted = text::ellipsize(font, px, content, rect.width + 0.01);
         let baseline = rect.y + rect.height / 2.0 + px * 0.727 / 2.0;
         let (x, text_align) = match align {
@@ -781,7 +830,7 @@ impl Ui {
 
     /// Wrapped lines of `content` for `width`.
     pub fn wrap(&self, content: &str, size: f32, font: FontId, width: f32) -> Vec<String> {
-        text::wrap(font, self.font_size(size), content, width.max(1.0))
+        text::wrap(self.face(font, content), self.font_size(size), content, width.max(1.0))
     }
 
     /// Height a wrapped paragraph takes.
@@ -805,6 +854,7 @@ impl Ui {
         let lines = self.wrap(content, size, font, width);
         let line_height = self.line_height(size);
         let px = self.font_size(size);
+        let font = self.face(font, content);
         let x = match align {
             TextAlign::Left => x,
             TextAlign::Center => x + width / 2.0,

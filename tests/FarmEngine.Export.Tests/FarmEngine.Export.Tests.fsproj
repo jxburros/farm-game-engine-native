@@ -32,6 +32,5 @@
     <ProjectReference Include="../../src/FarmEngine.Export/FarmEngine.Export.fsproj" />
     <ProjectReference Include="../../src/FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../../src/FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
-    <ProjectReference Include="../../src/FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 </Project>

@@ -30,7 +30,6 @@
   <ItemGroup>
     <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
-    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 
   <!--

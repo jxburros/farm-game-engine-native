@@ -20,20 +20,21 @@ let ``assets nothing refers to are unused`` () =
 let ``bindings, legacy images, frames, tile art and the export icon count as use`` () =
     let frameSource = asset "art-frames" png
     let animated =
-        let clip = AnimationClip(Name = "walk", Frames = List<ArtFrame>([ ArtFrame(AssetId = "art-frames", Width = 16.0, Height = 16.0) ]))
-        Records.withValue (asset "art-player" png) "Animations" (box (List<AnimationClip>([ clip ])))
+        let clip = { AnimationClip.Default with Name = "walk"; Frames = [ { ArtFrame.Default with AssetId = Some "art-frames"; Width = 16.0; Height = 16.0 } ] }
+        { asset "art-player" png with Animations = Some [ clip ] }
     let legacy = asset "art-legacy" (makePng 16 16 true)
-    let tile = Records.withValues (asset "art-grass" png) [ "Type", box CustomAssetTypes.Tile; "TileType", box TileTypes.Grass ]
+    let tile = { asset "art-grass" png with Type = CustomAssetTypes.Tile; TileType = Some TileTypes.Grass }
     let icon = asset "art-icon" (makePng 256 256 false)
     let brushOnly = asset "art-brush" png
     let project =
         starter ()
         |> withAssets [ frameSource; animated; legacy; tile; icon; brushOnly ]
-        |> fun p -> Records.withValues p [ "PlayerVisual", box (VisualRef(AssetId = "art-player")); "SelectedTileVisual", box (VisualRef(AssetId = "art-brush")) ]
         |> fun p ->
-            let npc = Records.withValue p.Npcs[0] "CustomImage" (box legacy.DataUrl)
-            Records.withValue p "Npcs" (box (List<Npc>(Seq.append [ npc ] (Seq.skip 1 p.Npcs))))
-        |> withExport (fun s -> Records.withValue s "IconAssetId" (box "art-icon"))
+            { p with
+                PlayerVisual = Some { VisualRef.Default with AssetId = "art-player" }
+                SelectedTileVisual = Some { VisualRef.Default with AssetId = "art-brush" } }
+        |> fun p -> { p with Npcs = { p.Npcs[0] with CustomImage = Some legacy.DataUrl } :: List.tail p.Npcs }
+        |> withExport (fun s -> { s with IconAssetId = Some "art-icon" })
     Assert.Equal<string list>([ "art-brush" ], unusedIds project)
 
 [<Fact>]
@@ -45,6 +46,7 @@ let ``unused assets become export warnings and stay out of the cartridge`` () =
     let clean = snd (Exporter.check (starter ()))
     Assert.DoesNotContain(clean, fun w -> w.Contains("customAssets"))
     // The compiled game carries no copy of the unused art.
-    let cart = FarmEngine.Cart.Cartridge.GetRootAsCartridge(Google.FlatBuffers.ByteBuffer(CartridgeCompiler.Compile project))
-    Assert.Equal(0, cart.AssetsLength)
+    match CartridgeReader.read (CartridgeCompiler.Compile project) with
+    | Ok cart -> Assert.Empty cart.Assets
+    | Error message -> failwith message
     Assert.Empty(AssetUsage.used project)

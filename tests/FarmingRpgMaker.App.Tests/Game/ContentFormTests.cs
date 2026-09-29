@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Game;
 using SkiaSharp;
@@ -43,7 +44,7 @@ public sealed class ContentFormTests
     {
         using var host = new GameTestHost();
         var before = Shop(host);
-        var count = before.Stock.Count;
+        var count = before.Stock.Length;
         OpenEntry(host, "Shops", "shop-general");
         Assert.Equal(before.Stock[0].ItemId, Chosen(host, "ContentField_Stock_0_ItemId"));
         Assert.True(Picker(host, "ContentField_Stock_0_ItemId").IsEditable);
@@ -64,7 +65,7 @@ public sealed class ContentFormTests
 
         Press(host, "SaveContentButton");
         var saved = Shop(host);
-        Assert.Equal(count, saved.Stock.Count); // one added, one removed
+        Assert.Equal(count, saved.Stock.Length); // one added, one removed
         Assert.Equal("tool-axe", saved.Stock[0].ItemId);
         Assert.Equal(77, saved.Stock[0].Price);
         Assert.Equal(before.Stock[3].ItemId, saved.Stock[2].ItemId);
@@ -80,14 +81,14 @@ public sealed class ContentFormTests
     {
         using var host = new GameTestHost();
         OpenEntry(host, "Shops", "shop-general");
-        var seasons = Shop(host).Stock[0].Seasons!;
+        var seasons = Shop(host).Stock[0].Seasons.OrEmpty();
         Assert.NotNull(TryFindByName<Border>(host.Window, "ContentChip_Stock_0_Seasons_0"));
-        for (var i = seasons.Count - 1; i >= 0; i--) Press(host, $"ContentChipRemove_Stock_0_Seasons_{i}");
+        for (var i = seasons.Length - 1; i >= 0; i--) Press(host, $"ContentChipRemove_Stock_0_Seasons_{i}");
         Assert.Null(TryFindByName<Border>(host.Window, "ContentChip_Stock_0_Seasons_0"));
         Choose(host, "ContentChipAdd_Stock_1_Seasons", "winter");
         Press(host, "SaveContentButton");
-        Assert.Null(Shop(host).Stock[0].Seasons);
-        Assert.Contains("winter", Shop(host).Stock[1].Seasons!);
+        Assert.Null(Shop(host).Stock[0].Seasons.OrNull());
+        Assert.Contains("winter", Shop(host).Stock[1].Seasons.OrEmpty());
     }
 
     [AvaloniaFact]
@@ -96,8 +97,8 @@ public sealed class ContentFormTests
         using var host = new GameTestHost();
         var shop = Shop(host);
         var stock = shop.Stock.ToList();
-        stock[0] = stock[0] with { ItemId = "ghost-item" };
-        host.Workspace.Apply(Edits.UpsertShop(shop with { Stock = stock }));
+        stock[0] = stock[0].WithItemId("ghost-item");
+        host.Workspace.Apply(Edits.UpsertShop(shop.WithStock(stock)));
         OpenEntry(host, "Shops", "shop-general");
         var selected = Assert.IsType<ComboBoxItem>(Picker(host, "ContentField_Stock_0_ItemId").SelectedItem);
         Assert.Equal("(missing: ghost-item)", selected.Content);
@@ -144,14 +145,14 @@ public sealed class ContentFormTests
         Assert.Equal(3, saved.Outcomes[0].ItemQuantity);
         Assert.Null(saved.Outcomes[0].Message);
         Assert.Equal(10, saved.Outcomes[1].Radius); // clamped to the web's 0-10
-        var friendship = Assert.IsType<FriendshipCondition>(saved.Conditions[0]);
+        var friendship = Assert.IsType<EventCondition.Friendship>(saved.Conditions[0]).Item;
         Assert.Equal(("npc-farmer", 250.0), (friendship.NpcId, friendship.Min));
-        Assert.Equal(host.Workspace.Current.Settings.Calendar.Seasons[0].Id, Assert.IsType<SeasonCondition>(saved.Conditions[1]).Seasons.Single());
+        Assert.Equal(host.Workspace.Current.Settings.Calendar.Seasons[0].Id, Assert.IsType<EventCondition.Season>(saved.Conditions[1]).Item.Seasons.Single());
 
         host.Workspace.Undo();
         var restored = host.Workspace.Current.Events.First(e => e.Id == eventId);
         Assert.Equal("message", restored.Outcomes.Single().Type);
-        Assert.IsType<EnterTileCondition>(restored.Conditions.Single());
+        Assert.IsType<EventCondition.EnterTile>(restored.Conditions.Single());
     }
 
     [AvaloniaFact]
@@ -175,12 +176,12 @@ public sealed class ContentFormTests
         FindByName<TextBox>(host.Window, "ContentJson_Stock").Text = "not JSON";
         Press(host, "SaveContentButton");
         Assert.Contains("Could not save", FindByName<TextBlock>(host.Window, "ContentMessage").Text);
-        Assert.Equal(2, Shop(host).Stock.Count);
+        Assert.Equal(2, Shop(host).Stock.Length);
         Press(host, "ContentJsonApply_Stock");
         Assert.Contains("Fix these first", FindByName<TextBlock>(host.Window, "ContentMessage").Text);
 
         host.Workspace.Undo();
-        Assert.True(Shop(host).Stock.Count > 2);
+        Assert.True(Shop(host).Stock.Length > 2);
     }
 
     [AvaloniaFact]
@@ -198,8 +199,8 @@ public sealed class ContentFormTests
         Assert.Equal(npc.SceneId, Chosen(host, "ContentField_Schedule_0_SceneId"));
         Press(host, "SaveContentButton");
         var saved = host.Workspace.Current.Npcs[0];
-        Assert.Equal(["gift-flower"], saved.GiftTastes!.Loved);
-        Assert.Equal(480, saved.Schedule!.Single().Minute);
+        Assert.Equal(["gift-flower"], saved.GiftTastes.OrNull()!.Loved);
+        Assert.Equal(480, saved.Schedule.OrEmpty().Single().Minute);
 
         FindByName<CheckBox>(host.Window, "ContentInclude_GiftTastes").IsChecked = false;
         Pump();
@@ -228,16 +229,16 @@ public sealed class ContentFormTests
         Press(host, "SaveContentButton");
 
         var saved = Fishing();
-        Assert.Equal(1.5, saved.Config["speed"].GetDouble());
-        Assert.True(saved.Config["hard"].GetBoolean());
-        Assert.StartsWith("Hook the fish", saved.Config["prompt"].GetString(), StringComparison.Ordinal);
+        Assert.Equal(1.5, ((Json.JNumber)saved.Config.ToDictionary()["speed"]).Item);
+        Assert.Equal(Json.NewJBool(true), saved.Config.ToDictionary()["hard"]);
+        Assert.StartsWith("Hook the fish", ((Json.JString)saved.Config.ToDictionary()["prompt"]).Item, StringComparison.Ordinal);
         var tier = Assert.Single(saved.ResultTiers);
         Assert.Equal(0.5, tier.MinScore);
         Assert.Equal(("giveMoney", 25.0), (tier.Outcomes[0].Type, tier.Outcomes[0].Amount!.Value));
 
         Press(host, "ContentRemove_Config_1");
         Press(host, "SaveContentButton");
-        Assert.Equal(["speed", "prompt", "hard"], Fishing().Config.Keys);
+        Assert.Equal(["speed", "prompt", "hard"], Fishing().Config.Select(pair => pair.Item1));
     }
 
     [AvaloniaFact]
@@ -285,22 +286,22 @@ public sealed class ContentFormTests
         Choose(host, "Export_PixelScale", "fit");
         Press(host, "SaveExportSettingsButton");
 
-        var export = host.Workspace.Current.Export!;
-        Assert.Equal(("Willow Creek", "Jo", icon.Id, "fit"), (export.Title, export.Author, export.IconAssetId, export.PixelScale));
+        var export = host.Workspace.Current.Export.OrNull()!;
+        Assert.Equal(("Willow Creek", "Jo", icon.Id, "fit"), (export.Title.OrNull(), export.Author.OrNull(), export.IconAssetId.OrNull(), export.PixelScale));
         Assert.Equal((100, 800, true), (export.Window.Width, export.Window.Height, export.Window.Fullscreen));
         Assert.Contains("320×240", FindByName<TextBlock>(host.Window, "ExportSettingsProblem_0").Text);
         Assert.Contains(Problems.Collect(host.Workspace.Current), problem => problem.Code == "export.window");
 
         FindByName<TextBox>(host.Window, "Export_WindowWidth").Text = "1600";
         Press(host, "SaveExportSettingsButton");
-        Assert.Equal(1600, host.Workspace.Current.Export!.Window.Width);
+        Assert.Equal(1600, host.Workspace.Current.Export.OrNull()!.Window.Width);
         Assert.Null(TryFindByName<TextBlock>(host.Window, "ExportSettingsProblem_0"));
         FindByName<TextBox>(host.Window, "Export_WindowWidth").Text = "wide";
         Press(host, "SaveExportSettingsButton");
         Assert.Contains("whole number", FindByName<TextBlock>(host.Window, "ExportSettingsMessage").Text);
 
         host.Workspace.Undo();
-        Assert.Equal(100, host.Workspace.Current.Export!.Window.Width);
+        Assert.Equal(100, host.Workspace.Current.Export.OrNull()!.Window.Width);
         host.Workspace.Undo();
         Assert.Null(host.Workspace.Current.Export);
     }
@@ -369,8 +370,8 @@ public sealed class ContentFormTests
         Pump();
         FindByName<ArtEditorView>(host.Window, "ArtEditorView").ImportBytes("sheet.png", encoded.ToArray());
         Press(host, "SliceArtButton");
-        AnimationClip Clip() => host.Workspace.Current!.CustomAssets.Single().Animations!.Single();
-        Assert.Equal(2, Clip().Frames.Count);
+        AnimationClip Clip() => host.Workspace.Current!.CustomAssets.Single().Animations.OrEmpty().Single();
+        Assert.Equal(2, Clip().Frames.Length);
 
         Press(host, "ArtFrameDuplicate_0");
         Assert.Equal([0.0, 0.0, 16.0], Clip().Frames.Select(frame => frame.X));
@@ -384,6 +385,6 @@ public sealed class ContentFormTests
         Assert.Equal([6.0, 6.0, 12.0], Clip().Frames.Select(frame => frame.Ticks));
         host.Workspace.Undo();
         host.Workspace.Undo();
-        Assert.Equal(2, Clip().Frames.Count);
+        Assert.Equal(2, Clip().Frames.Length);
     }
 }

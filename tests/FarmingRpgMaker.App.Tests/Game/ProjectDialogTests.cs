@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using FarmEngine.Authoring.Net;
 using FarmingRpgMaker.App.Projects;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
 
@@ -67,5 +68,56 @@ public sealed class ProjectDialogTests
         Click(dialog, FindByName<Button>(dialog, "OpenSelectedProjectButton"));
         PumpUntil(() => host.Workspace.Current?.Id == b.Id, "opened");
         Assert.Equal("Cozy Corner", host.ViewModel.ProjectName);
+    }
+
+    [AvaloniaFact]
+    public void OpenProjectDialog_RenamesAndDuplicatesProjects()
+    {
+        using var host = new GameTestHost();
+        var other = host.Workspace.CreateProject(ProjectTemplates.Cozy, "Cozy Corner");
+        other = other.WithExport(FarmEngine.Authoring.ExportSettingsForm.Current(other));
+        host.Workspace.Store.Save(other);
+        var openId = host.Workspace.Current!.Id;
+
+        host.ViewModel.OpenProjectCommand.Execute(null);
+        var dialog = OpenedDialog(host, "OpenProjectWindow");
+        var list = FindByName<ListBox>(dialog, "ProjectList");
+        list.SelectedItem = list.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, other.Id));
+        Pump();
+        var name = FindByName<TextBox>(dialog, "RenameProjectName");
+        Assert.Equal("Cozy Corner", name.Text);
+
+        // Duplicate: a new id and "(copy)" name, selected in the list; the original is untouched.
+        Click(dialog, FindByName<Button>(dialog, "DuplicateProjectButton"));
+        Assert.Equal(3, list.ItemCount);
+        var copyId = (string)((ListBoxItem)list.SelectedItem!).Tag!;
+        Assert.NotEqual(other.Id, copyId);
+        var copy = host.Workspace.Store.Load(copyId).Project!;
+        Assert.Equal("Cozy Corner (copy)", copy.Name);
+        Assert.NotEqual(other.Export.OrNull()!.GameId, copy.Export.OrNull()!.GameId);
+        Assert.Equal("Cozy Corner", host.Workspace.Store.Load(other.Id).Project!.Name);
+        Assert.Contains("Created", FindByName<TextBlock>(dialog, "ProjectListHint").Text);
+
+        // Rename a stored project.
+        name.Text = "  Copy Farm ";
+        Click(dialog, FindByName<Button>(dialog, "RenameProjectButton"));
+        Assert.Equal("Copy Farm", host.Workspace.Store.Load(copyId).Project!.Name);
+        Assert.Equal(copyId, ((ListBoxItem)list.SelectedItem!).Tag);
+        name.Text = " ";
+        Pump();
+        Assert.False(FindByName<Button>(dialog, "RenameProjectButton").IsEnabled);
+
+        // Rename the open project: the open document takes the name when the dialog closes.
+        list.SelectedItem = list.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, openId));
+        Pump();
+        name.Text = "Renamed Farm";
+        Click(dialog, FindByName<Button>(dialog, "RenameProjectButton"));
+        dialog.Close();
+        PumpUntil(() => host.Workspace.Current?.Name == "Renamed Farm", "open project renamed");
+        Assert.Equal(openId, host.Workspace.Current!.Id);
+        host.Workspace.FlushPendingSave();
+        Assert.Equal("Renamed Farm", host.Workspace.Store.Load(openId).Project!.Name);
+        Assert.True(host.Workspace.Undo());
+        Assert.Equal("Starter Farm", host.Workspace.Current!.Name);
     }
 }

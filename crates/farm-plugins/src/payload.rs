@@ -3,12 +3,12 @@
 //! Plugins must see the same payload text on every host, key order included (a plugin may
 //! `JSON.stringify` its payload into a flag). The web engine builds payload objects in a
 //! fixed order; the Rust payload structs declare their fields in that order, and this module
-//! writes them like `crates/farm-ffi`'s `view_json` does for the C# bridge: fields in
+//! writes them like `crates/farm-host`'s `view_json` does for the C# bridge: fields in
 //! declaration order and numbers and strings as JavaScript's `JSON.stringify` writes them.
 
 use farm_sim::effects::Effect;
 use farm_sim::hooks::{EffectHookPayload, HookEvent};
-use farm_sim::js;
+use farm_sim::{text, units};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -47,7 +47,7 @@ fn write(out: &mut String, value: &Value) {
                 if i > 0 {
                     out.push(',');
                 }
-                js::push_quoted(out, name);
+                text::push_quoted(out, name);
                 out.push(':');
                 write(out, item);
             }
@@ -63,10 +63,10 @@ fn write(out: &mut String, value: &Value) {
             }
             out.push(']');
         }
-        Value::String(text) => js::push_quoted(out, text),
+        Value::String(text) => text::push_quoted(out, text),
         // JSON.stringify writes non-finite numbers as null.
         Value::Number(number) => match number.as_f64() {
-            Some(n) if n.is_finite() => out.push_str(&js::num(n)),
+            Some(n) if n.is_finite() => out.push_str(&units::format_number(n)),
             _ => out.push_str("null"),
         },
         Value::Bool(true) => out.push_str("true"),
@@ -82,18 +82,24 @@ mod tests {
 
     #[test]
     fn payloads_keep_engine_order_and_javascript_numbers() {
-        let day = HookEvent::DayStart(DayHookPayload { day: 2.0, season: "spring".to_owned(), year: 1.0 });
+        let day = HookEvent::DayStart(DayHookPayload { day: 2, season: "spring".to_owned(), year: 1 });
         assert_eq!(hook_payload_json(&day), r#"{"day":2,"season":"spring","year":1}"#);
-        let weather = HookEvent::WeatherRoll(WeatherRollHookPayload { weather_id: "rain".to_owned(), day: 3.0 });
+        let weather = HookEvent::WeatherRoll(WeatherRollHookPayload { weather_id: "rain".to_owned(), day: 3 });
         assert_eq!(hook_payload_json(&weather), r#"{"weatherId":"rain","day":3}"#);
         let gather = HookEvent::ResourceGather(ResourceGatherHookPayload {
             node_type_id: "node-tree".to_owned(),
-            drops: vec![GatherDrop { item_id: "material-wood".to_owned(), quantity: 2.5 }],
+            drops: vec![GatherDrop { item_id: "material-wood".to_owned(), quantity: 2 }],
         });
         assert_eq!(
             hook_payload_json(&gather),
-            r#"{"nodeTypeId":"node-tree","drops":[{"itemId":"material-wood","quantity":2.5}]}"#
+            r#"{"nodeTypeId":"node-tree","drops":[{"itemId":"material-wood","quantity":2}]}"#
         );
+        // Fractional authoring numbers (energy) print like JavaScript.
+        let action = HookEvent::MinigameResolve(farm_sim::hooks::MinigameResolveHookPayload {
+            minigame_id: "m".to_owned(),
+            score: farm_sim::units::chance(0.25),
+        });
+        assert_eq!(hook_payload_json(&action), r#"{"minigameId":"m","score":0.25}"#);
     }
 
     #[test]

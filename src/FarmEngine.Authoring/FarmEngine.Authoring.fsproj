@@ -9,8 +9,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Json.fs" />
+    <Compile Include="JsonCodec.fs" />
+    <Compile Include="Schema.fs" />
+    <Compile Include="SchemaJson.fs" />
+    <Compile Include="SchemaConstants.fs" />
     <Compile Include="Migrations.fs" />
-    <Compile Include="Records.fs" />
     <Compile Include="PackRules.fs" />
     <Compile Include="Builtin.fs" />
     <Compile Include="PackMerge.fs" />
@@ -26,6 +29,7 @@
     <Compile Include="EditProject.fs" />
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
+    <Compile Include="SettingsForms.fs" />
     <Compile Include="References.fs" />
     <Compile Include="Vocabulary.fs" />
     <Compile Include="Problem.fs" />
@@ -35,15 +39,21 @@
     <Compile Include="ChecksContent.fs" />
     <Compile Include="ChecksExport.fs" />
     <Compile Include="Problems.fs" />
+    <Compile Include="ProjectLoad.fs" />
     <Compile Include="AssetUsage.fs" />
+    <Compile Include="ArtLibrary.fs" />
+    <Compile Include="PackExport.fs" />
+    <Compile Include="ModRegistry.fs" />
+    <Compile Include="Bytes.fs" />
+    <Compile Include="FlatBuffers.fs" />
     <Compile Include="CartridgeCompiler.fs" />
+    <Compile Include="CartridgeReader.fs" />
+    <Compile Include="Playtest.fs" />
     <Compile Include="Patterns.fs" />
     <Compile Include="Api.fs" />
+    <Compile Include="WebApi.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 </Project>

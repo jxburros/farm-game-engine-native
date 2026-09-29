@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using FarmEngine.Authoring;
 using FarmEngine.Export;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 using FarmingRpgMaker.App.Projects;
 using FarmingRpgMaker.App.ViewModels;
@@ -104,7 +105,7 @@ public sealed class ExportGameTests
         Assert.Contains(result.Files, f => f.StartsWith("game.cart (", StringComparison.Ordinal));
 
         Assert.Equal(output, host.Workspace.Settings.Load().LastExportFolder);
-        Assert.Equal(["windows-x64"], host.Workspace.Current!.Export!.Targets);
+        Assert.Equal(["windows-x64"], host.Workspace.Current!.Export.OrNull()!.Targets);
         Assert.True(host.Workspace.CanUndo);
 
         viewModel.OpenFolderCommand.Execute(result.Folder);
@@ -116,7 +117,7 @@ public sealed class ExportGameTests
     {
         using var host = new GameTestHost();
         using var dir = new TempDir();
-        host.Workspace.Open(Records.withValue(host.Workspace.Current!, "SelectedTileType", (object)"lava"));
+        host.Workspace.Open(host.Workspace.Current!.WithSelectedTileType("lava"));
         var viewModel = Create(host, dir.Path);
         Assert.True(viewModel.IsBlockedByProblems);
         Assert.Contains("must be fixed before export", viewModel.ProblemsText, StringComparison.Ordinal);

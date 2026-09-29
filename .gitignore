@@ -20,3 +20,4 @@ __pycache__/
 
 # Agent worktrees
 .claude/worktrees/
+tools/wasm/dist/

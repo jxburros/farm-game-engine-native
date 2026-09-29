@@ -1,0 +1,3163 @@
+{
+  "content/blank.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "20d048ce45888b81",
+    "stable": "52f3523dbc4aab54",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "ca2245098d2b062a",
+    "cartridge": "4e685c9528a119e9",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "52f3523dbc4aab54"
+  },
+  "content/cozy-garden.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "6e3fe58ad7a89e64",
+    "stable": "0bc3fc1fceca9925",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "decd154aa94de133",
+    "cartridge": "38517ae4dd9b9fdc",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "0bc3fc1fceca9925"
+  },
+  "content/fixture-v1.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "ee2c998706d7a7f9",
+    "stable": "41cd6e4157d41237",
+    "problems": [],
+    "content": "66a1ead028841e28",
+    "cartridge": "0b2cd31119d1a9f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "41cd6e4157d41237"
+  },
+  "content/fixture-v8.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "154089e35da63224",
+    "stable": "03ad03f1b269e626",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "7f91ee5fdb495fb2",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "03ad03f1b269e626"
+  },
+  "content/lab-calendar.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "401ab81624a2b0f1",
+    "stable": "7a228ada15f01f65",
+    "problems": [
+      "warning|weather.tableUnknownSeason|weather.table.spring|The weather table has a row for unknown season \"spring\"|settings"
+    ],
+    "content": "1281fb34b0d88401",
+    "cartridge": "b85882e211eced5c",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7a228ada15f01f65"
+  },
+  "content/packs-all-disabled.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "c061e32e05c99aaf",
+    "stable": "c8307317db070c23",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "90123abd946c16d7",
+    "cartridge": "840299d48c37cfaf",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "c8307317db070c23"
+  },
+  "content/packs-de.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "67cc13cc24cdca35",
+    "stable": "9daad6f05468a60a",
+    "problems": [
+      "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "681e0ab478fc5f36",
+    "cartridge": "c85c0bf944200a2a",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "9daad6f05468a60a"
+  },
+  "content/packs-fr.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "503f881c20523bf2",
+    "stable": "e5e31e2101ae120e",
+    "problems": [
+      "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "6886ba4f2fb1520c",
+    "cartridge": "faad1377513381fa",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "e5e31e2101ae120e"
+  },
+  "content/packs-nodes.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "3ec68942d85dfadc",
+    "stable": "b6c9117f84495954",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "8190486fb1bf0314",
+    "cartridge": "d6aa2d1362cc82b4",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "b6c9117f84495954"
+  },
+  "content/quest-rpg.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "e40576af5097ffbd",
+    "stable": "7008c74f512ddf36",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "fc3c116cde15c65f",
+    "cartridge": "6328ecaa8ca9d0bd",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7008c74f512ddf36"
+  },
+  "content/starter-farm.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "f03871d5e9f6193d",
+    "stable": "fff37104fcb068b9",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "c9cab3cf4e1bab6a",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "fff37104fcb068b9"
+  },
+  "replays/actions-items-minigames.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "77d86687446cfccd",
+    "stable": "f2ed67b1aa6d85f8",
+    "problems": [
+      "warning|minigame.noTiers|minigames[1].resultTiers|Minigame \"Empty\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "d2b8c911412fdeab",
+    "cartridge": "b14387c9acab7f71",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "f2ed67b1aa6d85f8"
+  },
+  "replays/animals-ranch.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "f20ead5ab1d002a2",
+    "stable": "c07657d4471185ee",
+    "problems": [
+      "error|animal.unknownSpecies|animals[3].speciesId|Animal \"Ghosty\" is of missing species \"animal-dragon\"|animalSpecies"
+    ],
+    "content": "2ec4358f88cd3c71",
+    "cartridge": "throws InvalidOperationException: animals[3].speciesId: Animal \"Ghosty\" is of missing species \"animal-dragon\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "c07657d4471185ee"
+  },
+  "replays/blank-idle-collapse.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "20d048ce45888b81",
+    "stable": "52f3523dbc4aab54",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "ca2245098d2b062a",
+    "cartridge": "4e685c9528a119e9",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "52f3523dbc4aab54"
+  },
+  "replays/calendar-festivals.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "401ab81624a2b0f1",
+    "stable": "7a228ada15f01f65",
+    "problems": [
+      "warning|weather.tableUnknownSeason|weather.table.spring|The weather table has a row for unknown season \"spring\"|settings"
+    ],
+    "content": "1281fb34b0d88401",
+    "cartridge": "b85882e211eced5c",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7a228ada15f01f65"
+  },
+  "replays/content-packs-and-plugins.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "503f881c20523bf2",
+    "stable": "e5e31e2101ae120e",
+    "problems": [
+      "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "6886ba4f2fb1520c",
+    "cartridge": "faad1377513381fa",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "e5e31e2101ae120e"
+  },
+  "replays/cozy-garden-slow-day.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "6e3fe58ad7a89e64",
+    "stable": "0bc3fc1fceca9925",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "decd154aa94de133",
+    "cartridge": "38517ae4dd9b9fdc",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "0bc3fc1fceca9925"
+  },
+  "replays/crafting-and-machines.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "cdc4f2ae06777694",
+    "stable": "ed80a608d412f73a",
+    "problems": [
+      "error|content.quests|quests[2]|Quest \"Bale Some Hay\" objective targets missing item \"recipe-craft-hay\"|quest",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "f47df7ae633ae036",
+    "cartridge": "throws InvalidOperationException: quests[2]: Quest \"Bale Some Hay\" objective targets missing item \"recipe-craft-hay\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "ed80a608d412f73a"
+  },
+  "replays/dialogue-and-social.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "188b3b1b33f0ad2a",
+    "stable": "1395918b68ad807e",
+    "problems": [
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dlg-ann-3\" links to missing dialogue \"dlg-missing\"|npc",
+      "warning|dialogue.notOnNpc|dialogues[2]|Dialogue \"dlg-ann-3\" is in the project list but not on NPC \"npc-ann\"|npc",
+      "warning|quest.objectiveNoTarget|quests[0].objectives[0].targetItemId|Quest \"Ann's Gifts\" objective 1 (gift) has no target yet|quest"
+    ],
+    "content": "10830782d16a0419",
+    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dlg-ann-3\" links to missing dialogue \"dlg-missing\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "1395918b68ad807e"
+  },
+  "replays/events-showcase.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "2146e9177f0b401e",
+    "stable": "1383f2d6e3102b60",
+    "problems": [],
+    "content": "eeda849f07aaba1e",
+    "cartridge": "8ab5e2b9bb1782d9",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "1383f2d6e3102b60"
+  },
+  "replays/farming-lifecycle.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "fd076821f451ac50",
+    "stable": "682263b1257701d0",
+    "problems": [],
+    "content": "a2383e797d443d22",
+    "cartridge": "97eaaec51c7622e6",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "682263b1257701d0"
+  },
+  "replays/fishing-instant.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "af231c0cdd188be5",
+    "stable": "47f4e1e18069ba8e",
+    "problems": [
+      "warning|fishTable.noEntries|fishTables[0].entries|Fish table \"Empty\" has no fish|fishTable"
+    ],
+    "content": "d1e2868129670ee7",
+    "cartridge": "d999f6f6e1afc4cb",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "47f4e1e18069ba8e"
+  },
+  "replays/fishing-minigame.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "b24ffb3b735edc03",
+    "stable": "cf87c981e78540cb",
+    "problems": [
+      "warning|fishTable.noEntries|fishTables[0].entries|Fish table \"Empty\" has no fish|fishTable"
+    ],
+    "content": "d7f32c2a38846558",
+    "cartridge": "68c838fbdc69715e",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cf87c981e78540cb"
+  },
+  "replays/free-movement.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "82ba1c8562700c27",
+    "stable": "af19ea499e05ba7b",
+    "problems": [],
+    "content": "48facc7cac1c7545",
+    "cartridge": "ceb4aaf41db6dfc1",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "af19ea499e05ba7b"
+  },
+  "replays/fuzz-thousand-commands.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "525c4f00513afb08",
+    "stable": "711691f93a07d96b",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "a902eaeee7145011",
+    "cartridge": "98cdc2d1281a55b8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "711691f93a07d96b"
+  },
+  "replays/gathering-and-tools.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "6920fe1c88564574",
+    "stable": "763c28cca39fd01e",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Smithy\"|shop"
+    ],
+    "content": "426f1f6982784608",
+    "cartridge": "0ccb1e9108f7cc75",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "763c28cca39fd01e"
+  },
+  "replays/legacy-v1-fixture-play.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "ee2c998706d7a7f9",
+    "stable": "41cd6e4157d41237",
+    "problems": [],
+    "content": "66a1ead028841e28",
+    "cartridge": "0b2cd31119d1a9f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "41cd6e4157d41237"
+  },
+  "replays/mines-descent.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "01ff70e84943877d",
+    "stable": "cab3773a9ea2f900",
+    "problems": [],
+    "content": "a85bd3ee8cd54fe0",
+    "cartridge": "c00ee40bf7e523fb",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cab3773a9ea2f900"
+  },
+  "replays/npc-schedules-and-movement.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "756b5da04128cce2",
+    "stable": "6e1b18c6e8234734",
+    "problems": [
+      "warning|content.scenes|scenes[1]|Scene \"Annex\" is unreachable (no transition leads to it)|scene"
+    ],
+    "content": "70883d7cfe508439",
+    "cartridge": "e335b8ed5f0501c6",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "6e1b18c6e8234734"
+  },
+  "replays/quest-rpg-rebuild-square.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "e40576af5097ffbd",
+    "stable": "7008c74f512ddf36",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "fc3c116cde15c65f",
+    "cartridge": "6328ecaa8ca9d0bd",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7008c74f512ddf36"
+  },
+  "replays/replay-three-days.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "525c4f00513afb08",
+    "stable": "711691f93a07d96b",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "a902eaeee7145011",
+    "cartridge": "98cdc2d1281a55b8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "711691f93a07d96b"
+  },
+  "replays/shop-economy.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "0cef3ee140bd611b",
+    "stable": "aa8ea54c14a3a332",
+    "problems": [
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc",
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc",
+      "error|content.shops|shops[1]|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop",
+      "info|shop.noStock|shops[2].stock|Shop \"Museum\" sells nothing|shop",
+      "info|shop.unreachable|shops[2]|No dialogue option opens shop \"Museum\"|shop"
+    ],
+    "content": "51400465dbcf7aba",
+    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"\nnpcs[0].dialogue: Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"\nshops[1]: Shop \"Picky Shop\" stocks missing item \"ghost-item\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "aa8ea54c14a3a332"
+  },
+  "replays/starter-farm-first-week.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "f03871d5e9f6193d",
+    "stable": "fff37104fcb068b9",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "c9cab3cf4e1bab6a",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "fff37104fcb068b9"
+  },
+  "replays/weather-seasons-long-run.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "589b00fc6b4e3706",
+    "stable": "35d7a33592d9906d",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "95ffe670ce124955",
+    "cartridge": "38f512e1275b94bd",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "35d7a33592d9906d"
+  },
+  "migrations/project-v1.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "ee2c998706d7a7f9",
+    "stable": "41cd6e4157d41237",
+    "problems": [],
+    "content": "66a1ead028841e28",
+    "cartridge": "0b2cd31119d1a9f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "41cd6e4157d41237"
+  },
+  "migrations/project-v2.json": {
+    "ok": true,
+    "fromVersion": 2,
+    "migrated": true,
+    "errors": [],
+    "json": "a441f2e1965664b4",
+    "stable": "fad363a60ff5b9f4",
+    "problems": [],
+    "content": "4492245414cd46ee",
+    "cartridge": "f18bee1291cf70d5",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "fad363a60ff5b9f4"
+  },
+  "migrations/project-v3.json": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": [],
+    "json": "b34e0eb17e4fb4ac",
+    "stable": "cc1e663e4d6682ba",
+    "problems": [],
+    "content": "0048f17fad88ad19",
+    "cartridge": "9d9a753d4a7fc252",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cc1e663e4d6682ba"
+  },
+  "migrations/project-v4.json": {
+    "ok": true,
+    "fromVersion": 4,
+    "migrated": true,
+    "errors": [],
+    "json": "dc73aa181cb8dec5",
+    "stable": "16c79b154e0e5173",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "a9a95866daffeb7a",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "16c79b154e0e5173"
+  },
+  "migrations/project-v5.json": {
+    "ok": true,
+    "fromVersion": 5,
+    "migrated": true,
+    "errors": [],
+    "json": "5eff3d70bb3e8375",
+    "stable": "4c4e2187595bd644",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "9f0a0e864296a233",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4c4e2187595bd644"
+  },
+  "migrations/project-v6.json": {
+    "ok": true,
+    "fromVersion": 6,
+    "migrated": true,
+    "errors": [],
+    "json": "15914e8dd8e0663f",
+    "stable": "4dd1a8ed0a19ffc5",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "5e2a9703e559db94",
+    "cartridge": "46a124bddea8420c",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4dd1a8ed0a19ffc5"
+  },
+  "migrations/project-v7.json": {
+    "ok": true,
+    "fromVersion": 7,
+    "migrated": true,
+    "errors": [],
+    "json": "b98401404200f80e",
+    "stable": "6e07e979c0b6518b",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "7f91ee5fdb495fb2",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "6e07e979c0b6518b"
+  },
+  "migrations/project-v8.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "154089e35da63224",
+    "stable": "03ad03f1b269e626",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "7f91ee5fdb495fb2",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "03ad03f1b269e626"
+  },
+  "migrations/errors/null": {
+    "ok": false,
+    "fromVersion": 0,
+    "migrated": false,
+    "errors": [
+      "Project data is not an object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "Game data is not an object"
+    ]
+  },
+  "migrations/errors/number": {
+    "ok": false,
+    "fromVersion": 0,
+    "migrated": false,
+    "errors": [
+      "Project data is not an object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "Game data is not an object"
+    ]
+  },
+  "migrations/errors/string": {
+    "ok": false,
+    "fromVersion": 0,
+    "migrated": false,
+    "errors": [
+      "Project data is not an object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "Game data is not an object"
+    ]
+  },
+  "migrations/errors/future-version": {
+    "ok": false,
+    "fromVersion": 99,
+    "migrated": false,
+    "errors": [
+      "Project schema version 99 is newer than this engine supports (9). Update the engine."
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "Game schema version 99 is newer than this engine supports (9). Update the engine."
+    ]
+  },
+  "migrated/exported-edge-v1.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "f41f8f5d9653ce64",
+    "stable": "126d8426886218af",
+    "problems": [
+      "warning|content.scenes|scenes[1]|Scene \"B\" is unreachable (no transition leads to it)|scene",
+      "error|content.events|events[1]|Event \"Item\" checks missing item \"wheat\"|event",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[3]|Crop \"Half\" has no seed item, so nobody can plant it|crop",
+      "warning|event.noOutcomes|events[1].outcomes|Event \"Item\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[2].outcomes|Event \"Flag\" does nothing (no outcomes)|event",
+      "warning|event.conditionUnknownFlag|events[2].conditions[0].flag|Event \"Flag\" checks flag \"met\", which nothing ever sets|event",
+      "warning|event.noOutcomes|events[3].outcomes|Event \"Time\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[4].outcomes|Event \"Time2\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[5].outcomes|Event \"Loc2\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[5].conditions|Event \"Loc2\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[6].outcomes|Event \"Other\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[6].conditions|Event \"Other\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[7].outcomes|Event \"New\" does nothing (no outcomes)|event",
+      "warning|event.interactWithoutTile|events[7].conditions|Event \"New\" fires on interact but has no tile or region condition|event",
+      "warning|event.noOutcomes|events[8].outcomes|Event \"Half\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[8].conditions|Event \"Half\" fires on enter but has no tile or region condition, so it fires on every step|event"
+    ],
+    "content": "874f5e3084a39a99",
+    "cartridge": "throws InvalidOperationException: events[1]: Event \"Item\" checks missing item \"wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "441efb9a69ad5c69"
+  },
+  "migrated/exported-from-project-v3.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "0148fef59f02e3e5",
+    "stable": "cc1e663e4d6682ba",
+    "problems": [],
+    "content": "0048f17fad88ad19",
+    "cartridge": "20b30d7e11b849f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cc1e663e4d6682ba"
+  },
+  "migrated/exported-from-project-v5.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "35df9705a5516134",
+    "stable": "4c4e2187595bd644",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "9f0a0e864296a233",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4c4e2187595bd644"
+  },
+  "migrated/exported-from-project-v7.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "c7cc06fa7146e41a",
+    "stable": "6e07e979c0b6518b",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "d532ff4f9c8db525",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "6e07e979c0b6518b"
+  },
+  "migrated/exported-from-project-v8.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "3f6507db2242cfcd",
+    "stable": "03ad03f1b269e626",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "d532ff4f9c8db525",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "03ad03f1b269e626"
+  },
+  "migrated/exported-legacy.input.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "c485b95ff804e0d6",
+    "stable": "9a1e2fc4535c3e18",
+    "problems": [
+      "warning|content.crops|scenes[0].tiles|Scene \"Farm\": Wheat at (0,1) cannot grow in the starting season (summer)|scene",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "b28c17ad6d1e0fd1",
+    "cartridge": "throws InvalidOperationException: player.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "0721a483a5038310"
+  },
+  "migrated/exported-legacy.stable.json": {
+    "ok": false,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [
+      "mode: Invalid enum value. Expected 'tiles' | 'npcs' | 'items' | 'events' | 'play' | 'quests', received ''",
+      "selectedTileType: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received ''",
+      "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received ''"
+    ],
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "0721a483a5038310"
+  },
+  "migrated/project-edge-v1.input.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "2b7f2069cd7cb628",
+    "stable": "126d8426886218af",
+    "problems": [
+      "warning|content.scenes|scenes[1]|Scene \"B\" is unreachable (no transition leads to it)|scene",
+      "error|content.events|events[1]|Event \"Item\" checks missing item \"wheat\"|event",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[3]|Crop \"Half\" has no seed item, so nobody can plant it|crop",
+      "warning|event.noOutcomes|events[1].outcomes|Event \"Item\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[2].outcomes|Event \"Flag\" does nothing (no outcomes)|event",
+      "warning|event.conditionUnknownFlag|events[2].conditions[0].flag|Event \"Flag\" checks flag \"met\", which nothing ever sets|event",
+      "warning|event.noOutcomes|events[3].outcomes|Event \"Time\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[4].outcomes|Event \"Time2\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[5].outcomes|Event \"Loc2\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[5].conditions|Event \"Loc2\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[6].outcomes|Event \"Other\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[6].conditions|Event \"Other\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[7].outcomes|Event \"New\" does nothing (no outcomes)|event",
+      "warning|event.interactWithoutTile|events[7].conditions|Event \"New\" fires on interact but has no tile or region condition|event",
+      "warning|event.noOutcomes|events[8].outcomes|Event \"Half\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[8].conditions|Event \"Half\" fires on enter but has no tile or region condition, so it fires on every step|event"
+    ],
+    "content": "874f5e3084a39a99",
+    "cartridge": "throws InvalidOperationException: events[1]: Event \"Item\" checks missing item \"wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "441efb9a69ad5c69"
+  },
+  "migrated/project-edge-v1.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "f41f8f5d9653ce64",
+    "stable": "126d8426886218af",
+    "problems": [
+      "warning|content.scenes|scenes[1]|Scene \"B\" is unreachable (no transition leads to it)|scene",
+      "error|content.events|events[1]|Event \"Item\" checks missing item \"wheat\"|event",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (1,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Slowroot at (2,0) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\" has a planted crop of missing type \"mystery\" at (3,0)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
+      "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
+      "warning|crop.noSeedItem|customCrops[3]|Crop \"Half\" has no seed item, so nobody can plant it|crop",
+      "warning|event.noOutcomes|events[1].outcomes|Event \"Item\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[2].outcomes|Event \"Flag\" does nothing (no outcomes)|event",
+      "warning|event.conditionUnknownFlag|events[2].conditions[0].flag|Event \"Flag\" checks flag \"met\", which nothing ever sets|event",
+      "warning|event.noOutcomes|events[3].outcomes|Event \"Time\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[4].outcomes|Event \"Time2\" does nothing (no outcomes)|event",
+      "warning|event.noOutcomes|events[5].outcomes|Event \"Loc2\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[5].conditions|Event \"Loc2\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[6].outcomes|Event \"Other\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[6].conditions|Event \"Other\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|event.noOutcomes|events[7].outcomes|Event \"New\" does nothing (no outcomes)|event",
+      "warning|event.interactWithoutTile|events[7].conditions|Event \"New\" fires on interact but has no tile or region condition|event",
+      "warning|event.noOutcomes|events[8].outcomes|Event \"Half\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[8].conditions|Event \"Half\" fires on enter but has no tile or region condition, so it fires on every step|event"
+    ],
+    "content": "874f5e3084a39a99",
+    "cartridge": "throws InvalidOperationException: events[1]: Event \"Item\" checks missing item \"wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "126d8426886218af"
+  },
+  "migrated/project-v1.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "a72c9f8ff16852f8",
+    "stable": "41cd6e4157d41237",
+    "problems": [],
+    "content": "66a1ead028841e28",
+    "cartridge": "21b953c00859f9ef",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "41cd6e4157d41237"
+  },
+  "migrated/project-v2.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "5ed63d5ae8e5e433",
+    "stable": "fad363a60ff5b9f4",
+    "problems": [],
+    "content": "4492245414cd46ee",
+    "cartridge": "d8288829e0411cff",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "fad363a60ff5b9f4"
+  },
+  "migrated/project-v3.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "0148fef59f02e3e5",
+    "stable": "cc1e663e4d6682ba",
+    "problems": [],
+    "content": "0048f17fad88ad19",
+    "cartridge": "20b30d7e11b849f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cc1e663e4d6682ba"
+  },
+  "migrated/project-v4.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "5586e1186e7192c6",
+    "stable": "16c79b154e0e5173",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "a9a95866daffeb7a",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "16c79b154e0e5173"
+  },
+  "migrated/project-v5.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "35df9705a5516134",
+    "stable": "4c4e2187595bd644",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "9f0a0e864296a233",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4c4e2187595bd644"
+  },
+  "migrated/project-v6.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "69620c765992bceb",
+    "stable": "4dd1a8ed0a19ffc5",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "5e2a9703e559db94",
+    "cartridge": "f38386fee8e642c4",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4dd1a8ed0a19ffc5"
+  },
+  "migrated/project-v7.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "c7cc06fa7146e41a",
+    "stable": "6e07e979c0b6518b",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "d532ff4f9c8db525",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "6e07e979c0b6518b"
+  },
+  "migrated/project-v8.stable.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "3f6507db2242cfcd",
+    "stable": "03ad03f1b269e626",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "d532ff4f9c8db525",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "03ad03f1b269e626"
+  },
+  "migrated/save-current.input.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-current.stable.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v1.input.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v1.stable.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v3-frac.input.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v3-frac.stable.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v3.input.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/save-v3.stable.json": {
+    "ok": false,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [
+      "npcs: Expected array, received object"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs: Expected array, received object"
+    ]
+  },
+  "migrated/summary.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "f2c84f859eb0e1f2",
+    "stable": "795f59db703eccd6",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "9b3f6ebdc23a003d",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "bdef4afec7e03413"
+  },
+  "fixtures/demo-mod.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "77da2b21e2e812bf",
+    "stable": "ffcc16889358b841",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "9b3f6ebdc23a003d",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "b6433a8a5c8d7fe3"
+  },
+  "fixtures/my-first-mod.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "b222bca38d2854dd",
+    "stable": "28a6457d478188bd",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "9b3f6ebdc23a003d",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "2905473d84d2ab0f"
+  },
+  "fixtures/packs-project.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "8bfb61fcc3e0361b",
+    "stable": "9513c6c04900bfde",
+    "problems": [
+      "error|content.packs|contentPacks[3]|Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled|pack",
+      "error|content.packs|contentPacks[3]|Dependency cycle involving pack 'pack-d'|pack",
+      "warning|content.packs|contentPacks[0]|Pack 'pack-b' targets engine ^9.0.0; this engine is 0.5.0|pack",
+      "warning|content.packs|contentPacks[0]|Pack 'pack-b' redefines item 'pack-a:berry' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "error|player.startOutOfBounds|player.x|The player starts at (2,0.25), outside \"Farm\" (2×1)|scene",
+      "warning|dialogue.noOptions|npcs[0].dialogue[0].options|Dialogue \"dlg-base\" of Base NPC has no options, so the player cannot answer|npc",
+      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"dlg-base\" of Base NPC is missing from the project dialogue list|npc",
+      "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowcorn\" has no seed item, so nobody can plant it|crop",
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType",
+      "warning|pack.incompatible|contentPacks[0].pack.manifest.engineCompatibility|Pack \"PACK-B\" wants engine ^9.0.0, this is 0.5.0|pack"
+    ],
+    "content": "b9d2dc4da222b46e",
+    "cartridge": "throws InvalidOperationException: contentPacks[3]: Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled\ncontentPacks[3]: Dependency cycle involving pack 'pack-d'\nplayer.x: The player starts at (2,0.25), outside \"Farm\" (2×1)",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "9513c6c04900bfde"
+  },
+  "fixtures/packs-project.ts-reference.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "cdf2533e976670b8",
+    "stable": "09b2b48473499784",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "9b3f6ebdc23a003d",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "20e1f80fd7ffada5"
+  },
+  "fixtures/project-v1.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "ee2c998706d7a7f9",
+    "stable": "41cd6e4157d41237",
+    "problems": [],
+    "content": "66a1ead028841e28",
+    "cartridge": "0b2cd31119d1a9f8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "41cd6e4157d41237"
+  },
+  "fixtures/project-v2.json": {
+    "ok": true,
+    "fromVersion": 2,
+    "migrated": true,
+    "errors": [],
+    "json": "a441f2e1965664b4",
+    "stable": "fad363a60ff5b9f4",
+    "problems": [],
+    "content": "4492245414cd46ee",
+    "cartridge": "f18bee1291cf70d5",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "fad363a60ff5b9f4"
+  },
+  "fixtures/project-v3.json": {
+    "ok": true,
+    "fromVersion": 3,
+    "migrated": true,
+    "errors": [],
+    "json": "b34e0eb17e4fb4ac",
+    "stable": "cc1e663e4d6682ba",
+    "problems": [],
+    "content": "0048f17fad88ad19",
+    "cartridge": "9d9a753d4a7fc252",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "cc1e663e4d6682ba"
+  },
+  "fixtures/project-v4.json": {
+    "ok": true,
+    "fromVersion": 4,
+    "migrated": true,
+    "errors": [],
+    "json": "dc73aa181cb8dec5",
+    "stable": "16c79b154e0e5173",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "a9a95866daffeb7a",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "16c79b154e0e5173"
+  },
+  "fixtures/project-v5.json": {
+    "ok": true,
+    "fromVersion": 5,
+    "migrated": true,
+    "errors": [],
+    "json": "5eff3d70bb3e8375",
+    "stable": "4c4e2187595bd644",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"Shop X\" stocks missing item \"seed-wheat\"|shop",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"Shop X\"|shop"
+    ],
+    "content": "9f0a0e864296a233",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"Shop X\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4c4e2187595bd644"
+  },
+  "fixtures/project-v6.json": {
+    "ok": true,
+    "fromVersion": 6,
+    "migrated": true,
+    "errors": [],
+    "json": "15914e8dd8e0663f",
+    "stable": "4dd1a8ed0a19ffc5",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "5e2a9703e559db94",
+    "cartridge": "46a124bddea8420c",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4dd1a8ed0a19ffc5"
+  },
+  "fixtures/project-v7.json": {
+    "ok": true,
+    "fromVersion": 7,
+    "migrated": true,
+    "errors": [],
+    "json": "b98401404200f80e",
+    "stable": "6e07e979c0b6518b",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "7f91ee5fdb495fb2",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "6e07e979c0b6518b"
+  },
+  "fixtures/project-v8.json": {
+    "ok": true,
+    "fromVersion": 8,
+    "migrated": true,
+    "errors": [],
+    "json": "154089e35da63224",
+    "stable": "03ad03f1b269e626",
+    "problems": [
+      "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType"
+    ],
+    "content": "abb63f06d6cf8387",
+    "cartridge": "7f91ee5fdb495fb2",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "03ad03f1b269e626"
+  },
+  "broken/schemaVersion not an integer": {
+    "ok": false,
+    "fromVersion": 8.5,
+    "migrated": false,
+    "errors": [
+      "No migration registered for schema version 8.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "No migration registered for schema version 8.5"
+    ]
+  },
+  "broken/mode missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mode: Expected string, received null"
+    ],
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "260b309b7f8de27a"
+  },
+  "broken/mode unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mode: Invalid enum value. Expected 'tiles' | 'npcs' | 'items' | 'events' | 'play' | 'quests', received 'bogus'"
+    ],
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "d5d41e8da1a6d3f2"
+  },
+  "broken/selectedTileType unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "selectedTileType: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "8b336033e83d8987"
+  },
+  "broken/currentYear not an integer": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "currentYear: Expected integer, received 1.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "currentYear: Expected integer, received 1.5"
+    ]
+  },
+  "broken/scene width not an integer": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.width: Expected integer, received 16.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.width: Expected integer, received 16.5"
+    ]
+  },
+  "broken/scene width zero": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.width: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.width: Number must be greater than 0"
+    ]
+  },
+  "broken/scene height negative": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.height: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.height: Number must be greater than 0"
+    ]
+  },
+  "broken/scene height fractional": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.height: Expected integer, received 1.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.height: Expected integer, received 1.5"
+    ]
+  },
+  "broken/null tile row": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.3: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.3: Expected array, received null"
+    ]
+  },
+  "broken/null tile": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.2.5: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.2.5: Expected object, received null"
+    ]
+  },
+  "broken/tile type unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ]
+  },
+  "broken/tile type missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.1.type: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.1.type: Expected string, received null"
+    ]
+  },
+  "broken/tile background unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ]
+  },
+  "broken/tile background missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.2.background: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.2.background: Expected string, received null"
+    ]
+  },
+  "broken/tile overlay unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ]
+  },
+  "broken/tile object unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ]
+  },
+  "broken/tile soilState unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'"
+    ]
+  },
+  "broken/crop quality and mutation unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'"
+    ]
+  },
+  "broken/crop quality missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.2.2.crop.quality: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.2.2.crop.quality: Expected string, received null"
+    ]
+  },
+  "broken/player direction unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'"
+    ]
+  },
+  "broken/item type unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'"
+    ]
+  },
+  "broken/item toolType unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'"
+    ]
+  },
+  "broken/item toolTier zero": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items.0.toolTier: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items.0.toolTier: Number must be greater than 0"
+    ]
+  },
+  "broken/item toolTier fractional": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items.1.toolTier: Expected integer, received 1.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items.1.toolTier: Expected integer, received 1.5"
+    ]
+  },
+  "broken/npc movePattern unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'"
+    ]
+  },
+  "broken/npc wanderRadius zero": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.0.wanderRadius: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.wanderRadius: Number must be greater than 0"
+    ]
+  },
+  "broken/npc patrol point fractional": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.0.patrolPoints.1.x: Expected integer, received 1.5",
+      "npcs.0.patrolPoints.1.y: Expected integer, received 2.25"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.patrolPoints.1.x: Expected integer, received 1.5",
+      "npcs.0.patrolPoints.1.y: Expected integer, received 2.25"
+    ]
+  },
+  "broken/npc birthday": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'",
+      "npcs.1.birthday.day: Expected integer, received 3.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'",
+      "npcs.1.birthday.day: Expected integer, received 3.5"
+    ]
+  },
+  "broken/npc birthday season missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.0.birthday.season: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.birthday.season: Expected string, received null"
+    ]
+  },
+  "broken/quest status unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "quests.0.status: Invalid enum value. Expected 'not-started' | 'active' | 'completed' | 'failed', received 'maybe'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "quests.0.status: Invalid enum value. Expected 'not-started' | 'active' | 'completed' | 'failed', received 'maybe'"
+    ]
+  },
+  "broken/quest objective type unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "quests.0.objectives.0.type: Invalid enum value. Expected 'collect' | 'harvest' | 'talk' | 'visit' | 'craft' | 'gift', received 'dance'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "quests.0.objectives.0.type: Invalid enum value. Expected 'collect' | 'harvest' | 'talk' | 'visit' | 'craft' | 'gift', received 'dance'"
+    ]
+  },
+  "broken/event trigger unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.trigger: Invalid enum value. Expected 'enter' | 'interact' | 'tick', received 'sometimes'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.trigger: Invalid enum value. Expected 'enter' | 'interact' | 'tick', received 'sometimes'"
+    ]
+  },
+  "broken/event condition null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.conditions.0: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.conditions.0: Expected object, received null"
+    ]
+  },
+  "broken/inventorySpace quantity": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.conditions.0.quantity: Expected integer, received 0.5",
+      "events.0.conditions.1.quantity: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.conditions.0.quantity: Expected integer, received 0.5",
+      "events.0.conditions.1.quantity: Number must be greater than 0"
+    ]
+  },
+  "broken/questStatus status unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.conditions.0.status: Invalid enum value. Expected 'not-started' | 'active' | 'completed' | 'failed', received 'zzz'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.conditions.0.status: Invalid enum value. Expected 'not-started' | 'active' | 'completed' | 'failed', received 'zzz'"
+    ]
+  },
+  "broken/event outcome null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.outcomes.0: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.outcomes.0: Expected object, received null"
+    ]
+  },
+  "broken/event outcome type unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
+    ]
+  },
+  "broken/event outcome type missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.outcomes.0.type: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.outcomes.0.type: Expected string, received null"
+    ]
+  },
+  "broken/waterArea radius": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.outcomes.0.radius: Number must be between 0 and 10",
+      "events.0.outcomes.1.radius: Expected integer, received 2.5",
+      "events.0.outcomes.2.radius: Number must be between 0 and 10"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.outcomes.0.radius: Number must be between 0 and 10",
+      "events.0.outcomes.1.radius: Expected integer, received 2.5",
+      "events.0.outcomes.2.radius: Number must be between 0 and 10"
+    ]
+  },
+  "broken/changeTile newTileType unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "events.0.outcomes.0.newTileType: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "events.0.outcomes.0.newTileType: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'"
+    ]
+  },
+  "broken/outcome amount not finite": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "8f2c067014855f89",
+    "stable": "d4fb67ae39c21a03",
+    "problems": [
+      "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "0aedb3140dc62543",
+    "cartridge": "e74e7d5630a7e7d4",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "d4fb67ae39c21a03"
+  },
+  "broken/action energyCost negative": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "actions.0.energyCost: Number must be greater than or equal to 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "actions.0.energyCost: Number must be greater than or equal to 0"
+    ]
+  },
+  "broken/action hotkey too long": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "actions.0.hotkey: String must contain at most 1 character(s)"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "actions.0.hotkey: String must contain at most 1 character(s)"
+    ]
+  },
+  "broken/action condition null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "actions.1.conditions.0: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "actions.1.conditions.0: Expected object, received null"
+    ]
+  },
+  "broken/action outcome type unknown": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "actions.1.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "actions.1.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
+    ]
+  },
+  "broken/minigame result tier": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "minigames.0.resultTiers.0.minScore: Number must be between 0 and 1",
+      "minigames.0.resultTiers.0.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'bogus'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "minigames.0.resultTiers.0.minScore: Number must be between 0 and 1",
+      "minigames.0.resultTiers.0.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'bogus'"
+    ]
+  },
+  "broken/node type numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "nodeTypes.0.health: Number must be greater than 0",
+      "nodeTypes.0.requiredToolTier: Expected integer, received 1.5",
+      "nodeTypes.0.respawnDays: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "nodeTypes.0.health: Number must be greater than 0",
+      "nodeTypes.0.requiredToolTier: Expected integer, received 1.5",
+      "nodeTypes.0.respawnDays: Number must be greater than 0"
+    ]
+  },
+  "broken/node type health fractional": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "nodeTypes.1.health: Expected integer, received 2.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "nodeTypes.1.health: Expected integer, received 2.5"
+    ]
+  },
+  "broken/node type requiredTool": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'"
+    ]
+  },
+  "broken/node type requiredTool missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "nodeTypes.1.requiredTool: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "nodeTypes.1.requiredTool: Expected string, received null"
+    ]
+  },
+  "broken/recipe numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "recipes.0.processingMinutes: Number must be greater than or equal to 0",
+      "recipes.0.inputs.0.quantity: Number must be greater than 0",
+      "recipes.0.outputs.0.quantity: Expected integer, received 1.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "recipes.0.processingMinutes: Number must be greater than or equal to 0",
+      "recipes.0.inputs.0.quantity: Number must be greater than 0",
+      "recipes.0.outputs.0.quantity: Expected integer, received 1.5"
+    ]
+  },
+  "broken/weather numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "weather.types.0.cropDamageChance: Number must be between 0 and 1",
+      "weather.table.spring.0.weight: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "weather.types.0.cropDamageChance: Number must be between 0 and 1",
+      "weather.table.spring.0.weight: Number must be greater than 0"
+    ]
+  },
+  "broken/settings numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "settings.maxEnergy: Number must be greater than 0",
+      "settings.collapseEnergyFraction: Number must be between 0 and 1",
+      "settings.collapseMoneyPenalty: Number must be greater than or equal to 0",
+      "settings.movement.playerSpeed: Number must be greater than 0",
+      "settings.time.dayStartMinute: Expected integer, received 360.5",
+      "settings.time.dayEndMinute: Expected integer, received 1560.25",
+      "settings.time.minutesPerRealSecond: Number must be greater than 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "settings.maxEnergy: Number must be greater than 0",
+      "settings.collapseEnergyFraction: Number must be between 0 and 1",
+      "settings.collapseMoneyPenalty: Number must be greater than or equal to 0",
+      "settings.movement.playerSpeed: Number must be greater than 0",
+      "settings.time.dayStartMinute: Expected integer, received 360.5",
+      "settings.time.dayEndMinute: Expected integer, received 1560.25",
+      "settings.time.minutesPerRealSecond: Number must be greater than 0"
+    ]
+  },
+  "broken/calendar numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "settings.calendar.seasons.0.days: Number must be greater than 0",
+      "settings.calendar.festivals.0.day: Expected integer, received 2.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "settings.calendar.seasons.0.days: Number must be greater than 0",
+      "settings.calendar.festivals.0.day: Expected integer, received 2.5"
+    ]
+  },
+  "broken/mine numbers": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mine.floors: Number must be greater than 0",
+      "mine.floorWidth: Expected integer, received 1.5",
+      "mine.floorHeight: Number must be greater than 0",
+      "mine.elevatorEvery: Number must be greater than 0",
+      "mine.ladderChance: Number must be between 0 and 1",
+      "mine.bands.0.fromFloor: Number must be greater than 0",
+      "mine.bands.0.toFloor: Expected integer, received 1.5",
+      "mine.bands.0.density: Number must be between 0 and 1"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "mine.floors: Number must be greater than 0",
+      "mine.floorWidth: Expected integer, received 1.5",
+      "mine.floorHeight: Number must be greater than 0",
+      "mine.elevatorEvery: Number must be greater than 0",
+      "mine.ladderChance: Number must be between 0 and 1",
+      "mine.bands.0.fromFloor: Number must be greater than 0",
+      "mine.bands.0.toFloor: Expected integer, received 1.5",
+      "mine.bands.0.density: Number must be between 0 and 1"
+    ]
+  },
+  "broken/mineDeepestFloor": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mineDeepestFloor: Expected integer, received -1.5",
+      "mineDeepestFloor: Number must be greater than or equal to 0"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "mineDeepestFloor: Expected integer, received -1.5",
+      "mineDeepestFloor: Number must be greater than or equal to 0"
+    ]
+  },
+  "broken/pack id invalid": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "contentPacks.0.pack.manifest.id: pack ids must be lowercase letters, digits and dashes"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "contentPacks.0.pack.manifest.id: pack ids must be lowercase letters, digits and dashes"
+    ]
+  },
+  "broken/rngState": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "rngState.algorithm: Invalid literal value, expected \"xoshiro128ss\"",
+      "rngState.s: Expected a tuple of 4 integers"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "rngState.algorithm: Invalid literal value, expected \"xoshiro128ss\"",
+      "rngState.s: Expected a tuple of 4 integers"
+    ]
+  },
+  "broken/rngState words missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "rngState.s: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "rngState.s: Expected a tuple of 4 integers"
+    ]
+  },
+  "broken/rngState algorithm missing": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "rngState.algorithm: Invalid literal value, expected \"xoshiro128ss\""
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "rngState.algorithm: Invalid literal value, expected \"xoshiro128ss\""
+    ]
+  },
+  "broken/project id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "73881e590a4b77e2",
+    "stable": "2cf7864571a10329",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "cd45b8700a0cc183",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "2cf7864571a10329"
+  },
+  "broken/scene id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "d3fc2ae8c639cf9f",
+    "stable": "70a33778f068ab4a",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "warning|content.scenes|scenes[0]|Scene \"Farm\" is unreachable (no transition leads to it)|scene",
+      "error|content.npcs|npcs[0]|NPC \"Old Farmer\" is placed in missing scene \"scene-farm\"|npc",
+      "error|content.npcs|npcs[1]|NPC \"Merchant Mia\" is placed in missing scene \"scene-farm\"|npc",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"scene-farm\"|",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "5fa717734380c05e",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nnpcs[0]: NPC \"Old Farmer\" is placed in missing scene \"scene-farm\"\nnpcs[1]: NPC \"Merchant Mia\" is placed in missing scene \"scene-farm\"\nplayer.sceneId: The player starts in missing scene \"scene-farm\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "70a33778f068ab4a"
+  },
+  "broken/duplicate scene id": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "f32056ae2c5fe96f",
+    "stable": "5fb62b171cc68a97",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e4e1bbf2cbfb4f2c",
+    "cartridge": "012c87d163b2015d",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "5fb62b171cc68a97"
+  },
+  "broken/tile rows vs height": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "627fcebb0503ee14",
+    "stable": "d009a063ffb3b376",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "44289152970ecfab",
+    "cartridge": "566640bd92658fd6",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "d009a063ffb3b376"
+  },
+  "broken/tile row vs width": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "f48e4eb752a9584c",
+    "stable": "026803e4c080f48e",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "509be5a72518f78f",
+    "cartridge": "aed74a3598bbf047",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "026803e4c080f48e"
+  },
+  "broken/transition target empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "b63a763bb1f99d17",
+    "stable": "a72ff2df1ebfe671",
+    "problems": [
+      "error|content.transitions|scenes[0].transitions|Transition in \"Farm\" at (0,0) leads to missing scene \"\"|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "118a9a02c2dfdecd",
+    "cartridge": "throws InvalidOperationException: scenes[0].transitions: Transition in \"Farm\" at (0,0) leads to missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "a72ff2df1ebfe671"
+  },
+  "broken/start scene missing": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "bdeef929b10b3e8d",
+    "stable": "b76d9dbb69dbc447",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"nowhere\" does not exist|settings",
+      "warning|content.scenes|scenes[0]|Scene \"Farm\" is unreachable (no transition leads to it)|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "04548628c6463e11",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"nowhere\" does not exist",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "b76d9dbb69dbc447"
+  },
+  "broken/player sceneId empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "88fc6ea1d7864f4e",
+    "stable": "001752a0a8a56203",
+    "problems": [
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "throws InvalidOperationException: player.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "001752a0a8a56203"
+  },
+  "broken/inventory item id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "af11d1e7b910a6dc",
+    "stable": "2ddebd32d30e1355",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "ea27b682bc7a849e",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "2ddebd32d30e1355"
+  },
+  "broken/item id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "1138607b0d7a572f",
+    "stable": "15c31bdabcd8dc8e",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"General Store\" stocks missing item \"seed-wheat\"|shop",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "70d9678c590d9049",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"General Store\" stocks missing item \"seed-wheat\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "15c31bdabcd8dc8e"
+  },
+  "broken/npc ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "37f63acfeacd1c73",
+    "stable": "b1642a68fd120d7a",
+    "problems": [
+      "error|dialogue.npcMissing|dialogues[0].npcId|Dialogue \"dialogue-farmer-greeting\" belongs to missing NPC \"npc-farmer\"|",
+      "error|dialogue.npcMissing|dialogues[1].npcId|Dialogue \"dialogue-farmer-crops\" belongs to missing NPC \"npc-farmer\"|",
+      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"\" of Old Farmer is missing from the project dialogue list|npc",
+      "error|quest.giverMissing|quests[0].giver|Quest \"First Harvest\" is given by missing NPC \"npc-farmer\"|quest",
+      "error|quest.giverMissing|quests[1].giver|Quest \"Supply Run\" is given by missing NPC \"npc-farmer\"|quest",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "1a1ad79f3df07e9e",
+    "cartridge": "throws InvalidOperationException: dialogues[0].npcId: Dialogue \"dialogue-farmer-greeting\" belongs to missing NPC \"npc-farmer\"\ndialogues[1].npcId: Dialogue \"dialogue-farmer-crops\" belongs to missing NPC \"npc-farmer\"\nquests[0].giver: Quest \"First Harvest\" is given by missing NPC \"npc-farmer\"\nquests[1].giver: Quest \"Supply Run\" is given by missing NPC \"npc-farmer\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "b1642a68fd120d7a"
+  },
+  "broken/dialogue id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "ecf5789521beabd6",
+    "stable": "7a1fb93065b2ab9d",
+    "problems": [
+      "warning|dialogue.notOnNpc|dialogues[0]|Dialogue \"\" is in the project list but not on NPC \"npc-farmer\"|npc",
+      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"dialogue-farmer-greeting\" of Old Farmer is missing from the project dialogue list|npc",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "05a5d7fb0c53f222",
+    "cartridge": "458b3e856da627f7",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7a1fb93065b2ab9d"
+  },
+  "broken/quest ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "2ad7ffeeee772e7c",
+    "stable": "e00a6c731d5a87a3",
+    "problems": [
+      "error|content.quests|quests[1]|Quest \"Supply Run\" requires missing quest \"quest-first-harvest\"|quest",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "cc183e9fda0a76da",
+    "cartridge": "throws InvalidOperationException: quests[1]: Quest \"Supply Run\" requires missing quest \"quest-first-harvest\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "e00a6c731d5a87a3"
+  },
+  "broken/event id empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "8bdc5ac74698d473",
+    "stable": "d2450d926513de3c",
+    "problems": [
+      "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "3a95d10f6ba5fd60",
+    "cartridge": "9759a61df14067b8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "d2450d926513de3c"
+  },
+  "broken/region conditions inverted": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "39844fc3402962f8",
+    "stable": "2bce5242c176021f",
+    "problems": [
+      "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "4c7ebaa467d09bf8",
+    "cartridge": "854bdafefaaa8f94",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "2bce5242c176021f"
+  },
+  "broken/condition ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "8ebb71a9446801c6",
+    "stable": "a61fd39c6bb5e0db",
+    "problems": [
+      "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing item \"\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing quest \"\"|event",
+      "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "1234267408227769",
+    "cartridge": "throws InvalidOperationException: events[0]: Event \"Broken ev-broken\" checks missing item \"\"\nevents[0]: Event \"Broken ev-broken\" checks missing quest \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "a61fd39c6bb5e0db"
+  },
+  "broken/ranges inverted": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "dc4641b002c92bba",
+    "stable": "245d62ba6e5a2f56",
+    "problems": [
+      "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
+      "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "512b5e8459b667c6",
+    "cartridge": "e0d506e6a72d71c0",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "245d62ba6e5a2f56"
+  },
+  "broken/action and minigame ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "b09c68f2ddb8ac9c",
+    "stable": "563fbc79bfcfdb3d",
+    "problems": [
+      "error|item.useActionMissing|items[57].useActionId|Item \"Growth Charm\" uses missing action \"action-growth-blessing\"|item",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "ac3e8768f21db143",
+    "cartridge": "throws InvalidOperationException: items[57].useActionId: Item \"Growth Charm\" uses missing action \"action-growth-blessing\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "563fbc79bfcfdb3d"
+  },
+  "broken/definition ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "97dde56fa6fa1051",
+    "stable": "4ad91493a9626082",
+    "problems": [
+      "error|content.dialogue|npcs[1].dialogue|Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"|npc",
+      "error|content.dialogue|npcs[1].dialogue|Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"|npc",
+      "error|weather.tableUnknownType|weather.table.spring[0].weatherId|The spring weather table rolls missing weather \"sun\"|settings",
+      "error|weather.tableUnknownType|weather.table.summer[0].weatherId|The summer weather table rolls missing weather \"sun\"|settings",
+      "error|weather.tableUnknownType|weather.table.fall[0].weatherId|The fall weather table rolls missing weather \"sun\"|settings",
+      "error|weather.tableUnknownType|weather.table.winter[0].weatherId|The winter weather table rolls missing weather \"sun\"|settings",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame",
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop",
+      "error|recipe.unknownMachine|recipes[3].machineTypeId|Recipe \"Copper Bar\" needs missing machine \"machine-furnace\"|recipe",
+      "error|recipe.unknownMachine|recipes[4].machineTypeId|Recipe \"Iron Bar\" needs missing machine \"machine-furnace\"|recipe",
+      "error|animal.unknownSpecies|animals[0].speciesId|Animal \"Hen\" is of missing species \"animal-chicken\"|animalSpecies"
+    ],
+    "content": "5dee56b7d91ee4d3",
+    "cartridge": "throws InvalidOperationException: npcs[1].dialogue: Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"\nnpcs[1].dialogue: Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"\nweather.table.spring[0].weatherId: The spring weather table rolls missing weather \"sun\"\nweather.table.summer[0].weatherId: The summer weather table rolls missing weather \"sun\"\nweather.table.fall[0].weatherId: The fall weather table rolls missing weather \"sun\"\nweather.table.winter[0].weatherId: The winter weather table rolls missing weather \"sun\"\nrecipes[3].machineTypeId: Recipe \"Copper Bar\" needs missing machine \"machine-furnace\"\nrecipes[4].machineTypeId: Recipe \"Iron Bar\" needs missing machine \"machine-furnace\"\nanimals[0].speciesId: Animal \"Hen\" is of missing species \"animal-chicken\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "4ad91493a9626082"
+  },
+  "broken/calendar ids empty": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "44f8b7a203aa8166",
+    "stable": "9b09b568040d204d",
+    "problems": [
+      "warning|project.currentSeasonUnknown|currentSeason|The starting season \"spring\" is not in the calendar|settings",
+      "warning|weather.tableUnknownSeason|weather.table.spring|The weather table has a row for unknown season \"spring\"|settings",
+      "warning|crop.unknownSeason|customCrops[0].seasons[0]|Crop \"Wheat\" grows in \"spring\", which is not in the calendar|crop",
+      "warning|crop.unknownSeason|customCrops[3].seasons[0]|Crop \"Carrot\" grows in \"spring\", which is not in the calendar|crop",
+      "warning|crop.unknownSeason|customCrops[4].seasons[0]|Crop \"Potato\" grows in \"spring\", which is not in the calendar|crop",
+      "warning|crop.unknownSeason|customCrops[5].seasons[0]|Crop \"Strawberry\" grows in \"spring\", which is not in the calendar|crop",
+      "warning|crop.unknownSeason|customCrops[7].seasons[0]|Crop \"Cauliflower\" grows in \"spring\", which is not in the calendar|crop",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame",
+      "warning|shop.unknownSeason|shops[0].stock[0].seasons[0]|Shop \"General Store\" sells \"seed-wheat\" in season \"spring\", which is not in the calendar|shop",
+      "warning|shop.unknownSeason|shops[0].stock[3].seasons[0]|Shop \"General Store\" sells \"seed-carrot\" in season \"spring\", which is not in the calendar|shop",
+      "warning|shop.unknownSeason|shops[0].stock[4].seasons[0]|Shop \"General Store\" sells \"seed-potato\" in season \"spring\", which is not in the calendar|shop",
+      "warning|shop.unknownSeason|shops[0].stock[5].seasons[0]|Shop \"General Store\" sells \"seed-strawberry\" in season \"spring\", which is not in the calendar|shop",
+      "warning|shop.unknownSeason|shops[0].stock[7].seasons[0]|Shop \"General Store\" sells \"seed-cauliflower\" in season \"spring\", which is not in the calendar|shop"
+    ],
+    "content": "3e9fc8d56f0c2a85",
+    "cartridge": "68acd51b3738809f",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "9b09b568040d204d"
+  },
+  "broken/transition to a missing scene": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "be0335901b37559f",
+    "stable": "75c5af539b79a76e",
+    "problems": [
+      "error|content.transitions|scenes[0].transitions|Transition in \"Farm\" at (0,0) leads to missing scene \"ghost-scene\"|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "061d3cfa1dfee44a",
+    "cartridge": "throws InvalidOperationException: scenes[0].transitions: Transition in \"Farm\" at (0,0) leads to missing scene \"ghost-scene\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "75c5af539b79a76e"
+  },
+  "broken/transition lands out of bounds": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "86474fca2bcdb95d",
+    "stable": "484d898fc8765671",
+    "problems": [
+      "error|content.transitions|scenes[0].transitions|Transition in \"Farm\" lands out of bounds at (99,-1) in \"Farm\"|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "8908f4b6e6ae9000",
+    "cartridge": "throws InvalidOperationException: scenes[0].transitions: Transition in \"Farm\" lands out of bounds at (99,-1) in \"Farm\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "484d898fc8765671"
+  },
+  "broken/unreachable scenes": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "6908665c9ecba18c",
+    "stable": "39fd71ab9e9475bb",
+    "problems": [
+      "warning|content.scenes|scenes[1]|Scene \"Island\" is unreachable (no transition leads to it)|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "f31a7443f560a1f3",
+    "cartridge": "6a32216e97e04bea",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "39fd71ab9e9475bb"
+  },
+  "broken/dialogue links": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "5ba586b1a6875420",
+    "stable": "04589243b93cd407",
+    "problems": [
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" links to missing dialogue \"dlg-ghost\"|npc",
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" gives missing item \"item-ghost\"|npc",
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" opens missing shop \"shop-ghost\"|npc",
+      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" offers missing quest \"quest-ghost\"|npc",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e817a69c3c8b0dd9",
+    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" links to missing dialogue \"dlg-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" gives missing item \"item-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" opens missing shop \"shop-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" offers missing quest \"quest-ghost\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "04589243b93cd407"
+  },
+  "broken/npc placement and schedule": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "e391e17865308767",
+    "stable": "b3f0440eecef3c35",
+    "problems": [
+      "error|content.npcs|npcs[0]|NPC \"Old Farmer\" is placed in missing scene \"scene-ghost\"|npc",
+      "error|content.npcs|npcs[1]|NPC \"Merchant Mia\" schedule targets missing scene \"scene-ghost-2\"|npc",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "b80989673b101d01",
+    "cartridge": "throws InvalidOperationException: npcs[0]: NPC \"Old Farmer\" is placed in missing scene \"scene-ghost\"\nnpcs[1]: NPC \"Merchant Mia\" schedule targets missing scene \"scene-ghost-2\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "b3f0440eecef3c35"
+  },
+  "broken/quest references": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "99e6525f12e6b859",
+    "stable": "267ffead080b8a12",
+    "problems": [
+      "error|content.quests|quests[0]|Quest \"First Harvest\" requires missing quest \"quest-ghost\"|quest",
+      "error|content.quests|quests[0]|Quest \"First Harvest\" objective targets missing item \"item-ghost\"|quest",
+      "error|content.quests|quests[0]|Quest \"First Harvest\" objective targets missing NPC \"npc-ghost\"|quest",
+      "error|content.quests|quests[0]|Quest \"First Harvest\" objective targets missing scene \"scene-ghost\"|quest",
+      "error|content.quests|quests[0]|Quest \"First Harvest\" objective targets missing crop \"crop-ghost\"|quest",
+      "error|content.quests|quests[0]|Quest \"First Harvest\" rewards missing item \"reward-ghost\"|quest",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "1828b221384ef960",
+    "cartridge": "throws InvalidOperationException: quests[0]: Quest \"First Harvest\" requires missing quest \"quest-ghost\"\nquests[0]: Quest \"First Harvest\" objective targets missing item \"item-ghost\"\nquests[0]: Quest \"First Harvest\" objective targets missing NPC \"npc-ghost\"\nquests[0]: Quest \"First Harvest\" objective targets missing scene \"scene-ghost\"\nquests[0]: Quest \"First Harvest\" objective targets missing crop \"crop-ghost\"\nquests[0]: Quest \"First Harvest\" rewards missing item \"reward-ghost\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "267ffead080b8a12"
+  },
+  "broken/event references": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "41bb65d36abb9ef1",
+    "stable": "f027782b39a50335",
+    "problems": [
+      "error|content.events|events[0]|Event \"Broken ev-broken\" belongs to missing scene \"scene-ghost\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing item \"item-ghost\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing quest \"quest-ghost\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" references missing item \"item-ghost-2\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" references missing quest \"quest-ghost-2\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" references missing NPC \"npc-ghost\"|event",
+      "error|content.events|events[0]|Event \"Broken ev-broken\" warps to missing scene \"scene-ghost-2\"|event",
+      "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
+      "error|event.outcomeMissingField|events[0].outcomes[4].itemId|Event \"Broken ev-broken\" has a giveItem outcome with no itemId|event",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "a0aed30063863cfb",
+    "cartridge": "throws InvalidOperationException: events[0]: Event \"Broken ev-broken\" belongs to missing scene \"scene-ghost\"\nevents[0]: Event \"Broken ev-broken\" checks missing item \"item-ghost\"\nevents[0]: Event \"Broken ev-broken\" checks missing quest \"quest-ghost\"\nevents[0]: Event \"Broken ev-broken\" references missing item \"item-ghost-2\"\nevents[0]: Event \"Broken ev-broken\" references missing quest \"quest-ghost-2\"\nevents[0]: Event \"Broken ev-broken\" references missing NPC \"npc-ghost\"\nevents[0]: Event \"Broken ev-broken\" warps to missing scene \"scene-ghost-2\"\nevents[0].outcomes[4].itemId: Event \"Broken ev-broken\" has a giveItem outcome with no itemId",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "f027782b39a50335"
+  },
+  "broken/shop stocks a missing item": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "ef1d89d63b0b0282",
+    "stable": "23d6fd501464cb87",
+    "problems": [
+      "error|content.shops|shops[0]|Shop \"General Store\" stocks missing item \"item-ghost\"|shop",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "686650f1258ca139",
+    "cartridge": "throws InvalidOperationException: shops[0]: Shop \"General Store\" stocks missing item \"item-ghost\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "23d6fd501464cb87"
+  },
+  "broken/node type drops a missing item": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "1e455c514f718c7c",
+    "stable": "c9dc1e28c4a96c59",
+    "problems": [
+      "error|content.nodes|nodeTypes[0].drops|Node type \"Tree\" drops missing item \"item-ghost\"|nodeType",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "c80a7c42a20d5109",
+    "cartridge": "throws InvalidOperationException: nodeTypes[0].drops: Node type \"Tree\" drops missing item \"item-ghost\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "c9dc1e28c4a96c59"
+  },
+  "broken/placed node of a missing type": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "5a017d88af91b662",
+    "stable": "16075fede8e523fa",
+    "problems": [
+      "error|content.nodes|scenes[0].tiles|Scene \"Farm\" has a placed node of missing type \"node-ghost\" at (3,2)|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "6a91c82418de803b",
+    "cartridge": "throws InvalidOperationException: scenes[0].tiles: Scene \"Farm\" has a placed node of missing type \"node-ghost\" at (3,2)",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "16075fede8e523fa"
+  },
+  "broken/planted crop of a missing type": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "4d479295e17cf547",
+    "stable": "a4c502038eac7a4f",
+    "problems": [
+      "warning|content.crops|scenes[0].tiles|Scene \"Farm\" has a planted crop of missing type \"crop-ghost\" at (4,2)|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "bd270701c9a51ebb",
+    "cartridge": "c07feff6d347d8e7",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "a4c502038eac7a4f"
+  },
+  "broken/crop out of season": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "f8e14e536305422a",
+    "stable": "7a8fc1218a7865e5",
+    "problems": [
+      "warning|content.crops|scenes[0].tiles|Scene \"Farm\": Pumpkin at (5,2) cannot grow in the starting season (spring)|scene",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "2bbaabcd5ee85e3f",
+    "cartridge": "370985c4b24c7223",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "7a8fc1218a7865e5"
+  },
+  "broken/seed of a missing crop": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "03608c00389d9611",
+    "stable": "36bcd293daccac4e",
+    "problems": [
+      "error|content.items|items[58]|Seed \"Ghost Seeds\" references missing crop \"crop-ghost\"|item",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "8423881ee84d4f06",
+    "cartridge": "throws InvalidOperationException: items[58]: Seed \"Ghost Seeds\" references missing crop \"crop-ghost\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "36bcd293daccac4e"
+  },
+  "broken/pack problems": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "c1f7c5c4c19bc7d4",
+    "stable": "9485b35b5c11e8e5",
+    "problems": [
+      "error|content.packs|contentPacks[0]|Pack 'lonely' depends on 'pack-ghost' which is not installed/enabled|pack",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "throws InvalidOperationException: contentPacks[0]: Pack 'lonely' depends on 'pack-ghost' which is not installed/enabled",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "9485b35b5c11e8e5"
+  },
+  "broken/scenes null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes: Expected array, received null"
+    ]
+  },
+  "broken/scene transitions null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.transitions: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.transitions: Expected array, received null"
+    ]
+  },
+  "broken/scene tiles null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles: Expected array, received null"
+    ]
+  },
+  "broken/player null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "player: Expected object, received null"
+    ],
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "eda1c7f25fff822b"
+  },
+  "broken/items null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items: Expected array, received null"
+    ]
+  },
+  "broken/item null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "items.3: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "items.3: Expected object, received null"
+    ]
+  },
+  "broken/npc dialogue null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "npcs.0.dialogue: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.dialogue: Expected array, received null"
+    ]
+  },
+  "broken/shops null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "shops: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "shops: Expected array, received null"
+    ]
+  },
+  "broken/animals null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "animals: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "animals: Expected array, received null"
+    ]
+  },
+  "broken/machine type null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "machineTypes.1: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "machineTypes.1: Expected object, received null"
+    ]
+  },
+  "broken/weather table null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "weather.table: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "weather.table: Expected object, received null"
+    ]
+  },
+  "broken/settings movement null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "settings.movement: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "settings.movement: Expected object, received null"
+    ]
+  },
+  "broken/mine bands null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mine.bands: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "mine.bands: Expected array, received null"
+    ]
+  },
+  "broken/pack manifest id null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "contentPacks.0.pack.manifest.id: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "contentPacks.0.pack.manifest.id: Expected string, received null"
+    ]
+  },
+  "broken/crop type null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.2.2.crop.type: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.2.2.crop.type: Expected string, received null"
+    ]
+  },
+  "broken/quest rewards null": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "quests.0.rewards: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "quests.0.rewards: Expected object, received null"
+    ]
+  },
+  "broken/null tile row, content": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "scenes.0.tiles.0: Expected array, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.0: Expected array, received null"
+    ]
+  },
+  "broken/everything at once": {
+    "ok": false,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [
+      "mode: Invalid enum value. Expected 'tiles' | 'npcs' | 'items' | 'events' | 'play' | 'quests', received 'bogus'",
+      "selectedTileType: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "currentYear: Expected integer, received 1.5",
+      "scenes.0.width: Number must be greater than 0",
+      "scenes.0.height: Expected integer, received 1.5",
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'",
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'",
+      "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'",
+      "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'",
+      "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'",
+      "items.0.toolTier: Number must be greater than 0",
+      "items.1.toolTier: Expected integer, received 1.5",
+      "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'",
+      "npcs.0.wanderRadius: Number must be greater than 0",
+      "npcs.0.patrolPoints.1.x: Expected integer, received 1.5"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "currentYear: Expected integer, received 1.5",
+      "scenes.0.width: Number must be greater than 0",
+      "scenes.0.height: Expected integer, received 1.5",
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'",
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'",
+      "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'",
+      "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'",
+      "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'",
+      "items.0.toolTier: Number must be greater than 0",
+      "items.1.toolTier: Expected integer, received 1.5",
+      "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'",
+      "npcs.0.wanderRadius: Number must be greater than 0",
+      "npcs.0.patrolPoints.1.x: Expected integer, received 1.5",
+      "npcs.0.patrolPoints.1.y: Expected integer, received 2.25",
+      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
+    ]
+  },
+  "code/starter": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "265909b751d5a815",
+    "stable": "11abdf3be820e792",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "e2bd8231a8d55d51",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "11abdf3be820e792"
+  },
+  "code/blank": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "b540f5be8b984c87",
+    "stable": "5b8eeb28b22f56c6",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "ca2245098d2b062a",
+    "cartridge": "689619d65ef2ebfd",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "5b8eeb28b22f56c6"
+  },
+  "code/cozy": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "30bf9186f397b06c",
+    "stable": "444c1a6e1487f56c",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "decd154aa94de133",
+    "cartridge": "89b5ce0e5430ba1b",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "444c1a6e1487f56c"
+  },
+  "code/quest": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "cbec933657609e7c",
+    "stable": "99b7c05b7f976f7f",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "fc3c116cde15c65f",
+    "cartridge": "a1adff33dc4c836f",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "99b7c05b7f976f7f"
+  },
+  "code/template-starter": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "265909b751d5a815",
+    "stable": "11abdf3be820e792",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "e2bd8231a8d55d51",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "11abdf3be820e792"
+  },
+  "code/template-blank": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "b540f5be8b984c87",
+    "stable": "5b8eeb28b22f56c6",
+    "problems": [
+      "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop"
+    ],
+    "content": "ca2245098d2b062a",
+    "cartridge": "689619d65ef2ebfd",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "5b8eeb28b22f56c6"
+  },
+  "code/template-cozy": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "30bf9186f397b06c",
+    "stable": "444c1a6e1487f56c",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "decd154aa94de133",
+    "cartridge": "89b5ce0e5430ba1b",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "444c1a6e1487f56c"
+  },
+  "code/template-quest": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "cbec933657609e7c",
+    "stable": "99b7c05b7f976f7f",
+    "problems": [
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "fc3c116cde15c65f",
+    "cartridge": "a1adff33dc4c836f",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "99b7c05b7f976f7f"
+  }
+}

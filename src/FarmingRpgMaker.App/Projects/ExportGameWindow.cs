@@ -26,7 +26,8 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
 
         var windows = Check("ExportWindowsCheck", "Windows x64", nameof(ExportGameViewModel.ExportWindows));
         var linux = Check("ExportLinuxCheck", "Linux x64 (and Steam Deck)", nameof(ExportGameViewModel.ExportLinux));
-        var archives = Check("ExportArchivesCheck", "Create archives (.zip for Windows, .tar.gz for Linux)", nameof(ExportGameViewModel.CreateArchives));
+        var web = Check("ExportWebCheck", "Web demo (a page for itch.io; runs in the browser)", nameof(ExportGameViewModel.ExportWeb));
+        var archives = Check("ExportArchivesCheck", "Create archives (.zip for Windows and the web, .tar.gz for Linux)", nameof(ExportGameViewModel.CreateArchives));
 
         var folder = new TextBox { Name = "ExportFolderBox", Watermark = "Output folder" };
         folder.Bind(TextBox.TextProperty, new Binding(nameof(ExportGameViewModel.OutputFolder)) { Mode = BindingMode.TwoWay });
@@ -61,7 +62,7 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
         var form = Ui.VStack(
             10,
             problems,
-            Ui.VStack(6, Ui.Text("TARGETS", "section"), windows, linux),
+            Ui.VStack(6, Ui.Text("TARGETS", "section"), windows, linux, web),
             Ui.VStack(6, Ui.Text("OUTPUT FOLDER", "section"), folderRow, archives));
 
         Content = new Border

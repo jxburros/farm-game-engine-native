@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using FarmEngine.Authoring;
 using FarmEngine.Interop;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -67,7 +68,7 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         _workspace.FlushPendingSave();
-        if (_workspace.Current.Scenes.Count == 0)
+        if (_workspace.Current.Scenes.Length == 0)
         {
             _shell.ShowStatus("This project has no scenes to play yet.");
             _shell.Mode = EditorMode.Edit;
@@ -115,9 +116,10 @@ public sealed class GameWorkspaceView : UserControl
         {
             try
             {
-                finalProject = play.Use(player => player.SyncedProject());
+                var state = play.Use(player => player.StateJson());
+                finalProject = Playtests.ApplyState(_snapshot!, state);
             }
-            catch (FarmFfiException ex)
+            catch (Exception ex) when (ex is FarmFfiException or FormatException)
             {
                 unreadable = true;
                 System.Diagnostics.Trace.TraceError($"Playtest state could not be read back: {ex}");
@@ -185,8 +187,16 @@ public sealed class GameWorkspaceView : UserControl
         System.Diagnostics.Trace.TraceError($"Playtest faulted: {exception}");
     }
 
-    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project) =>
-        RustPlayer.Create(project, (_options.Player ?? new RustPlayerOptions()) with { Audio = _options.Audio });
+    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project)
+    {
+        // The game's interface follows the editor's language until the player picks one.
+        var options = _options.Player ?? new RustPlayerOptions();
+        // Play Mode runs the cartridge F# compiles, like an exported game (Keep changes then
+        // writes the final state back through F#; see EndPlaytest).
+        return RustPlayer.CreateCartridge(
+            Playtests.Cartridge(project),
+            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+    }
 
     private void OnRestartRequested(object? sender, EventArgs e)
     {

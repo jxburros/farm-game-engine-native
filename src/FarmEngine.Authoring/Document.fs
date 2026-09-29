@@ -36,6 +36,7 @@ module Document =
         | RemovePlacedItem(sceneId, x, y) -> EditScenes.removePlacedItem sceneId x y project
         | PlaceMachine(sceneId, x, y, machineTypeId) -> EditScenes.placeMachine sceneId x y machineTypeId project
         | RemoveMachine(sceneId, x, y) -> EditScenes.removeMachine sceneId x y project
+        | ClearTile(sceneId, x, y) -> EditScenes.clearTile sceneId x y project
         | ClearCropsAndItems sceneId -> EditScenes.clearCropsAndItems sceneId project
         | ResetSoil sceneId -> EditScenes.resetSoil sceneId project
         | FillScene(sceneId, tileType) -> EditScenes.fillScene sceneId tileType project
@@ -90,6 +91,7 @@ module Document =
         | SetSettings settings -> EditProject.setSettings settings project
         | SetExportSettings settings -> EditProject.setExportSettings settings project
         | RemoveSeason seasonId -> EditProject.removeSeason seasonId project
+        | MoveSeason(seasonId, delta) -> EditProject.moveSeason seasonId delta project
         | SetGraphics graphics -> EditProject.setGraphics graphics project
         | SetPlayerVisual visual -> EditProject.setPlayerVisual visual project
         | BindVisual(target, visual) -> EditProject.bindVisual target visual project
@@ -113,7 +115,7 @@ module Document =
     /// No-ops leave the document untouched (same instance). Ends any drag stroke.
     let apply (edit: Edit) (document: Document) : Document =
         let next = run document.Project edit
-        if obj.ReferenceEquals(next, document.Project) then
+        if LanguagePrimitives.PhysicalEquality next document.Project then
             (if document.Stroke.IsNone then document else { document with Stroke = None })
         else
             { Project = next; Past = push document.Project document.Past; Future = []; Stroke = None }
@@ -124,7 +126,7 @@ module Document =
     /// redo) starts a new entry, so the stroke needs no explicit end.
     let applyInStroke (strokeId: string) (edit: Edit) (document: Document) : Document =
         let next = run document.Project edit
-        if obj.ReferenceEquals(next, document.Project) then document
+        if LanguagePrimitives.PhysicalEquality next document.Project then document
         elif document.Stroke = Some strokeId then { document with Project = next }
         else { Project = next; Past = push document.Project document.Past; Future = []; Stroke = Some strokeId }
 

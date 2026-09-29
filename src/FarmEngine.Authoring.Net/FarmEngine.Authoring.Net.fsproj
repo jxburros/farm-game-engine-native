@@ -9,12 +9,13 @@
   <ItemGroup>
     <Compile Include="JsonInterop.fs" />
     <Compile Include="ProjectMigrations.fs" />
+    <Compile Include="RecordJson.fs" />
+    <Compile Include="RecordWith.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
-    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 </Project>

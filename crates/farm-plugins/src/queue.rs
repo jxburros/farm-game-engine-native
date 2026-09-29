@@ -103,7 +103,7 @@ mod tests {
     fn drained_mutations_become_plugin_mutation_commands() {
         let queued = QueuedPluginMutation {
             plugin_id: "gifts:daily".to_owned(),
-            mutation: PluginMutation::GiveMoney { amount: 20.0 },
+            mutation: PluginMutation::GiveMoney { amount: 20 },
         };
         let command = queued.into_command();
         assert_eq!(

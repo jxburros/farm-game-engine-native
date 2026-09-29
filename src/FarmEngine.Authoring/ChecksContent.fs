@@ -10,10 +10,17 @@ open FarmEngine.Schemas
 module internal ChecksContent =
     let private hasValue = Context.hasValue
 
-    let private missing (set: HashSet<string>) (id: string | null) =
+    /// A non-empty optional reference to something `set` does not contain.
+    let private missing (set: HashSet<string>) (id: string option) =
         match id with
-        | null -> false
-        | value -> value.Length > 0 && not (set.Contains value)
+        | None -> false
+        | Some value -> value.Length > 0 && not (set.Contains value)
+
+    /// A non-empty required reference to something `set` does not contain.
+    let private missingText (set: HashSet<string>) (id: string) = id.Length > 0 && not (set.Contains id)
+
+    /// An optional reference as the message prints it.
+    let private text (value: string option) = defaultArg value ""
 
     let private duplicates (context: Context) (sink: Sink) =
         let check (family: string) (path: string) (ids: seq<string>) (target: string -> NavigationTarget option) =
@@ -39,8 +46,8 @@ module internal ChecksContent =
         check "minigame" "minigames" (p.Minigames |> Seq.map (fun x -> x.Id)) (fun id -> Some(NavigationTarget.Minigame id))
         check "asset" "customAssets" (p.CustomAssets |> Seq.map (fun x -> x.Id)) (fun id -> Some(NavigationTarget.Asset id))
         match p.CustomCrops with
-        | null -> ()
-        | crops -> check "crop" "customCrops" (crops |> Seq.map (fun x -> x.Id)) (fun id -> Some(NavigationTarget.Crop id))
+        | None -> ()
+        | Some crops -> check "crop" "customCrops" (crops |> Seq.map (fun x -> x.Id)) (fun id -> Some(NavigationTarget.Crop id))
 
     let private items (context: Context) (sink: Sink) =
         context.Project.Items
@@ -54,16 +61,16 @@ module internal ChecksContent =
             if item.Type = ItemTypes.Tool && not (hasValue item.ToolType) then
                 sink.Warning("item.toolWithoutType", path + ".toolType", sprintf "Tool \"%s\" has no tool type, so it cannot be used" item.Name, target)
             if item.Type <> ItemTypes.Seed && missing context.CropIds item.CropType then
-                sink.Warning("item.unknownCrop", path + ".cropType", sprintf "Item \"%s\" belongs to missing crop \"%s\"" item.Name item.CropType, target)
+                sink.Warning("item.unknownCrop", path + ".cropType", sprintf "Item \"%s\" belongs to missing crop \"%s\"" item.Name (text item.CropType), target)
             // validate-extensibility.ts: "on use" action must exist.
             if missing context.ActionIds item.UseActionId then
-                sink.Error("item.useActionMissing", path + ".useActionId", sprintf "Item \"%s\" uses missing action \"%s\"" item.Name item.UseActionId, target))
+                sink.Error("item.useActionMissing", path + ".useActionId", sprintf "Item \"%s\" uses missing action \"%s\"" item.Name (text item.UseActionId), target))
 
     let private crops (context: Context) (sink: Sink) =
         match context.Project.CustomCrops with
-        | null -> ()
-        | crops ->
-            let seedsFor = HashSet<string>(context.Project.Items |> Seq.filter (fun i -> i.Type = ItemTypes.Seed) |> Seq.choose (fun i -> Option.ofObj i.CropType))
+        | None -> ()
+        | Some crops ->
+            let seedsFor = HashSet<string>(context.Project.Items |> Seq.filter (fun i -> i.Type = ItemTypes.Seed) |> Seq.choose (fun i -> i.CropType))
             crops
             |> Seq.iteri (fun i crop ->
                 let path = sprintf "customCrops[%d]" i
@@ -71,11 +78,11 @@ module internal ChecksContent =
                 // CropEditor handleSaveCrop rules.
                 if System.String.IsNullOrWhiteSpace crop.Name then
                     sink.Error("crop.emptyName", path + ".name", sprintf "Crop \"%s\" has no name" crop.Id, target)
-                if not crop.GrowthDays.HasValue || crop.GrowthDays.Value <= 0.0 then
+                if (match crop.GrowthDays with Some days -> days <= 0.0 | None -> true) then
                     sink.Error("crop.growthDays", path + ".growthDays", sprintf "Crop \"%s\" needs at least 1 growth day" crop.Name, target)
                 if crop.Stages < 2.0 then
                     sink.Error("crop.stagesTooFew", path + ".stages", sprintf "Crop \"%s\" needs at least 2 stages" crop.Name, target)
-                if crop.Seasons.Count = 0 then
+                if crop.Seasons.IsEmpty then
                     sink.Error("crop.noSeasons", path + ".seasons", sprintf "Crop \"%s\" grows in no season" crop.Name, target)
                 crop.Seasons
                 |> Seq.iteri (fun k season ->
@@ -89,22 +96,24 @@ module internal ChecksContent =
         |> Seq.iteri (fun i quest ->
             let path = sprintf "quests[%d]" i
             let target = Some(NavigationTarget.Quest quest.Id)
-            if quest.Objectives.Count = 0 then
+            if quest.Objectives.IsEmpty then
                 sink.Warning("quest.noObjectives", path + ".objectives", sprintf "Quest \"%s\" has no objectives, so it completes at once" quest.Name, target)
             if missing context.NpcIds quest.Giver then
-                sink.Error("quest.giverMissing", path + ".giver", sprintf "Quest \"%s\" is given by missing NPC \"%s\"" quest.Name quest.Giver, target)
+                sink.Error("quest.giverMissing", path + ".giver", sprintf "Quest \"%s\" is given by missing NPC \"%s\"" quest.Name (text quest.Giver), target)
             match quest.Prerequisites with
-            | null -> ()
-            | prerequisites ->
+            | None -> ()
+            | Some prerequisites ->
                 prerequisites
                 |> Seq.iteri (fun k id ->
                     if id = quest.Id then
                         sink.Error("quest.prerequisiteSelf", sprintf "%s.prerequisites[%d]" path k, sprintf "Quest \"%s\" requires itself" quest.Name, target))
-            if quest.AvailableFromDay.HasValue && quest.AvailableToDay.HasValue && quest.AvailableFromDay.Value > quest.AvailableToDay.Value then
-                sink.Warning("quest.availableWindow", path + ".availableFromDay", sprintf "Quest \"%s\" is available from day %g until day %g, which never happens" quest.Name quest.AvailableFromDay.Value quest.AvailableToDay.Value, target)
+            match quest.AvailableFromDay, quest.AvailableToDay with
+            | Some fromDay, Some toDay when fromDay > toDay ->
+                sink.Warning("quest.availableWindow", path + ".availableFromDay", sprintf "Quest \"%s\" is available from day %g until day %g, which never happens" quest.Name fromDay toDay, target)
+            | _ -> ()
             match quest.AvailableSeasons with
-            | null -> ()
-            | seasons ->
+            | None -> ()
+            | Some seasons ->
                 seasons
                 |> Seq.iteri (fun k season ->
                     if not (context.SeasonIds.Contains season) then
@@ -123,7 +132,7 @@ module internal ChecksContent =
 
     /// The condition/outcome vocabulary shared by events, actions and minigame tiers (event-forms.tsx).
     /// `sceneId` is the scene tile conditions and tile outcomes are checked against (empty = any).
-    let private conditions (context: Context) (sink: Sink) (family: string) (path: string) (label: string) (sceneId: string) (target: NavigationTarget option) (conditions: List<EventCondition>) =
+    let private conditions (context: Context) (sink: Sink) (family: string) (path: string) (label: string) (sceneId: string) (target: NavigationTarget option) (conditions: EventCondition list) =
         conditions
         |> Seq.iteri (fun c condition ->
             let cpath = sprintf "%s.conditions[%d]" path c
@@ -131,66 +140,66 @@ module internal ChecksContent =
                 if sceneId.Length > 0 && context.Scenes.ContainsKey sceneId && not (Context.tileInScene context sceneId x y) then
                     sink.Error(sprintf "%s.conditionTileOutOfBounds" family, cpath + ".x", sprintf "%s watches tile (%g,%g), outside its scene" label x y, target)
             match condition with
-            | :? EnterTileCondition as t -> tile t.X t.Y
-            | :? InteractTileCondition as t -> tile t.X t.Y
-            | :? FriendshipCondition as f ->
-                if missing context.NpcIds f.NpcId then
+            | EventCondition.EnterTile t -> tile t.X t.Y
+            | EventCondition.InteractTile t -> tile t.X t.Y
+            | EventCondition.Friendship f ->
+                if missingText context.NpcIds f.NpcId then
                     sink.Error(sprintf "%s.conditionUnknownNpc" family, cpath + ".npcId", sprintf "%s checks friendship with missing NPC \"%s\"" label f.NpcId, target)
-            | :? FlagCondition as f ->
-                if hasValue f.Flag && not (context.KnownFlags.Contains f.Flag) then
+            | EventCondition.Flag f ->
+                if f.Flag.Length > 0 && not (context.KnownFlags.Contains f.Flag) then
                     sink.Warning(sprintf "%s.conditionUnknownFlag" family, cpath + ".flag", sprintf "%s checks flag \"%s\", which nothing ever sets" label f.Flag, target)
-            | :? WeatherCondition as w ->
+            | EventCondition.Weather w ->
                 w.WeatherIds
                 |> Seq.iteri (fun k id ->
                     if not (context.WeatherIds.Contains id) then
                         sink.Warning(sprintf "%s.conditionUnknownWeather" family, sprintf "%s.weatherIds[%d]" cpath k, sprintf "%s checks unknown weather \"%s\"" label id, target))
-            | :? SeasonCondition as s ->
+            | EventCondition.Season s ->
                 s.Seasons
                 |> Seq.iteri (fun k id ->
                     if not (context.SeasonIds.Contains id) then
                         sink.Warning(sprintf "%s.conditionUnknownSeason" family, sprintf "%s.seasons[%d]" cpath k, sprintf "%s checks season \"%s\", which is not in the calendar" label id, target))
-            | :? FestivalIdCondition as f ->
-                if missing context.FestivalIds f.FestivalId then
+            | EventCondition.FestivalId f ->
+                if missingText context.FestivalIds f.FestivalId then
                     sink.Error(sprintf "%s.conditionUnknownFestival" family, cpath + ".festivalId", sprintf "%s checks missing festival \"%s\"" label f.FestivalId, target)
-            | :? InventorySpaceCondition as i ->
-                if missing context.ItemIds i.ItemId then
+            | EventCondition.InventorySpace i ->
+                if missingText context.ItemIds i.ItemId then
                     sink.Error(sprintf "%s.conditionUnknownItem" family, cpath + ".itemId", sprintf "%s checks room for missing item \"%s\"" label i.ItemId, target)
             // Event conditions on items and quests are content lints (validation.ts); actions get them here.
-            | :? HasItemCondition as h when family <> "event" ->
-                if missing context.ItemIds h.ItemId then
+            | EventCondition.HasItem h when family <> "event" ->
+                if missingText context.ItemIds h.ItemId then
                     sink.Error(sprintf "%s.conditionUnknownItem" family, cpath + ".itemId", sprintf "%s checks missing item \"%s\"" label h.ItemId, target)
-            | :? QuestStatusCondition as q when family <> "event" ->
-                if missing context.QuestIds q.QuestId then
+            | EventCondition.QuestStatus q when family <> "event" ->
+                if missingText context.QuestIds q.QuestId then
                     sink.Error(sprintf "%s.conditionUnknownQuest" family, cpath + ".questId", sprintf "%s checks missing quest \"%s\"" label q.QuestId, target)
             | _ -> ())
 
-    let private outcomes (context: Context) (sink: Sink) (family: string) (path: string) (label: string) (sceneId: string) (target: NavigationTarget option) (outcomes: List<EventOutcome>) =
+    let private outcomes (context: Context) (sink: Sink) (family: string) (path: string) (label: string) (sceneId: string) (target: NavigationTarget option) (outcomes: EventOutcome list) =
         outcomes
         |> Seq.iteri (fun o outcome ->
             let opath = sprintf "%s.outcomes[%d]" path o
             let needs (field: string) (present: bool) =
                 if not present then
                     sink.Error(sprintf "%s.outcomeMissingField" family, opath + "." + field, sprintf "%s has a %s outcome with no %s" label outcome.Type field, target)
-            let sceneFor (id: string | null) = if hasValue id then (match id with null -> sceneId | s -> s) else sceneId
+            let sceneFor (id: string option) = if hasValue id then text id else sceneId
             // Event outcomes on items, quests, NPCs and warps are content lints (validation.ts);
             // actions and minigame tiers get the same checks here.
-            let unknown (code: string) (field: string) (known: string -> bool) (id: string | null) (what: string) =
-                if family <> "event" && (match id with null -> false | id -> id.Length > 0 && not (known id)) then
-                    sink.Error(sprintf "%s.%s" family code, opath + "." + field, sprintf "%s references missing %s \"%s\"" label what id, target)
+            let unknown (code: string) (field: string) (known: string -> bool) (id: string option) (what: string) =
+                if family <> "event" && (match id with None -> false | Some id -> id.Length > 0 && not (known id)) then
+                    sink.Error(sprintf "%s.%s" family code, opath + "." + field, sprintf "%s references missing %s \"%s\"" label what (text id), target)
             let unknownScene () =
-                if (match outcome.SceneId with null -> false | id -> id.Length > 0 && not (context.Scenes.ContainsKey id)) then
-                    sink.Error(sprintf "%s.outcomeUnknownScene" family, opath + ".sceneId", sprintf "%s %s in missing scene \"%s\"" label outcome.Type outcome.SceneId, target)
+                if (match outcome.SceneId with None -> false | Some id -> id.Length > 0 && not (context.Scenes.ContainsKey id)) then
+                    sink.Error(sprintf "%s.outcomeUnknownScene" family, opath + ".sceneId", sprintf "%s %s in missing scene \"%s\"" label outcome.Type (text outcome.SceneId), target)
             match outcome.Type with
             | EventOutcomeTypes.Message -> needs "message" (hasValue outcome.Message)
             | EventOutcomeTypes.GiveItem | EventOutcomeTypes.TakeItem ->
                 needs "itemId" (hasValue outcome.ItemId)
                 unknown "outcomeUnknownItem" "itemId" context.ItemIds.Contains outcome.ItemId "item"
-            | EventOutcomeTypes.GiveMoney | EventOutcomeTypes.TakeMoney | EventOutcomeTypes.ModifyEnergy -> needs "amount" outcome.Amount.HasValue
+            | EventOutcomeTypes.GiveMoney | EventOutcomeTypes.TakeMoney | EventOutcomeTypes.ModifyEnergy -> needs "amount" outcome.Amount.IsSome
             | EventOutcomeTypes.ModifyFriendship ->
                 needs "npcId" (hasValue outcome.NpcId)
-                needs "amount" outcome.Amount.HasValue
+                needs "amount" outcome.Amount.IsSome
                 if missing context.NpcIds outcome.NpcId then
-                    sink.Error(sprintf "%s.outcomeUnknownNpc" family, opath + ".npcId", sprintf "%s changes friendship with missing NPC \"%s\"" label outcome.NpcId, target)
+                    sink.Error(sprintf "%s.outcomeUnknownNpc" family, opath + ".npcId", sprintf "%s changes friendship with missing NPC \"%s\"" label (text outcome.NpcId), target)
             | EventOutcomeTypes.SetFlag | EventOutcomeTypes.ClearFlag -> needs "flagName" (hasValue outcome.FlagName)
             | EventOutcomeTypes.StartQuest | EventOutcomeTypes.CompleteQuest ->
                 needs "questId" (hasValue outcome.QuestId)
@@ -202,11 +211,11 @@ module internal ChecksContent =
                 needs "npcId" (hasValue outcome.NpcId)
                 unknown "outcomeUnknownNpc" "npcId" context.NpcIds.Contains outcome.NpcId "NPC"
                 match outcome.NpcId with
-                | null -> ()
-                | npcId ->
+                | None -> ()
+                | Some npcId ->
                     match outcome.DialogueId with
-                    | null -> ()
-                    | dialogueId when dialogueId.Length > 0 ->
+                    | None -> ()
+                    | Some dialogueId when dialogueId.Length > 0 ->
                         match context.Project.Npcs |> Seq.tryFind (fun n -> n.Id = npcId) with
                         | Some npc when not (npc.Dialogue |> Seq.exists (fun d -> d.Id = dialogueId)) ->
                             sink.Error(sprintf "%s.outcomeUnknownDialogue" family, opath + ".dialogueId", sprintf "%s starts dialogue \"%s\", which %s does not have" label dialogueId npc.Name, target)
@@ -216,25 +225,25 @@ module internal ChecksContent =
                 needs "newTileType" (hasValue outcome.NewTileType)
                 unknownScene ()
                 let scene = sceneFor outcome.SceneId
-                let x = if outcome.TileX.HasValue then outcome.TileX.Value else 0.0
-                let y = if outcome.TileY.HasValue then outcome.TileY.Value else 0.0
+                let x = defaultArg outcome.TileX 0.0
+                let y = defaultArg outcome.TileY 0.0
                 if scene.Length > 0 && context.Scenes.ContainsKey scene && not (Context.tileInScene context scene x y) then
                     sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".tileX", sprintf "%s changes tile (%g,%g), outside the scene" label x y, target)
             | EventOutcomeTypes.WarpPlayer ->
                 needs "sceneId" (hasValue outcome.SceneId)
                 unknown "outcomeUnknownScene" "sceneId" context.Scenes.ContainsKey outcome.SceneId "scene"
-                let x = if outcome.X.HasValue then outcome.X.Value else 0.0
-                let y = if outcome.Y.HasValue then outcome.Y.Value else 0.0
+                let x = defaultArg outcome.X 0.0
+                let y = defaultArg outcome.Y 0.0
                 match outcome.SceneId with
-                | null -> ()
-                | scene when context.Scenes.ContainsKey scene && not (Context.tileInScene context scene x y) ->
-                    sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".x", sprintf "%s warps the player to (%g,%g), outside \"%s\"" label x y context.Scenes[scene].Name, target)
+                | None -> ()
+                | Some scene when context.Scenes.ContainsKey scene && not (Context.tileInScene context scene x y) ->
+                    sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".x", sprintf "%s warps the player to (%g,%g), outside \"%s\"" label x y context.Scenes.[scene].Name, target)
                 | _ -> ()
             | EventOutcomeTypes.LockTransition | EventOutcomeTypes.UnlockTransition ->
                 unknownScene ()
                 let scene = sceneFor outcome.SceneId
-                let x = if outcome.X.HasValue then outcome.X.Value else 0.0
-                let y = if outcome.Y.HasValue then outcome.Y.Value else 0.0
+                let x = defaultArg outcome.X 0.0
+                let y = defaultArg outcome.Y 0.0
                 match context.Scenes.TryGetValue scene with
                 | true, s when not (s.Transitions |> Seq.exists (fun t -> t.FromX = x && t.FromY = y)) ->
                     sink.Warning(sprintf "%s.outcomeUnknownTransition" family, opath + ".x", sprintf "%s %ss a transition at (%g,%g) in \"%s\", but there is none" label (if outcome.Type = EventOutcomeTypes.LockTransition then "lock" else "unlock") x y s.Name, target)
@@ -244,11 +253,11 @@ module internal ChecksContent =
             | EventOutcomeTypes.PerformAction ->
                 needs "actionId" (hasValue outcome.ActionId)
                 if missing context.ActionIds outcome.ActionId then
-                    sink.Error(sprintf "%s.outcomeUnknownAction" family, opath + ".actionId", sprintf "%s performs missing action \"%s\"" label outcome.ActionId, target)
+                    sink.Error(sprintf "%s.outcomeUnknownAction" family, opath + ".actionId", sprintf "%s performs missing action \"%s\"" label (text outcome.ActionId), target)
             | EventOutcomeTypes.StartMinigame ->
                 needs "minigameId" (hasValue outcome.MinigameId)
                 if missing context.MinigameIds outcome.MinigameId then
-                    sink.Error(sprintf "%s.outcomeUnknownMinigame" family, opath + ".minigameId", sprintf "%s starts missing minigame \"%s\"" label outcome.MinigameId, target)
+                    sink.Error(sprintf "%s.outcomeUnknownMinigame" family, opath + ".minigameId", sprintf "%s starts missing minigame \"%s\"" label (text outcome.MinigameId), target)
             | _ -> ())
 
     let private events (context: Context) (sink: Sink) =
@@ -257,9 +266,15 @@ module internal ChecksContent =
             let path = sprintf "events[%d]" i
             let label = sprintf "Event \"%s\"" event.Name
             let target = Some(NavigationTarget.Event event.Id)
-            if event.Outcomes.Count = 0 then
+            if event.Outcomes.IsEmpty then
                 sink.Warning("event.noOutcomes", path + ".outcomes", sprintf "%s does nothing (no outcomes)" label, target)
-            let hasTile = event.Conditions |> Seq.exists (fun c -> c :? EnterTileCondition || c :? InteractTileCondition)
+            let hasTile =
+                event.Conditions
+                |> List.exists (fun c ->
+                    match c with
+                    | EventCondition.EnterTile _
+                    | EventCondition.InteractTile _ -> true
+                    | _ -> false)
             if event.Trigger = EventTriggers.Enter && not hasTile then
                 sink.Warning("event.enterWithoutTile", path + ".conditions", sprintf "%s fires on enter but has no tile or region condition, so it fires on every step" label, target)
             if event.Trigger = EventTriggers.Interact && not hasTile then
@@ -278,17 +293,16 @@ module internal ChecksContent =
             let path = sprintf "actions[%d]" i
             let label = sprintf "Action \"%s\"" action.Name
             let target = Some(NavigationTarget.Action action.Id)
-            if action.Outcomes.Count = 0 then
+            if action.Outcomes.IsEmpty then
                 sink.Warning("action.noOutcomes", path + ".outcomes", sprintf "%s does nothing (no outcomes)" label, target)
             match action.Hotkey with
-            | null -> ()
-            | key when key.Length > 0 ->
+            | Some key when key.Length > 0 ->
                 let lowered = key.ToLowerInvariant()
                 if reservedActionKeys.Contains lowered then
                     sink.Warning("action.reservedHotkey", path + ".hotkey", sprintf "%s uses hotkey \"%s\", which is reserved for gameplay and ignored in play" label key, target)
                 match hotkeys.TryGetValue lowered with
                 | true, other -> sink.Warning("action.duplicateHotkey", path + ".hotkey", sprintf "%s shares hotkey \"%s\" with \"%s\"" label key other, target)
-                | _ -> hotkeys[lowered] <- action.Name
+                | _ -> hotkeys.[lowered] <- action.Name
             | _ -> ()
             conditions context sink "action" path label "" target action.Conditions
             outcomes context sink "action" path label "" target action.Outcomes)
@@ -300,7 +314,7 @@ module internal ChecksContent =
             let target = Some(NavigationTarget.Minigame minigame.Id)
             if System.String.IsNullOrWhiteSpace minigame.Kind then
                 sink.Error("minigame.emptyKind", path + ".kind", sprintf "Minigame \"%s\" has no kind" minigame.Name, target)
-            if minigame.ResultTiers.Count = 0 then
+            if minigame.ResultTiers.IsEmpty then
                 sink.Warning("minigame.noTiers", path + ".resultTiers", sprintf "Minigame \"%s\" has no result tiers, so its score changes nothing" minigame.Name, target)
             minigame.ResultTiers
             |> Seq.iteri (fun t tier ->
@@ -309,21 +323,21 @@ module internal ChecksContent =
     let private shops (context: Context) (sink: Sink) =
         let opened = HashSet<string>(
             Seq.append
-                (context.Project.Dialogues |> Seq.collect (fun d -> d.Options |> Seq.choose (fun o -> Option.ofObj o.OpenShopId)))
-                (context.Project.Npcs |> Seq.collect (fun n -> n.Dialogue |> Seq.collect (fun d -> d.Options |> Seq.choose (fun o -> Option.ofObj o.OpenShopId)))))
+                (context.Project.Dialogues |> Seq.collect (fun d -> d.Options |> Seq.choose (fun o -> o.OpenShopId)))
+                (context.Project.Npcs |> Seq.collect (fun n -> n.Dialogue |> Seq.collect (fun d -> d.Options |> Seq.choose (fun o -> o.OpenShopId)))))
         context.Project.Shops
         |> Seq.iteri (fun i shop ->
             let path = sprintf "shops[%d]" i
             let target = Some(NavigationTarget.Shop shop.Id)
-            if shop.Stock.Count = 0 then
+            if shop.Stock.IsEmpty then
                 sink.Info("shop.noStock", path + ".stock", sprintf "Shop \"%s\" sells nothing" shop.Name, target)
             if not (opened.Contains shop.Id) then
                 sink.Info("shop.unreachable", path, sprintf "No dialogue option opens shop \"%s\"" shop.Name, target)
             shop.Stock
             |> Seq.iteri (fun k entry ->
                 match entry.Seasons with
-                | null -> ()
-                | seasons ->
+                | None -> ()
+                | Some seasons ->
                     seasons
                     |> Seq.iteri (fun s season ->
                         if not (context.SeasonIds.Contains season) then
@@ -335,7 +349,7 @@ module internal ChecksContent =
         |> Seq.iteri (fun i recipe ->
             let path = sprintf "recipes[%d]" i
             let target = Some(NavigationTarget.Recipe recipe.Id)
-            let ingredients (kind: string) (list: List<RecipeIngredient>) =
+            let ingredients (kind: string) (list: RecipeIngredient list) =
                 list
                 |> Seq.iteri (fun k ingredient ->
                     if not (context.ItemIds.Contains ingredient.ItemId) then
@@ -343,28 +357,26 @@ module internal ChecksContent =
                                    sprintf "Recipe \"%s\" %s missing item \"%s\"" recipe.Name (if kind = "inputs" then "needs" else "makes") ingredient.ItemId, target))
             ingredients "inputs" recipe.Inputs
             ingredients "outputs" recipe.Outputs
-            if recipe.Outputs.Count = 0 then
+            if recipe.Outputs.IsEmpty then
                 sink.Warning("recipe.noOutputs", path + ".outputs", sprintf "Recipe \"%s\" makes nothing" recipe.Name, target)
             if missing context.MachineTypeIds recipe.MachineTypeId then
-                sink.Error("recipe.unknownMachine", path + ".machineTypeId", sprintf "Recipe \"%s\" needs missing machine \"%s\"" recipe.Name recipe.MachineTypeId, target)
+                sink.Error("recipe.unknownMachine", path + ".machineTypeId", sprintf "Recipe \"%s\" needs missing machine \"%s\"" recipe.Name (text recipe.MachineTypeId), target)
             match recipe.RequiresStationCategory with
-            | null -> ()
-            | station when station.Length > 0 && not (stations.Contains station) ->
+            | Some station when station.Length > 0 && not (stations.Contains station) ->
                 sink.Warning("recipe.unknownStation", path + ".requiresStationCategory", sprintf "Recipe \"%s\" needs a \"%s\" station, which no machine provides" recipe.Name station, target)
             | _ -> ()
             match recipe.Unlock with
-            | null -> ()
-            | unlock ->
+            | None -> ()
+            | Some unlock ->
                 match unlock.Skill with
-                | null -> ()
-                | skill when not (SaveSchema.SkillNames |> Seq.contains skill.Skill) ->
+                | Some skill when not (SaveSchema.SkillNames |> Seq.contains skill.Skill) ->
                     sink.Warning("recipe.unknownSkill", path + ".unlock.skill.skill", sprintf "Recipe \"%s\" unlocks with unknown skill \"%s\"" recipe.Name skill.Skill, target)
                 | _ -> ()
                 if missing context.QuestIds unlock.QuestId then
-                    sink.Error("recipe.unlockQuestMissing", path + ".unlock.questId", sprintf "Recipe \"%s\" unlocks after missing quest \"%s\"" recipe.Name unlock.QuestId, target)
+                    sink.Error("recipe.unlockQuestMissing", path + ".unlock.questId", sprintf "Recipe \"%s\" unlocks after missing quest \"%s\"" recipe.Name (text unlock.QuestId), target)
                 match unlock.Seasons with
-                | null -> ()
-                | seasons ->
+                | None -> ()
+                | Some seasons ->
                     seasons
                     |> Seq.iteri (fun k season ->
                         if not (context.SeasonIds.Contains season) then
@@ -376,9 +388,9 @@ module internal ChecksContent =
             let path = sprintf "machineTypes[%d]" i
             let target = Some(NavigationTarget.MachineType machine.Id)
             match machine.ItemId with
-            | null -> sink.Warning("machineType.noItem", path + ".itemId", sprintf "Machine \"%s\" has no item, so players cannot place it" machine.Name, target)
-            | id when id.Length = 0 -> sink.Warning("machineType.noItem", path + ".itemId", sprintf "Machine \"%s\" has no item, so players cannot place it" machine.Name, target)
-            | id when not (context.ItemIds.Contains id) -> sink.Error("machineType.unknownItem", path + ".itemId", sprintf "Machine \"%s\" is placed with missing item \"%s\"" machine.Name id, target)
+            | None -> sink.Warning("machineType.noItem", path + ".itemId", sprintf "Machine \"%s\" has no item, so players cannot place it" machine.Name, target)
+            | Some id when id.Length = 0 -> sink.Warning("machineType.noItem", path + ".itemId", sprintf "Machine \"%s\" has no item, so players cannot place it" machine.Name, target)
+            | Some id when not (context.ItemIds.Contains id) -> sink.Error("machineType.unknownItem", path + ".itemId", sprintf "Machine \"%s\" is placed with missing item \"%s\"" machine.Name id, target)
             | _ -> ())
 
     let private nodeTypes (context: Context) (sink: Sink) =
@@ -386,7 +398,7 @@ module internal ChecksContent =
         |> Seq.iteri (fun i node ->
             let path = sprintf "nodeTypes[%d]" i
             let target = Some(NavigationTarget.NodeType node.Id)
-            if node.Drops.Count = 0 then
+            if node.Drops.IsEmpty then
                 sink.Warning("nodeType.noDrops", path + ".drops", sprintf "Node type \"%s\" drops nothing" node.Name, target)
             node.Drops
             |> Seq.iteri (fun k drop ->
@@ -403,7 +415,7 @@ module internal ChecksContent =
             elif not (context.ItemIds.Contains species.ProductItemId) then
                 sink.Error("species.unknownProduct", path + ".productItemId", sprintf "Species \"%s\" produces missing item \"%s\"" species.Name species.ProductItemId, target)
             if missing context.ItemIds species.FeedItemId then
-                sink.Error("species.unknownFeed", path + ".feedItemId", sprintf "Species \"%s\" eats missing item \"%s\"" species.Name species.FeedItemId, target))
+                sink.Error("species.unknownFeed", path + ".feedItemId", sprintf "Species \"%s\" eats missing item \"%s\"" species.Name (text species.FeedItemId), target))
         context.Project.Animals
         |> Seq.iteri (fun i animal ->
             let path = sprintf "animals[%d]" i
@@ -418,24 +430,24 @@ module internal ChecksContent =
         |> Seq.iteri (fun i table ->
             let path = sprintf "fishTables[%d]" i
             let target = Some(NavigationTarget.FishTable table.Id)
-            if table.Entries.Count = 0 then
+            if table.Entries.IsEmpty then
                 sink.Warning("fishTable.noEntries", path + ".entries", sprintf "Fish table \"%s\" has no fish" table.Name, target)
             table.Entries
             |> Seq.iteri (fun k entry ->
                 if not (context.ItemIds.Contains entry.ItemId) then
                     sink.Error("fishTable.unknownItem", sprintf "%s.entries[%d].itemId" path k, sprintf "Fish table \"%s\" catches missing item \"%s\"" table.Name entry.ItemId, target))
             if missing context.ItemIds table.JunkItemId then
-                sink.Error("fishTable.unknownJunk", path + ".junkItemId", sprintf "Fish table \"%s\" catches missing junk item \"%s\"" table.Name table.JunkItemId, target)
+                sink.Error("fishTable.unknownJunk", path + ".junkItemId", sprintf "Fish table \"%s\" catches missing junk item \"%s\"" table.Name (text table.JunkItemId), target)
             match table.SceneIds with
-            | null -> ()
-            | scenes ->
+            | None -> ()
+            | Some scenes ->
                 scenes
                 |> Seq.iteri (fun k id ->
                     if not (context.Scenes.ContainsKey id) then
                         sink.Error("fishTable.unknownScene", sprintf "%s.sceneIds[%d]" path k, sprintf "Fish table \"%s\" applies to missing scene \"%s\"" table.Name id, target))
             match table.Seasons with
-            | null -> ()
-            | seasons ->
+            | None -> ()
+            | Some seasons ->
                 seasons
                 |> Seq.iteri (fun k season ->
                     if not (context.SeasonIds.Contains season) then
@@ -446,33 +458,33 @@ module internal ChecksContent =
         let project = context.Project
         let assets = Dictionary<string, CustomAsset>()
         for a in project.CustomAssets do
-            if not (assets.ContainsKey a.Id) then assets[a.Id] <- a
+            if not (assets.ContainsKey a.Id) then assets.[a.Id] <- a
         let frame (path: string) (f: ArtFrame) (defaultId: string) (label: string) (target: NavigationTarget option) =
-            let id = match f.AssetId with null -> defaultId | s -> s
+            let id = defaultArg f.AssetId defaultId
             match assets.TryGetValue id with
             | false, _ -> sink.Error("graphics.missingAsset", path, sprintf "%s: missing frame image %s" label id, target)
             | true, a ->
-                if a.Width.HasValue && a.Height.HasValue && (f.X + f.Width > a.Width.Value || f.Y + f.Height > a.Height.Value) then
-                    sink.Error("graphics.frameOutside", path, sprintf "%s: frame is outside %s (%g×%g)" label a.Name a.Width.Value a.Height.Value, target)
-        let visual (path: string) (v: VisualRef | null) (label: string) (target: NavigationTarget option) =
+                match a.Width, a.Height with
+                | Some width, Some height when f.X + f.Width > width || f.Y + f.Height > height ->
+                    sink.Error("graphics.frameOutside", path, sprintf "%s: frame is outside %s (%g×%g)" label a.Name width height, target)
+                | _ -> ()
+        let visual (path: string) (v: VisualRef option) (label: string) (target: NavigationTarget option) =
             match v with
-            | null -> ()
-            | v ->
+            | None -> ()
+            | Some v ->
                 match assets.TryGetValue v.AssetId with
                 | false, _ -> sink.Error("graphics.missingAsset", path + ".assetId", sprintf "%s: missing artwork %s" label v.AssetId, target)
                 | true, a ->
                     match v.Animation with
-                    | null -> ()
-                    | animation when animation.Length > 0 && not (match a.Animations with null -> false | clips -> clips |> Seq.exists (fun c -> c.Name = animation)) ->
+                    | Some animation when animation.Length > 0 && not (match a.Animations with None -> false | Some clips -> clips |> List.exists (fun c -> c.Name = animation)) ->
                         sink.Error("graphics.missingAnimation", path + ".animation", sprintf "%s: missing animation %s on %s" label animation a.Name, target)
                     | _ -> ()
                     match v.Frame with
-                    | null -> ()
-                    | f -> frame (path + ".frame") f a.Id label target
-        let customImage (path: string) (id: string | null) (label: string) (target: NavigationTarget option) =
+                    | None -> ()
+                    | Some f -> frame (path + ".frame") f a.Id label target
+        let customImage (path: string) (id: string option) (label: string) (target: NavigationTarget option) =
             match id with
-            | null -> ()
-            | id when id.Length > 0 && not (assets.ContainsKey id) ->
+            | Some id when id.Length > 0 && not (assets.ContainsKey id) ->
                 sink.Warning("graphics.missingCustomImage", path, sprintf "%s: custom image %s is not an asset" label id, target)
             | _ -> ()
         project.CustomAssets
@@ -480,8 +492,8 @@ module internal ChecksContent =
             let path = sprintf "customAssets[%d]" i
             let target = Some(NavigationTarget.Asset a.Id)
             match a.Animations with
-            | null -> ()
-            | clips ->
+            | None -> ()
+            | Some clips ->
                 let names = HashSet<string>()
                 clips
                 |> Seq.iteri (fun c clip ->
@@ -489,12 +501,11 @@ module internal ChecksContent =
                         sink.Error("graphics.duplicateClip", sprintf "%s.animations[%d].name" path c, sprintf "%s: duplicate clip %s" a.Name clip.Name, target)
                     clip.Frames
                     |> Seq.iteri (fun k f -> frame (sprintf "%s.animations[%d].frames[%d]" path c k) f a.Id (sprintf "%s / %s / frame %d" a.Name clip.Name (k + 1)) target))
-            match a.Sheet with
-            | null -> ()
-            | sheet ->
-                if a.Width.HasValue && a.Height.HasValue
-                   && (sheet.FrameWidth * sheet.Frames > a.Width.Value || sheet.FrameHeight * (if sheet.Directional then 4.0 else 1.0) > a.Height.Value) then
-                    sink.Error("graphics.sheetTooLarge", path + ".sheet", sprintf "%s: sprite sheet dimensions exceed the image" a.Name, target))
+            match a.Sheet, a.Width, a.Height with
+            | Some sheet, Some width, Some height
+                when sheet.FrameWidth * sheet.Frames > width || sheet.FrameHeight * (if sheet.Directional then 4.0 else 1.0) > height ->
+                sink.Error("graphics.sheetTooLarge", path + ".sheet", sprintf "%s: sprite sheet dimensions exceed the image" a.Name, target)
+            | _ -> ())
         visual "playerVisual" project.PlayerVisual "Player" (Some NavigationTarget.Settings)
         customImage "playerCustomImage" project.PlayerCustomImage "Player" (Some NavigationTarget.Settings)
         project.Npcs |> Seq.iteri (fun i n ->
@@ -504,8 +515,8 @@ module internal ChecksContent =
             visual (sprintf "items[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.Item d.Id))
             customImage (sprintf "items[%d].customImage" i) d.CustomImage d.Name (Some(NavigationTarget.Item d.Id)))
         match project.CustomCrops with
-        | null -> ()
-        | crops -> crops |> Seq.iteri (fun i d -> visual (sprintf "customCrops[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.Crop d.Id)))
+        | None -> ()
+        | Some crops -> crops |> Seq.iteri (fun i d -> visual (sprintf "customCrops[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.Crop d.Id)))
         project.NodeTypes |> Seq.iteri (fun i d -> visual (sprintf "nodeTypes[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.NodeType d.Id)))
         project.MachineTypes |> Seq.iteri (fun i d -> visual (sprintf "machineTypes[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.MachineType d.Id)))
         project.AnimalSpecies |> Seq.iteri (fun i d -> visual (sprintf "animalSpecies[%d].visual" i) d.Visual d.Name (Some(NavigationTarget.AnimalSpecies d.Id)))
@@ -519,18 +530,18 @@ module internal ChecksContent =
                     let target = Some(NavigationTarget.Scene(scene.Id, x, y))
                     let label = sprintf "%s (%d,%d)" scene.Name x y
                     match tile.Visuals with
-                    | null -> ()
-                    | visuals ->
+                    | None -> ()
+                    | Some visuals ->
                         visual (path + ".visuals.background") visuals.Background (label + " background") target
                         visual (path + ".visuals.overlay") visuals.Overlay (label + " overlay") target
                         visual (path + ".visuals.object") visuals.Object (label + " object") target
                     customImage (path + ".customImage") tile.CustomImage label target
                     match tile.Item with
-                    | null -> ()
-                    | item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
+                    | None -> ()
+                    | Some item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
         match project.GamePanels with
-        | null -> ()
-        | panels ->
+        | None -> ()
+        | Some panels ->
             panels
             |> Seq.iteri (fun i panel ->
                 panel.Entries
@@ -552,8 +563,71 @@ module internal ChecksContent =
             let target = Some(NavigationTarget.Pack manifest.Id)
             if not (seen.Add manifest.Id) then
                 sink.Error("pack.duplicate", path + ".pack.manifest.id", sprintf "Pack \"%s\" is installed twice" manifest.Id, target)
-            if not (PackRules.isEngineCompatible manifest.EngineCompatibility PackRules.EngineVersion) then
+            if not (PackRules.isEngineCompatible (Some manifest.EngineCompatibility) PackRules.EngineVersion) then
                 sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
+
+    /// Whole-number fields (money, counts) with a fraction: the engine keeps them as integers and
+    /// rounds them when it loads the game (docs/NUMERICS.md), so say so.
+    let private offGridNumbers (context: Context) (sink: Sink) =
+        let p = context.Project
+        let check (path: string) (what: string) (value: float) (target: NavigationTarget option) =
+            if not (System.Double.IsNaN value || System.Double.IsInfinity value) && value <> System.Math.Truncate value then
+                sink.Warning(
+                    "numbers.offGrid",
+                    path,
+                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (Migrations.roundAway value)),
+                    target
+                )
+        let checkSome path what (value: float option) target = value |> Option.iter (fun v -> check path what v target)
+        p.Items
+        |> List.iteri (fun i item ->
+            let target = Some(NavigationTarget.Item item.Id)
+            check (sprintf "items[%d].value" i) (sprintf "The value of \"%s\"" item.Name) item.Value target
+            check (sprintf "items[%d].maxStack" i) (sprintf "The stack size of \"%s\"" item.Name) item.MaxStack target)
+        p.CustomCrops
+        |> Option.defaultValue []
+        |> List.iteri (fun i crop ->
+            let target = Some(NavigationTarget.Crop crop.Id)
+            let path = sprintf "customCrops[%d]" i
+            check (path + ".seedCost") (sprintf "The seed cost of \"%s\"" crop.Name) crop.SeedCost target
+            check (path + ".baseHarvestValue") (sprintf "The harvest value of \"%s\"" crop.Name) crop.BaseHarvestValue target
+            check (path + ".yieldMin") (sprintf "The minimum yield of \"%s\"" crop.Name) crop.YieldMin target
+            check (path + ".yieldMax") (sprintf "The maximum yield of \"%s\"" crop.Name) crop.YieldMax target)
+        p.Shops
+        |> List.iteri (fun i shop ->
+            let target = Some(NavigationTarget.Shop shop.Id)
+            shop.Stock
+            |> List.iteri (fun k entry ->
+                let path = sprintf "shops[%d].stock[%d]" i k
+                checkSome (path + ".price") (sprintf "The price of \"%s\" in \"%s\"" entry.ItemId shop.Name) entry.Price target
+                checkSome (path + ".dailyLimit") (sprintf "The daily limit of \"%s\" in \"%s\"" entry.ItemId shop.Name) entry.DailyLimit target))
+        p.Recipes
+        |> List.iteri (fun i recipe ->
+            let target = Some(NavigationTarget.Recipe recipe.Id)
+            let ingredients (key: string) (list: RecipeIngredient list) =
+                list
+                |> List.iteri (fun k ingredient ->
+                    check (sprintf "recipes[%d].%s[%d].quantity" i key k) (sprintf "A quantity in \"%s\"" recipe.Name) ingredient.Quantity target)
+            ingredients "inputs" recipe.Inputs
+            ingredients "outputs" recipe.Outputs)
+        p.Quests
+        |> List.iteri (fun i quest ->
+            let target = Some(NavigationTarget.Quest quest.Id)
+            checkSome (sprintf "quests[%d].rewards.money" i) (sprintf "The money reward of \"%s\"" quest.Name) quest.Rewards.Money target
+            quest.Rewards.Items
+            |> Option.defaultValue []
+            |> List.iteri (fun k reward ->
+                check (sprintf "quests[%d].rewards.items[%d].quantity" i k) (sprintf "A reward quantity of \"%s\"" quest.Name) reward.Quantity target))
+        p.AnimalSpecies
+        |> List.iteri (fun i species ->
+            check (sprintf "animalSpecies[%d].purchaseCost" i) (sprintf "The price of \"%s\"" species.Name) species.PurchaseCost (Some(NavigationTarget.AnimalSpecies species.Id)))
+        p.NodeTypes
+        |> List.iteri (fun i node ->
+            let target = Some(NavigationTarget.NodeType node.Id)
+            node.Drops
+            |> List.iteri (fun k drop ->
+                check (sprintf "nodeTypes[%d].drops[%d].min" i k) (sprintf "A drop amount of \"%s\"" node.Name) drop.Min target
+                check (sprintf "nodeTypes[%d].drops[%d].max" i k) (sprintf "A drop amount of \"%s\"" node.Name) drop.Max target))
 
     let run (context: Context) (sink: Sink) =
         duplicates context sink
@@ -570,3 +644,4 @@ module internal ChecksContent =
         wildlife context sink
         graphics context sink
         packs context sink
+        offGridNumbers context sink

@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using FarmEngine.Json;
+using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
 
 namespace FarmEngine.Interop;
@@ -165,7 +165,11 @@ public sealed record PlayerToast(string Text, string Kind);
 /// <param name="ReducedMotion">No floating pops, fades or flashes.</param>
 /// <param name="UiScale">Interface size (1 = 100 %; null keeps the default).</param>
 /// <param name="Audio">Play the game's sounds on the default output device (silent without one).</param>
-public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null, bool Audio = false);
+/// <param name="Locale">
+/// The language the game's interface follows while the player's own setting is automatic (the
+/// editor's, like <c>es</c>); null uses the game's locale, else English.
+/// </param>
+public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null, bool Audio = false, string? Locale = null);
 
 /// <summary>
 /// The Rust game player embedded in the editor (<c>farm_player::Player</c> through
@@ -198,7 +202,7 @@ public sealed class RustPlayer : IDisposable
     public static RustPlayer Create(GameProject project, RustPlayerOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return CreateFromBytes(JsonSerializer.SerializeToUtf8Bytes(project, JsonDefaults.Options), options);
+        return CreateFromBytes(RecordJson.ToUtf8(project), options);
     }
 
     /// <summary>Starts a player for a compiled cartridge (no project to keep changes into).</summary>
@@ -225,6 +229,11 @@ public sealed class RustPlayer : IDisposable
         if (options.UiScale is { } scale)
         {
             settings["uiScale"] = scale;
+        }
+
+        if (!string.IsNullOrEmpty(options.Locale))
+        {
+            settings["locale"] = options.Locale;
         }
 
         var optionsJson = Encoding.UTF8.GetBytes(settings.ToJsonString());
@@ -295,7 +304,7 @@ public sealed class RustPlayer : IDisposable
                     var frameWidth = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[..4]);
                     var frameHeight = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..8]);
                     var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..12]);
-                    var info = JsonSerializer.Deserialize<PlayerFrameInfo>(bytes.Slice(12, jsonLength), JsonDefaults.Options) ?? PlayerFrameInfo.Empty;
+                    var info = JsonSerializer.Deserialize<PlayerFrameInfo>(bytes.Slice(12, jsonLength), InteropJson.Options) ?? PlayerFrameInfo.Empty;
                     var source = bytes[(12 + jsonLength)..];
                     var pixels = reuse is not null && reuse.Length == source.Length ? reuse : new byte[source.Length];
                     source.CopyTo(pixels);
@@ -318,7 +327,7 @@ public sealed class RustPlayer : IDisposable
     public void Debug(object action)
     {
         ArgumentNullException.ThrowIfNull(action);
-        var json = JsonSerializer.SerializeToUtf8Bytes(action, JsonDefaults.Options);
+        var json = JsonSerializer.SerializeToUtf8Bytes(action, InteropJson.Options);
         unsafe
         {
             ObjectDisposedException.ThrowIf(_handle == null, this);
@@ -350,7 +359,7 @@ public sealed class RustPlayer : IDisposable
     public void RunCommands(params object[] commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        RunCommands(JsonSerializer.Serialize(commands, JsonDefaults.Options));
+        RunCommands(JsonSerializer.Serialize(commands, InteropJson.Options));
     }
 
     /// <summary>The live game state as stable JSON.</summary>
@@ -389,7 +398,7 @@ public sealed class RustPlayer : IDisposable
             ObjectDisposedException.ThrowIf(_handle == null, this);
             NativeMethods.FeBytes output;
             var json = Check(NativeMethods.fe_player_synced_project(_handle, &output), output, nameof(SyncedProject));
-            return JsonSerializer.Deserialize<GameProject>(json, JsonDefaults.Options)!;
+            return RecordJson.ParseUtf8<GameProject>(json);
         }
     }
 
@@ -410,7 +419,7 @@ public sealed class RustPlayer : IDisposable
 
     private T? Query<T>(object query)
     {
-        var json = JsonSerializer.SerializeToUtf8Bytes(query, JsonDefaults.Options);
+        var json = JsonSerializer.SerializeToUtf8Bytes(query, InteropJson.Options);
         unsafe
         {
             ObjectDisposedException.ThrowIf(_handle == null, this);
@@ -418,7 +427,7 @@ public sealed class RustPlayer : IDisposable
             {
                 NativeMethods.FeBytes output;
                 var answer = Check(NativeMethods.fe_player_query_json(_handle, ptr, (nuint)json.Length, &output), output, nameof(Query));
-                return JsonSerializer.Deserialize<T>(answer, JsonDefaults.Options);
+                return JsonSerializer.Deserialize<T>(answer, InteropJson.Options);
             }
         }
     }

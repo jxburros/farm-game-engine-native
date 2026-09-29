@@ -1,0 +1,36 @@
+[package]
+name = "farm-bench"
+description = "Benchmarks and CI time budgets of the Farming RPG Maker runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+farm-sim = { path = "../farm-sim" }
+farm-cart = { path = "../farm-cart" }
+# The player library only: frames are composed by the CPU rasterizer, with no window or audio.
+farm-player = { path = "../farm-player", default-features = false }
+serde_json.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+# `cargo bench -p farm-bench` runs criterion only: the library and the binary have no libtest
+# benches (which would reject criterion's command-line options).
+[lib]
+bench = false
+
+[[bin]]
+name = "farm-bench"
+path = "src/main.rs"
+bench = false
+
+[[bench]]
+name = "runtime"
+harness = false
+
+[lints]
+workspace = true

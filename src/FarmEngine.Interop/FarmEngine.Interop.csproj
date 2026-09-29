@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
+    <ProjectReference Include="../FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
   </ItemGroup>
 
   <!--

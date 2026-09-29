@@ -55,9 +55,11 @@ pub mod hook_names {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DayHookPayload {
-    pub day: f64,
+    #[serde(with = "crate::units::count")]
+    pub day: u32,
     pub season: String,
-    pub year: f64,
+    #[serde(with = "crate::units::count")]
+    pub year: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,20 +67,23 @@ pub struct DayHookPayload {
 pub struct SeasonChangeHookPayload {
     pub season: String,
     pub previous_season: String,
-    pub year: f64,
+    #[serde(with = "crate::units::count")]
+    pub year: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct YearStartHookPayload {
-    pub year: f64,
+    #[serde(with = "crate::units::count")]
+    pub year: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CropHarvestHookPayload {
     pub crop_type: String,
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
     pub quality: String,
 }
 
@@ -86,7 +91,8 @@ pub struct CropHarvestHookPayload {
 #[serde(rename_all = "camelCase")]
 pub struct GatherDrop {
     pub item_id: String,
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -120,14 +126,16 @@ pub struct GiftGivenHookPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RelationshipChangeHookPayload {
     pub npc_id: String,
-    pub friendship: f64,
+    #[serde(with = "crate::units::int")]
+    pub friendship: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeatherRollHookPayload {
     pub weather_id: String,
-    pub day: f64,
+    #[serde(with = "crate::units::count")]
+    pub day: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -152,7 +160,8 @@ pub struct ActionHookPayload {
 #[serde(rename_all = "camelCase")]
 pub struct MinigameResolveHookPayload {
     pub minigame_id: String,
-    pub score: f64,
+    #[serde(with = "crate::units::probability")]
+    pub score: u64,
 }
 
 /// One emitted hook: the hook name plus its typed payload, as `{"hook": …, "payload": …}`.
@@ -291,11 +300,11 @@ mod tests {
     #[test]
     fn collects_events_and_answers_weather_rolls() {
         let mut bus = HookBus::new();
-        bus.emit(HookEvent::DayStart(DayHookPayload { day: 2.0, season: "spring".to_owned(), year: 1.0 }));
-        assert!(bus.collect_weather_roll(WeatherRollHookPayload { weather_id: "sun".to_owned(), day: 2.0 }).is_empty());
+        bus.emit(HookEvent::DayStart(DayHookPayload { day: 2, season: "spring".to_owned(), year: 1 }));
+        assert!(bus.collect_weather_roll(WeatherRollHookPayload { weather_id: "sun".to_owned(), day: 2 }).is_empty());
         bus.set_weather_roll_listener(Box::new(Reroll("rain")));
         assert_eq!(
-            bus.collect_weather_roll(WeatherRollHookPayload { weather_id: "sun".to_owned(), day: 3.0 }),
+            bus.collect_weather_roll(WeatherRollHookPayload { weather_id: "sun".to_owned(), day: 3 }),
             vec!["rain".to_owned()]
         );
         let events = bus.drain();

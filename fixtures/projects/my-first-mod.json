@@ -1,0 +1,32 @@
+{
+  "manifest": {
+    "id": "my-first-mod",
+    "name": "My First Mod",
+    "version": "0.1.0",
+    "description": "Rename me, then add content below.",
+    "author": "you",
+    "engineCompatibility": "*",
+    "base": false,
+    "dependencies": [],
+    "overrides": [],
+    "permissions": {
+      "hooks": [],
+      "contentInject": true,
+      "uiPanels": false
+    }
+  },
+  "content": {
+    "items": [
+      {
+        "id": "lucky-coin",
+        "name": "Lucky Coin",
+        "description": "It has to be lucky, right?",
+        "type": "material",
+        "stackable": true,
+        "maxStack": 99,
+        "value": 500
+      }
+    ]
+  },
+  "plugins": []
+}
