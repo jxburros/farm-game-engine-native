@@ -99,7 +99,10 @@ fn play(source: &Value) -> Result<Value, String> {
     fixture.insert("steps".to_owned(), Value::Array(steps));
     fixture.insert("finalHash".to_owned(), Value::String(hash::hash_state(&game)));
     fixture.insert("finalState".to_owned(), stable_value(&game));
-    fixture.insert("finalProject".to_owned(), stable_value(&state::apply_state_to_project(&project, &game)));
+    // Keep changes as the hosts do it: the state written into the project JSON as given, so
+    // content keeps what the creator typed (docs/NUMERICS.md).
+    let final_project = state::apply_state_to_project_json(&source["project"], &game)?;
+    fixture.insert("finalProject".to_owned(), stable_value(&final_project));
     Ok(Value::Object(fixture))
 }
 

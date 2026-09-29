@@ -7,7 +7,7 @@
 // - a standalone Player autosaves into its in-memory storage, and a new Player continues from
 //   the exported storage with the same state hash;
 // - pack plugins run in the player (QuickJS in wasmi, inside WebAssembly);
-// - Session replays of the TypeScript goldens in fixtures/golden/replays reproduce every step's
+// - Session replays of the goldens in fixtures/golden/replays reproduce every step's
 //   state hash and effects, the final state and the final project;
 // - Preview, renderJson, hashText and the sound cues answer.
 import assert from "node:assert/strict";
@@ -83,7 +83,8 @@ await test("a player renders project-v8.json and takes input", () => {
   assert.equal(b.pixels, a.pixels);
   assert.notEqual(frame(player, [], [64, 40], true, a.pixels).pixels, a.pixels);
 
-  assert.equal(player.hash(), farm.hashText(player.stateJson()));
+  // The state hash is xxh3-64 over the binary state since v9 (docs/NUMERICS.md).
+  assert.match(player.hash(), /^[0-9a-f]{16}$/);
   player.debug({ type: "addMoney", amount: 500 });
   const summary = JSON.parse(player.queryJson({ type: "summary" }));
   assert.equal(summary.seed, "wasm-smoke");
@@ -194,7 +195,7 @@ await test("sessions save, load and run cartridges", () => {
   const save = session.save();
   for (const input of replay.inputs) session.tick(input.ticks);
   assert.notEqual(session.hash(), before);
-  assert.equal(session.hash(), farm.hashText(session.stateJson()));
+  assert.match(session.hash(), /^[0-9a-f]{16}$/);
   assert.throws(() => session.projectJson(), { kind: "invalid" });
   const report = JSON.parse(session.loadSave(save));
   assert.equal(report.migrated, false);
