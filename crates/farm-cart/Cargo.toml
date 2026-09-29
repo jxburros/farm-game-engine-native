@@ -17,5 +17,8 @@ farm-cart-schema = { path = "../farm-cart-schema" }
 # Pure-Rust zstd (saves compress their state; also builds for wasm32).
 ruzstd = "0.9"
 
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }
+
 [lints]
 workspace = true

@@ -55,6 +55,12 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # The benchmark budgets (docs/LANGUAGES.md "Tests"), checked on medians with a 3× margin
+      # for shared runners. `cargo bench -p farm-bench` has the full criterion statistics.
+      - name: Time budgets (release)
+        if: runner.os == 'Linux'
+        run: cargo run --release -p farm-bench -- --budget --factor 3
+
       - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render, farm-ui, farm-player lib)
         run: |
           cargo check -p farm-sim -p farm-cart -p farm-runtime -p farm-render -p farm-ui --target wasm32-unknown-unknown
