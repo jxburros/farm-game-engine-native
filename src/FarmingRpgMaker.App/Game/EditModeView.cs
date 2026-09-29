@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -38,6 +39,20 @@ public sealed partial class EditModeView : UserControl
     private readonly MapCanvas _canvas = new() { Name = "EditCanvas", Cursor = new Cursor(StandardCursorType.Hand) };
     private readonly ScrollViewer _scroller;
     private readonly Border _hover = new() { Name = "HoverHighlight", BorderThickness = new Thickness(2), IsHitTestVisible = false, IsVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    /// <summary>The keyboard editing cursor (web GameView edit cursor): a gold frame over one tile.</summary>
+    private readonly Border _cursor = new()
+    {
+        Name = "EditCursor",
+        BorderThickness = new Thickness(2),
+        BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
+        BoxShadow = BoxShadows.Parse("0 0 0 1 #B3000000, 0 0 8 0 #99E7BA4B"),
+        IsHitTestVisible = false,
+        IsVisible = false,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        VerticalAlignment = VerticalAlignment.Top,
+    };
+    /// <summary>One line (so the map never shifts as it changes); screen readers get the whole text.</summary>
+    private readonly TextBlock _cursorStatus = new() { Name = "EditCursorStatus", TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4, 8, 4, 0) };
     private readonly ComboBox _sceneSelector = new() { Name = "SceneSelector", MinWidth = 200 };
     private readonly TextBlock _hoverInfo = new() { Name = "HoverInfo", VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _zoomText = new() { Name = "ZoomText", VerticalAlignment = VerticalAlignment.Center, MinWidth = 44, TextAlignment = TextAlignment.Center };
@@ -53,6 +68,7 @@ public sealed partial class EditModeView : UserControl
     private (int X, int Y)? _lastPainted;
     private bool _fitPending = true;
     private double _zoom = 1;
+    private (int X, int Y) _cursorTile;
     private bool _updatingScenes;
     private TopLevel? _topLevel;
 
@@ -63,16 +79,19 @@ public sealed partial class EditModeView : UserControl
         _hover.BorderBrush = (IBrush?)Application.Current?.FindResource("FarmAccentBrush") ?? Brushes.Gold;
         _hover.Background = new SolidColorBrush(Color.Parse("#33FFFFFF"));
 
-        // Canvas + hover highlight in a scroll viewer.
+        // Canvas + hover highlight + editing cursor in a scroll viewer. Focusing the map must not
+        // scroll it to its top-left corner; keyboard moves bring the cursor into view instead.
         var stage = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
         stage.Children.Add(_canvas);
         stage.Children.Add(_hover);
+        stage.Children.Add(_cursor);
         _scroller = new ScrollViewer
         {
             Name = "EditScroller",
             Content = stage,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            BringIntoViewOnFocusChange = false,
         };
         var frame = new Border { Child = _scroller, Background = new SolidColorBrush(Color.Parse("#4DE4DDCF")) }.WithClasses("game-frame");
         frame.Background = new SolidColorBrush(Color.Parse("#66E4DDCF"));
@@ -80,12 +99,18 @@ public sealed partial class EditModeView : UserControl
         _canvas.PointerMoved += OnCanvasPointerMoved;
         _canvas.PointerExited += (_, _) =>
         {
-            _hover.IsVisible = false;
+            // A rectangle started from the keyboard keeps its preview.
+            _hover.IsVisible = _gestureStart is not null;
             _hoverInfo.Text = "Hover a tile to inspect it.";
         };
         _canvas.PointerPressed += OnCanvasPointerPressed;
         _canvas.PointerReleased += OnCanvasPointerReleased;
         _canvas.PointerCaptureLost += (_, _) => EndStroke();
+        _canvas.KeyDown += OnCanvasKeyDown;
+        // The status line under the map is a polite live region: screen readers announce each cursor move.
+        _cursorStatus.Classes.Add("muted");
+        _cursorStatus.Classes.Add("small");
+        AutomationProperties.SetLiveSetting(_cursorStatus, AutomationLiveSetting.Polite);
         _scroller.SizeChanged += (_, _) =>
         {
             if (_fitPending)
@@ -108,12 +133,16 @@ public sealed partial class EditModeView : UserControl
         };
         _hoverInfo.Classes.Add("muted");
         _hoverInfo.Text = "Hover a tile to inspect it.";
+        AutomationProperties.SetName(_sceneSelector, "Scene");
         var zoomOut = Ui.Button("−", () => SetZoom(_zoom - 0.25), "tool");
         zoomOut.Name = "ZoomOutButton";
+        AutomationProperties.SetName(zoomOut, "Zoom out");
         var zoomIn = Ui.Button("+", () => SetZoom(_zoom + 0.25), "tool");
         zoomIn.Name = "ZoomInButton";
+        AutomationProperties.SetName(zoomIn, "Zoom in");
         var fit = Ui.Button("Fit", FitToView, "tool");
         fit.Name = "ZoomFitButton";
+        AutomationProperties.SetName(fit, "Fit map to view");
         var toolbarLeft = Ui.HStack(8, Ui.Icon("IconMap", 18), Ui.Text("Scene", "hud-label"), _sceneSelector);
         var toolbarRight = Ui.HStack(6, zoomOut, _zoomText, zoomIn, fit);
         var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 10) };
@@ -123,19 +152,23 @@ public sealed partial class EditModeView : UserControl
         toolbar.Children.Add(hoverBox);
         Grid.SetColumn(toolbarRight, 2);
         toolbar.Children.Add(toolbarRight);
-        var toolbarBorder = new Border { Child = toolbar, Padding = new Thickness(12, 8), Margin = new Thickness(0, 0, 0, 12) }.WithClasses("hud");
+        var toolbarBorder = new Border { Name = "MapToolbar", Child = toolbar, Padding = new Thickness(12, 8), Margin = new Thickness(0, 0, 0, 12) }.WithClasses("hud");
 
         var center = new DockPanel();
         DockPanel.SetDock(toolbarBorder, Dock.Top);
         center.Children.Add(toolbarBorder);
+        DockPanel.SetDock(_cursorStatus, Dock.Bottom);
+        center.Children.Add(_cursorStatus);
         center.Children.Add(frame);
 
         // Side panel: map tools, scene and transition controls, history.
         _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
         _undo.Name = "UndoButton";
+        AutomationProperties.SetName(_undo, "Undo");
         ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
         _redo = Ui.Button(Ui.IconLabel("IconRedo", "Redo"), () => _workspace.Redo(), "tool");
         _redo.Name = "RedoButton";
+        AutomationProperties.SetName(_redo, "Redo");
         ToolTip.SetTip(_redo, "Redo (Ctrl+Y)");
         BuildPalette();
 
@@ -171,6 +204,20 @@ public sealed partial class EditModeView : UserControl
         });
         var workshop = new WorkshopView(workspace, tab =>
         {
+            // The web editor's tab keys: art, the map and the Problems panel have their own tabs.
+            var editorTab = tab switch
+            {
+                "scenes" => 0,
+                "problems" => 2,
+                "assets" => 5,
+                _ => -1,
+            };
+            if (editorTab >= 0)
+            {
+                tabs.SelectedIndex = editorTab;
+                return;
+            }
+
             var category = tab switch
             {
                 "npcs" => "NPCs",
@@ -178,6 +225,10 @@ public sealed partial class EditModeView : UserControl
                 "events" => "Events",
                 "nodes" => "Node types",
                 "craft" => "Recipes",
+                "crops" => "Crops",
+                "wildlife" => "Animal species",
+                "items" => "Items",
+                "quests" => "Quests",
                 _ => null,
             };
             if (category is not null)
@@ -312,6 +363,19 @@ public sealed partial class EditModeView : UserControl
 
     /// <summary>Last hover readout (tile coords + type).</summary>
     public string HoverText => _hoverInfo.Text ?? "";
+
+    /// <summary>The keyboard editing cursor: arrow keys move it, Enter or Space applies the tool there.</summary>
+    public (int X, int Y) CursorTile => _cursorTile;
+
+    /// <summary>Moves the editing cursor by whole tiles (clamped to the scene) and scrolls it into view.</summary>
+    public void MoveCursor(int dx, int dy)
+    {
+        SetCursor((_cursorTile.X + dx, _cursorTile.Y + dy));
+        if (_canvas.Geometry is not null)
+        {
+            _canvas.BringIntoView(_canvas.TileRect(_cursorTile.X, _cursorTile.Y).Inflate(4));
+        }
+    }
 
     /// <summary>Selects a scene by id.</summary>
     public void SelectScene(string sceneId)
@@ -497,6 +561,7 @@ public sealed partial class EditModeView : UserControl
         if (project is null)
         {
             _canvas.Geometry = null;
+            UpdateCursor(null);
             return;
         }
 
@@ -514,6 +579,7 @@ public sealed partial class EditModeView : UserControl
         if (scene is null)
         {
             _canvas.Geometry = null;
+            UpdateCursor(null);
             return;
         }
 
@@ -521,6 +587,46 @@ public sealed partial class EditModeView : UserControl
         // the 1px grid seams stay exactly one pixel at every zoom level. The Rust renderer draws it.
         _canvas.Geometry = new MapGeometry(scene.Id, (int)scene.Width, (int)scene.Height, Math.Max(8, Math.Round(TileSize * _zoom)), Math.Round(12 * _zoom));
         _zoomText.Text = $"{Math.Round(_zoom * 100)}%";
+        AutomationProperties.SetName(_canvas, $"Scene editor canvas: {scene.Name}, {Ui.Num(scene.Width)} by {Ui.Num(scene.Height)} tiles. Arrow keys move the editing cursor. Enter or Space applies the current tool.");
+        UpdateCursor(scene);
+    }
+
+    /// <summary>
+    /// Clamps the editing cursor to the scene (after a scene switch or resize) and moves its frame,
+    /// the status line and a rectangle preview that is waiting for its second corner.
+    /// </summary>
+    private void UpdateCursor(Scene? scene)
+    {
+        if (scene is null || _canvas.Geometry is null)
+        {
+            _cursor.IsVisible = false;
+            _cursorStatus.Text = "";
+            return;
+        }
+
+        _cursorTile = (Math.Clamp(_cursorTile.X, 0, Math.Max(0, (int)scene.Width - 1)), Math.Clamp(_cursorTile.Y, 0, Math.Max(0, (int)scene.Height - 1)));
+        var rect = _canvas.TileRect(_cursorTile.X, _cursorTile.Y);
+        _cursor.Margin = new Thickness(rect.X, rect.Y, 0, 0);
+        _cursor.Width = rect.Width;
+        _cursor.Height = rect.Height;
+        _cursor.IsVisible = true;
+        _cursorStatus.Text = $"Editing tile column {_cursorTile.X + 1}, row {_cursorTile.Y + 1}. {DescribeTile(_cursorTile.X, _cursorTile.Y)}";
+        if (_gestureStart is { } start)
+        {
+            UpdateGesturePreview(start, _lastPainted ?? start);
+        }
+    }
+
+    private void SetCursor((int X, int Y) tile)
+    {
+        _cursorTile = tile;
+        if (_gestureStart is not null)
+        {
+            // A rectangle started from the keyboard stretches to the cursor.
+            _lastPainted = tile;
+        }
+
+        UpdateCursor(CurrentScene());
     }
 
     private void RefreshSceneSelector(GameProject project)
@@ -555,10 +661,12 @@ public sealed partial class EditModeView : UserControl
         name.Name = "ProjectInfoName";
         _info.Children.Add(Ui.VStack(2, name, Ui.Text($"Version {project.Version} · schema v{Ui.Num(project.SchemaVersion)}", "muted", "small")));
 
-        var stats = new UniformGrid { Name = "ProjectStats", Columns = 2 };
+        // Three columns keep the eight counts to three rows, so the map tools below stay in view.
+        var stats = new UniformGrid { Name = "ProjectStats", Columns = 3 };
         void Stat(string label, int count)
         {
             var value = Ui.Text(count.ToString(System.Globalization.CultureInfo.InvariantCulture), "stat-value");
+            value.Name = $"Stat_{label}";
             var box = new Border { Child = Ui.VStack(0, value, Ui.Text(label, "muted", "small")), Margin = new Thickness(0, 0, 6, 6) }.WithClasses("stat");
             stats.Children.Add(box);
         }
@@ -569,6 +677,8 @@ public sealed partial class EditModeView : UserControl
         Stat("Quests", project.Quests.Length);
         Stat("Shops", project.Shops.Length);
         Stat("Recipes", project.Recipes.Length);
+        Stat("Dialogue", project.Dialogues.Length);
+        Stat("Assets", project.CustomAssets.Length);
         _info.Children.Add(stats);
 
         var scene = CurrentScene();
@@ -606,6 +716,7 @@ public sealed partial class EditModeView : UserControl
 
             var toggle = new ToggleButton { Tag = type, Content = Ui.HStack(6, chip, Ui.Text(label, "small")), Margin = new Thickness(0, 0, 6, 6), Name = $"Brush_{type ?? "inspect"}" };
             toggle.Classes.Add("swatch");
+            AutomationProperties.SetName(toggle, type is null ? "Inspect (no brush)" : $"Brush: {label}");
             toggle.IsChecked = type is null;
             toggle.Click += (_, _) => Brush = type;
             _palette.Children.Add(toggle);
@@ -623,15 +734,20 @@ public sealed partial class EditModeView : UserControl
         var point = e.GetPosition(_canvas);
         if (_canvas.TileAt(point) is not { } tile)
         {
-            _hover.IsVisible = false;
+            _hover.IsVisible = _gestureStart is not null;
             return;
         }
 
-        var rect = _canvas.TileRect(tile.X, tile.Y);
-        _hover.Margin = new Thickness(rect.X, rect.Y, 0, 0);
-        _hover.Width = rect.Width;
-        _hover.Height = rect.Height;
-        _hover.IsVisible = true;
+        // While a rectangle is open the highlight is its preview, not the hovered tile.
+        if (_gestureStart is null)
+        {
+            var rect = _canvas.TileRect(tile.X, tile.Y);
+            _hover.Margin = new Thickness(rect.X, rect.Y, 0, 0);
+            _hover.Width = rect.Width;
+            _hover.Height = rect.Height;
+            _hover.IsVisible = true;
+        }
+
         _hoverInfo.Text = DescribeTile(tile.X, tile.Y);
 
         if (_gestureStart is { } start && e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed)
@@ -652,6 +768,7 @@ public sealed partial class EditModeView : UserControl
             return;
         }
 
+        SetCursor(tile);
         if (BeginToolAt(tile))
         {
             e.Pointer.Capture(_canvas);
@@ -667,6 +784,83 @@ public sealed partial class EditModeView : UserControl
             CompleteGesture(end);
         }
         EndStroke();
+    }
+
+    /// <summary>
+    /// Keyboard map editing (web GameView): arrow keys move the editing cursor, Enter or Space
+    /// applies the current tool there like a click, and Escape drops a rectangle's first corner.
+    /// Only the focused map sees these keys, so text boxes keep theirs.
+    /// </summary>
+    private void OnCanvasKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (CurrentScene() is null || (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) != 0)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Left:
+                MoveCursor(-1, 0);
+                break;
+            case Key.Right:
+                MoveCursor(1, 0);
+                break;
+            case Key.Up:
+                MoveCursor(0, -1);
+                break;
+            case Key.Down:
+                MoveCursor(0, 1);
+                break;
+            case Key.Enter:
+            case Key.Space:
+                ApplyToolAtCursor();
+                break;
+            case Key.Escape when _gestureStart is not null:
+                CancelCorner();
+                break;
+            default:
+                return;
+        }
+
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// The current tool at the cursor, exactly as a click there (one undo step). Rectangle and
+    /// Select take two presses: the first marks a corner, the second the opposite corner.
+    /// </summary>
+    private void ApplyToolAtCursor()
+    {
+        var tile = _cursorTile;
+        if (_gestureStart is not null)
+        {
+            CompleteGesture(tile);
+            EndStroke();
+            return;
+        }
+
+        if (!BeginToolAt(tile))
+        {
+            return;
+        }
+
+        if (_gestureStart is not null)
+        {
+            UpdateGesturePreview(tile, tile);
+            _editorMessage.Text = $"Corner marked at ({tile.X}, {tile.Y}). Move to the opposite corner and press Enter; Escape cancels.";
+            return;
+        }
+
+        EndStroke();
+    }
+
+    private void CancelCorner()
+    {
+        _gestureStart = null;
+        _lastPainted = null;
+        _hover.IsVisible = false;
+        _editorMessage.Text = Tool == MapTool.Select ? "Selection cancelled." : "Rectangle cancelled.";
     }
 
     private void EndStroke()

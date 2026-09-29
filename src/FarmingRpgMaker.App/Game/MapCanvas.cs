@@ -1,5 +1,7 @@
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -28,6 +30,7 @@ public sealed record MapGeometry(string SceneId, int Width, int Height, double T
 /// visible in the surrounding <see cref="ScrollViewer"/> is rasterized, again when the project,
 /// scene, zoom or scroll position changes. The control is sized to the whole map so scrolling
 /// and hit testing work in world pixels (zoom is baked into <see cref="MapGeometry.TileSize"/>).
+/// It takes keyboard focus (with a gold focus ring) so the map can be edited from the keyboard.
 /// </summary>
 public sealed class MapCanvas : Control, IDisposable
 {
@@ -45,6 +48,15 @@ public sealed class MapCanvas : Control, IDisposable
     public MapCanvas()
     {
         ClipToBounds = true;
+        Focusable = true;
+        // Web: focus-visible:ring-2 in --iw-gold-400, shown when focus arrives from the keyboard.
+        FocusAdorner = new FuncTemplate<Control>(() => new Border
+        {
+            BorderThickness = new Thickness(2),
+            BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
+            CornerRadius = new CornerRadius(3),
+            Margin = new Thickness(-3),
+        });
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
     }
 
@@ -132,6 +144,9 @@ public sealed class MapCanvas : Control, IDisposable
         _preview?.Dispose();
         _preview = null;
     }
+
+    /// <summary>A focusable control element, so screen readers read its AutomationProperties.Name.</summary>
+    protected override AutomationPeer OnCreateAutomationPeer() => new MapCanvasAutomationPeer(this);
 
     protected override Size MeasureOverride(Size availableSize) =>
         _geometry is { } g ? new Size(Math.Ceiling(g.WorldSize.Width), Math.Ceiling(g.WorldSize.Height)) : default;
@@ -224,5 +239,10 @@ public sealed class MapCanvas : Control, IDisposable
         }
 
         return bitmap;
+    }
+
+    private sealed class MapCanvasAutomationPeer(MapCanvas owner) : ControlAutomationPeer(owner)
+    {
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Custom;
     }
 }
