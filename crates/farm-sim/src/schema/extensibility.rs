@@ -31,7 +31,8 @@ pub struct ActionDef {
     /// Applied in order when the action runs (same vocabulary as events).
     pub outcomes: Vec<EventOutcome>,
     /// Energy spent on a successful run (respects the energy toggle). nonnegative.
-    pub energy_cost: f64,
+    #[serde(with = "crate::units::energy")]
+    pub energy_cost: i32,
     /// Optional single-character play-mode hotkey (max length 1). Reserved gameplay keys
     /// (movement/tools/panels) are ignored by hosts.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +45,8 @@ pub struct ActionDef {
 #[serde(rename_all = "camelCase", default)]
 pub struct MinigameResultTier {
     /// Tier applies when score ≥ minScore; the highest matching tier wins. 0..1.
-    pub min_score: f64,
+    #[serde(with = "crate::units::probability")]
+    pub min_score: u64,
     pub outcomes: Vec<EventOutcome>,
 }
 

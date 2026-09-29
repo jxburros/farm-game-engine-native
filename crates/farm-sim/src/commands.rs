@@ -10,7 +10,12 @@ use serde::{Deserialize, Serialize};
 pub enum Command {
     /// Free movement (v4): set the held movement intent (each axis −1/0/1).
     #[serde(rename = "setMoveIntent")]
-    SetMoveIntent { dx: f64, dy: f64 },
+    SetMoveIntent {
+        #[serde(with = "crate::units::truncated")]
+        dx: i32,
+        #[serde(with = "crate::units::truncated")]
+        dy: i32,
+    },
     /// Discrete one-tile step — scripted movement / legacy primitive.
     #[serde(rename = "move")]
     Move { dir: String },
@@ -19,7 +24,10 @@ pub enum Command {
     #[serde(rename = "interact")]
     Interact,
     #[serde(rename = "chooseDialogueOption")]
-    ChooseDialogueOption { index: f64 },
+    ChooseDialogueOption {
+        #[serde(with = "crate::units::index")]
+        index: i32,
+    },
     #[serde(rename = "closeDialogue")]
     CloseDialogue,
     #[serde(rename = "sleep")]
@@ -29,9 +37,17 @@ pub enum Command {
     #[serde(rename = "closeShop")]
     CloseShop,
     #[serde(rename = "buyItem")]
-    BuyItem { item_id: String, quantity: f64 },
+    BuyItem {
+        item_id: String,
+        #[serde(with = "crate::units::count")]
+        quantity: u32,
+    },
     #[serde(rename = "sellItem")]
-    SellItem { item_id: String, quantity: f64 },
+    SellItem {
+        item_id: String,
+        #[serde(with = "crate::units::count")]
+        quantity: u32,
+    },
     #[serde(rename = "repairTool")]
     RepairTool { item_id: String },
     #[serde(rename = "craft")]
@@ -43,7 +59,10 @@ pub enum Command {
     #[serde(rename = "giveGift")]
     GiveGift { item_id: String },
     #[serde(rename = "descendMine")]
-    DescendMine { floor: f64 },
+    DescendMine {
+        #[serde(with = "crate::units::count")]
+        floor: u32,
+    },
     #[serde(rename = "exitMine")]
     ExitMine,
     /// Run a creator-defined action (extensibility layer).
@@ -56,7 +75,10 @@ pub enum Command {
     StartMinigame { minigame_id: String },
     /// Resolve the open minigame with a score in [0, 1].
     #[serde(rename = "resolveMinigame")]
-    ResolveMinigame { score: f64 },
+    ResolveMinigame {
+        #[serde(with = "crate::units::probability")]
+        score: u64,
+    },
     #[serde(rename = "cancelMinigame")]
     CancelMinigame,
     /// A validated mutation returned by a sandboxed plugin hook (M5).
@@ -121,7 +143,7 @@ mod tests {
             nested,
             Command::PluginMutation {
                 plugin_id: "morning-hum".to_owned(),
-                mutation: PluginMutation::GiveItem { item_id: "seed-wheat".to_owned(), quantity: 2.0 },
+                mutation: PluginMutation::GiveItem { item_id: "seed-wheat".to_owned(), quantity: 2 },
             }
         );
         assert_eq!(nested.type_name(), "pluginMutation");

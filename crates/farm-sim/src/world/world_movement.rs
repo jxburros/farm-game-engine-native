@@ -4,6 +4,9 @@
 //! tile-unit coordinate (the center of the player's collision box) integrated every tick from a
 //! held movement intent. Tiles remain the unit of terrain, collision, farming and interaction
 //! targeting — the occupied tile is `Math.floor(x/y)`.
+//!
+//! Positions are integers in 1/8192 tile ([`units::TILE`]); speed is 1/8192 tile per tick
+//! (docs/NUMERICS.md).
 
 use crate::effects::Effect;
 use crate::engine_types::{Effects, EngineContext};
@@ -12,47 +15,50 @@ use crate::inventory::{self, AddItemOptions};
 use crate::mines;
 use crate::quests;
 use crate::schema::{GameState, MachineTypeDefinition, MoveIntent, NodeTypeDefinition, NpcState, Scene, Tile};
+use crate::units;
 use indexmap::IndexMap;
 
-/// Half-extents of the player's collision box, in tile units. Kept below 0.5 so one-tile gaps
-/// stay walkable.
-pub const PLAYER_HALF_WIDTH: f64 = 0.3;
-pub const PLAYER_HALF_HEIGHT: f64 = 0.3;
+/// Half-extents of the player's collision box, in position units (0.3 tile, rounded to the
+/// grid). Kept below half a tile so one-tile gaps stay walkable.
+pub const PLAYER_HALF_WIDTH: i32 = 2458;
+pub const PLAYER_HALF_HEIGHT: i32 = 2458;
 
-/// Collision skin so a clamped position never re-overlaps the blocking tile.
-const COLLISION_EPSILON: f64 = 1e-4;
+/// Collision skin so a clamped position never re-overlaps the blocking tile (one position
+/// unit; v8 used 1e-4 tile).
+const COLLISION_EPSILON: i32 = 1;
 
-/// Diagonal input is normalized so it isn't √2 faster than cardinal input (JS `Math.SQRT1_2` =
-/// 0.7071067811865476, the same double as `FRAC_1_SQRT_2`).
-const INV_SQRT2: f64 = std::f64::consts::FRAC_1_SQRT_2;
+/// Diagonal input is normalized so it isn't √2 faster than cardinal input: the per-tick speed
+/// is scaled by 46341/65536 (1/√2 to six digits) and rounded.
+const INV_SQRT2_NUMERATOR: i64 = 46341;
+const INV_SQRT2_DENOMINATOR: i64 = 65536;
 
 /// TS `getDirectionVector` result.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DirectionVector {
-    pub dx: f64,
-    pub dy: f64,
+    pub dx: i32,
+    pub dy: i32,
 }
 
 /// Integer tile coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TilePoint {
-    pub x: f64,
-    pub y: f64,
+    pub x: i32,
+    pub y: i32,
 }
 
 pub fn get_direction_vector(direction: &str) -> DirectionVector {
     match direction {
-        "up" => DirectionVector { dx: 0.0, dy: -1.0 },
-        "down" => DirectionVector { dx: 0.0, dy: 1.0 },
-        "left" => DirectionVector { dx: -1.0, dy: 0.0 },
-        "right" => DirectionVector { dx: 1.0, dy: 0.0 },
-        _ => DirectionVector { dx: 0.0, dy: 0.0 },
+        "up" => DirectionVector { dx: 0, dy: -1 },
+        "down" => DirectionVector { dx: 0, dy: 1 },
+        "left" => DirectionVector { dx: -1, dy: 0 },
+        "right" => DirectionVector { dx: 1, dy: 0 },
+        _ => DirectionVector { dx: 0, dy: 0 },
     }
 }
 
 /// The tile the player currently occupies (position is the box center).
 pub fn player_tile(state: &GameState) -> TilePoint {
-    TilePoint { x: state.player.x.floor(), y: state.player.y.floor() }
+    TilePoint { x: units::tile_of(state.player.x), y: units::tile_of(state.player.y) }
 }
 
 /// The tile the player is facing (interaction/tool target).
@@ -66,19 +72,19 @@ pub fn facing_target(state: &GameState) -> TilePoint {
 /// already matches one axis (so walking down-left while facing down keeps facing down);
 /// otherwise the horizontal axis wins.
 pub fn direction_from_intent(intent: &MoveIntent, current: &str) -> String {
-    if intent.dx == 0.0 && intent.dy == 0.0 {
+    if intent.dx == 0 && intent.dy == 0 {
         return current.to_owned();
     }
-    let horizontal = if intent.dx < 0.0 {
+    let horizontal = if intent.dx < 0 {
         Some("left")
-    } else if intent.dx > 0.0 {
+    } else if intent.dx > 0 {
         Some("right")
     } else {
         None
     };
-    let vertical = if intent.dy < 0.0 {
+    let vertical = if intent.dy < 0 {
         Some("up")
-    } else if intent.dy > 0.0 {
+    } else if intent.dy > 0 {
         Some("down")
     } else {
         None
@@ -89,21 +95,22 @@ pub fn direction_from_intent(intent: &MoveIntent, current: &str) -> String {
         }
         return horizontal.to_owned();
     }
-    // TS `(horizontal ?? vertical) as Direction` — undefined only for NaN intents.
+    // TS `(horizontal ?? vertical) as Direction`: one of them is set here.
     horizontal.or(vertical).unwrap_or_default().to_owned()
 }
 
-/// Collision check against tiles, gathering nodes, machines and NPC occupancy.
+/// Collision check against tiles, gathering nodes, machines and NPC occupancy, for the tile
+/// `(x, y)`.
 pub fn can_move_to(
     scene: &Scene,
-    x: f64,
-    y: f64,
+    x: i32,
+    y: i32,
     npcs: &IndexMap<String, NpcState>,
     exclude_npc_id: Option<&str>,
     node_types: Option<&IndexMap<String, NodeTypeDefinition>>,
     machine_types: Option<&IndexMap<String, MachineTypeDefinition>>,
 ) -> bool {
-    if x < 0.0 || x >= scene.width || y < 0.0 || y >= scene.height {
+    if x < 0 || x >= scene.width || y < 0 || y >= scene.height {
         return false;
     }
     let tile = &scene.tiles[y as usize][x as usize];
@@ -111,7 +118,7 @@ pub fn can_move_to(
         return false;
     }
     if let Some(node) = &tile.node {
-        if node.remaining_health > 0.0 {
+        if node.remaining_health > 0 {
             let definition = node_types.and_then(|types| types.get(&node.type_id));
             // Unknown node types block by default (safe fallback).
             if definition.is_none_or(|def| def.blocks_movement) {
@@ -130,7 +137,7 @@ pub fn can_move_to(
         if exclude_npc_id == Some(npc_id.as_str()) {
             continue;
         }
-        if npc.scene_id == scene.id && npc.x == x && npc.y == y {
+        if npc.scene_id == scene.id && npc.x == units::tiles(x) && npc.y == units::tiles(y) {
             return false;
         }
     }
@@ -171,44 +178,45 @@ fn make_collision_context<'a>(ctx: &EngineContext, state: &'a GameState, scene: 
     }
 }
 
-fn blocked_tile(c: &CollisionContext<'_>, x: f64, y: f64) -> bool {
+fn blocked_tile(c: &CollisionContext<'_>, x: i32, y: i32) -> bool {
     !can_move_to(c.scene, x, y, c.npcs, None, Some(&c.node_types), Some(&c.machine_types))
 }
 
 /// Move the box center along one axis, clamping against the first blocked tile column/row the
 /// leading edge would enter. Axis-separated resolution gives natural wall sliding. Step sizes
 /// stay well under one tile (speed/tick ≈ 0.2), so single-cell checks cannot tunnel.
-fn move_axis(c: &CollisionContext<'_>, x: f64, y: f64, delta: f64, axis_x: bool) -> f64 {
-    if delta == 0.0 {
+fn move_axis(c: &CollisionContext<'_>, x: i32, y: i32, delta: i32, axis_x: bool) -> i32 {
+    if delta == 0 {
         return if axis_x { x } else { y };
     }
     let along_half = if axis_x { PLAYER_HALF_WIDTH } else { PLAYER_HALF_HEIGHT };
     let cross_half = if axis_x { PLAYER_HALF_HEIGHT } else { PLAYER_HALF_WIDTH };
     let cross = if axis_x { y } else { x };
     let from = if axis_x { x } else { y };
-    let mut next = from + delta;
+    let mut next = from.saturating_add(delta);
 
-    let cross_start = (cross - cross_half + COLLISION_EPSILON).floor();
-    let cross_end = (cross + cross_half - COLLISION_EPSILON).floor();
-    let leading_edge = if delta > 0.0 { next + along_half } else { next - along_half };
-    let leading_cell = leading_edge.floor();
-    let current_leading_cell =
-        if delta > 0.0 { from + along_half - COLLISION_EPSILON } else { from - along_half + COLLISION_EPSILON }.floor();
+    let cross_start = units::tile_of(cross - cross_half + COLLISION_EPSILON);
+    let cross_end = units::tile_of(cross + cross_half - COLLISION_EPSILON);
+    let leading_edge = if delta > 0 { next.saturating_add(along_half) } else { next.saturating_sub(along_half) };
+    let leading_cell = units::tile_of(leading_edge);
+    let current_leading_cell = units::tile_of(if delta > 0 {
+        from + along_half - COLLISION_EPSILON
+    } else {
+        from - along_half + COLLISION_EPSILON
+    });
 
     if leading_cell != current_leading_cell {
-        let mut cc = cross_start;
-        while cc <= cross_end {
+        for cc in cross_start..=cross_end {
             let tx = if axis_x { leading_cell } else { cc };
             let ty = if axis_x { cc } else { leading_cell };
             if blocked_tile(c, tx, ty) {
-                next = if delta > 0.0 {
-                    leading_cell - along_half - COLLISION_EPSILON
+                next = if delta > 0 {
+                    units::tiles(leading_cell) - along_half - COLLISION_EPSILON
                 } else {
-                    leading_cell + 1.0 + along_half + COLLISION_EPSILON
+                    units::tiles(leading_cell + 1) + along_half + COLLISION_EPSILON
                 };
                 break;
             }
-            cc += 1.0;
         }
     }
     next
@@ -231,8 +239,8 @@ fn settle_tile_entry(
     ctx: &EngineContext,
     state: &mut GameState,
     entered_scene_index: usize,
-    tile_x: f64,
-    tile_y: f64,
+    tile_x: i32,
+    tile_y: i32,
 ) -> SettleResult {
     let mut effects: Effects = Vec::new();
     let mut picked_up_item_id: Option<String> = None;
@@ -256,7 +264,7 @@ fn settle_tile_entry(
             let result = inventory::add_item(
                 &state.player.inventory,
                 item,
-                1.0,
+                1,
                 state.player.max_inventory_size,
                 Some(AddItemOptions { require_stackable_for_merge: Some(true) }),
             );
@@ -271,8 +279,8 @@ fn settle_tile_entry(
     // Everything decided: apply.
     if let Some((to_scene_id, to_x, to_y, target_name)) = transition {
         state.player.scene_id = to_scene_id.clone();
-        state.player.x = to_x + 0.5;
-        state.player.y = to_y + 0.5;
+        state.player.x = units::tile_center(to_x);
+        state.player.y = units::tile_center(to_y);
         changed_scene = true;
         effects.push(Effect::SceneChanged { scene_id: to_scene_id, x: to_x, y: to_y });
         effects.push(Effect::message("success", format!("Entered {target_name}")));
@@ -293,10 +301,10 @@ fn settle_tile_entry(
     let landed_scene_id = state.player.scene_id.clone();
 
     if let Some(item_id) = &picked_up_item_id {
-        effects.extend(quests::progress_quests(ctx, state, "collect", item_id, 1.0));
+        effects.extend(quests::progress_quests(ctx, state, "collect", item_id, 1));
     }
     if changed_scene {
-        effects.extend(quests::progress_quests(ctx, state, "visit", &landed_scene_id, 1.0));
+        effects.extend(quests::progress_quests(ctx, state, "visit", &landed_scene_id, 1));
     }
 
     // Mine ladders (M4): stepping onto a revealed ladder descends a floor.
@@ -305,7 +313,7 @@ fn settle_tile_entry(
         .and_then(|landed_scene| tile_at(landed_scene, final_tile.x, final_tile.y))
         .is_some_and(|landed_tile| landed_tile.ladder_down == Some(true));
     if landed_on_ladder && mines::is_mine_scene(&state.player.scene_id) {
-        let to_floor = state.mine.current_floor + 1.0;
+        let to_floor = state.mine.current_floor.saturating_add(1);
         effects.extend(mines::descend_mine(ctx, state, to_floor));
         return SettleResult { effects, aborted: false };
     }
@@ -322,15 +330,9 @@ fn settle_tile_entry(
 }
 
 /// TS `scene.tiles[y]?.[x]`.
-fn tile_at(scene: &Scene, x: f64, y: f64) -> Option<&Tile> {
-    if !(y >= 0.0 && y < scene.tiles.len() as f64) || y != y.floor() {
-        return None;
-    }
-    let row = &scene.tiles[y as usize];
-    if !(x >= 0.0 && x < row.len() as f64) || x != x.floor() {
-        return None;
-    }
-    Some(&row[x as usize])
+fn tile_at(scene: &Scene, x: i32, y: i32) -> Option<&Tile> {
+    let row = scene.tiles.get(usize::try_from(y).ok()?)?;
+    row.get(usize::try_from(x).ok()?)
 }
 
 /// Discrete one-tile step (the legacy `move` command; still the primitive for scripted movement
@@ -367,8 +369,8 @@ pub fn handle_move(ctx: &EngineContext, state: &mut GameState, dir: &str) -> Eff
     // changes are remembered here and restored instead (settling touches nothing on abort).
     let previous = (state.player.direction.clone(), state.player.x, state.player.y);
     state.player.direction = dir.to_owned();
-    state.player.x = new_x + 0.5;
-    state.player.y = new_y + 0.5;
+    state.player.x = units::tile_center(new_x);
+    state.player.y = units::tile_center(new_y);
     let mut effects: Effects = vec![Effect::PlayerMoved { x: new_x, y: new_y }];
 
     let settled = settle_tile_entry(ctx, state, scene_index, new_x, new_y);
@@ -386,10 +388,10 @@ pub fn handle_move(ctx: &EngineContext, state: &mut GameState, dir: &str) -> Eff
 /// Integrate free movement for one tick from the held intent. Runs inside `advanceTick`, so
 /// replay determinism needs only the intent-change commands in the log — never per-tick
 /// positions.
-pub fn integrate_movement(ctx: &EngineContext, state: &mut GameState, dt_seconds: f64) -> Effects {
+pub fn integrate_movement(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let intent_dx = state.player.move_intent.dx;
     let intent_dy = state.player.move_intent.dy;
-    if intent_dx == 0.0 && intent_dy == 0.0 {
+    if intent_dx == 0 && intent_dy == 0 {
         return Vec::new();
     }
 
@@ -398,12 +400,16 @@ pub fn integrate_movement(ctx: &EngineContext, state: &mut GameState, dt_seconds
     };
 
     // TS `ctx.content.settings.movement?.playerSpeed ?? 4.5`: the config is always present here
-    // and defaults to 4.5.
+    // and defaults to 4.5 tiles per second. The setting is already per tick.
     let speed = ctx.content.settings.movement.player_speed;
-    let scale = if intent_dx != 0.0 && intent_dy != 0.0 { INV_SQRT2 } else { 1.0 };
-    // Left-to-right evaluation, exactly as TS: ((dx * speed) * scale) * dt.
-    let step_x = intent_dx * speed * scale * dt_seconds;
-    let step_y = intent_dy * speed * scale * dt_seconds;
+    let speed = if intent_dx != 0 && intent_dy != 0 {
+        let scaled = units::div_round(i64::from(speed) * INV_SQRT2_NUMERATOR, INV_SQRT2_DENOMINATOR);
+        i32::try_from(scaled).unwrap_or(speed)
+    } else {
+        speed
+    };
+    let step_x = intent_dx.saturating_mul(speed);
+    let step_y = intent_dy.saturating_mul(speed);
 
     let from_x = state.player.x;
     let from_y = state.player.y;
@@ -422,8 +428,8 @@ pub fn integrate_movement(ctx: &EngineContext, state: &mut GameState, dt_seconds
     state.player.y = ny;
     let mut effects: Effects = Vec::new();
 
-    let tile_x = nx.floor();
-    let tile_y = ny.floor();
+    let tile_x = units::tile_of(nx);
+    let tile_y = units::tile_of(ny);
     if tile_x != prev_tile.x || tile_y != prev_tile.y {
         effects.push(Effect::PlayerMoved { x: tile_x, y: tile_y });
         let settled = settle_tile_entry(ctx, state, scene_index, tile_x, tile_y);

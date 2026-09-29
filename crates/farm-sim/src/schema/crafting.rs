@@ -10,7 +10,8 @@ use serde_json::{Map, Value};
 pub struct RecipeIngredient {
     pub item_id: String,
     /// int, positive.
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
 }
 
 /// TS `RecipeUnlockSchema.skill` (inline object).
@@ -19,7 +20,8 @@ pub struct RecipeIngredient {
 pub struct RecipeSkillRequirement {
     pub skill: String,
     /// int.
-    pub level: f64,
+    #[serde(with = "crate::units::count")]
+    pub level: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -46,7 +48,8 @@ pub struct RecipeDefinition {
     pub inputs: Vec<RecipeIngredient>,
     pub outputs: Vec<RecipeIngredient>,
     /// In-game minutes a machine needs; 0 = instant hand-craft. nonnegative.
-    pub processing_minutes: f64,
+    #[serde(with = "crate::units::count")]
+    pub processing_minutes: u32,
     /// Machine type required; absent = craftable by hand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine_type_id: Option<String>,
@@ -68,7 +71,7 @@ impl Default for RecipeDefinition {
             name: String::new(),
             inputs: Vec::new(),
             outputs: Vec::new(),
-            processing_minutes: 0.0,
+            processing_minutes: 0,
             machine_type_id: None,
             category: "crafting".to_owned(),
             requires_station_category: None,
@@ -120,7 +123,8 @@ impl Default for MachineTypeDefinition {
 #[serde(rename_all = "camelCase", default)]
 pub struct MachineProcessing {
     pub recipe_id: String,
-    pub completes_at_minute: f64,
+    #[serde(with = "crate::units::absolute_micro_minutes")]
+    pub completes_at_minute: i64,
 }
 
 /// Live machine instance on a tile.

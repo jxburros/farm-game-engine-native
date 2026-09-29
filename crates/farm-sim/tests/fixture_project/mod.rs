@@ -29,7 +29,7 @@ pub fn make_engine(seed: &str, mutate: impl FnOnce(&mut GameProject)) -> (Engine
 }
 
 /// C# `CoreTestHelpers.Slot(items, id, quantity)`.
-pub fn slot(items: &[Item], id: &str, quantity: f64) -> InventorySlot {
+pub fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
     let item = items.iter().find(|i| i.id == id).unwrap_or_else(|| panic!("item {id} exists")).clone();
     InventorySlot { item, quantity }
 }
@@ -39,20 +39,21 @@ pub fn find_item<'a>(ctx: &'a EngineContext, id: &str) -> &'a Item {
 }
 
 /// C# M4 `Give`: appends a NEW slot (no merge) so tests control the slot layout.
-pub fn give(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: f64) {
+pub fn give(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) {
     let item = find_item(ctx, item_id).clone();
     state.player.inventory.push(InventorySlot { item, quantity });
 }
 
 /// C# M4 `Quantity`: the first slot's quantity for an item id.
-pub fn quantity(state: &GameState, item_id: &str) -> Option<f64> {
+pub fn quantity(state: &GameState, item_id: &str) -> Option<u32> {
     state.player.inventory.iter().find(|s| s.item.id == item_id).map(|s| s.quantity)
 }
 
 /// C# `At`: put the player on a tile facing a direction.
-pub fn at(state: &mut GameState, x: f64, y: f64, direction: &str) {
-    state.player.x = x;
-    state.player.y = y;
+/// Stands the player on tile `(x, y)` (its corner, as v8 tests wrote tile indices).
+pub fn at(state: &mut GameState, x: i32, y: i32, direction: &str) {
+    state.player.x = farm_sim::units::tiles(x);
+    state.player.y = farm_sim::units::tiles(y);
     state.player.direction = direction.to_owned();
 }
 

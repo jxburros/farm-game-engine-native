@@ -7,10 +7,11 @@ use crate::content_builtin::ToolDefinition;
 use crate::effects::Effect;
 use crate::engine_types::{Effects, EngineContext};
 use crate::game_time::{self, SleepOptions};
-use crate::js;
 use crate::schema::GameState;
+use crate::units;
 
-pub const LOW_ENERGY_FRACTION: f64 = 0.2;
+/// Below this fraction of max energy (1/5) the player is warned.
+pub const LOW_ENERGY_DIVISOR: i32 = 5;
 
 /// TS `EnergySpendResult` minus the state (updated in place).
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -20,29 +21,35 @@ pub struct EnergySpendResult {
     pub collapsed: bool,
 }
 
-/// Effective energy cost for a tool at a given tier (higher tiers are more efficient).
-pub fn effective_energy_cost(definition: &ToolDefinition, tier: f64) -> f64 {
-    1.0_f64.max(js::round(definition.energy_cost * (1.0 - 0.15 * (tier - 1.0))))
+/// Effective energy cost for a tool at a given tier (higher tiers are more efficient): 15% less
+/// per tier above 1, rounded to whole points, at least 1 point.
+pub fn effective_energy_cost(definition: &ToolDefinition, tier: i32) -> i32 {
+    let percent = 100 - 15 * (i64::from(tier) - 1);
+    let whole_points =
+        units::div_round(i64::from(definition.energy_cost) * percent, 100 * i64::from(units::ENERGY_POINT));
+    units::points(i32::try_from(whole_points.max(1)).unwrap_or(i32::MAX))
 }
 
-pub fn spend_energy(ctx: &EngineContext, state: &mut GameState, amount: f64) -> EnergySpendResult {
-    if !ctx.content.settings.energy_enabled || amount <= 0.0 {
+pub fn spend_energy(ctx: &EngineContext, state: &mut GameState, amount: i32) -> EnergySpendResult {
+    if !ctx.content.settings.energy_enabled || amount <= 0 {
         return EnergySpendResult { effects: Vec::new(), collapsed: false };
     }
 
     let before = state.player.energy;
-    let after = before - amount;
+    let after = before.saturating_sub(amount);
     let mut effects: Effects = Vec::new();
 
-    if after <= 0.0 {
-        state.player.energy = 0.0;
+    if after <= 0 {
+        state.player.energy = 0;
         let sleep_effects = game_time::perform_sleep(ctx, state, SleepOptions { collapsed: true });
         effects.extend(sleep_effects);
         return EnergySpendResult { effects, collapsed: true };
     }
 
-    let low_threshold = state.player.max_energy * LOW_ENERGY_FRACTION;
-    if after <= low_threshold && before > low_threshold {
+    // after <= max/5 < before, without truncating max/5.
+    let max = i64::from(state.player.max_energy);
+    let divisor = i64::from(LOW_ENERGY_DIVISOR);
+    if i64::from(after) * divisor <= max && i64::from(before) * divisor > max {
         effects.push(Effect::message("info", "You are getting exhausted — consider sleeping."));
     }
 

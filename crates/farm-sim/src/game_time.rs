@@ -16,12 +16,12 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::farming::crops;
 use crate::hooks::{DayHookPayload, HookEvent, SeasonChangeHookPayload, WeatherRollHookPayload, YearStartHookPayload};
-use crate::js;
 use crate::rng::Rng;
 use crate::schema::{
     classic_calendar_seasons, soil_states, tile_types, CalendarConfig, CalendarFestival, CalendarSeason, GameState,
     NodeTypeDefinition, TileNode,
 };
+use crate::units;
 use crate::weather;
 use indexmap::IndexMap;
 use std::sync::LazyLock;
@@ -47,7 +47,7 @@ static CLASSIC_SEASONS: LazyLock<Vec<CalendarSeason>> = LazyLock::new(classic_ca
 /// [`calendar_seasons`] as borrowed entries: the project's positive-length seasons, or the
 /// classic fallback.
 fn effective_seasons(calendar: &CalendarConfig) -> Vec<&CalendarSeason> {
-    let seasons: Vec<&CalendarSeason> = calendar.seasons.iter().filter(|season| season.days > 0.0).collect();
+    let seasons: Vec<&CalendarSeason> = calendar.seasons.iter().filter(|season| season.days > 0).collect();
     if seasons.is_empty() {
         CLASSIC_SEASONS.iter().collect()
     } else {
@@ -61,12 +61,8 @@ pub fn calendar_seasons(calendar: &CalendarConfig) -> Vec<CalendarSeason> {
     effective_seasons(calendar).into_iter().cloned().collect()
 }
 
-fn calendar_year_length(seasons: &[&CalendarSeason]) -> f64 {
-    let mut sum = 0.0;
-    for season in seasons {
-        sum += season.days;
-    }
-    sum
+fn calendar_year_length(seasons: &[&CalendarSeason]) -> i64 {
+    seasons.iter().map(|season| i64::from(season.days)).sum()
 }
 
 /// Look up a calendar season by id (searches the effective, fallback-safe list).
@@ -81,21 +77,23 @@ struct CalendarPosition<'a> {
     #[allow(dead_code)]
     season_index: usize,
     /// 1-based day within `season`.
-    day_of_season: f64,
+    day_of_season: u32,
 }
 
 /// Resolve an absolute (1-based) day to its season + day-of-season, honoring each season's own
 /// length via cumulative offsets.
-fn position_for_day(calendar: &CalendarConfig, absolute_day: f64) -> CalendarPosition<'_> {
+fn position_for_day(calendar: &CalendarConfig, absolute_day: u32) -> CalendarPosition<'_> {
     let seasons = effective_seasons(calendar);
     let year_length = calendar_year_length(&seasons);
-    let day_in_year = ((absolute_day - 1.0) % year_length + year_length) % year_length;
+    let day_in_year = (i64::from(absolute_day) - 1).rem_euclid(year_length);
     let mut remaining = day_in_year;
     for (i, season) in seasons.iter().enumerate() {
-        if remaining < season.days {
-            return CalendarPosition { season, season_index: i, day_of_season: remaining + 1.0 };
+        let days = i64::from(season.days);
+        if remaining < days {
+            // remaining < days ≤ u32::MAX
+            return CalendarPosition { season, season_index: i, day_of_season: remaining as u32 + 1 };
         }
-        remaining -= season.days;
+        remaining -= days;
     }
     // Unreachable when yearLength = sum(seasons.days), kept for type safety. The effective
     // list is never empty (the classic fallback has four seasons).
@@ -105,21 +103,22 @@ fn position_for_day(calendar: &CalendarConfig, absolute_day: f64) -> CalendarPos
 }
 
 /// 1-based day within the current season for an absolute (1-based) day.
-pub fn day_of_season(calendar: &CalendarConfig, absolute_day: f64) -> f64 {
+pub fn day_of_season(calendar: &CalendarConfig, absolute_day: u32) -> u32 {
     position_for_day(calendar, absolute_day).day_of_season
 }
 
-pub fn season_for_day(calendar: &CalendarConfig, absolute_day: f64) -> String {
+pub fn season_for_day(calendar: &CalendarConfig, absolute_day: u32) -> String {
     position_for_day(calendar, absolute_day).season.id.clone()
 }
 
-pub fn year_for_day(calendar: &CalendarConfig, absolute_day: f64) -> f64 {
+pub fn year_for_day(calendar: &CalendarConfig, absolute_day: u32) -> u32 {
     let year_length = calendar_year_length(&effective_seasons(calendar));
-    ((absolute_day - 1.0) / year_length).floor() + 1.0
+    // Day 0 is in year 0.
+    u32::try_from((i64::from(absolute_day) - 1).div_euclid(year_length) + 1).unwrap_or(0)
 }
 
 /// The festival configured for the given absolute day, if any.
-pub fn festival_on_day(calendar: &CalendarConfig, absolute_day: f64) -> Option<&CalendarFestival> {
+pub fn festival_on_day(calendar: &CalendarConfig, absolute_day: u32) -> Option<&CalendarFestival> {
     if calendar.festivals.is_empty() {
         return None;
     }
@@ -130,26 +129,27 @@ pub fn festival_on_day(calendar: &CalendarConfig, absolute_day: f64) -> Option<&
         .find(|festival| festival.season_id == position.season.id && festival.day == position.day_of_season)
 }
 
-/// Format minute-of-day as a clock string, e.g. 810 → "1:30 PM".
-pub fn format_time_of_day(time_minutes: f64) -> String {
-    let total = time_minutes.floor() % (24.0 * 60.0);
-    let hours24 = (total / 60.0).floor();
-    let minutes = total % 60.0;
-    let suffix = if hours24 < 12.0 { "AM" } else { "PM" };
-    let hours12 = if hours24 % 12.0 == 0.0 { 12.0 } else { hours24 % 12.0 };
-    format!("{}:{:0>2} {suffix}", js::num(hours12), js::num(minutes))
+/// Format a time of day (micro-minutes) as a clock string, e.g. 810 minutes → "1:30 PM".
+pub fn format_time_of_day(time_minutes: u32) -> String {
+    let total = units::whole_minute(time_minutes) % units::MINUTES_PER_DAY;
+    let hours24 = total / 60;
+    let minutes = total % 60;
+    let suffix = if hours24 < 12 { "AM" } else { "PM" };
+    let hours12 = if hours24.is_multiple_of(12) { 12 } else { hours24 % 12 };
+    format!("{hours12}:{minutes:0>2} {suffix}")
 }
 
-/// Returns one of [`day_phases`].
-pub fn day_phase(time_minutes: f64) -> &'static str {
-    let t = time_minutes % (24.0 * 60.0);
-    if (5.0 * 60.0..10.0 * 60.0).contains(&t) {
+/// Returns one of [`day_phases`] for a time of day (micro-minutes).
+pub fn day_phase(time_minutes: u32) -> &'static str {
+    let t = u64::from(time_minutes) % (u64::from(units::MINUTES_PER_DAY) * u64::from(units::MINUTE));
+    let hour = |h: u64| h * 60 * u64::from(units::MINUTE);
+    if (hour(5)..hour(10)).contains(&t) {
         return day_phases::MORNING;
     }
-    if (10.0 * 60.0..17.0 * 60.0).contains(&t) {
+    if (hour(10)..hour(17)).contains(&t) {
         return day_phases::DAY;
     }
-    if (17.0 * 60.0..21.0 * 60.0).contains(&t) {
+    if (hour(17)..hour(21)).contains(&t) {
         return day_phases::EVENING;
     }
     day_phases::NIGHT
@@ -173,14 +173,14 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
         year: previous_year,
     }));
 
-    let new_day = previous_day + 1.0;
+    let new_day = previous_day.saturating_add(1);
     let calendar = &settings.calendar;
     let seasons = calendar_seasons(calendar);
     // Season progression is relative to the CURRENT season so authored projects may start in
     // any season regardless of the absolute day. dayOfSeason(newDay) === 1 detects a season
     // boundary at the calendar's cumulative offsets — correct for uneven season lengths too,
     // since only one day elapses per sleep.
-    let season_rolls = day_of_season(calendar, new_day) == 1.0;
+    let season_rolls = day_of_season(calendar, new_day) == 1;
     // Math.Max(0, FindIndex(…)): a missing season counts as the first one.
     let previous_season_index = seasons.iter().position(|season| season.id == previous_season).unwrap_or(0);
     let new_season = if season_rolls {
@@ -188,7 +188,8 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
     } else {
         previous_season.clone()
     };
-    let new_year = if season_rolls && new_season == seasons[0].id { previous_year + 1.0 } else { previous_year };
+    let new_year =
+        if season_rolls && new_season == seasons[0].id { previous_year.saturating_add(1) } else { previous_year };
 
     // Object.fromEntries: later duplicates win.
     let mut node_types: IndexMap<&str, &NodeTypeDefinition> = IndexMap::new();
@@ -219,7 +220,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
         }
     }
     let weather_def = ctx.content.weather.types.iter().find(|weather_type| weather_type.id == new_weather_id);
-    let crop_damage_chance = weather_def.map_or(0.0, |def| def.crop_damage_chance);
+    let crop_damage_chance = weather_def.map_or(0, |def| def.crop_damage_chance);
     let waters_outdoor_soil = weather_def.is_some_and(|def| def.waters_outdoor_soil);
 
     // Nightly world pass (C# cloned every tile grid; the reducer edits the tiles in place)
@@ -229,8 +230,8 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                 // Storm damage rolls before growth (the storm hits overnight). The draw only
                 // happens for a live crop under damaging weather (short-circuit order).
                 if tile.crop.as_ref().is_some_and(|crop| crop.withered != Some(true))
-                    && crop_damage_chance > 0.0
-                    && rng.float() < crop_damage_chance
+                    && crop_damage_chance > 0
+                    && rng.chance(crop_damage_chance)
                 {
                     tile.crop = None;
                 }
@@ -239,10 +240,10 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                     if crop.withered != Some(true) {
                         if let Some(definition) = definition {
                             if crop.watered {
-                                crop.days_grown = Some(crop.days_grown.unwrap_or(0.0) + 1.0);
-                                crop.days_without_water = 0.0;
+                                crop.days_grown = Some(crop.days_grown.unwrap_or(0).saturating_add(1));
+                                crop.days_without_water = 0;
                             } else {
-                                crop.days_without_water += 1.0;
+                                crop.days_without_water = crop.days_without_water.saturating_add(1);
                             }
                             crop.watered = false;
                             crop.stage = crops::compute_crop_stage(crop, definition);
@@ -257,7 +258,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                 // Unfertilized watered soil dries out overnight — unless the new day's weather
                 // waters it (rain/storm, M4).
                 if waters_outdoor_soil && tile.background == tile_types::SOIL {
-                    tile.soil_moisture = 100.0;
+                    tile.soil_moisture = 100;
                     tile.soil_state = Some(
                         if tile.soil_state.as_deref() == Some(soil_states::FERTILIZED) {
                             soil_states::FERTILIZED
@@ -270,11 +271,11 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                         if crop.withered != Some(true) {
                             crop.watered = true;
                             crop.last_watered_day = Some(new_day);
-                            crop.days_without_water = 0.0;
+                            crop.days_without_water = 0;
                         }
                     }
                 } else {
-                    tile.soil_moisture = 0.0;
+                    tile.soil_moisture = 0;
                     if tile.soil_state.as_deref() == Some(soil_states::WATERED) {
                         tile.soil_state = Some(soil_states::DRY.to_owned());
                     }
@@ -285,7 +286,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
                     let depleted_on_day = node.depleted_on_day?;
                     let definition = node_types.get(node.type_id.as_str())?;
                     let respawn_days = definition.respawn_after()?;
-                    (new_day - depleted_on_day >= respawn_days).then(|| TileNode {
+                    (i64::from(new_day) - i64::from(depleted_on_day) >= i64::from(respawn_days)).then(|| TileNode {
                         type_id: node.type_id.clone(),
                         remaining_health: definition.health,
                         ..TileNode::default()
@@ -303,18 +304,25 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
     let mut money = state.player.money;
     if options.collapsed {
         let penalty = money.min(settings.collapse_money_penalty);
-        money -= penalty;
-        effects.push(Effect::message(
-            message_levels::ERROR,
-            format!("You collapsed from exhaustion! Lost ${}.", js::num(penalty)),
-        ));
+        money = money.saturating_sub(penalty);
+        effects
+            .push(Effect::message(message_levels::ERROR, format!("You collapsed from exhaustion! Lost ${penalty}.")));
     }
-    let energy = if options.collapsed { js::round(max_energy * settings.collapse_energy_fraction) } else { max_energy };
+    // A collapse restores round(max × fraction) whole points (the fraction in thousandths).
+    let energy = if options.collapsed {
+        let whole_points = units::div_round(
+            i64::from(max_energy) * i64::from(settings.collapse_energy_fraction),
+            i64::from(units::MILLI_ONE) * i64::from(units::ENERGY_POINT),
+        );
+        units::points(i32::try_from(whole_points).unwrap_or(i32::MAX))
+    } else {
+        max_energy
+    };
 
     state.clock.day = new_day;
     state.clock.season = new_season.clone();
     state.clock.year = new_year;
-    state.clock.time_minutes = settings.time.day_start_minute;
+    state.clock.time_minutes = units::minutes(settings.time.day_start_minute);
     state.clock.weather_id = new_weather_id.clone();
     state.player.energy = energy;
     state.player.money = money;
@@ -347,14 +355,14 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
         }));
     }
     if new_year != previous_year {
-        effects.push(Effect::message(message_levels::INFO, format!("Year {} begins!", js::num(new_year))));
+        effects.push(Effect::message(message_levels::INFO, format!("Year {new_year} begins!")));
         ctx.emit(HookEvent::YearStart(YearStartHookPayload { year: new_year }));
     }
 
     effects.push(Effect::DayStarted { day: new_day, season: new_season.clone(), year: new_year });
     effects.push(Effect::message(
         message_levels::SUCCESS,
-        format!("Day {} of {new_season}, Year {}", js::num(day_of_season(calendar, new_day)), js::num(new_year)),
+        format!("Day {} of {new_season}, Year {new_year}", day_of_season(calendar, new_day)),
     ));
 
     if let Some(festival) = festival_on_day(calendar, new_day) {

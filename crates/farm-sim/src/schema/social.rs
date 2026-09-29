@@ -19,12 +19,14 @@ pub struct GiftTastes {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NpcSocialState {
-    pub friendship: f64,
+    #[serde(with = "crate::units::int")]
+    pub friendship: i32,
     /// int.
-    pub gifts_today: f64,
+    #[serde(with = "crate::units::count")]
+    pub gifts_today: u32,
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_gift_day: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub last_gift_day: Option<u32>,
 }
 
 /// TS `GiftReaction` (`keyof typeof GIFT_FRIENDSHIP_DELTAS`).
@@ -38,19 +40,19 @@ pub mod gift_reactions {
     pub const ALL: &[&str] = &[LOVED, LIKED, NEUTRAL, DISLIKED, HATED];
 }
 
-pub const FRIENDSHIP_PER_HEART: f64 = 125.0;
-pub const MAX_FRIENDSHIP: f64 = 1250.0;
+pub const FRIENDSHIP_PER_HEART: i32 = 125;
+pub const MAX_FRIENDSHIP: i32 = 1250;
 
 /// TS `GIFT_FRIENDSHIP_DELTAS`, keyed by [`gift_reactions`] (declaration order kept).
-pub const GIFT_FRIENDSHIP_DELTAS: &[(&str, f64)] = &[
-    (gift_reactions::LOVED, 80.0),
-    (gift_reactions::LIKED, 45.0),
-    (gift_reactions::NEUTRAL, 20.0),
-    (gift_reactions::DISLIKED, -20.0),
-    (gift_reactions::HATED, -40.0),
+pub const GIFT_FRIENDSHIP_DELTAS: &[(&str, i32)] = &[
+    (gift_reactions::LOVED, 80),
+    (gift_reactions::LIKED, 45),
+    (gift_reactions::NEUTRAL, 20),
+    (gift_reactions::DISLIKED, -20),
+    (gift_reactions::HATED, -40),
 ];
 
 /// Friendship delta for a gift reaction (`GIFT_FRIENDSHIP_DELTAS[reaction]`).
-pub fn gift_friendship_delta(reaction: &str) -> Option<f64> {
+pub fn gift_friendship_delta(reaction: &str) -> Option<i32> {
     GIFT_FRIENDSHIP_DELTAS.iter().find(|(key, _)| *key == reaction).map(|(_, delta)| *delta)
 }

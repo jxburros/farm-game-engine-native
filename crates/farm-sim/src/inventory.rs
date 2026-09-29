@@ -24,8 +24,8 @@ pub struct AddItemOptions {
 pub fn add_item(
     inventory: &[InventorySlot],
     item: &Item,
-    quantity: f64,
-    max_inventory_size: f64,
+    quantity: u32,
+    max_inventory_size: u32,
     options: Option<AddItemOptions>,
 ) -> AddItemResult {
     let options = options.unwrap_or_default();
@@ -38,14 +38,14 @@ pub fn add_item(
             // NOTE: Item.max_stack is a required number in the schema, so it is never
             // "undefined"; the Option view keeps this branch valid if the schema ever
             // makes it optional.
-            let cap: Option<f64> = Some(slot.item.max_stack);
+            let cap: Option<u32> = Some(slot.item.max_stack);
             if let Some(cap_value) = cap {
-                if slot.quantity + quantity > cap_value {
-                    let room_in_slot = (cap_value - slot.quantity).max(0.0);
+                if u64::from(slot.quantity) + u64::from(quantity) > u64::from(cap_value) {
+                    let room_in_slot = cap_value.saturating_sub(slot.quantity);
                     let overflow = quantity - room_in_slot;
-                    if inventory.len() as f64 >= max_inventory_size {
+                    if slot_count(inventory) >= max_inventory_size {
                         // No room for an overflow slot: absorb what fits, reject the rest.
-                        if room_in_slot == 0.0 {
+                        if room_in_slot == 0 {
                             return AddItemResult { inventory: inventory.to_vec(), added: false };
                         }
                         let capped = with_quantity_at(inventory, index, cap_value);
@@ -56,11 +56,11 @@ pub fn add_item(
                     return AddItemResult { inventory: next, added: true };
                 }
             }
-            let merged = with_quantity_at(inventory, index, slot.quantity + quantity);
+            let merged = with_quantity_at(inventory, index, slot.quantity.saturating_add(quantity));
             return AddItemResult { inventory: merged, added: true };
         }
     }
-    if (inventory.len() as f64) < max_inventory_size {
+    if slot_count(inventory) < max_inventory_size {
         let mut next = inventory.to_vec();
         next.push(InventorySlot { item: item.clone(), quantity });
         return AddItemResult { inventory: next, added: true };
@@ -68,8 +68,13 @@ pub fn add_item(
     AddItemResult { inventory: inventory.to_vec(), added: false }
 }
 
+/// The number of slots, for comparing with a `u32` inventory size.
+fn slot_count(inventory: &[InventorySlot]) -> u32 {
+    u32::try_from(inventory.len()).unwrap_or(u32::MAX)
+}
+
 /// TS `inventory.map((s, i) => i === index ? { ...s, quantity } : s)`.
-fn with_quantity_at(inventory: &[InventorySlot], index: usize, quantity: f64) -> Vec<InventorySlot> {
+fn with_quantity_at(inventory: &[InventorySlot], index: usize, quantity: u32) -> Vec<InventorySlot> {
     inventory
         .iter()
         .enumerate()
@@ -81,14 +86,14 @@ fn with_quantity_at(inventory: &[InventorySlot], index: usize, quantity: f64) ->
 /// deletes emptied slots. Multiple slots per item id can exist (stack caps,
 /// pack reconciliation), and `has_ingredients` counts across all of them —
 /// consuming from only the first slot allowed item duplication.
-pub fn remove_item(inventory: &[InventorySlot], item_id: &str, quantity: f64) -> Vec<InventorySlot> {
+pub fn remove_item(inventory: &[InventorySlot], item_id: &str, quantity: u32) -> Vec<InventorySlot> {
     if !inventory.iter().any(|slot| slot.item.id == item_id) {
         return inventory.to_vec();
     }
     let mut remaining_to_remove = quantity;
     let mut next = Vec::new();
     for slot in inventory {
-        if slot.item.id != item_id || remaining_to_remove <= 0.0 {
+        if slot.item.id != item_id || remaining_to_remove == 0 {
             next.push(slot.clone());
             continue;
         }

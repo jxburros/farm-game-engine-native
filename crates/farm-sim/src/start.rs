@@ -29,7 +29,8 @@ pub struct StartQuest {
 #[serde(rename_all = "camelCase", default)]
 pub struct StartObjective {
     pub id: String,
-    pub progress: f64,
+    #[serde(with = "crate::units::count")]
+    pub progress: u32,
     pub completed: bool,
 }
 
@@ -38,8 +39,10 @@ pub struct StartObjective {
 #[serde(rename_all = "camelCase", default)]
 pub struct StartNpc {
     pub id: String,
-    pub x: f64,
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     pub scene_id: String,
 }
 
@@ -49,16 +52,20 @@ pub struct StartNpc {
 pub struct StartState {
     /// The project id; with `game_start_time` it forms the default engine seed.
     pub id: String,
-    pub game_start_time: f64,
+    #[serde(with = "crate::units::long")]
+    pub game_start_time: i64,
     pub settings: ProjectSettings,
     pub player: Player,
     pub quests: Vec<StartQuest>,
     pub npcs: Vec<StartNpc>,
     pub event_flags: IndexMap<String, bool>,
-    pub current_time_minutes: f64,
-    pub current_day: f64,
+    #[serde(with = "crate::units::micro_minutes")]
+    pub current_time_minutes: u32,
+    #[serde(with = "crate::units::count")]
+    pub current_day: u32,
     pub current_season: String,
-    pub current_year: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_year: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_weather_id: Option<String>,
     pub scenes: Vec<Scene>,
@@ -67,8 +74,8 @@ pub struct StartState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub social_state: Option<IndexMap<String, NpcSocialState>>,
     pub animals: Vec<AnimalState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mine_deepest_floor: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub mine_deepest_floor: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quarantined_items: Option<Vec<InventorySlot>>,
     #[serde(skip_serializing_if = "Option::is_none")]

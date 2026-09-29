@@ -1,11 +1,11 @@
 //! Seeded, serializable PRNG: the single entry point for all randomness in the simulation
 //! (port of engine-core/src/rng.ts / `Rng.cs`). Algorithm: xoshiro128** (Blackman & Vigna),
 //! 128-bit state. State lives in `GameState.rng` so a saved game resumes its random stream
-//! deterministically. All arithmetic wraps, matching `Math.imul` and `>>> 0`.
+//! deterministically. All arithmetic wraps, matching `Math.imul` and `>>> 0`. Draws are used as
+//! integers (docs/NUMERICS.md "Randomness"): chances compare against thresholds out of 2³², ranges
+//! and weighted picks scale the draw with a 64-bit multiply and shift.
 
 use serde::{Deserialize, Serialize};
-
-const U32: f64 = 4294967296.0;
 
 /// Serialized PRNG state: deterministic resume is a core guarantee.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,20 +40,21 @@ pub fn hash_string_to_u32(input: &str) -> u32 {
 
 /// JS `seed >>> 0` for a numeric seed (ToUint32).
 pub fn to_uint32(seed: f64) -> u32 {
-    crate::js::to_uint32(seed)
+    crate::units::to_uint32(seed)
 }
 
 /// Initial state for a string seed.
 pub fn create_rng_state(seed: &str) -> RngState {
-    create_from_u32(hash_string_to_u32(seed))
+    create_rng_state_from_u32(hash_string_to_u32(seed))
 }
 
-/// Initial state for a numeric seed.
+/// Initial state for a numeric seed (JSON seeds; `seed >>> 0`).
 pub fn create_rng_state_from_number(seed: f64) -> RngState {
-    create_from_u32(to_uint32(seed))
+    create_rng_state_from_u32(to_uint32(seed))
 }
 
-fn create_from_u32(seed: u32) -> RngState {
+/// Initial state for a 32-bit seed.
+pub fn create_rng_state_from_u32(seed: u32) -> RngState {
     let mut a = seed;
     let mut next = || {
         a = a.wrapping_add(0x9e3779b9);
@@ -84,22 +85,24 @@ pub fn next_u32(state: &RngState) -> (u32, RngState) {
     (result, RngState::with_words([n0, n1, n2, n3]))
 }
 
-/// Uniform float in [0, 1).
-pub fn next_float(state: &RngState) -> (f64, RngState) {
-    let (value, next) = next_u32(state);
-    (f64::from(value) / U32, next)
+/// `floor(u / 2³² × n)` for a draw `u`: the integer form of v8's `floor(nextFloat() × n)`,
+/// exact for every `n` (negative too: the shift floors).
+pub fn scale_draw(draw: u32, n: i64) -> i64 {
+    ((i128::from(draw) * i128::from(n)) >> 32) as i64
 }
 
-/// Uniform integer in [min, max] inclusive.
-pub fn next_int(state: &RngState, min: f64, max: f64) -> (f64, RngState) {
-    let (value, next) = next_float(state);
-    ((value * (max - min + 1.0)).floor() + min, next)
+/// Uniform integer in [min, max] inclusive (`((u × (max − min + 1)) >> 32) + min`).
+pub fn next_int(state: &RngState, min: i64, max: i64) -> (i64, RngState) {
+    let (value, next) = next_u32(state);
+    (scale_draw(value, max - min + 1) + min, next)
 }
 
 /// Minimal random-source interface consumed by game math (port of `IRandomSource`).
 pub trait RandomSource {
-    fn float(&mut self) -> f64;
-    fn int(&mut self, min: f64, max: f64) -> f64;
+    /// One 32-bit draw.
+    fn next_u32(&mut self) -> u32;
+    /// Uniform integer in [min, max] inclusive.
+    fn int(&mut self, min: i64, max: i64) -> i64;
 }
 
 /// Mutable convenience wrapper for command handlers: draws update the state in place; the
@@ -114,45 +117,54 @@ impl Rng {
         Self { state }
     }
 
-    pub fn float(&mut self) -> f64 {
-        let (value, next) = next_float(&self.state);
+    pub fn next_u32(&mut self) -> u32 {
+        let (value, next) = next_u32(&self.state);
         self.state = next;
         value
     }
 
-    pub fn int(&mut self, min: f64, max: f64) -> f64 {
+    /// One draw against a probability threshold (out of 2³²): v8's `nextFloat() < p`.
+    pub fn chance(&mut self, threshold: u64) -> bool {
+        u64::from(self.next_u32()) < threshold
+    }
+
+    /// One draw against an exact fraction of 2³² units: `u < numerator / denominator` (chances
+    /// that are products of thresholds, compared without rounding).
+    pub fn chance_below(&mut self, (numerator, denominator): (u128, u128)) -> bool {
+        u128::from(self.next_u32()) * denominator < numerator
+    }
+
+    pub fn int(&mut self, min: i64, max: i64) -> i64 {
         let (value, next) = next_int(&self.state, min, max);
         self.state = next;
         value
     }
 
-    /// Pick an index from weighted entries. Returns -1 for an empty/zero table.
-    #[allow(clippy::cast_possible_wrap)]
-    pub fn weighted(&mut self, weights: &[f64]) -> i64 {
-        let mut total = 0.0;
-        for w in weights {
-            total += w;
+    /// Pick an index from integer weights: `(u × total) >> 32`, then walk the weights. `None`
+    /// for an empty or all-zero table (no draw).
+    pub fn weighted(&mut self, weights: &[u32]) -> Option<usize> {
+        let total: u64 = weights.iter().map(|w| u64::from(*w)).sum();
+        if total == 0 {
+            return None;
         }
-        if total <= 0.0 {
-            return -1;
-        }
-        let mut roll = self.float() * total;
+        let mut roll = (u64::from(self.next_u32()) * total) >> 32;
         for (i, w) in weights.iter().enumerate() {
-            roll -= w;
-            if roll < 0.0 {
-                return i as i64;
+            let w = u64::from(*w);
+            if roll < w {
+                return Some(i);
             }
+            roll -= w;
         }
-        weights.len() as i64 - 1
+        Some(weights.len() - 1)
     }
 }
 
 impl RandomSource for Rng {
-    fn float(&mut self) -> f64 {
-        Rng::float(self)
+    fn next_u32(&mut self) -> u32 {
+        Rng::next_u32(self)
     }
 
-    fn int(&mut self, min: f64, max: f64) -> f64 {
+    fn int(&mut self, min: i64, max: i64) -> i64 {
         Rng::int(self, min, max)
     }
 }

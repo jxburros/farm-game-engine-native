@@ -9,14 +9,19 @@ pub struct ArtFrame {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_id: Option<String>,
     /// int, nonnegative.
+    #[serde(with = "crate::units::screen")]
     pub x: f64,
     /// int, nonnegative.
+    #[serde(with = "crate::units::screen")]
     pub y: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub width: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub height: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub ticks: f64,
 }
 

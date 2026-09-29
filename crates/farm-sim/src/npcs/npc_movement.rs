@@ -8,18 +8,17 @@
 //! Determinism: wander draws flow through the seeded RNG in state.
 
 use crate::engine_types::EngineContext;
-use crate::js;
 use crate::rng::Rng;
 use crate::schema::{GameState, GridPoint, NodeTypeDefinition, Npc, NpcScheduleEntry, NpcState};
+use crate::units;
 use crate::weather;
 use crate::world::pathfinding::{self, PathPoint, Walkability};
 use crate::world::world_movement;
 use indexmap::{IndexMap, IndexSet};
-use std::cmp::Ordering;
 
-const WANDER_PERIOD_MINUTES: f64 = 3.0;
+const WANDER_PERIOD_MINUTES: u32 = 3;
 
-const DIRECTIONS: [(f64, f64); 4] = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
+const DIRECTIONS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 
 /// C# `MakeWalkability`: runs `f` with the walkability of `scene_id` for `npc_id` (other NPCs in
 /// the scene and the player's tile block); `None` when the scene is missing. The node map is
@@ -36,12 +35,16 @@ fn with_walkability<R>(
     // Other NPCs in the scene block.
     for (other_id, other) in &state.npcs {
         if other_id != npc_id && other.scene_id == scene_id {
-            blocked.insert(format!("{},{}", js::num(other.x), js::num(other.y)));
+            // An NPC standing between tiles blocks no tile key (v8 wrote "2.5,3").
+            if other.x % units::TILE == 0 && other.y % units::TILE == 0 {
+                blocked.insert(format!("{},{}", units::tile_of(other.x), units::tile_of(other.y)));
+            }
         }
     }
     // The player blocks too (fractional position → occupied tile).
     if state.player.scene_id == scene_id {
-        blocked.insert(format!("{},{}", js::num(state.player.x.floor()), js::num(state.player.y.floor())));
+        let player = world_movement::player_tile(state);
+        blocked.insert(format!("{},{}", player.x, player.y));
     }
     Some(f(&Walkability { scene, node_types: Some(node_types), blocked: Some(&blocked) }))
 }
@@ -50,20 +53,23 @@ fn player_is_adjacent(state: &GameState, npc: &NpcState) -> bool {
     if state.player.scene_id != npc.scene_id {
         return false;
     }
-    (state.player.x.floor() - npc.x).abs() + (state.player.y.floor() - npc.y).abs() <= 1.0
+    let player = world_movement::player_tile(state);
+    let distance = (i64::from(units::tiles(player.x)) - i64::from(npc.x)).abs()
+        + (i64::from(units::tiles(player.y)) - i64::from(npc.y)).abs();
+    distance <= i64::from(units::TILE)
 }
 
 /// Latest schedule entry whose minute has passed (entries sorted by minute).
-fn active_schedule_entry(def: &Npc, time_minutes: f64) -> Option<&NpcScheduleEntry> {
+fn active_schedule_entry(def: &Npc, time_minutes: u32) -> Option<&NpcScheduleEntry> {
     let schedule = def.schedule.as_ref()?;
     if schedule.is_empty() {
         return None;
     }
     let mut sorted: Vec<&NpcScheduleEntry> = schedule.iter().collect();
-    sorted.sort_by(|a, b| compare_numbers(a.minute - b.minute));
+    sorted.sort_by(|a, b| a.minute.cmp(&b.minute));
     let mut active = None;
     for entry in sorted {
-        if entry.minute <= time_minutes {
+        if u64::from(entry.minute) * u64::from(units::MINUTE) <= u64::from(time_minutes) {
             active = Some(entry);
         }
     }
@@ -71,16 +77,6 @@ fn active_schedule_entry(def: &Npc, time_minutes: f64) -> Option<&NpcScheduleEnt
 }
 
 /// JS comparator result → sign (NaN compares equal, as in Array.prototype.sort).
-fn compare_numbers(diff: f64) -> Ordering {
-    if diff < 0.0 {
-        Ordering::Less
-    } else if diff > 0.0 {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
-    }
-}
-
 fn step_along_path(
     state: &GameState,
     node_types: &IndexMap<String, NodeTypeDefinition>,
@@ -97,11 +93,16 @@ fn step_along_path(
         return NpcState { path: None, ..npc.clone() };
     }
     NpcState {
-        x: next.x,
-        y: next.y,
+        x: units::tiles(next.x),
+        y: units::tiles(next.y),
         path: npc.path.as_ref().map(|path| path.iter().skip(1).cloned().collect()),
         ..npc.clone()
     }
+}
+
+/// The tile an NPC stands on (NPC positions are tile-aligned).
+fn npc_tile(npc: &NpcState) -> PathPoint {
+    PathPoint { x: units::tile_of(npc.x), y: units::tile_of(npc.y) }
 }
 
 fn to_grid_path(path: Option<Vec<PathPoint>>) -> Option<Vec<GridPoint>> {
@@ -112,8 +113,8 @@ fn to_grid_path(path: Option<Vec<PathPoint>>) -> Option<Vec<GridPoint>> {
 ///
 /// The C# tracks `changed`/reference equality to decide whether to write an NPC back; every
 /// write here stores the same value the C# would, so the tracking is dropped.
-pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: f64) {
-    if minutes <= 0.0 {
+pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
+    if minutes == 0 {
         return;
     }
     let movers: Vec<&Npc> = ctx
@@ -148,21 +149,17 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: f64) {
             if target.scene_id != npc.scene_id {
                 // Cross-scene schedule: teleport (v1 simplification).
                 npc.scene_id = target.scene_id.clone();
-                npc.x = target.x;
-                npc.y = target.y;
+                npc.x = units::tiles(target.x);
+                npc.y = units::tiles(target.y);
                 npc.path = None;
                 state.npcs.insert(def.id.clone(), npc);
                 continue;
             }
 
-            if npc.x != target.x || npc.y != target.y {
+            if npc.x != units::tiles(target.x) || npc.y != units::tiles(target.y) {
                 if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
                     let path = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
-                        pathfinding::find_path(
-                            w,
-                            PathPoint { x: npc.x, y: npc.y },
-                            PathPoint { x: target.x, y: target.y },
-                        )
+                        pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: target.x, y: target.y })
                     })
                     .flatten();
                     npc.path = to_grid_path(path);
@@ -179,21 +176,18 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: f64) {
 
         if def.move_pattern.as_deref() == Some("patrol") {
             if let Some(patrol_points) = def.patrol_points.as_ref().filter(|points| !points.is_empty()) {
-                let index = npc.patrol_index.unwrap_or(0.0) % patrol_points.len() as f64;
-                let waypoint = &patrol_points[index as usize];
-                if npc.x == waypoint.x && npc.y == waypoint.y {
-                    npc.patrol_index = Some((index + 1.0) % patrol_points.len() as f64);
+                let count = patrol_points.len();
+                let index = npc.patrol_index.unwrap_or(0) as usize % count;
+                let waypoint = &patrol_points[index];
+                if npc.x == units::tiles(waypoint.x) && npc.y == units::tiles(waypoint.y) {
+                    npc.patrol_index = Some(((index + 1) % count) as u32);
                     npc.path = None;
                     state.npcs.insert(def.id.clone(), npc);
                     continue;
                 }
                 if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
                     let path = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
-                        pathfinding::find_path(
-                            w,
-                            PathPoint { x: npc.x, y: npc.y },
-                            PathPoint { x: waypoint.x, y: waypoint.y },
-                        )
+                        pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: waypoint.x, y: waypoint.y })
                     })
                     .flatten();
                     npc.path = to_grid_path(path);
@@ -207,18 +201,19 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: f64) {
         if def.move_pattern.as_deref() == Some("wander") {
             // Move at most once per WANDER_PERIOD_MINUTES; use the minute counter
             // so behavior is time-based rather than frame-based.
-            if state.clock.time_minutes.floor() % WANDER_PERIOD_MINUTES != 0.0 {
+            if !units::whole_minute(state.clock.time_minutes).is_multiple_of(WANDER_PERIOD_MINUTES) {
                 continue;
             }
-            let pick = DIRECTIONS[rng.int(0.0, 3.0) as usize];
-            let nx = npc.x + pick.0;
-            let ny = npc.y + pick.1;
-            let radius = def.wander_radius.unwrap_or(3.0);
-            if (nx - def.x).abs() > radius || (ny - def.y).abs() > radius {
+            let pick = DIRECTIONS[rng.int(0, 3) as usize];
+            let nx = npc.x.saturating_add(units::tiles(pick.0));
+            let ny = npc.y.saturating_add(units::tiles(pick.1));
+            let radius = i64::from(units::TILE) * i64::from(def.wander_radius.unwrap_or(3));
+            if (i64::from(nx) - i64::from(def.x)).abs() > radius || (i64::from(ny) - i64::from(def.y)).abs() > radius {
                 continue;
             }
-            let walkable =
-                with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| pathfinding::is_walkable(w, nx, ny));
+            let walkable = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
+                pathfinding::is_walkable(w, units::tile_of(nx), units::tile_of(ny))
+            });
             if walkable == Some(true) {
                 npc.x = nx;
                 npc.y = ny;

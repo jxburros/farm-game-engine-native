@@ -8,12 +8,13 @@ use farm_sim::schema::{
     Dialogue, DialogueOption, GameProject, GameState, InventorySlot, Item, MineConfig, Npc, Player, ProjectSettings,
     Quest, QuestObjective, QuestRewards, Scene, Tile, WeatherConfig, WeatherTableEntry, WeatherTypeDefinition,
 };
+use farm_sim::units;
 use farm_sim::{content_builtin, state, Effect, EngineContext, HookBus};
 use indexmap::IndexMap;
 use serde_json::Value;
 
 /// `Tiles.CreateEmptyTile(x, y, "grass")`.
-pub fn empty_tile(x: f64, y: f64) -> Tile {
+pub fn empty_tile(x: i32, y: i32) -> Tile {
     Tile {
         x,
         y,
@@ -22,8 +23,8 @@ pub fn empty_tile(x: f64, y: f64) -> Tile {
         overlay: None,
         object: None,
         collision: false,
-        soil_moisture: 0.0,
-        soil_fertility: 0.0,
+        soil_moisture: 0,
+        soil_fertility: 0,
         ..Tile::default()
     }
 }
@@ -43,24 +44,24 @@ pub fn set_tile_layer(tile: &Tile, new_type: &str) -> Tile {
 }
 
 /// `Tiles.CreateEmptyScene(id, name, width, height)`.
-pub fn empty_scene(id: &str, name: &str, width: f64, height: f64) -> Scene {
+pub fn empty_scene(id: &str, name: &str, width: i32, height: i32) -> Scene {
     let mut tiles = Vec::new();
-    let mut y = 0.0;
+    let mut y = 0;
     while y < height {
         let mut row = Vec::new();
-        let mut x = 0.0;
+        let mut x = 0;
         while x < width {
             row.push(empty_tile(x, y));
-            x += 1.0;
+            x += 1;
         }
         tiles.push(row);
-        y += 1.0;
+        y += 1;
     }
     Scene { id: id.to_owned(), name: name.to_owned(), width, height, tiles, ..Scene::default() }
 }
 
 /// `CoreTestHelpers.Slot`.
-pub fn slot(items: &[Item], id: &str, quantity: f64) -> InventorySlot {
+pub fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
     let item = items.iter().find(|i| i.id == id).unwrap_or_else(|| panic!("no built-in item '{id}'"));
     InventorySlot { item: item.clone(), quantity }
 }
@@ -85,13 +86,13 @@ pub fn flag_is_true(state: &GameState, key: &str) -> bool {
 }
 
 fn sun_only() -> Vec<WeatherTableEntry> {
-    vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1.0 }]
+    vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1 }]
 }
 
 /// Minimal test project (C# `EngineTests.MakeProject`): 6x6 open field with soil at (3,2), npc
 /// at (1,1).
 pub fn make_project() -> GameProject {
-    let mut scene = empty_scene("scene-test", "Test Farm", 6.0, 6.0);
+    let mut scene = empty_scene("scene-test", "Test Farm", 6, 6);
     scene.tiles[2][3] = set_tile_layer(&scene.tiles[2][3], "soil");
     scene.tiles[4][4] = set_tile_layer(&scene.tiles[4][4], "wall");
 
@@ -99,8 +100,8 @@ pub fn make_project() -> GameProject {
     let npc = Npc {
         id: "npc-test".to_owned(),
         name: "Testy".to_owned(),
-        x: 1.0,
-        y: 1.0,
+        x: units::tiles(1),
+        y: units::tiles(1),
         scene_id: "scene-test".to_owned(),
         dialogue: vec![
             Dialogue {
@@ -111,7 +112,7 @@ pub fn make_project() -> GameProject {
                     DialogueOption { text: "Bye".to_owned(), ..DialogueOption::default() },
                     DialogueOption {
                         text: "Gift me".to_owned(),
-                        give_money: Some(25.0),
+                        give_money: Some(25),
                         next_dialogue_id: Some("dlg-2".to_owned()),
                         ..DialogueOption::default()
                     },
@@ -141,12 +142,12 @@ pub fn make_project() -> GameProject {
             r#type: "harvest".to_owned(),
             description: "Harvest wheat".to_owned(),
             target_crop_type: Some("wheat".to_owned()),
-            target_crop_quantity: Some(1.0),
+            target_crop_quantity: Some(1),
             completed: false,
-            progress: 0.0,
+            progress: 0,
             ..QuestObjective::default()
         }],
-        rewards: QuestRewards { money: Some(100.0), ..QuestRewards::default() },
+        rewards: QuestRewards { money: Some(100), ..QuestRewards::default() },
         ..Quest::default()
     };
 
@@ -156,26 +157,26 @@ pub fn make_project() -> GameProject {
     }
 
     GameProject {
-        schema_version: 4.0,
+        schema_version: 4,
         id: "proj-test".to_owned(),
         name: "Test".to_owned(),
-        version: "2.0".to_owned(),
+        version: "2".to_owned(),
         scenes: vec![scene],
         // Same dialogues as the NPC's (TS `dialogues: npc.dialogue`).
         dialogues: npc.dialogue.clone(),
         npcs: vec![npc],
         player: Player {
-            x: 3.0,
-            y: 4.0,
+            x: units::tiles(3),
+            y: units::tiles(4),
             direction: "up".to_owned(),
             scene_id: "scene-test".to_owned(),
             inventory: vec![
-                slot(&items, "seed-wheat", 5.0),
-                slot(&items, "tool-hoe", 1.0),
-                slot(&items, "tool-watering-can", 1.0),
+                slot(&items, "seed-wheat", 5),
+                slot(&items, "tool-hoe", 1),
+                slot(&items, "tool-watering-can", 1),
             ],
-            max_inventory_size: 10.0,
-            money: 100.0,
+            max_inventory_size: 10,
+            money: 100,
             active_quests: vec!["quest-wheat".to_owned()],
             completed_quests: vec![],
             ..Player::default()
@@ -185,11 +186,11 @@ pub fn make_project() -> GameProject {
         start_scene_id: "scene-test".to_owned(),
         mode: "play".to_owned(),
         selected_tile_type: "grass".to_owned(),
-        current_time: 1_000_000.0,
+        current_time: 1_000_000,
         current_season: "spring".to_owned(),
-        current_day: 1.0,
-        current_time_minutes: 6.0 * 60.0,
-        current_year: 1.0,
+        current_day: 1,
+        current_time_minutes: units::minutes(6 * 60),
+        current_year: 1,
         settings: ProjectSettings::default(),
         // Sun-only table keeps sim tests weather-independent (weather has its own dedicated
         // tests).
@@ -203,7 +204,7 @@ pub fn make_project() -> GameProject {
             ..WeatherConfig::default()
         },
         mine: MineConfig { enabled: false, ..MineConfig::default() },
-        game_start_time: 1_000_000.0,
+        game_start_time: 1_000_000,
         ..GameProject::default()
     }
 }

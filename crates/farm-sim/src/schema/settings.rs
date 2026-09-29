@@ -4,6 +4,7 @@
 //! cozy configs stay cozy).
 
 use super::primitives::CLASSIC_SEASONS;
+use crate::units;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -12,7 +13,8 @@ pub struct CalendarSeason {
     pub id: String,
     pub name: String,
     /// In-game days this season lasts. int, positive.
-    pub days: f64,
+    #[serde(with = "crate::units::count")]
+    pub days: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -23,7 +25,8 @@ pub struct CalendarFestival {
     /// Season this festival falls in (matches a CalendarSeason id).
     pub season_id: String,
     /// 1-based day within that season. int, positive.
-    pub day: f64,
+    #[serde(with = "crate::units::count")]
+    pub day: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -45,16 +48,23 @@ impl Default for CalendarConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct TimeConfig {
     /// Minute-of-day the player wakes up (6:00). int.
-    pub day_start_minute: f64,
+    #[serde(with = "crate::units::count")]
+    pub day_start_minute: u32,
     /// Minute-of-day the player collapses if still awake (26:00 = 2am). int.
-    pub day_end_minute: f64,
+    #[serde(with = "crate::units::count")]
+    pub day_end_minute: u32,
     /// In-game minutes that pass per real-time second. positive.
-    pub minutes_per_real_second: f64,
+    #[serde(with = "crate::units::minute_rate")]
+    pub minutes_per_real_second: u32,
 }
 
 impl Default for TimeConfig {
     fn default() -> Self {
-        Self { day_start_minute: 6.0 * 60.0, day_end_minute: 26.0 * 60.0, minutes_per_real_second: 1.0 }
+        Self {
+            day_start_minute: 6 * 60,
+            day_end_minute: 26 * 60,
+            minutes_per_real_second: units::MINUTE / units::TICKS_PER_SECOND,
+        }
     }
 }
 
@@ -62,12 +72,13 @@ impl Default for TimeConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct MovementConfig {
     /// Player walk speed in tiles per second (free movement). positive.
-    pub player_speed: f64,
+    #[serde(with = "crate::units::speed")]
+    pub player_speed: i32,
 }
 
 impl Default for MovementConfig {
     fn default() -> Self {
-        Self { player_speed: 4.5 }
+        Self { player_speed: units::from_authoring::<units::Speed>(4.5) }
     }
 }
 
@@ -77,18 +88,22 @@ pub struct ProjectSettings {
     pub movement: MovementConfig,
     pub energy_enabled: bool,
     /// positive.
-    pub max_energy: f64,
+    #[serde(with = "crate::units::energy")]
+    pub max_energy: i32,
     /// Fraction of energy restored after a collapse (vs full sleep). 0..1.
-    pub collapse_energy_fraction: f64,
+    #[serde(with = "crate::units::milli")]
+    pub collapse_energy_fraction: u32,
     /// Money penalty charged on collapse. nonnegative.
-    pub collapse_money_penalty: f64,
+    #[serde(with = "crate::units::money")]
+    pub collapse_money_penalty: i64,
     pub time: TimeConfig,
     /// Creator-configurable calendar (M9): seasons, their lengths, and festival days.
     pub calendar: CalendarConfig,
     /// Player skills (M4g): XP per action category, levels unlock recipes.
     pub skills_enabled: bool,
     /// XP thresholds per level (index = level).
-    pub skill_level_curve: Vec<f64>,
+    #[serde(with = "crate::units::count::vec")]
+    pub skill_level_curve: Vec<u32>,
     /// Game-text locale (M7 i18n): packs may carry per-locale string tables.
     pub locale: String,
     /// Optional, creator-controlled credit shown in exported games.
@@ -100,13 +115,13 @@ impl Default for ProjectSettings {
         Self {
             movement: MovementConfig::default(),
             energy_enabled: true,
-            max_energy: 100.0,
-            collapse_energy_fraction: 0.5,
-            collapse_money_penalty: 50.0,
+            max_energy: units::points(100),
+            collapse_energy_fraction: 500,
+            collapse_money_penalty: 50,
             time: TimeConfig::default(),
             calendar: CalendarConfig::default(),
             skills_enabled: true,
-            skill_level_curve: vec![0.0, 50.0, 150.0, 300.0, 500.0, 750.0, 1050.0, 1400.0, 1800.0, 2250.0],
+            skill_level_curve: vec![0, 50, 150, 300, 500, 750, 1050, 1400, 1800, 2250],
             locale: "en".to_owned(),
             show_made_with_credit: false,
         }
@@ -123,7 +138,7 @@ pub fn classic_calendar_seasons() -> Vec<CalendarSeason> {
                 Some(first) => first.to_uppercase().chain(chars).collect(),
                 None => String::new(),
             };
-            CalendarSeason { id: (*id).to_owned(), name, days: 28.0 }
+            CalendarSeason { id: (*id).to_owned(), name, days: 28 }
         })
         .collect()
 }

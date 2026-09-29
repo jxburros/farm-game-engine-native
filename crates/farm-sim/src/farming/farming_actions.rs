@@ -7,12 +7,12 @@ use crate::engine_types::{Effects, EngineContext};
 use crate::events::EventPosition;
 use crate::farming::crops;
 use crate::hooks::{CropHarvestHookPayload, HookEvent, NpcInteractHookPayload};
-use crate::js;
 use crate::rng::Rng;
 use crate::schema::{
     crop_qualities, item_types, soil_states, tile_types, tool_types, Crop, DialogueState, GameState, Item, Tile,
     FISHING_MINIGAME_ID,
 };
+use crate::units;
 use crate::world::world_movement;
 use crate::{animals, crafting, energy, events, fishing, gathering, inventory, mines, quests, skills, tools};
 use indexmap::IndexMap;
@@ -22,10 +22,10 @@ use serde_json::Value;
 /// are copied out (and the tile cloned) so the caller can go on to mutate the state.
 struct FacingTileResult {
     scene_id: String,
-    width: f64,
-    height: f64,
-    x: f64,
-    y: f64,
+    width: i32,
+    height: i32,
+    x: i32,
+    y: i32,
     tile: Tile,
 }
 
@@ -35,7 +35,7 @@ fn facing_tile(state: &GameState) -> Option<FacingTileResult> {
     let origin = world_movement::player_tile(state);
     let x = origin.x + vector.dx;
     let y = origin.y + vector.dy;
-    if x < 0.0 || x >= scene.width || y < 0.0 || y >= scene.height {
+    if x < 0 || x >= scene.width || y < 0 || y >= scene.height {
         return None;
     }
     Some(FacingTileResult {
@@ -49,15 +49,15 @@ fn facing_tile(state: &GameState) -> Option<FacingTileResult> {
 }
 
 /// Tiles affected by an AoE-capable tool: facing tile + perpendicular neighbors at tier 2+.
-fn aoe_targets(target: &FacingTileResult, direction: &str, tier: f64) -> Vec<(f64, f64)> {
+fn aoe_targets(target: &FacingTileResult, direction: &str, tier: i32) -> Vec<(i32, i32)> {
     let mut targets = vec![(target.x, target.y)];
-    if tier >= 2.0 {
+    if tier >= 2 {
         let horizontal = direction == "up" || direction == "down";
-        let offsets: [(f64, f64); 2] = if horizontal { [(-1.0, 0.0), (1.0, 0.0)] } else { [(0.0, -1.0), (0.0, 1.0)] };
+        let offsets: [(i32, i32); 2] = if horizontal { [(-1, 0), (1, 0)] } else { [(0, -1), (0, 1)] };
         for (dx, dy) in offsets {
             let tx = target.x + dx;
             let ty = target.y + dy;
-            if tx >= 0.0 && tx < target.width && ty >= 0.0 && ty < target.height {
+            if tx >= 0 && tx < target.width && ty >= 0 && ty < target.height {
                 targets.push((tx, ty));
             }
         }
@@ -66,11 +66,11 @@ fn aoe_targets(target: &FacingTileResult, direction: &str, tier: f64) -> Vec<(f6
 }
 
 /// TS `waterTileInPlace`.
-fn water_tile(tile: &mut Tile, day: f64) {
+fn water_tile(tile: &mut Tile, day: u32) {
     if tile.background != tile_types::SOIL {
         return;
     }
-    tile.soil_moisture = 100.0;
+    tile.soil_moisture = 100;
     tile.soil_state = Some(
         if tile.soil_state.as_deref() == Some(soil_states::FERTILIZED) {
             soil_states::FERTILIZED
@@ -83,7 +83,7 @@ fn water_tile(tile: &mut Tile, day: f64) {
         if crop.withered != Some(true) {
             crop.watered = true;
             crop.last_watered_day = Some(day);
-            crop.days_without_water = 0.0;
+            crop.days_without_water = 0;
         }
     }
 }
@@ -93,9 +93,9 @@ fn scene_index(state: &GameState, scene_id: &str) -> Option<usize> {
 }
 
 /// Durability + energy apply after a successful action (the C# local `Finish`).
-fn finish(ctx: &EngineContext, state: &mut GameState, tool: &Item, energy_cost: f64, mut effects: Effects) -> Effects {
+fn finish(ctx: &EngineContext, state: &mut GameState, tool: &Item, energy_cost: i32, mut effects: Effects) -> Effects {
     state.player.inventory =
-        inventory::replace_item(&state.player.inventory, &tool.id, &tools::damage_tool_durability(tool, 1.0));
+        inventory::replace_item(&state.player.inventory, &tool.id, &tools::damage_tool_durability(tool, 1));
     let spent = energy::spend_energy(ctx, state, energy_cost);
     effects.extend(spent.effects);
     effects
@@ -121,7 +121,7 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
         return Vec::new();
     };
 
-    let tier = tool_slot.item.tool_tier.unwrap_or(1.0);
+    let tier = tool_slot.item.tool_tier.unwrap_or(1);
     let power = tool_slot.item.tool_power.unwrap_or(tier);
     let definition = tools::get_tool_definition(tool_type);
     let energy_cost = energy::effective_energy_cost(&definition, tier);
@@ -162,8 +162,8 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
             {
                 spot_tile.background = tile_types::SOIL.to_owned();
                 spot_tile.r#type = tile_types::SOIL.to_owned();
-                spot_tile.soil_moisture = 0.0;
-                spot_tile.soil_fertility = 0.0;
+                spot_tile.soil_moisture = 0;
+                spot_tile.soil_fertility = 0;
                 spot_tile.soil_state = Some(soil_states::DRY.to_owned());
             }
         }
@@ -204,7 +204,7 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
             if state.minigame.is_none() {
                 let mut context: IndexMap<String, Value> = IndexMap::new();
                 context.insert("builtin".to_owned(), Value::String("fishing".to_owned()));
-                context.insert("rodTier".to_owned(), js::value(tier));
+                context.insert("rodTier".to_owned(), Value::from(tier));
                 let effects = events::start_minigame_session(ctx, state, &minigame.id, Some(&context));
                 return finish(ctx, state, tool, energy_cost, effects);
             }
@@ -238,7 +238,9 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let npc_entry_id = state
         .npcs
         .iter()
-        .find(|(_, npc)| npc.scene_id == state.player.scene_id && npc.x == target_x && npc.y == target_y)
+        .find(|(_, npc)| {
+            npc.scene_id == state.player.scene_id && npc.x == units::tiles(target_x) && npc.y == units::tiles(target_y)
+        })
         .map(|(id, _)| id.clone());
     if let Some(npc_entry_id) = npc_entry_id {
         let npc_def = ctx.content.npcs.iter().find(|npc| npc.id == npc_entry_id);
@@ -247,7 +249,7 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
                 ctx.emit(HookEvent::NpcInteract(NpcInteractHookPayload { npc_id: npc_def.id.clone() }));
                 state.dialogue =
                     Some(DialogueState { npc_id: npc_def.id.clone(), dialogue_id: npc_def.dialogue[0].id.clone() });
-                return quests::progress_quests(ctx, state, "talk", &npc_def.id, 1.0);
+                return quests::progress_quests(ctx, state, "talk", &npc_def.id, 1);
             }
         }
         return Vec::new();
@@ -281,13 +283,18 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let mine_config = &ctx.content.mine;
     if mine_config.enabled
         && state.player.scene_id == mine_config.entrance_scene_id.as_deref().unwrap_or("")
-        && target.x == mine_config.entrance_x.unwrap_or(-1.0)
-        && target.y == mine_config.entrance_y.unwrap_or(-1.0)
+        && target.x == mine_config.entrance_x.unwrap_or(-1)
+        && target.y == mine_config.entrance_y.unwrap_or(-1)
     {
-        let checkpoint = (state.mine.deepest_floor / mine_config.elevator_every).floor() * mine_config.elevator_every;
-        return mines::descend_mine(ctx, state, f64::max(1.0, checkpoint));
+        // floor(deepest / every) × every; JS divides by zero into NaN, and max(1, NaN) is NaN.
+        let checkpoint = state
+            .mine
+            .deepest_floor
+            .checked_div(mine_config.elevator_every)
+            .map_or(0, |elevators| elevators * mine_config.elevator_every);
+        return mines::descend_mine(ctx, state, checkpoint.max(1));
     }
-    if mines::is_mine_scene(&state.player.scene_id) && target.x == 1.0 && target.y == 1.0 {
+    if mines::is_mine_scene(&state.player.scene_id) && target.x == 1 && target.y == 1 {
         return mines::exit_mine(ctx, state);
     }
 
@@ -310,7 +317,7 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     Vec::new()
 }
 
-fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64, y: f64) -> Effects {
+fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32, y: i32) -> Effects {
     let Some(scene) = world_movement::find_scene(state, scene_id) else {
         return Vec::new();
     };
@@ -338,7 +345,7 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f
     let mutation = crops::roll_mutation(Some(definition), &crop.quality, &mut rng);
     // Farming skill: +1 yield per 4 levels (M4g)
     let quantity = crops::roll_yield(Some(definition), &crop.quality, mutation.as_deref(), &mut rng)
-        + skills::farming_yield_bonus(state);
+        .saturating_add(skills::farming_yield_bonus(state));
     let estimated_value =
         crops::calculate_harvest_value(Some(definition), &crop.quality, mutation.as_deref(), quantity);
 
@@ -357,8 +364,8 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f
         let growth_days = crops::crop_growth_days(definition);
         let regrowth = crops::crop_regrowth_days(definition);
         let mut regrown = Crop {
-            days_grown: Some(f64::max(0.0, growth_days - regrowth)),
-            harvest_count: crop.harvest_count + 1.0,
+            days_grown: Some(growth_days.saturating_sub(regrowth)),
+            harvest_count: crop.harvest_count.saturating_add(1),
             watered: false,
             ..crop.clone()
         };
@@ -391,11 +398,11 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f
             message_levels::SUCCESS,
             format!(
                 "Harvested {}x {}{}{} (worth ~${})",
-                js::num(quantity),
+                quantity,
                 definition.name,
                 quality_text,
                 mutation_text,
-                js::num(estimated_value)
+                estimated_value.map_or_else(|| "NaN".to_owned(), |value| value.to_string())
             ),
         ),
         Effect::CropHarvested { crop_type: crop.r#type.clone(), quantity },
@@ -406,12 +413,12 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f
         quality: crop.quality.clone(),
     }));
 
-    effects.extend(skills::grant_xp(ctx, state, "farming", 8.0));
+    effects.extend(skills::grant_xp(ctx, state, "farming", 8));
     effects.extend(quests::progress_quests(ctx, state, "harvest", &crop.r#type, quantity));
     effects
 }
 
-fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64, y: f64) -> Effects {
+fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32, y: i32) -> Effects {
     let Some(scene) = world_movement::find_scene(state, scene_id) else {
         return Vec::new();
     };
@@ -442,12 +449,12 @@ fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64
     }
 
     let crop_type = crop_type.to_owned();
-    let mut inventory = inventory::remove_item(&state.player.inventory, &seed_item_id, 1.0);
+    let mut inventory = inventory::remove_item(&state.player.inventory, &seed_item_id, 1);
     let fertilizer_item_id =
         inventory.iter().find(|slot| slot.item.r#type == item_types::FERTILIZER).map(|slot| slot.item.id.clone());
     let used_fertilizer = fertilizer_item_id.is_some();
     if let Some(fertilizer_item_id) = fertilizer_item_id {
-        inventory = inventory::remove_item(&inventory, &fertilizer_item_id, 1.0);
+        inventory = inventory::remove_item(&inventory, &fertilizer_item_id, 1);
     }
 
     let Some(index) = scene_index(state, scene_id) else {
@@ -455,24 +462,21 @@ fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64
     };
 
     let new_crop = crops::create_planted_crop(&crop_type, state.clock.day, used_fertilizer);
-    let multi_tile_id = format!("{}-{}-{}-{}", crop_type, js::num(state.clock.tick), js::num(x), js::num(y));
+    let multi_tile_id = format!("{}-{}-{}-{}", crop_type, state.clock.tick, x, y);
     let tiles = &mut state.world.scenes[index].tiles;
 
     if let Some(multi_tile) = &definition.multi_tile {
-        let mut crop_dy = 0.0;
-        while crop_dy < multi_tile.height {
-            let mut crop_dx = 0.0;
-            while crop_dx < multi_tile.width {
-                let ty = (y + crop_dy) as usize;
-                let tx = (x + crop_dx) as usize;
+        for crop_dy in 0..multi_tile.height {
+            for crop_dx in 0..multi_tile.width {
+                // The placement check above kept every covered tile inside the scene.
+                let ty = y as usize + crop_dy as usize;
+                let tx = x as usize + crop_dx as usize;
                 tiles[ty][tx].crop = Some(Crop {
-                    is_multi_tile_root: Some(crop_dy == 0.0 && crop_dx == 0.0),
+                    is_multi_tile_root: Some(crop_dy == 0 && crop_dx == 0),
                     multi_tile_id: Some(multi_tile_id.clone()),
                     ..new_crop.clone()
                 });
-                crop_dx += 1.0;
             }
-            crop_dy += 1.0;
         }
     } else {
         tiles[y as usize][x as usize].crop = Some(new_crop);
@@ -480,7 +484,7 @@ fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: f64
 
     if used_fertilizer {
         let tile = &mut tiles[y as usize][x as usize];
-        tile.soil_fertility = 100.0;
+        tile.soil_fertility = 100;
         tile.soil_state = Some(soil_states::FERTILIZED.to_owned());
     }
 
@@ -509,6 +513,7 @@ pub(crate) mod test_support {
         WeatherTableEntry, WeatherTypeDefinition,
     };
     use crate::state;
+    use crate::units;
     use crate::world::tiles;
     use indexmap::IndexMap;
 
@@ -517,14 +522,14 @@ pub(crate) mod test_support {
         effects.iter().any(|effect| matches!(effect, Effect::Message { text, .. } if predicate(text)))
     }
 
-    pub(crate) fn slot(items: &[Item], id: &str, quantity: f64) -> InventorySlot {
+    pub(crate) fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
         let item = items.iter().find(|item| item.id == id).unwrap_or_else(|| panic!("item {id}")).clone();
         InventorySlot { item, quantity }
     }
 
     /// Minimal test project: 6x6 open field with soil at (3,2), npc at (1,1).
     pub(crate) fn make_project() -> GameProject {
-        let mut scene = tiles::create_empty_scene("scene-test", "Test Farm", 6.0, 6.0);
+        let mut scene = tiles::create_empty_scene("scene-test", "Test Farm", 6, 6);
         scene.tiles[2][3] = tiles::set_tile_layer(&scene.tiles[2][3], "soil", None);
         scene.tiles[4][4] = tiles::set_tile_layer(&scene.tiles[4][4], "wall", None);
 
@@ -532,8 +537,8 @@ pub(crate) mod test_support {
         let npc = Npc {
             id: "npc-test".to_owned(),
             name: "Testy".to_owned(),
-            x: 1.0,
-            y: 1.0,
+            x: units::tiles(1),
+            y: units::tiles(1),
             scene_id: "scene-test".to_owned(),
             dialogue: vec![
                 Dialogue {
@@ -544,7 +549,7 @@ pub(crate) mod test_support {
                         DialogueOption { text: "Bye".to_owned(), ..DialogueOption::default() },
                         DialogueOption {
                             text: "Gift me".to_owned(),
-                            give_money: Some(25.0),
+                            give_money: Some(25),
                             next_dialogue_id: Some("dlg-2".to_owned()),
                             ..DialogueOption::default()
                         },
@@ -574,26 +579,26 @@ pub(crate) mod test_support {
                 r#type: "harvest".to_owned(),
                 description: "Harvest wheat".to_owned(),
                 target_crop_type: Some("wheat".to_owned()),
-                target_crop_quantity: Some(1.0),
+                target_crop_quantity: Some(1),
                 completed: false,
-                progress: 0.0,
+                progress: 0,
                 ..QuestObjective::default()
             }],
-            rewards: QuestRewards { money: Some(100.0), ..QuestRewards::default() },
+            rewards: QuestRewards { money: Some(100), ..QuestRewards::default() },
             ..Quest::default()
         };
 
-        let sun_only = || vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1.0 }];
+        let sun_only = || vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1 }];
         let mut weather_table = IndexMap::new();
         for season in ["spring", "summer", "fall", "winter"] {
             weather_table.insert(season.to_owned(), sun_only());
         }
 
         GameProject {
-            schema_version: 4.0,
+            schema_version: 4,
             id: "proj-test".to_owned(),
             name: "Test".to_owned(),
-            version: "2.0".to_owned(),
+            version: "2".to_owned(),
             scenes: vec![scene],
             npcs: vec![npc.clone()],
             items: items.clone(),
@@ -602,17 +607,17 @@ pub(crate) mod test_support {
             dialogues: npc.dialogue.clone(),
             quests: vec![quest],
             player: Player {
-                x: 3.0,
-                y: 4.0,
+                x: units::tiles(3),
+                y: units::tiles(4),
                 direction: "up".to_owned(),
                 scene_id: "scene-test".to_owned(),
                 inventory: vec![
-                    slot(&items, "seed-wheat", 5.0),
-                    slot(&items, "tool-hoe", 1.0),
-                    slot(&items, "tool-watering-can", 1.0),
+                    slot(&items, "seed-wheat", 5),
+                    slot(&items, "tool-hoe", 1),
+                    slot(&items, "tool-watering-can", 1),
                 ],
-                max_inventory_size: 10.0,
-                money: 100.0,
+                max_inventory_size: 10,
+                money: 100,
                 active_quests: vec!["quest-wheat".to_owned()],
                 completed_quests: Vec::new(),
                 pixel_x: 0.0,
@@ -627,12 +632,12 @@ pub(crate) mod test_support {
             selected_tile_type: "grass".to_owned(),
             selected_npc_id: None,
             selected_item_id: None,
-            current_time: 1_000_000.0,
+            current_time: 1_000_000,
             custom_assets: Vec::new(),
             current_season: "spring".to_owned(),
-            current_day: 1.0,
-            current_time_minutes: 6.0 * 60.0,
-            current_year: 1.0,
+            current_day: 1,
+            current_time_minutes: 6 * 60,
+            current_year: 1,
             shops: Vec::new(),
             node_types: Vec::new(),
             settings: default_project_settings(),
@@ -656,7 +661,7 @@ pub(crate) mod test_support {
             fish_tables: Vec::new(),
             mine: MineConfig { enabled: false, ..MineConfig::default() },
             content_packs: Vec::new(),
-            game_start_time: 1_000_000.0,
+            game_start_time: 1_000_000,
             ..GameProject::default()
         }
     }
@@ -682,15 +687,15 @@ pub(crate) mod test_support {
                 },
                 ShopStockEntry {
                     item_id: "fertilizer-quality".to_owned(),
-                    daily_limit: Some(2.0),
+                    daily_limit: Some(2),
                     ..ShopStockEntry::default()
                 },
-                ShopStockEntry { item_id: "seed-carrot".to_owned(), price: Some(3.0), ..ShopStockEntry::default() },
+                ShopStockEntry { item_id: "seed-carrot".to_owned(), price: Some(3), ..ShopStockEntry::default() },
             ],
-            sell_price_multiplier: 1.0,
+            sell_price_multiplier: 1,
             buys_items: true,
             repairs_tools: true,
-            repair_cost_per_point: 0.5,
+            repair_cost_per_point: 500,
             ..ShopDefinition::default()
         }];
         mutate(&mut project);
@@ -699,8 +704,8 @@ pub(crate) mod test_support {
 
     /// `state with { Player = state.Player with { X = 3, Y = 3, Direction = "up" } }`.
     pub(crate) fn facing_soil(state: &mut GameState) {
-        state.player.x = 3.0;
-        state.player.y = 3.0;
+        state.player.x = units::tiles(3);
+        state.player.y = units::tiles(3);
         state.player.direction = "up".to_owned();
     }
 }
@@ -714,6 +719,7 @@ mod engine_tests {
     use crate::engine::apply_command;
     use crate::engine_types::EngineContext;
     use crate::schema::GameState;
+    use crate::units;
 
     const NEEDS_MODULES: &str = "needs Tiles/WorldMovement/Engine/Economy/GameTime/… ports — enable at integration";
 
@@ -746,8 +752,8 @@ mod engine_tests {
         assert_eq!(tile.soil_state.as_deref(), Some("dry"));
         assert!(effects.contains(&Effect::message("success", "Tilled soil!")));
         let hoe = state.player.inventory.iter().find(|s| s.item.tool_type.as_deref() == Some("hoe")).unwrap();
-        assert_eq!(hoe.item.durability, Some(99.0));
-        assert_eq!(state.player.energy, 96.0); // hoe costs 4
+        assert_eq!(hoe.item.durability, Some(99));
+        assert_eq!(state.player.energy, units::points(96)); // hoe costs 4
     }
 
     #[test]
@@ -756,9 +762,9 @@ mod engine_tests {
         facing_soil(&mut state);
         apply_command(&ctx, &mut state, &use_tool("watering-can"));
         let tile = &state.world.scenes[0].tiles[2][3];
-        assert_eq!(tile.soil_moisture, 100.0);
+        assert_eq!(tile.soil_moisture, 100);
         assert_eq!(tile.soil_state.as_deref(), Some("watered"));
-        assert_eq!(state.player.energy, 98.0); // watering can costs 2
+        assert_eq!(state.player.energy, units::points(98)); // watering can costs 2
     }
 
     #[test]
@@ -782,10 +788,10 @@ mod engine_tests {
         let crop = tile.crop.as_ref().unwrap();
         assert_eq!(crop.r#type, "wheat");
         assert!(!crop.watered);
-        assert_eq!(crop.days_grown, Some(0.0));
-        assert_eq!(crop.planted_on_day, Some(1.0));
+        assert_eq!(crop.days_grown, Some(0));
+        assert_eq!(crop.planted_on_day, Some(1));
         let seeds = state.player.inventory.iter().find(|s| s.item.id == "seed-wheat").unwrap();
-        assert_eq!(seeds.quantity, 4.0);
+        assert_eq!(seeds.quantity, 4);
     }
 
     #[test]
@@ -805,16 +811,16 @@ mod engine_tests {
         apply_command(&ctx, &mut state, &Command::Interact); // plant wheat (3 growth days)
         water_and_sleep(&ctx, &mut state, 3);
 
-        assert_eq!(state.world.scenes[0].tiles[2][3].crop.as_ref().and_then(|c| c.days_grown), Some(3.0));
-        assert_eq!(state.clock.day, 4.0);
+        assert_eq!(state.world.scenes[0].tiles[2][3].crop.as_ref().and_then(|c| c.days_grown), Some(3));
+        assert_eq!(state.clock.day, 4);
 
         let money_before_harvest = state.player.money;
         let effects = apply_command(&ctx, &mut state, &Command::Interact);
         assert!(state.world.scenes[0].tiles[2][3].crop.is_none());
         let wheat = state.player.inventory.iter().find(|s| s.item.id == "crop-wheat").expect("harvested wheat");
-        assert!(wheat.quantity >= 1.0);
+        assert!(wheat.quantity >= 1);
         // No auto-sell: money only moves via the quest reward (100).
-        assert_eq!(state.player.money, money_before_harvest + 100.0);
+        assert_eq!(state.player.money, money_before_harvest + 100);
         assert!(state.player.completed_quests.iter().any(|q| q == "quest-wheat"));
         assert_eq!(state.quests["quest-wheat"].status, "completed");
         assert!(effects.iter().any(|e| matches!(e, Effect::QuestCompleted { .. })));
@@ -827,8 +833,8 @@ mod engine_tests {
         apply_command(&ctx, &mut state, &Command::Interact);
         apply_command(&ctx, &mut state, &Command::Sleep); // no watering
         let crop = state.world.scenes[0].tiles[2][3].crop.as_ref().unwrap();
-        assert_eq!(crop.days_grown, Some(0.0));
-        assert_eq!(crop.days_without_water, 1.0);
+        assert_eq!(crop.days_grown, Some(0));
+        assert_eq!(crop.days_without_water, 1);
     }
 
     #[test]
@@ -848,19 +854,20 @@ mod m2_systems_tests {
     use super::test_support::{make_m2_engine, slot};
     use crate::commands::Command;
     use crate::engine::apply_command;
+    use crate::units;
 
     #[test]
     fn regrowing_crops_reset_to_a_partial_growth_state_on_harvest() {
         let (ctx, mut state) = make_m2_engine(|project| {
             let items = project.items.clone();
-            project.player.inventory = vec![slot(&items, "seed-tomato", 1.0), slot(&items, "tool-watering-can", 1.0)];
+            project.player.inventory = vec![slot(&items, "seed-tomato", 1), slot(&items, "tool-watering-can", 1)];
         });
         // Summer for tomatoes (4 growth days, 2 regrowth days). Day 29 keeps
         // the season stable across the sleeps below.
         state.clock.season = "summer".to_owned();
-        state.clock.day = 29.0;
-        state.player.x = 3.0;
-        state.player.y = 3.0;
+        state.clock.day = 29;
+        state.player.x = units::tiles(3);
+        state.player.y = units::tiles(3);
         state.player.direction = "up".to_owned();
         apply_command(&ctx, &mut state, &Command::Interact);
         for _ in 0..4 {
@@ -869,7 +876,7 @@ mod m2_systems_tests {
         }
         apply_command(&ctx, &mut state, &Command::Interact);
         let crop = state.world.scenes[0].tiles[2][3].crop.as_ref().expect("regrown crop");
-        assert_eq!(crop.harvest_count, 1.0);
-        assert_eq!(crop.days_grown, Some(2.0)); // growthDays 4 - regrowthDays 2
+        assert_eq!(crop.harvest_count, 1);
+        assert_eq!(crop.days_grown, Some(2)); // growthDays 4 - regrowthDays 2
     }
 }

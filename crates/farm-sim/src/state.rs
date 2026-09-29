@@ -3,7 +3,6 @@
 
 use crate::content_builtin;
 use crate::farming::crops;
-use crate::js;
 use crate::packs;
 use crate::rng;
 use crate::schema::{
@@ -12,6 +11,8 @@ use crate::schema::{
     WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
 };
 use crate::start::StartState;
+use crate::text;
+use crate::units;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -103,7 +104,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
     let max_energy = start.player.max_energy.unwrap_or(resolved_settings.max_energy);
     let engine_seed = match seed {
         Some(seed) => seed.to_owned(),
-        None => format!("{}:{}", start.id, js::num(start.game_start_time)),
+        None => format!("{}:{}", start.id, start.game_start_time),
     };
 
     let flags: IndexMap<String, Value> =
@@ -116,7 +117,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
             packs: start.packs.clone(),
         },
         clock: ClockState {
-            tick: 0.0,
+            tick: 0,
             // TS `project.currentTimeMinutes ?? dayStartMinute` / `currentYear ?? 1`: both are
             // required (non-nullable) project fields here, so the fallbacks never apply.
             time_minutes: start.current_time_minutes,
@@ -131,7 +132,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
             // positions; tile indices land on the tile center.
             x: center_coordinate(start.player.x),
             y: center_coordinate(start.player.y),
-            move_intent: MoveIntent { dx: 0.0, dy: 0.0 },
+            move_intent: MoveIntent { dx: 0, dy: 0 },
             direction: start.player.direction.clone(),
             scene_id: start.player.scene_id.clone(),
             inventory: start.player.inventory.clone(),
@@ -152,7 +153,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
         shop_purchases_today: IndexMap::new(),
         social: start.social_state.clone().unwrap_or_default(),
         animals: start.animals.clone(),
-        mine: MineProgress { deepest_floor: start.mine_deepest_floor.unwrap_or(0.0), current_floor: 0.0 },
+        mine: MineProgress { deepest_floor: start.mine_deepest_floor.unwrap_or(0), current_floor: 0 },
         flags,
         quarantined_items: start.quarantined_items.clone().unwrap_or_default(),
         rng: start.rng_state.clone().unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
@@ -168,7 +169,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
 /// project store and the editor views in sync while the engine owns play-mode rules).
 pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameProject {
     let event_flags: IndexMap<String, bool> =
-        state.flags.iter().map(|(key, value)| (key.clone(), js::truthy(Some(value)))).collect();
+        state.flags.iter().map(|(key, value)| (key.clone(), text::truthy(Some(value)))).collect();
 
     let mut next = project.clone();
     // Generated scenes (mine floors) sync through so rendering works while the player stands in
@@ -230,119 +231,74 @@ pub fn resolve_settings(settings: &ProjectSettings) -> ProjectSettings {
     }
 }
 
-// zod refinements on `z.number()`. Each comparison is false for NaN, which is what rejects it
-// (`z.number()` refuses NaN but accepts ±Infinity).
-
-/// `z.number()`.
-fn is_number(value: f64) -> bool {
-    !value.is_nan()
-}
-
-/// `z.number().int()`.
-fn is_int(value: f64) -> bool {
-    js::is_integer(value)
-}
-
-/// `.positive()`.
-fn positive(value: f64) -> bool {
-    value > 0.0
-}
-
-/// `.nonnegative()`.
-fn nonnegative(value: f64) -> bool {
-    value >= 0.0
-}
-
-/// `.min(0).max(1)`.
-fn unit_fraction(value: f64) -> bool {
-    (0.0..=1.0).contains(&value)
-}
+// zod refinements on the settings numbers. The values are already on their integer grids
+// (whole minutes and days, thousandths), so `.int()` and "is a number" hold by construction;
+// what is left are the sign and range checks.
 
 /// TS `ProjectSettingsSchema.safeParse(settings).success`.
 pub fn is_valid_settings(s: &ProjectSettings) -> bool {
-    if !is_number(s.movement.player_speed) || !positive(s.movement.player_speed) {
+    if s.movement.player_speed <= 0 {
         return false;
     }
-    if !positive(s.max_energy) {
+    if s.max_energy <= 0 {
         return false;
     }
-    if !unit_fraction(s.collapse_energy_fraction) {
+    // `.min(0).max(1)` in thousandths.
+    if s.collapse_energy_fraction > units::MILLI_ONE {
         return false;
     }
-    if !nonnegative(s.collapse_money_penalty) {
+    if s.collapse_money_penalty < 0 {
         return false;
     }
-    if !is_int(s.time.day_start_minute) || !is_int(s.time.day_end_minute) {
+    if s.time.minutes_per_real_second == 0 {
         return false;
     }
-    if !positive(s.time.minutes_per_real_second) {
+    if s.calendar.seasons.iter().any(|season| season.days == 0) {
         return false;
     }
-    for season in &s.calendar.seasons {
-        if !is_int(season.days) || !positive(season.days) {
-            return false;
-        }
-    }
-    for festival in &s.calendar.festivals {
-        if !is_int(festival.day) || !positive(festival.day) {
-            return false;
-        }
-    }
-    if s.skill_level_curve.iter().any(|value| !is_number(*value)) {
+    if s.calendar.festivals.iter().any(|festival| festival.day == 0) {
         return false;
     }
     true
 }
 
-/// TS `WeatherConfigSchema.safeParse(config).success`.
+/// TS `WeatherConfigSchema.safeParse(config).success`: chances lie in 0–1 by construction, so
+/// what is left is that every weight is positive.
 pub fn is_valid_weather_config(config: &WeatherConfig) -> bool {
-    for weather_type in &config.types {
-        if !unit_fraction(weather_type.crop_damage_chance) {
-            return false;
-        }
-    }
-    for entries in config.table.values() {
-        for entry in entries {
-            if !positive(entry.weight) {
-                return false;
-            }
-        }
-    }
-    true
+    config.table.values().flatten().all(|entry| entry.weight > 0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{CalendarSeason, WeatherTableEntry, WeatherTypeDefinition};
+    use crate::schema::{CalendarSeason, WeatherTableEntry};
 
     #[test]
     fn settings_validation_mirrors_the_zod_refinements() {
         assert!(is_valid_settings(&ProjectSettings::default()));
         let mut settings = ProjectSettings::default();
-        settings.movement.player_speed = 0.0;
+        settings.movement.player_speed = 0;
         assert!(!is_valid_settings(&settings));
         assert_eq!(resolve_settings(&settings), ProjectSettings::default());
 
-        let settings = ProjectSettings { collapse_energy_fraction: 1.5, ..ProjectSettings::default() };
+        let settings = ProjectSettings { collapse_energy_fraction: 1500, ..ProjectSettings::default() };
         assert!(!is_valid_settings(&settings));
 
-        let settings = ProjectSettings { max_energy: f64::NAN, ..ProjectSettings::default() };
-        assert!(!is_valid_settings(&settings));
-
-        let mut settings = ProjectSettings::default();
-        settings.time.day_start_minute = 360.5;
+        let settings = ProjectSettings { max_energy: 0, ..ProjectSettings::default() };
         assert!(!is_valid_settings(&settings));
 
         let mut settings = ProjectSettings::default();
-        settings.calendar.seasons.push(CalendarSeason { id: "mud".to_owned(), name: "Mud".to_owned(), days: 0.0 });
+        settings.time.minutes_per_real_second = 0;
+        assert!(!is_valid_settings(&settings));
+
+        let settings = ProjectSettings { collapse_money_penalty: -1, ..ProjectSettings::default() };
         assert!(!is_valid_settings(&settings));
 
         let mut settings = ProjectSettings::default();
-        settings.skill_level_curve.push(f64::NAN);
+        settings.calendar.seasons.push(CalendarSeason { id: "mud".to_owned(), name: "Mud".to_owned(), days: 0 });
         assert!(!is_valid_settings(&settings));
 
-        let settings = ProjectSettings { max_energy: f64::INFINITY, ..ProjectSettings::default() };
+        let settings = ProjectSettings { max_energy: i32::MAX, ..ProjectSettings::default() };
         assert!(is_valid_settings(&settings));
     }
 
@@ -352,23 +308,19 @@ mod tests {
         assert!(is_valid_weather_config(&default_weather_config()));
 
         let mut config = default_weather_config();
-        config.types.push(WeatherTypeDefinition { crop_damage_chance: 2.0, ..WeatherTypeDefinition::default() });
-        assert!(!is_valid_weather_config(&config));
-
-        let mut config = default_weather_config();
-        config.table.insert("mud".to_owned(), vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 0.0 }]);
+        config.table.insert("mud".to_owned(), vec![WeatherTableEntry { weather_id: "sun".to_owned(), weight: 0 }]);
         assert!(!is_valid_weather_config(&config));
     }
 
     #[test]
     fn engine_seed_defaults_to_project_id_and_start_time() {
-        let project = GameProject { id: "p1".to_owned(), game_start_time: 1.5e12, ..GameProject::default() };
+        let project = GameProject { id: "p1".to_owned(), game_start_time: 1_500_000_000_000, ..GameProject::default() };
         let state = create_game_state(&project, None);
         assert_eq!(state.meta.engine_seed, "p1:1500000000000");
         assert_eq!(state.rng, rng::create_rng_state("p1:1500000000000"));
         let seeded = create_game_state(&project, Some("seed-x"));
         assert_eq!(seeded.meta.engine_seed, "seed-x");
-        assert_eq!(seeded.player.x, 0.5);
-        assert_eq!(seeded.player.energy, 100.0);
+        assert_eq!(seeded.player.x, units::tile_center(0));
+        assert_eq!(seeded.player.energy, units::points(100));
     }
 }

@@ -65,8 +65,16 @@ impl Ids {
     }
 }
 
-fn int(range: std::ops::RangeInclusive<i32>) -> impl Strategy<Value = f64> {
-    range.prop_map(f64::from)
+fn int(range: std::ops::RangeInclusive<i32>) -> impl Strategy<Value = i32> {
+    range
+}
+
+fn count(range: std::ops::RangeInclusive<u32>) -> impl Strategy<Value = u32> {
+    range
+}
+
+fn money(range: std::ops::RangeInclusive<i64>) -> impl Strategy<Value = i64> {
+    range
 }
 
 fn direction() -> impl Strategy<Value = String> {
@@ -75,12 +83,12 @@ fn direction() -> impl Strategy<Value = String> {
 
 fn plugin_mutation(ids: &Ids) -> impl Strategy<Value = PluginMutation> {
     prop_oneof![
-        (select(ids.items.clone()), int(1..=20))
+        (select(ids.items.clone()), count(1..=20))
             .prop_map(|(item_id, quantity)| PluginMutation::GiveItem { item_id, quantity }),
-        (select(ids.items.clone()), int(1..=5))
+        (select(ids.items.clone()), count(1..=5))
             .prop_map(|(item_id, quantity)| PluginMutation::TakeItem { item_id, quantity }),
-        int(1..=5_000).prop_map(|amount| PluginMutation::GiveMoney { amount }),
-        int(1..=500).prop_map(|amount| PluginMutation::TakeMoney { amount }),
+        money(1..=5_000).prop_map(|amount| PluginMutation::GiveMoney { amount }),
+        money(1..=500).prop_map(|amount| PluginMutation::TakeMoney { amount }),
         (
             select(vec!["flag-a", "flag-b"]),
             prop_oneof![
@@ -94,9 +102,9 @@ fn plugin_mutation(ids: &Ids) -> impl Strategy<Value = PluginMutation> {
         select(ids.weather.clone()).prop_map(|weather_id| PluginMutation::SetWeather { weather_id }),
         (select(ids.npcs.clone()), int(-300..=300))
             .prop_map(|(npc_id, delta)| PluginMutation::ModifyFriendship { npc_id, delta }),
-        (select(SKILL_NAMES.to_vec()), int(1..=500))
+        (select(SKILL_NAMES.to_vec()), count(1..=500))
             .prop_map(|(skill, amount)| PluginMutation::GrantXp { skill: skill.to_owned(), amount }),
-        int(-60..=60).prop_map(|delta| PluginMutation::ModifyEnergy { delta }),
+        int(-60..=60).prop_map(|delta| PluginMutation::ModifyEnergy { delta: farm_sim::units::points(delta) }),
         select(ids.quests.clone()).prop_map(|quest_id| PluginMutation::StartQuest { quest_id }),
         (select(ids.scenes.clone()), int(0..=15), int(0..=11))
             .prop_map(|(scene_id, x, y)| PluginMutation::WarpPlayer { scene_id, x, y }),
@@ -118,21 +126,21 @@ pub fn command(ids: &Ids) -> impl Strategy<Value = Command> {
         1 => Just(Command::Sleep),
         1 => select(ids.shops.clone()).prop_map(|shop_id| Command::OpenShop { shop_id }),
         1 => Just(Command::CloseShop),
-        2 => (select(ids.items.clone()), int(1..=5))
+        2 => (select(ids.items.clone()), count(1..=5))
             .prop_map(|(item_id, quantity)| Command::BuyItem { item_id, quantity }),
-        2 => (select(ids.items.clone()), int(1..=5))
+        2 => (select(ids.items.clone()), count(1..=5))
             .prop_map(|(item_id, quantity)| Command::SellItem { item_id, quantity }),
         1 => select(ids.tools.clone()).prop_map(|item_id| Command::RepairTool { item_id }),
         2 => select(ids.recipes.clone()).prop_map(|recipe_id| Command::Craft { recipe_id }),
         1 => select(ids.machines.clone()).prop_map(|machine_type_id| Command::PlaceMachine { machine_type_id }),
         1 => select(ids.recipes.clone()).prop_map(|recipe_id| Command::MachineLoad { recipe_id }),
         1 => select(ids.items.clone()).prop_map(|item_id| Command::GiveGift { item_id }),
-        1 => int(1..=4).prop_map(|floor| Command::DescendMine { floor }),
+        1 => count(1..=4).prop_map(|floor| Command::DescendMine { floor }),
         1 => Just(Command::ExitMine),
         1 => select(ids.actions.clone()).prop_map(|action_id| Command::PerformAction { action_id }),
         1 => select(ids.items.clone()).prop_map(|item_id| Command::UseItem { item_id }),
         1 => select(ids.minigames.clone()).prop_map(|minigame_id| Command::StartMinigame { minigame_id }),
-        1 => (0.0..=1.0f64).prop_map(|score| Command::ResolveMinigame { score }),
+        1 => (0..=farm_sim::units::PROBABILITY_ONE).prop_map(|score| Command::ResolveMinigame { score }),
         1 => Just(Command::CancelMinigame),
         3 => (select(vec!["plugin-a", "plugin-b"]), plugin_mutation(ids)).prop_map(|(plugin_id, mutation)| {
             Command::PluginMutation { plugin_id: plugin_id.to_owned(), mutation }
@@ -144,7 +152,7 @@ pub fn command(ids: &Ids) -> impl Strategy<Value = Command> {
 pub fn input(ids: &Ids, max_ticks: u32) -> impl Strategy<Value = ReplayInput> {
     prop_oneof![
         4 => command(ids).prop_map(|command| ReplayInput::Command { command }),
-        1 => (1..=max_ticks).prop_map(|ticks| ReplayInput::Tick { ticks: f64::from(ticks) }),
+        1 => (1..=max_ticks).prop_map(|ticks| ReplayInput::Tick { ticks: u64::from(ticks) }),
     ]
 }
 

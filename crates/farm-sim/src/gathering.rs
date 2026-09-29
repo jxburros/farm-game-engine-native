@@ -5,7 +5,6 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{GatherDrop, HookEvent, ResourceGatherHookPayload};
-use crate::js;
 use crate::rng::Rng;
 use crate::schema::{tool_types, GameState, NodeTypeDefinition, Tile, TileNode};
 use crate::{inventory, mines, quests, skills};
@@ -23,7 +22,7 @@ pub fn node_type_by_id<'a>(ctx: &'a EngineContext, type_id: &str) -> Option<&'a 
 }
 
 pub fn is_node_active(tile: &Tile) -> bool {
-    tile.node.as_ref().is_some_and(|node| node.remaining_health > 0.0)
+    tile.node.as_ref().is_some_and(|node| node.remaining_health > 0)
 }
 
 /// JS `str.replace('-', ' ')`: replaces the FIRST occurrence only.
@@ -38,11 +37,11 @@ pub fn strike_node(
     ctx: &EngineContext,
     state: &mut GameState,
     scene_id: &str,
-    x: f64,
-    y: f64,
+    x: i32,
+    y: i32,
     tool_type: &str,
-    tool_tier: f64,
-    tool_power: f64,
+    tool_tier: i32,
+    tool_power: i32,
 ) -> NodeStrikeOutcome {
     let Some(scene_index) = state.world.scenes.iter().position(|scene| scene.id == scene_id) else {
         return NodeStrikeOutcome::default();
@@ -51,7 +50,7 @@ pub fn strike_node(
     let Some(node) = tile.node.clone() else {
         return NodeStrikeOutcome::default();
     };
-    if node.remaining_health <= 0.0 {
+    if node.remaining_health <= 0 {
         return NodeStrikeOutcome::default();
     }
 
@@ -82,30 +81,34 @@ pub fn strike_node(
         };
     }
 
-    let damage = f64::max(1.0, tool_power);
-    let remaining = node.remaining_health - damage;
+    let damage = tool_power.max(1);
+    let remaining = node.remaining_health.saturating_sub(damage);
 
     let mut effects: Effects = Vec::new();
     let mut added_drops: Vec<GatherDrop> = Vec::new();
 
-    if remaining > 0.0 {
+    if remaining > 0 {
         state.world.scenes[scene_index].tiles[y as usize][x as usize].node =
             Some(TileNode { remaining_health: remaining, ..node.clone() });
         effects.push(Effect::message(
             message_levels::INFO,
-            format!("{}: {}/{}", definition.name, js::num(remaining), js::num(definition.health)),
+            format!("{}: {}/{}", definition.name, remaining, definition.health),
         ));
     } else {
         // Depleted: roll the weighted drop table once.
         let mut rng = Rng::new(state.rng.clone());
         let mut drops: Vec<GatherDrop> = Vec::new();
         if !definition.drops.is_empty() {
-            let weights: Vec<f64> = definition.drops.iter().map(|drop| drop.weight).collect();
-            let index = rng.weighted(&weights);
-            if index >= 0 {
-                let drop = &definition.drops[index as usize];
-                let quantity = if drop.max > drop.min { rng.int(drop.min, drop.max) } else { drop.min };
-                if quantity > 0.0 {
+            let weights: Vec<u32> = definition.drops.iter().map(|drop| drop.weight).collect();
+            if let Some(index) = rng.weighted(&weights) {
+                let drop = &definition.drops[index];
+                let quantity = if drop.max > drop.min {
+                    // min ≤ result ≤ max
+                    rng.int(i64::from(drop.min), i64::from(drop.max)) as u32
+                } else {
+                    drop.min
+                };
+                if quantity > 0 {
                     drops.push(GatherDrop { item_id: drop.item_id.clone(), quantity });
                 }
             }
@@ -121,7 +124,7 @@ pub fn strike_node(
             let result = inventory::add_item(&inventory, item, drop.quantity, state.player.max_inventory_size, None);
             if result.added {
                 inventory = result.inventory;
-                received.push(format!("{}x {}", js::num(drop.quantity), item.name));
+                received.push(format!("{}x {}", drop.quantity, item.name));
                 added_drops.push(drop.clone());
             } else {
                 effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
@@ -134,7 +137,7 @@ pub fn strike_node(
         if definition.respawn_after().is_some() {
             tile.node = Some(TileNode {
                 type_id: node.type_id.clone(),
-                remaining_health: 0.0,
+                remaining_health: 0,
                 depleted_on_day: Some(depleted_on_day),
                 ..TileNode::default()
             });
@@ -160,10 +163,10 @@ pub fn strike_node(
         effects.extend(quests::progress_quests(ctx, state, "collect", &drop.item_id, drop.quantity));
     }
 
-    if remaining <= 0.0 {
+    if remaining <= 0 {
         // Skill XP (M4g): axes/scythes train foraging, pickaxes train mining.
         let skill = if tool_type == tool_types::PICKAXE { "mining" } else { "foraging" };
-        effects.extend(skills::grant_xp(ctx, state, skill, 5.0));
+        effects.extend(skills::grant_xp(ctx, state, skill, 5));
 
         // Mine floors: breaking a rock can reveal the ladder down (M4f).
         effects.extend(mines::maybe_reveal_ladder(ctx, state, scene_id, x, y));
@@ -188,9 +191,9 @@ mod tests {
     fn a_node_is_active_only_while_it_has_health() {
         let mut tile = Tile::default();
         assert!(!is_node_active(&tile));
-        tile.node = Some(TileNode { type_id: "node-tree".to_owned(), remaining_health: 0.0, ..TileNode::default() });
+        tile.node = Some(TileNode { type_id: "node-tree".to_owned(), remaining_health: 0, ..TileNode::default() });
         assert!(!is_node_active(&tile));
-        tile.node = Some(TileNode { type_id: "node-tree".to_owned(), remaining_health: 1.0, ..TileNode::default() });
+        tile.node = Some(TileNode { type_id: "node-tree".to_owned(), remaining_health: 1, ..TileNode::default() });
         assert!(is_node_active(&tile));
     }
 
@@ -220,72 +223,72 @@ mod m2_systems_tests {
         Command::UseTool { tool: tool.to_owned() }
     }
 
-    fn with_tree(health: f64) -> (EngineContext, GameState) {
+    fn with_tree(health: i32) -> (EngineContext, GameState) {
         make_m2_engine(|project| {
             project.scenes[0].tiles[3][3].node =
                 Some(TileNode { type_id: "node-tree".to_owned(), remaining_health: health, ..TileNode::default() });
             let items = project.items.clone();
-            project.player.inventory.push(slot(&items, "tool-axe", 1.0));
-            project.player.inventory.push(slot(&items, "tool-pickaxe", 1.0));
+            project.player.inventory.push(slot(&items, "tool-axe", 1));
+            project.player.inventory.push(slot(&items, "tool-pickaxe", 1));
         })
     }
 
     #[test]
     fn requires_the_right_tool() {
-        let (ctx, mut state) = with_tree(4.0);
+        let (ctx, mut state) = with_tree(4);
         let effects = apply_command(&ctx, &mut state, &use_tool("pickaxe"));
         assert!(has_message(&effects, |t| t.contains("needs a axe")));
-        assert_eq!(state.world.scenes[0].tiles[3][3].node.as_ref().map(|n| n.remaining_health), Some(4.0));
+        assert_eq!(state.world.scenes[0].tiles[3][3].node.as_ref().map(|n| n.remaining_health), Some(4));
     }
 
     #[test]
     fn striking_depletes_health_and_finally_drops_materials() {
-        let (ctx, mut state) = with_tree(4.0);
+        let (ctx, mut state) = with_tree(4);
         for _ in 0..4 {
             apply_command(&ctx, &mut state, &use_tool("axe"));
         }
         assert!(state.world.scenes[0].tiles[3][3].node.is_none()); // trees don't respawn
         let wood = state.player.inventory.iter().find(|s| s.item.id == "material-wood").expect("wood dropped");
-        assert!((2.0..=4.0).contains(&wood.quantity));
+        assert!((2..=4).contains(&wood.quantity));
     }
 
     #[test]
     fn nodes_block_movement_until_cleared() {
-        let (ctx, state) = with_tree(4.0);
+        let (ctx, state) = with_tree(4);
         // player (3,4); tree node at (3,3) above.
         let mut blocked = state.clone();
         apply_command(&ctx, &mut blocked, &Command::Move { dir: "up".to_owned() });
-        assert_eq!(blocked.player.y, 4.5);
+        assert_eq!(blocked.player.y, crate::units::tile_center(4));
 
         let mut current = state;
         for _ in 0..4 {
             apply_command(&ctx, &mut current, &use_tool("axe"));
         }
         apply_command(&ctx, &mut current, &Command::Move { dir: "up".to_owned() });
-        assert_eq!(current.player.y, 3.5);
+        assert_eq!(current.player.y, crate::units::tile_center(3));
     }
 
     #[test]
     fn respawning_nodes_come_back_after_their_respawn_window() {
         let (ctx, mut state) = make_m2_engine(|project| {
             project.scenes[0].tiles[3][3].node =
-                Some(TileNode { type_id: "node-rock".to_owned(), remaining_health: 3.0, ..TileNode::default() });
+                Some(TileNode { type_id: "node-rock".to_owned(), remaining_health: 3, ..TileNode::default() });
             let items = project.items.clone();
-            project.player.inventory.push(slot(&items, "tool-pickaxe", 1.0));
+            project.player.inventory.push(slot(&items, "tool-pickaxe", 1));
         });
         for _ in 0..3 {
             apply_command(&ctx, &mut state, &use_tool("pickaxe"));
         }
         let node = state.world.scenes[0].tiles[3][3].node.as_ref().expect("depleted node stays");
-        assert_eq!(node.remaining_health, 0.0);
-        assert_eq!(node.depleted_on_day, Some(1.0));
+        assert_eq!(node.remaining_health, 0);
+        assert_eq!(node.depleted_on_day, Some(1));
 
         // Rocks respawn after 3 days.
         for _ in 0..3 {
             apply_command(&ctx, &mut state, &Command::Sleep);
         }
         let node = state.world.scenes[0].tiles[3][3].node.as_ref().expect("respawned node");
-        assert_eq!(node.remaining_health, 3.0);
+        assert_eq!(node.remaining_health, 3);
         assert_eq!(node.depleted_on_day, None);
     }
 
@@ -293,10 +296,10 @@ mod m2_systems_tests {
     fn tier_gates_high_end_nodes() {
         let (ctx, state) = make_m2_engine(|project| {
             project.scenes[0].tiles[3][3].node =
-                Some(TileNode { type_id: "node-boulder".to_owned(), remaining_health: 6.0, ..TileNode::default() });
+                Some(TileNode { type_id: "node-boulder".to_owned(), remaining_health: 6, ..TileNode::default() });
             let items = project.items.clone();
-            project.player.inventory.push(slot(&items, "tool-pickaxe", 1.0));
-            project.player.inventory.push(slot(&items, "tool-pickaxe-2", 1.0));
+            project.player.inventory.push(slot(&items, "tool-pickaxe", 1));
+            project.player.inventory.push(slot(&items, "tool-pickaxe-2", 1));
         });
         let mut weak = state.clone();
         let effects = apply_command(&ctx, &mut weak, &use_tool("pickaxe"));
@@ -307,6 +310,6 @@ mod m2_systems_tests {
         upgraded.player.inventory.retain(|s| s.item.id != "tool-pickaxe");
         apply_command(&ctx, &mut upgraded, &use_tool("pickaxe"));
         // tier-2 pickaxe has power 2 → 6 → 4
-        assert_eq!(upgraded.world.scenes[0].tiles[3][3].node.as_ref().map(|n| n.remaining_health), Some(4.0));
+        assert_eq!(upgraded.world.scenes[0].tiles[3][3].node.as_ref().map(|n| n.remaining_health), Some(4));
     }
 }

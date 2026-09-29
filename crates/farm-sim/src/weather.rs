@@ -41,9 +41,8 @@ pub fn roll_weather(ctx: &EngineContext, season: &str, rng: &mut Rng) -> String 
         let types = &ctx.content.weather.types;
         return types.first().map_or_else(|| "sun".to_owned(), |weather_type| weather_type.id.clone());
     };
-    let weights: Vec<f64> = table.iter().map(|entry| entry.weight).collect();
-    let index = rng.weighted(&weights);
-    match usize::try_from(index).ok().and_then(|i| table.get(i)) {
+    let weights: Vec<u32> = table.iter().map(|entry| entry.weight).collect();
+    match rng.weighted(&weights).and_then(|i| table.get(i)) {
         Some(entry) => entry.weather_id.clone(),
         None => first.weather_id.clone(),
     }

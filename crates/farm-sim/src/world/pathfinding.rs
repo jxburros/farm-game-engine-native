@@ -3,15 +3,14 @@
 //! Simple A* pathfinding on a scene grid (M3 NPC schedules). 4-directional, uniform cost,
 //! Manhattan heuristic. Deterministic: ties broken by insertion order.
 
-use crate::js;
 use crate::schema::{NodeTypeDefinition, Scene};
 use indexmap::{IndexMap, IndexSet};
 
 /// TS `PathPoint`.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PathPoint {
-    pub x: f64,
-    pub y: f64,
+    pub x: i32,
+    pub y: i32,
 }
 
 /// TS `Walkability`: the scene grid, node definitions by id, and extra blocked tiles keyed `"x,y"`.
@@ -22,11 +21,11 @@ pub struct Walkability<'a> {
     pub blocked: Option<&'a IndexSet<String>>,
 }
 
-const NEIGHBORS: [(f64, f64); 4] = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
+const NEIGHBORS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 
-pub fn is_walkable(w: &Walkability<'_>, x: f64, y: f64) -> bool {
+pub fn is_walkable(w: &Walkability<'_>, x: i32, y: i32) -> bool {
     let scene = w.scene;
-    if x < 0.0 || x >= scene.width || y < 0.0 || y >= scene.height {
+    if x < 0 || x >= scene.width || y < 0 || y >= scene.height {
         return false;
     }
     let tile = &scene.tiles[y as usize][x as usize];
@@ -34,7 +33,7 @@ pub fn is_walkable(w: &Walkability<'_>, x: f64, y: f64) -> bool {
         return false;
     }
     if let Some(node) = &tile.node {
-        if node.remaining_health > 0.0 {
+        if node.remaining_health > 0 {
             let definition = w.node_types.and_then(|types| types.get(&node.type_id));
             if definition.is_none_or(|def| def.blocks_movement) {
                 return false;
@@ -48,19 +47,24 @@ pub fn is_walkable(w: &Walkability<'_>, x: f64, y: f64) -> bool {
 }
 
 struct OpenNode {
-    x: f64,
-    y: f64,
-    f: f64,
-    g: f64,
+    x: i32,
+    y: i32,
+    f: i64,
+    g: i64,
 }
 
 /// TS `` `${x},${y}` ``.
-fn key(x: f64, y: f64) -> String {
-    format!("{},{}", js::num(x), js::num(y))
+fn key(x: i32, y: i32) -> String {
+    format!("{x},{y}")
 }
 
 /// Find a path from start to goal (exclusive of start, inclusive of goal). Returns `None` when
 /// unreachable. Bounded by the scene size.
+/// Manhattan distance from `from` to `(x, y)`.
+fn manhattan(from: PathPoint, x: i32, y: i32) -> i64 {
+    (i64::from(x) - i64::from(from.x)).abs() + (i64::from(y) - i64::from(from.y)).abs()
+}
+
 pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Option<Vec<PathPoint>> {
     if start.x == goal.x && start.y == goal.y {
         return Some(Vec::new());
@@ -69,21 +73,20 @@ pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Opti
         return None;
     }
 
-    let mut open =
-        vec![OpenNode { x: start.x, y: start.y, f: (goal.x - start.x).abs() + (goal.y - start.y).abs(), g: 0.0 }];
+    let mut open = vec![OpenNode { x: start.x, y: start.y, f: manhattan(start, goal.x, goal.y), g: 0 }];
     // neighbor key → (previous key, previous x, previous y)
-    let mut came_from: IndexMap<String, (String, f64, f64)> = IndexMap::new();
-    let mut g_score: IndexMap<String, f64> = IndexMap::new();
-    g_score.insert(key(start.x, start.y), 0.0);
+    let mut came_from: IndexMap<String, (String, i32, i32)> = IndexMap::new();
+    let mut g_score: IndexMap<String, i64> = IndexMap::new();
+    g_score.insert(key(start.x, start.y), 0);
     let mut closed: IndexSet<String> = IndexSet::new();
 
-    let max_iterations = w.scene.width * w.scene.height * 4.0;
+    let max_iterations = i64::from(w.scene.width) * i64::from(w.scene.height) * 4;
 
     // `for (iterations = 0; open.Count > 0 && iterations < maxIterations; iterations++)`: the
     // counter is bumped before each body so `continue` counts the iteration too.
-    let mut iterations = 0.0;
+    let mut iterations: i64 = 0;
     while !open.is_empty() && iterations < max_iterations {
-        iterations += 1.0;
+        iterations += 1;
         // Lowest f wins; stable for determinism.
         let mut best_index = 0;
         for (i, node) in open.iter().enumerate().skip(1) {
@@ -133,7 +136,7 @@ pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Opti
             if !is_walkable(w, nx, ny) {
                 continue;
             }
-            let tentative_g = current.g + 1.0;
+            let tentative_g = current.g + 1;
             if g_score.get(&neighbor_key).is_some_and(|known| *known <= tentative_g) {
                 continue;
             }
@@ -142,7 +145,7 @@ pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Opti
             open.push(OpenNode {
                 x: nx,
                 y: ny,
-                f: tentative_g + (goal.x - nx).abs() + (goal.y - ny).abs(),
+                f: tentative_g + manhattan(PathPoint { x: nx, y: ny }, goal.x, goal.y),
                 g: tentative_g,
             });
         }

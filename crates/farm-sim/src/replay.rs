@@ -13,8 +13,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ReplayInput {
-    Command { command: Command },
-    Tick { ticks: f64 },
+    Command {
+        command: Command,
+    },
+    Tick {
+        #[serde(with = "crate::units::ticks")]
+        ticks: u64,
+    },
 }
 
 /// TS `ReplayResult`: the final state hash and every effect, in order (the state itself was
@@ -42,6 +47,6 @@ pub fn command(command: Command) -> ReplayInput {
 }
 
 /// TS `ticks(count)`.
-pub fn ticks(count: f64) -> ReplayInput {
+pub fn ticks(count: u64) -> ReplayInput {
     ReplayInput::Tick { ticks: count }
 }

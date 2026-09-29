@@ -56,8 +56,8 @@ proptest! {
         let split: Vec<ReplayInput> = inputs
             .iter()
             .flat_map(|input| match input {
-                ReplayInput::Tick { ticks } if *ticks >= 2.0 => {
-                    let first = (ticks / 2.0).floor();
+                ReplayInput::Tick { ticks } if *ticks >= 2 => {
+                    let first = ticks / 2;
                     vec![replay::ticks(first), replay::ticks(ticks - first)]
                 }
                 other => vec![other.clone()],

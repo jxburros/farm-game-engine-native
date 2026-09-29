@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 /// A tile coordinate (the facing tile). May lie outside the scene.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct FacingTile {
-    pub x: f64,
-    pub y: f64,
+    pub x: i32,
+    pub y: i32,
 }
 
 /// One read of everything the overlays need. The JSON form (camelCase) is what the editor's
@@ -33,7 +33,7 @@ pub struct OverlayView<'a> {
     pub visible_dialogue_options: Vec<DialogueOption>,
     pub shop: Option<&'a ShopDefinition>,
     /// Stock left today per item id of the open shop (`None`: unlimited).
-    pub stock_remaining: BTreeMap<&'a str, Option<f64>>,
+    pub stock_remaining: BTreeMap<&'a str, Option<u32>>,
     pub facing: FacingTile,
     /// Hand and machine recipes by id.
     pub craftable: BTreeMap<&'a str, CraftableStatus>,
@@ -54,7 +54,7 @@ pub fn overlay_view<'a>(ctx: &'a EngineContext, state: &GameState) -> OverlayVie
     if let Some(shop) = shop {
         for entry in &shop.stock {
             let remaining = economy::remaining_daily_stock(state, &shop.id, &entry.item_id, entry.daily_limit);
-            stock_remaining.insert(entry.item_id.as_str(), remaining.is_finite().then_some(remaining));
+            stock_remaining.insert(entry.item_id.as_str(), remaining);
         }
     }
     let facing = world_movement::facing_target(state);
@@ -76,9 +76,9 @@ pub fn overlay_view<'a>(ctx: &'a EngineContext, state: &GameState) -> OverlayVie
 }
 
 impl OverlayView<'_> {
-    /// Units of `item_id` the open shop still sells today (infinite when unlimited or unknown).
-    pub fn remaining(&self, item_id: &str) -> f64 {
-        self.stock_remaining.get(item_id).copied().flatten().unwrap_or(f64::INFINITY)
+    /// Units of `item_id` the open shop still sells today (`None` when unlimited or unknown).
+    pub fn remaining(&self, item_id: &str) -> Option<u32> {
+        self.stock_remaining.get(item_id).copied().flatten()
     }
 
     /// Whether a recipe can be crafted now, with the reason when not (unknown recipes are not).
@@ -95,10 +95,8 @@ impl OverlayView<'_> {
     pub fn facing_tile<'s>(&self, state: &'s GameState) -> Option<&'s Tile> {
         let scene = state.world.scenes.iter().find(|scene| scene.id == state.player.scene_id)?;
         let (x, y) = (self.facing.x, self.facing.y);
-        if x < 0.0 || y < 0.0 || !x.is_finite() || !y.is_finite() {
-            return None;
-        }
-        scene.tiles.get(y as usize)?.get(x as usize)
+        let (x, y) = (usize::try_from(x).ok()?, usize::try_from(y).ok()?);
+        scene.tiles.get(y)?.get(x)
     }
 }
 
@@ -128,7 +126,7 @@ mod tests {
         assert_eq!(view.shop.map(|s| s.id.as_str()), Some(shop.id.as_str()));
         assert_eq!(view.stock_remaining.len(), shop.stock.len());
         assert_eq!(view.craftable.len(), ctx.content.recipes.len());
-        assert_eq!(view.remaining("no-such-item"), f64::INFINITY);
+        assert_eq!(view.remaining("no-such-item"), None);
         assert!(!view.status("no-such-recipe").craftable);
         assert!(!view.ingredients("no-such-recipe"));
         let target = world_movement::facing_target(&state);
