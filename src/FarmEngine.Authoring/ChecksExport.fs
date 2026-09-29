@@ -47,8 +47,8 @@ module internal ChecksExport =
             else
                 settings.Targets
                 |> List.iteri (fun i target ->
-                    if target <> "windows-x64" && target <> "linux-x64" then
-                        error "target" (sprintf "targets[%d]" i) "Export target must be windows-x64 or linux-x64.")
+                    if target <> "windows-x64" && target <> "linux-x64" && target <> "web" then
+                        error "target" (sprintf "targets[%d]" i) "Export target must be windows-x64, linux-x64 or web.")
                 if (List.distinct settings.Targets).Length <> settings.Targets.Length then
                     error "targets" "targets" "Export targets must not repeat."
             match settings.IconAssetId with

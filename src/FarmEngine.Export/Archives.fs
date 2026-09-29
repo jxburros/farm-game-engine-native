@@ -28,7 +28,8 @@ module Archives =
 
     let private sorted (files: PackageFile list) = files |> List.sortWith (fun a b -> String.CompareOrdinal(a.Path, b.Path))
 
-    let private entryName (root: string) (path: string) = root + "/" + path
+    /// `root/path`, or just `path` when there is no root folder (`zipFlat`).
+    let private entryName (root: string) (path: string) = if root = "" then path else root + "/" + path
 
     /// A ZIP archive of `files` under the folder `root`. Entries are deflated unless that
     /// makes them larger. DOS time 1980-01-01, "made by" MS-DOS, no extra fields.
@@ -150,3 +151,7 @@ module Archives =
 
     /// `tar` then `gzip`.
     let tarGz (root: string) (files: PackageFile list) : byte[] = gzip (tar root files)
+
+    /// A ZIP archive of `files` at its root (web demos: itch.io serves `index.html` from the
+    /// root of the upload).
+    let zipFlat (files: PackageFile list) : byte[] = zip "" files

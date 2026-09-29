@@ -56,6 +56,10 @@ let fakeLinuxPlayer = Text.Encoding.UTF8.GetBytes "#!/bin/sh\necho fake player\n
 let fakeTemplates (root: string) (version: string) =
     writeTemplate root ExportTarget.WindowsX64 version (File.ReadAllBytes(fixture "player-fixture.exe")) |> ignore
     writeTemplate root ExportTarget.LinuxX64 version fakeLinuxPlayer |> ignore
+    let web = writeTemplate root ExportTarget.Web version (Text.Encoding.UTF8.GetBytes "\000asm fake module")
+    File.WriteAllText(Path.Combine(web, "farm_wasm.js"), "export default async function init() {}\n")
+    File.WriteAllText(Path.Combine(web, "game.js"), "import init from './farm_wasm.js';\n")
+    File.WriteAllText(Path.Combine(web, "index.html"), "<title>{{TITLE}}</title><script type=module src=game.js></script>\n")
     root
 
 let options (templates: string) (output: string) (targets: string list) : ExportOptions =

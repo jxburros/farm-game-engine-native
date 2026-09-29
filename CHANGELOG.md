@@ -32,6 +32,13 @@
   and `farm-wasm`. `tools/wasm/build.sh` builds the package and
   `tools/wasm/smoke.mjs` checks it in Node, including every golden replay; CI
   runs both.
+- **Web demo export.** Export Game has a third target, **Web (browser demo)**:
+  a folder and a flat zip ready for an itch.io page, with `index.html`, the
+  `farm-wasm` player and the game's cartridge and icon. It runs the same title
+  screen, save slots, settings and game UI as the desktop game, keeps saves in
+  the browser's storage, and plays sounds through WebAudio. `farmc export
+  --target web` does the same, and releases ship the web template with the
+  app.
 - **Play Mode runs the exported cartridge.** A playtest now runs the cartridge
   the F# compiler makes, exactly what Export Game ships (it still starts while
   Problems lists errors). Keep changes writes the final game state back

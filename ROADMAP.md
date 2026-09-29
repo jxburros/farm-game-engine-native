@@ -76,8 +76,8 @@ and exit criteria for each phase.
 4. [x] Switch the app to F# + Rust; the C# engine projects are deleted
 5. [x] Editor port on the new stack (the list above)
 6. [x] Rust player and plugin sandbox, embedded in Play Mode; Export Game for
-   Windows and Linux. The web demo export target and a GPU renderer come
-   later.
+   Windows and Linux, and (with `farm-wasm`) the web demo. A GPU renderer
+   comes later.
 7. [ ] One engine for web and native: F# schema records and the authoring core
    under Fable (done), `farm-wasm` (done), the web editor on both (done),
    native numerics v9 (in progress)
@@ -306,12 +306,12 @@ project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
 
 Export makes real desktop games, not browser games. It copies a prebuilt
 `farm-player` for the target, renames it, and puts the compiled `game.cart`
-next to it. Windows and Linux (including Steam Deck) come first. A web demo
-build for itch.io pages is optional and comes after them, and macOS comes
-later. The web version's single-file HTML export is not ported.
+next to it. Windows and Linux (including Steam Deck) came first; a web demo
+for itch.io pages (the `farm-wasm` player in a page) is done too, and macOS
+comes later. The web version's single-file HTML export is not ported.
 
 Packaging works now: **File → Export Game…** and `farmc export` build the
-Windows and Linux folders and archives from the prebuilt templates. The games
+Windows, Linux and web folders and archives from the prebuilt templates. The games
 it makes run the graphical player, with a title screen, save slots, settings
 and gamepad support ([docs/PLAYER.md](docs/PLAYER.md)).
 [docs/EXPORT.md](docs/EXPORT.md) has the design, what is done and what is left.
@@ -322,7 +322,7 @@ and gamepad support ([docs/PLAYER.md](docs/PLAYER.md)).
   names, Play Mode toolbar and help are translated) and of the Creator Guide.
 - **Retire the web version's TypeScript engine** once playtesting on
   `farm-wasm` has proven itself, and move its HTML export to `farm-wasm`'s
-  standalone player (the web demo export target).
+  standalone player (as the native editor's web demo export does).
 - **Code signing** for the Windows installer (see `docs/RELEASING.md`).
 - **Player polish.** A GPU renderer (wgpu) for lighting, palette swaps and
   particles; gamepad rebinding in the controls menu (keys are rebindable

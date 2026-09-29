@@ -3,6 +3,7 @@ namespace FarmEngine.Export
 open System
 open System.Globalization
 open System.IO
+open System.Net
 open System.Text
 open FarmEngine.Authoring
 open FarmEngine.Schemas
@@ -149,6 +150,24 @@ module Exporter =
                   { Path = game.ExecutableName + ".desktop"; Data = Encoding.UTF8.GetBytes desktop; Executable = false } ]
                 @ common
             )
+        | ExportTarget.Web ->
+            let missing = ExportTarget.webFiles |> List.filter (fun f -> not (File.Exists(Path.Combine(template.Folder, f))))
+            if not missing.IsEmpty then
+                Error(sprintf "The %s player template has no %s." target.DisplayName (String.Join(", ", missing)))
+            else
+                let read (name: string) = File.ReadAllBytes(Path.Combine(template.Folder, name))
+                let page =
+                    File.ReadAllText(Path.Combine(template.Folder, "index.html"))
+                        .Replace("{{TITLE}}", WebUtility.HtmlEncode game.Title)
+                let icon = icons |> List.find (fun (size, _) -> size = 256) |> snd
+                Ok(
+                    [ { Path = "index.html"; Data = Encoding.UTF8.GetBytes page; Executable = false }
+                      { Path = "game.js"; Data = read "game.js"; Executable = false }
+                      { Path = "farm_wasm.js"; Data = read "farm_wasm.js"; Executable = false }
+                      { Path = target.TemplateExecutable; Data = player; Executable = false }
+                      { Path = "icon.png"; Data = icon; Executable = false } ]
+                    @ common
+                )
         |> Result.map (List.sortWith (fun a b -> String.CompareOrdinal(a.Path, b.Path)))
 
     /// Writes `files` into `folder`. A folder that already holds files export would not write
@@ -209,6 +228,8 @@ module Exporter =
                         [ "The Windows player template is signed; export changes the executable, so sign the game again." ]
                     | _ -> []
                 | ExportTarget.LinuxX64 -> []
+                | ExportTarget.Web ->
+                    [ "Browsers only run the web demo from a web server (an itch.io page, or `python3 -m http.server` in its folder), not from a file:// link." ]
             match writeFolder folder files with
             | Error e -> failedTarget target [ e ]
             | Ok() ->
@@ -219,6 +240,8 @@ module Exporter =
                             match target with
                             | ExportTarget.WindowsX64 -> Archives.zip game.ExecutableName files
                             | ExportTarget.LinuxX64 -> Archives.tarGz game.ExecutableName files
+                            // itch.io wants index.html at the root of the zip.
+                            | ExportTarget.Web -> Archives.zipFlat files
                         File.WriteAllBytes(path, bytes)
                         path, int64 bytes.Length
                     else null, 0L

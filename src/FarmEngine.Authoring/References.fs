@@ -279,7 +279,7 @@ module References =
           plain "ExportSettings" "GameId" "the stable save-folder identity of the exported game"
           optional "ExportSettings" "IconAssetId" ReferenceKind.Asset
           oneOf "ExportSettings" "PixelScale" [ "integer", "Whole-number scaling (crisp)"; "fit", "Fit the window" ]
-          plain "ExportSettings" "Targets" "export target names (windows-x64, linux-x64)" ]
+          plain "ExportSettings" "Targets" "export target names (windows-x64, linux-x64, web)" ]
 
     let private byProperty =
         let table = Dictionary<string, FieldDeclaration>()

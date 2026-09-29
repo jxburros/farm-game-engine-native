@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="icon" href="icon.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #10140f; color: #e8e2cf; font: 16px system-ui, sans-serif; }
+  #game { display: block; width: 100vw; height: 100vh; outline: none; image-rendering: pixelated; touch-action: none; }
+  #status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; }
+  #status[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="{{TITLE}}"></canvas>
+<div id="status" role="status">Loading…</div>
+<noscript>This game needs JavaScript and WebAssembly.</noscript>
+<script type="module" src="game.js"></script>
+</body>
+</html>

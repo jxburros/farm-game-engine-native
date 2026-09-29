@@ -492,12 +492,12 @@ Later items (native and web roadmaps):
 | Item | Where |
 |---|---|
 | Export Game: Windows and Linux | Copy the prebuilt `farm-player` template for the target, rename it, set its icon and version info, and put `game.cart` next to it. The cartridge is never appended to the exe: that gets in the way of code signing and makes every Steam patch re-ship the runtime. See [EXPORT.md](EXPORT.md). |
-| Export Game: web demo (optional) | The `farm-wasm` player template + `game.cart` + `index.html`, for itch.io pages. Comes after Windows and Linux. |
+| Export Game: web demo | Done: the `farm-wasm` player template + `game.cart` + `index.html`, for itch.io pages ([EXPORT.md](EXPORT.md#output-layout)). |
 | Seed selection, fertilizer choice, richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
 | Audio-file import | C# import; F# embeds in the cartridge; Rust plays with kira (seasonal music crossfades, weather ambience layers) |
 | Zip/folder content packs with binary assets | F# pack loader + compiler |
 | JSON Schema for mod autocomplete | F# generates it from the authoring types |
-| Property-based determinism, economy and migration tests | proptest (Rust), FsCheck (F#) |
+| Property-based determinism, economy and migration tests | Done: proptest (Rust), FsCheck (F#) |
 | Balancing lab (new) | F# `FarmEngine.Lab`: run thousands of seeds through `farm-ffi` in parallel; chart gold per day per crop or strategy; flag dominant crops |
 | Code signing, macOS/Linux builds | CI. wgpu, winit, kira and Avalonia all support all three. |
 
@@ -543,8 +543,8 @@ the same tests, and was then deleted.
    player and game shell are done, on the CPU rasterizer with cpal audio).
    Embed it in Play Mode (done: frames rendered by Rust and shown in an
    Avalonia control) and retire the C# play views and Jint (done). Export Game
-   for Windows and Linux (done), then the optional web demo target
-   ([EXPORT.md](EXPORT.md), [PLAYER.md](PLAYER.md)). *Exit:* the embedded and
+   for Windows and Linux (done), then the web demo target (done in phase 7,
+   with `farm-wasm`; [EXPORT.md](EXPORT.md), [PLAYER.md](PLAYER.md)). *Exit:* the embedded and
    standalone players are the same `Player`, screenshot goldens pin its
    frames, and exported sample games replay their goldens on Windows and
    Linux. The wgpu backend and the wasm player remain open.

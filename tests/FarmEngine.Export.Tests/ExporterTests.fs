@@ -218,7 +218,7 @@ let ``the C# facade summarizes, exports and remembers targets`` () =
     Assert.Equal("WillowCreek", summary.ExecutableName)
     Assert.Equal(0, summary.ErrorCount)
     Assert.Equal<string list>(both, summary.Targets)
-    Assert.Equal<string list>(both, [ for t in GameExporter.Targets -> t.Id ])
+    Assert.Equal<string list>(both @ [ "web" ], [ for t in GameExporter.Targets -> t.Id ])
     let mutable edit = Unchecked.defaultof<Edit>
     Assert.False(GameExporter.TryRememberTargets(project, both, &edit))
     Assert.True(GameExporter.TryRememberTargets(project, [ "linux-x64" ], &edit))
@@ -235,3 +235,35 @@ let ``the C# facade summarizes, exports and remembers targets`` () =
     Assert.True(report.Ok, GameExporter.Format report)
     Assert.Equal("12 B", GameExporter.FormatSize 12L)
     Assert.Equal("1.5 KB", GameExporter.FormatSize 1536L)
+
+[<Fact>]
+let ``the web demo is a page with the module, the cartridge and an icon, zipped flat`` () =
+    use dir = new TempDir()
+    let project = { willowCreek () with Name = "Willow & <Creek>" } |> withExport (fun s -> { s with Title = Some "Willow & <Creek>" })
+    let report = export project (fakeTemplates (dir.Sub "templates") "1.0.0-test") (dir.Sub "out") [ "web" ]
+    Assert.True(report.Ok, Exporter.format report)
+    let web = target report "web"
+    let files = readFolder web.Folder
+    Assert.Equal<string list>(
+        [ "farm_wasm.js"; "farm_wasm_bg.wasm"; "game.cart"; "game.js"; "icon.png"; "index.html"; "licenses/THIRD-PARTY.txt" ],
+        files |> Map.toList |> List.map fst)
+    // The page carries the game's title, escaped.
+    Assert.Contains("<title>Willow &amp; &lt;Creek&gt;</title>", Text.Encoding.UTF8.GetString files.["index.html"])
+    Assert.Equal<byte>(CartridgeCompiler.Compile project, files.["game.cart"])
+    Assert.Equal((256, 256), pngSize files.["icon.png"])
+    // Browsers need a web server for modules and wasm: the report says so.
+    Assert.Contains(web.Warnings, fun w -> w.Contains "web server")
+    // itch.io serves index.html from the root of the upload.
+    let archive = File.ReadAllBytes web.Archive
+    Assert.EndsWith(".zip", web.Archive)
+    Assert.Contains("index.html", Text.Encoding.ASCII.GetString archive)
+    Assert.DoesNotContain("WillowCreek/index.html", Text.Encoding.ASCII.GetString archive)
+
+[<Fact>]
+let ``a web template without its page files is refused`` () =
+    use dir = new TempDir()
+    let templates = fakeTemplates (dir.Sub "templates") "1.0.0-test"
+    File.Delete(Path.Combine(templates, "web", "game.js"))
+    let report = export (willowCreek ()) templates (dir.Sub "out") [ "web" ]
+    Assert.False report.Ok
+    Assert.Contains("has no game.js", String.concat " " (target report "web").Errors)
