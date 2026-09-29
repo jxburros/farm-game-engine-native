@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using FarmEngine.Authoring;
 using FarmEngine.Interop;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -115,9 +116,10 @@ public sealed class GameWorkspaceView : UserControl
         {
             try
             {
-                finalProject = play.Use(player => player.SyncedProject());
+                var state = play.Use(player => player.StateJson());
+                finalProject = Playtests.ApplyState(_snapshot!, state);
             }
-            catch (FarmFfiException ex)
+            catch (Exception ex) when (ex is FarmFfiException or FormatException)
             {
                 unreadable = true;
                 System.Diagnostics.Trace.TraceError($"Playtest state could not be read back: {ex}");
@@ -189,7 +191,11 @@ public sealed class GameWorkspaceView : UserControl
     {
         // The game's interface follows the editor's language until the player picks one.
         var options = _options.Player ?? new RustPlayerOptions();
-        return RustPlayer.Create(project, options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+        // Play Mode runs the cartridge F# compiles, like an exported game (Keep changes then
+        // writes the final state back through F#; see EndPlaytest).
+        return RustPlayer.CreateCartridge(
+            Playtests.Cartridge(project),
+            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
     }
 
     private void OnRestartRequested(object? sender, EventArgs e)

@@ -99,6 +99,42 @@ public sealed class RustSessionTests
         }
     }
 
+    /// <summary>Keep changes: F# writing the engine's state back gives the project Rust's own
+    /// <c>applyStateToProject</c> gives (Play Mode runs cartridges, so F# does it there).</summary>
+    [Theory]
+    [InlineData(ProjectTemplates.Starter)]
+    [InlineData(ProjectTemplates.Blank)]
+    [InlineData(ProjectTemplates.Cozy)]
+    [InlineData(ProjectTemplates.Quest)]
+    public void KeepChangesInFSharpMatchesTheRustWriteBack(string template)
+    {
+        if (!FarmFfi.IsAvailable)
+        {
+            return;
+        }
+
+        var project = ProjectCatalog.CreateProjectForTemplate(template, 0);
+        using var session = RustSession.Create(project, "keep");
+        string[] commands =
+        [
+            """{"type":"move","dir":"down"}""",
+            """{"type":"useTool","tool":"hoe"}""",
+            """{"type":"interact"}""",
+            """{"type":"sleep"}""",
+            """{"type":"move","dir":"right"}""",
+        ];
+        foreach (var command in commands)
+        {
+            session.Apply($"[{command}]");
+            session.Tick(30);
+            Assert.Equal(
+                RecordJson.ToStableText(session.SyncedProject()),
+                RecordJson.ToStableText(Playtests.ApplyState(project, session.StateJson())));
+        }
+
+        Assert.Throws<FormatException>(() => Playtests.ApplyState(project, "[]"));
+    }
+
     [Fact]
     public void SavesRoundTripThroughTheRustSession()
     {

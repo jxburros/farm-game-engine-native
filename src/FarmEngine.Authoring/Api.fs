@@ -152,6 +152,19 @@ type Documents =
     static member Redo(document: Document) : Document = Document.redo document
 
 /// `Problems` for C#: a read-only list with nullable-friendly members.
+/// Keep changes (see `Playtest`).
+[<AbstractClass; Sealed>]
+type Playtests =
+    /// The cartridge Play Mode runs (compiled even when Problems reports errors).
+    static member Cartridge(project: GameProject) : byte[] = CartridgeCompiler.CompileForPlaytest project
+
+    /// The project with a playtest's final state (the engine's `GameState` JSON text) written
+    /// back. Throws `FormatException` when the text is not a state the project can take.
+    static member ApplyState(project: GameProject, stateJson: string) : GameProject =
+        match Json.parse stateJson |> Result.bind (Playtest.applyState project) with
+        | Ok kept -> kept
+        | Error message -> raise (System.FormatException message)
+
 [<AbstractClass; Sealed>]
 type Problems =
     static member Collect(project: GameProject) : IReadOnlyList<Problem> = Problems.collect project |> Array.ofList :> IReadOnlyList<Problem>

@@ -108,11 +108,19 @@ type CartridgeCompiler =
             | other -> other
         walk json
 
+    /// The cartridge of a project whose Problems report no errors (Export Game, farmc); throws
+    /// `InvalidOperationException` listing the errors otherwise.
     static member Compile(project: GameProject) : byte[] =
         let problems = Problems.collect project |> Problems.errors
         if not problems.IsEmpty then
             invalidOp (problems |> List.map (fun p -> p.Path + ": " + p.Message) |> String.concat "\n")
+        CartridgeCompiler.Build project
 
+    /// The cartridge the editor's Play Mode runs: the same bytes as `Compile`, without refusing
+    /// a project that still has errors (a playtest of unfinished work is allowed, as on the web).
+    static member CompileForPlaytest(project: GameProject) : byte[] = CartridgeCompiler.Build project
+
+    static member private Build(project: GameProject) : byte[] =
         let settings = defaultArg project.Export (Defaults.newExportSettings project)
         let title = defaultArg settings.Title project.Name
         let version = defaultArg settings.Version project.Version
