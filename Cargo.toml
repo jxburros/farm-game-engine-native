@@ -15,6 +15,7 @@ members = [
     "crates/farm-ffi",
     "crates/farm-player",
     "crates/farm-plugins",
+    "crates/farm-bench",
 ]
 # The plugin guest builds only for wasm32-wasip1 (tools/plugin-guest/build.sh); its output is
 # checked in under crates/farm-plugins/guest.
