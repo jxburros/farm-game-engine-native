@@ -385,6 +385,12 @@ type ContentReadouts =
     /// Harvest value minus seed cost.
     static member CropProfit(crop: CustomCropDefinition) : float = Readouts.cropProfit (Readouts.cropOfCustom crop)
     static member CropProfit(crop: CropDefinition) : float = Readouts.cropProfit crop
+    /// "Profit per harvest: $15".
+    static member CropProfitText(crop: CustomCropDefinition) : string = Readouts.cropProfitText (Readouts.cropOfCustom crop)
+    /// The list line under a custom crop: "Custom · 5 stages" or "Replaces built-in · 4 stages".
+    static member CropNote(crop: CustomCropDefinition) : string = Readouts.cropNote crop
+    /// The list line under a built-in crop: "Built-in · 4 stages".
+    static member BuiltinCropNote(crop: CropDefinition) : string = Readouts.builtinCropNote crop
     /// The crop summary card.
     static member CropSummary(project: GameProject, crop: CustomCropDefinition) : IReadOnlyList<ReadoutLine> =
         Readouts.cropSummary project (Readouts.cropOfCustom crop) |> ContentReadouts.List
@@ -396,6 +402,11 @@ type ContentReadouts =
     static member IsBuiltinCrop(id: string) : bool = Readouts.builtinCropIds () |> List.contains id
     /// A custom crop with the built-in crop's id and values, to replace it.
     static member CustomizeCrop(crop: CropDefinition) : CustomCropDefinition = Readouts.customOfCrop crop
+    /// Deleting a custom crop that replaces a built-in: the built-in comes back with its own seed
+    /// and crop items, and what uses the id keeps it. Null when `cropId` replaces nothing (use
+    /// `Edits.RemoveCrop`).
+    static member RestoreBuiltinCrop(project: GameProject, cropId: string) : Edit | null =
+        Readouts.restoreBuiltinCrop project cropId |> Option.toObj
 
     /// Built-in and mine node types the project does not replace (read-only in the editor).
     static member BuiltinNodeTypes(project: GameProject) : IReadOnlyList<NodeTypeDefinition> = Readouts.builtinNodeTypes project |> ContentReadouts.List
@@ -403,6 +414,13 @@ type ContentReadouts =
     static member IsBuiltinNodeType(id: string) : bool = Readouts.builtinNodeTypeIds () |> List.contains id
     /// "4 hp · axe · no respawn".
     static member NodeTypeNote(node: NodeTypeDefinition) : string = Readouts.nodeTypeNote node
+    /// The list line under a node type: "Built-in · 4 hp · axe · no respawn" (`builtin` when it is
+    /// listed read-only), "Replaces built-in · …" or "Custom · …".
+    static member NodeTypeListNote(node: NodeTypeDefinition, builtin: bool) : string = Readouts.nodeTypeListNote node builtin
+    /// Deleting a project node type that replaces a built-in: placed nodes and mine bands keep
+    /// the id. Null when `nodeTypeId` replaces nothing (use `Edits.RemoveNodeType`).
+    static member RestoreBuiltinNodeType(project: GameProject, nodeTypeId: string) : Edit | null =
+        Readouts.restoreBuiltinNodeType project nodeTypeId |> Option.toObj
     /// The node type summary card.
     static member NodeTypeSummary(project: GameProject, node: NodeTypeDefinition) : IReadOnlyList<ReadoutLine> =
         Readouts.nodeTypeSummary project node |> ContentReadouts.List

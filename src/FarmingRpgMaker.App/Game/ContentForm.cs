@@ -99,6 +99,26 @@ internal sealed class ContentForm
         return [.. _errors];
     }
 
+    /// <summary>
+    /// The entry as the fields describe it right now, for readouts that follow the typing: writes
+    /// the fields into the draft (the "Edit as JSON" boxes wait for save) and returns the record,
+    /// or null while a field holds something invalid or the draft does not fit the record.
+    /// </summary>
+    public object? Preview()
+    {
+        _errors.Clear();
+        foreach (var write in _writers) write();
+        if (_errors.Count > 0) return null;
+        try
+        {
+            return RecordJson.FromNode(Draft, _entityType);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>A structural change (add, remove, move, retype): write the fields, change, rebuild.</summary>
     private void Structural(Action change)
     {
