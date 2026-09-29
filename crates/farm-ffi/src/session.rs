@@ -2,72 +2,25 @@
 //!
 //! A headless game for tools (the editor's Play Mode uses the graphical player in
 //! [`crate::player`] instead): sessions accept web-compatible project JSON or the F# FlatBuffers
-//! cartridge. Commands and effects cross as JSON arrays, and state is stable JSON. The call
-//! shape stays coarse, handle-based and batched; Rust allocates results and .NET frees them
-//! with `fe_bytes_free`.
+//! cartridge. Commands and effects cross as JSON arrays, and state is stable JSON (see
+//! `farm_host::session`, shared with farm-wasm). The call shape stays coarse, handle-based and
+//! batched; Rust allocates results and .NET frees them with `fe_bytes_free`.
 //!
 //! A session is used by one thread at a time. Panics are caught at the boundary: the session
 //! is then *poisoned* (its state may be half-updated) and every later call answers
 //! `FeResult::Poisoned`; the host drops it and reports `fe_session_last_error`.
 
-use crate::{view_json, FeBytes, FeResult};
-use farm_cart::save_file::{self, SaveTarget};
-use farm_sim::commands::Command;
-use farm_sim::engine_types::EngineContext;
-use farm_sim::hooks::HookBus;
-use farm_sim::schema::{GameProject, GameState};
-use farm_sim::{engine, game_time, hash, quests, stable_json, state};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use crate::{bytes_arg, write, write_empty, FeBytes, FeResult};
+use farm_host::{Guarded, HostSession};
 
 /// An opaque engine session: immutable content plus the live state.
 pub struct FeSession {
-    ctx: EngineContext,
-    state: GameState,
-    /// The editor project the session started from; `None` for a cartridge.
-    project: Option<GameProject>,
-    /// Which game this session's saves belong to (header of [`fe_session_save`]).
-    target: SaveTarget,
-    poisoned: bool,
-    last_error: String,
+    session: Guarded<HostSession>,
 }
 
 impl std::fmt::Debug for FeSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FeSession").field("poisoned", &self.poisoned).finish_non_exhaustive()
-    }
-}
-
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "panic".to_owned()
-    }
-}
-
-unsafe fn bytes_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
-    if ptr.is_null() {
-        if len == 0 {
-            Some(&[])
-        } else {
-            None
-        }
-    } else {
-        Some(std::slice::from_raw_parts(ptr, len))
-    }
-}
-
-unsafe fn write_bytes(out: *mut FeBytes, text: String) {
-    if !out.is_null() {
-        *out = FeBytes::from_vec(text.into_bytes());
-    }
-}
-
-unsafe fn write_empty(out: *mut FeBytes) {
-    if !out.is_null() {
-        *out = FeBytes::empty();
+        f.debug_struct("FeSession").field("poisoned", &self.session.is_poisoned()).finish_non_exhaustive()
     }
 }
 
@@ -97,43 +50,17 @@ pub unsafe extern "C" fn fe_session_new(
     let (Some(project_bytes), Some(seed_bytes)) = (bytes_arg(project_json, len), bytes_arg(seed, seed_len)) else {
         return FeResult::InvalidArgument;
     };
-    let seed_text = match std::str::from_utf8(seed_bytes) {
-        Ok(s) => s,
-        Err(_) => return FeResult::InvalidArgument,
+    let Ok(seed_text) = std::str::from_utf8(seed_bytes) else {
+        return FeResult::InvalidArgument;
     };
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<FeSession, String> {
-        let seed = if seed_text.is_empty() { None } else { Some(seed_text) };
-        let (project, content, mut game_state, target) = if farm_cart::is_cartridge(project_bytes) {
-            let cart = farm_cart::load_cartridge(project_bytes)?;
-            let target = SaveTarget::for_cartridge(&cart);
-            let game_state = state::create_game_state_from_start(&cart.start, seed);
-            (None, cart.content, game_state, target)
-        } else {
-            let project: GameProject =
-                serde_json::from_slice(project_bytes).map_err(|e| format!("project JSON: {e}"))?;
-            let content = state::create_content_from_project(&project);
-            let game_state = state::create_game_state(&project, seed);
-            let target = SaveTarget::for_project(&project, &content);
-            (Some(project), content, game_state, target)
-        };
-        let ctx = EngineContext::with_hooks(content, HookBus::new());
-        if auto_start_quests {
-            quests::auto_start_quests(&ctx, &mut game_state);
-        }
-        Ok(FeSession { ctx, state: game_state, project, target, poisoned: false, last_error: String::new() })
-    }));
-    match result {
-        Ok(Ok(session)) => {
-            *out = Box::into_raw(Box::new(session));
+    match farm_host::catch(|| HostSession::new(project_bytes, Some(seed_text), auto_start_quests)) {
+        Ok(session) => {
+            *out = Box::into_raw(Box::new(FeSession { session: Guarded::new(session) }));
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            write_bytes(error, message);
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            write_bytes(error, panic_message(payload));
-            FeResult::Panic
+        Err(e) => {
+            write(error, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
@@ -149,32 +76,22 @@ pub unsafe extern "C" fn fe_session_free(session: *mut FeSession) {
     }
 }
 
+/// Runs `body` on the session. Only successes write `out`; an error's message is kept for
+/// [`fe_session_last_error`].
 unsafe fn with_session<F>(session: *mut FeSession, out: *mut FeBytes, body: F) -> FeResult
 where
-    F: FnOnce(&mut FeSession) -> Result<String, String>,
+    F: FnOnce(&mut HostSession) -> Result<String, String>,
 {
     write_empty(out);
     if session.is_null() {
         return FeResult::InvalidArgument;
     }
-    let session = &mut *session;
-    if session.poisoned {
-        return FeResult::Poisoned;
-    }
-    match catch_unwind(AssertUnwindSafe(|| body(session))) {
-        Ok(Ok(text)) => {
-            write_bytes(out, text);
+    match (*session).session.run(body) {
+        Ok(text) => {
+            write(out, text.into_bytes());
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            session.last_error = message;
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            session.poisoned = true;
-            session.last_error = panic_message(payload);
-            FeResult::Panic
-        }
+        Err(e) => e.kind.into(),
     }
 }
 
@@ -194,14 +111,7 @@ pub unsafe extern "C" fn fe_session_apply(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_session(session, out, |s| {
-        let commands: Vec<Command> = serde_json::from_slice(bytes).map_err(|e| format!("commands JSON: {e}"))?;
-        let mut effects = Vec::new();
-        for command in &commands {
-            effects.extend(engine::apply_command(&s.ctx, &mut s.state, command));
-        }
-        Ok(stable_json::stringify(&effects))
-    })
+    with_session(session, out, |s| s.apply(bytes))
 }
 
 /// Advances `ticks` simulation ticks and returns their effects as a JSON array.
@@ -210,10 +120,7 @@ pub unsafe extern "C" fn fe_session_apply(
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_tick(session: *mut FeSession, ticks: u32, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| {
-        let effects = engine::advance_tick(&s.ctx, &mut s.state, f64::from(ticks));
-        Ok(stable_json::stringify(&effects))
-    })
+    with_session(session, out, |s| Ok(s.tick(ticks)))
 }
 
 /// The full state as stable JSON (the debug drawer, saves, and the differential tests).
@@ -222,7 +129,7 @@ pub unsafe extern "C" fn fe_session_tick(session: *mut FeSession, ticks: u32, ou
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_state_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| Ok(stable_json::stringify(&s.state)))
+    with_session(session, out, |s| Ok(s.state_json()))
 }
 
 /// The state hash (`hashState`), 16 hex characters.
@@ -231,7 +138,7 @@ pub unsafe extern "C" fn fe_session_state_json(session: *mut FeSession, out: *mu
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_hash(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| Ok(hash::hash_state(&s.state)))
+    with_session(session, out, |s| Ok(s.hash()))
 }
 
 /// The project with the live state written back (`applyStateToProject`), as stable JSON.
@@ -240,10 +147,7 @@ pub unsafe extern "C" fn fe_session_hash(session: *mut FeSession, out: *mut FeBy
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| {
-        let project = s.project.as_ref().ok_or("A cartridge session has no editor project to write back to.")?;
-        Ok(stable_json::stringify(&state::apply_state_to_project(project, &s.state)))
-    })
+    with_session(session, out, |s| s.project_json())
 }
 
 /// Creator debug action: run the same overnight pass as a sleep command without requiring
@@ -255,7 +159,7 @@ pub unsafe extern "C" fn fe_session_project_json(session: *mut FeSession, out: *
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_skip_day(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
     with_session(session, out, |s| {
-        game_time::perform_sleep(&s.ctx, &mut s.state, game_time::SleepOptions { collapsed: false });
+        s.skip_day();
         Ok(String::new())
     })
 }
@@ -268,7 +172,7 @@ pub unsafe extern "C" fn fe_session_skip_day(session: *mut FeSession, out: *mut 
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_hook_events(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
     // Engine order, not sorted: plugins see payload keys in the order the C# engine sends them.
-    with_session(session, out, |s| Ok(view_json::to_json(&s.ctx.drain_hook_events())))
+    with_session(session, out, |s| Ok(s.hook_events()))
 }
 
 /// Replaces the live state with `state_json` (a `GameState`, as the debug drawer's creator
@@ -289,10 +193,7 @@ pub unsafe extern "C" fn fe_session_set_state(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_session(session, out, |s| {
-        s.state = serde_json::from_slice(bytes).map_err(|e| format!("state JSON: {e}"))?;
-        Ok(String::new())
-    })
+    with_session(session, out, |s| s.set_state(bytes).map(|()| String::new()))
 }
 
 /// A save file for the live state: `{"header": {…}, "state": {…}}` as stable JSON (see
@@ -302,7 +203,7 @@ pub unsafe extern "C" fn fe_session_set_state(
 /// `session` from [`fe_session_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_session_save(session: *mut FeSession, out: *mut FeBytes) -> FeResult {
-    with_session(session, out, |s| Ok(save_file::write_save(&s.state, &s.target)))
+    with_session(session, out, |s| Ok(s.save()))
 }
 
 /// Loads a save file (or a bare web `GameState`) into the session, replacing its state. Old
@@ -324,22 +225,7 @@ pub unsafe extern "C" fn fe_session_load_save(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_session(session, out, |s| {
-        let text = std::str::from_utf8(bytes).map_err(|e| format!("save file is not UTF-8: {e}"))?;
-        let loaded = save_file::load_save(text, &s.target, &s.ctx.content);
-        let Some(state) = loaded.state.filter(|_| loaded.ok) else {
-            return Err(loaded.errors.join("\n"));
-        };
-        s.state = state;
-        let report = serde_json::json!({
-            "warnings": loaded.warnings,
-            "quarantined": loaded.quarantined,
-            "restored": loaded.restored,
-            "fromVersion": loaded.from_version,
-            "migrated": loaded.migrated,
-        });
-        Ok(stable_json::stringify_value(&report))
-    })
+    with_session(session, out, |s| s.load_save(bytes))
 }
 
 /// The message of the last error or panic on this session (empty when none).
@@ -352,13 +238,14 @@ pub unsafe extern "C" fn fe_session_last_error(session: *mut FeSession, out: *mu
     if session.is_null() {
         return FeResult::InvalidArgument;
     }
-    write_bytes(out, (*session).last_error.clone());
+    write(out, (*session).session.last_error().as_bytes().to_vec());
     FeResult::Ok
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use farm_sim::stable_json;
 
     fn starter_project() -> Vec<u8> {
         let path: std::path::PathBuf =

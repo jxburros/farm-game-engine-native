@@ -61,10 +61,36 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo run --release -p farm-bench -- --budget --factor 3
 
-      - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render, farm-ui, farm-player lib)
+      - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render, farm-ui, farm-player lib, farm-wasm)
         run: |
           cargo check -p farm-sim -p farm-cart -p farm-runtime -p farm-render -p farm-ui --target wasm32-unknown-unknown
           cargo check -p farm-player --lib --no-default-features --target wasm32-unknown-unknown
+          cargo check -p farm-wasm --target wasm32-unknown-unknown
+
+      # The wasm-bindgen CLI must match the wasm-bindgen crate in Cargo.lock exactly.
+      - name: wasm-bindgen version
+        if: runner.os == 'Linux'
+        id: wasm-bindgen
+        run: echo "version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; exit }' Cargo.lock)" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-bindgen-cli
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: 22
+
+      # The web version's player (crates/farm-wasm): build the `--target web` package, then run
+      # it in Node (frames, storage, plugins and every golden replay).
+      - name: WebAssembly player build and smoke test (farm-wasm)
+        if: runner.os == 'Linux'
+        run: |
+          tools/wasm/build.sh
+          node tools/wasm/smoke.mjs
 
       - name: Install cargo-about
         if: runner.os == 'Linux'

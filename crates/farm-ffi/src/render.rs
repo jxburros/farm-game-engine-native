@@ -1,4 +1,5 @@
-//! Rendering over the C ABI, on `farm-render`.
+//! Rendering over the C ABI, on `farm-render` (requests are `farm_host::render`'s, shared with
+//! farm-wasm).
 //!
 //! - [`fe_render_json`]: stateless requests. `{"type":"editorSnapshot",…}` returns the decorated
 //!   Edit Mode snapshot as JSON (what `EditModeView` builds with `BuildEditorSnapshot` +
@@ -12,183 +13,16 @@
 //! UTF-8 error message instead of a result. A preview is used by one thread at a time; after a
 //! panic it is poisoned and answers `FeResult::Poisoned`.
 
-use crate::{view_json, FeBytes, FeResult};
-use farm_render::{apply_graphics, editor_snapshot, GraphicsSource, SnapshotCamera, WorldRenderer, WorldSnapshot};
-use farm_sim::schema::{GameContent, GameProject};
-use serde::Deserialize;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use crate::{bytes_arg, write, write_empty, FeBytes, FeResult};
+use farm_host::{Guarded, HostPreview, Rgba};
 
-/// Largest image a request may produce, in pixels.
-const MAX_PIXELS: u64 = 64 * 1024 * 1024;
-/// Largest accepted scale factor.
-const MAX_SCALE: f64 = 16.0;
-
-fn default_tile_size() -> f64 {
-    28.0
-}
-
-fn default_padding() -> f64 {
-    12.0
-}
-
-fn default_scale() -> f64 {
-    1.0
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum RenderRequest {
-    EditorSnapshot {
-        project: Box<GameProject>,
-        scene_id: String,
-        #[serde(default = "default_tile_size")]
-        tile_size: f64,
-        #[serde(default = "default_padding")]
-        padding: f64,
-    },
-    Rasterize {
-        snapshot: Box<WorldSnapshot>,
-        #[serde(default = "default_scale")]
-        scale: f64,
-    },
-}
-
-/// `{sceneId, tileSize, padding, camera?, scale}` for [`fe_preview_render`].
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PreviewRequest {
-    scene_id: String,
-    #[serde(default = "default_tile_size")]
-    tile_size: f64,
-    #[serde(default = "default_padding")]
-    padding: f64,
-    #[serde(default)]
-    camera: Option<SnapshotCamera>,
-    #[serde(default = "default_scale")]
-    scale: f64,
-}
-
-/// `{visual?, tick, direction, moving, size, scale}` for [`fe_preview_render_visual`].
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct VisualRequest {
-    #[serde(default)]
-    visual: Option<farm_sim::schema::VisualRef>,
-    #[serde(default)]
-    tick: f64,
-    #[serde(default = "default_direction")]
-    direction: String,
-    #[serde(default = "default_moving")]
-    moving: bool,
-    /// The square the frame is fitted into, in logical pixels.
-    size: f64,
-    #[serde(default = "default_scale")]
-    scale: f64,
-}
-
-fn default_direction() -> String {
-    "down".to_owned()
-}
-
-fn default_moving() -> bool {
-    true
-}
-
-/// Largest side of a visual preview.
-const MAX_VISUAL_SIZE: f64 = 1024.0;
-
-/// The Edit Mode snapshot of a scene decorated with the project's art, as `EditModeView` does:
-/// `BuildEditorSnapshot` then `ApplyGraphics(snapshot, FromProject(project), scene, 0, false)`.
-fn decorated_editor_snapshot(
-    project: &GameProject,
-    content: &GameContent,
-    graphics: &GraphicsSource,
-    scene_id: &str,
-    tile_size: f64,
-    padding: f64,
-) -> Result<WorldSnapshot, String> {
-    let scene = project
-        .scenes
-        .iter()
-        .find(|scene| scene.id == scene_id)
-        .ok_or_else(|| format!("Scene {scene_id} not found."))?;
-    let mut snapshot = editor_snapshot(project, content, scene, tile_size, padding);
-    apply_graphics(&mut snapshot, graphics, scene, 0.0, false);
-    Ok(snapshot)
-}
-
-fn check_scale(scale: f64) -> Result<f32, String> {
-    if scale.is_finite() && scale > 0.0 && scale <= MAX_SCALE {
-        Ok(scale as f32)
-    } else {
-        Err(format!("Scale must be in (0, {MAX_SCALE}], got {scale}."))
-    }
-}
-
-/// Device size of a snapshot's viewport at `scale`, refusing oversized requests.
-fn pixel_size(snapshot: &WorldSnapshot, scale: f32) -> Result<(u32, u32), String> {
-    let (width, height) = snapshot.pixel_size(f64::from(scale));
-    if u64::from(width) * u64::from(height) > MAX_PIXELS {
-        return Err(format!("The requested image is too large ({width}×{height})."));
-    }
-    Ok((width, height))
-}
-
-fn render(
-    renderer: &mut WorldRenderer,
-    snapshot: &WorldSnapshot,
-    scale: f64,
-) -> Result<farm_render::tiny_skia::Pixmap, String> {
-    let scale = check_scale(scale)?;
-    let (width, height) = pixel_size(snapshot, scale)?;
-    let list = renderer.draw_list(snapshot);
-    Ok(renderer.rasterizer.render_to_pixmap(&list, &renderer.images, width, height, scale))
-}
-
-fn handle_render_request(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let request: RenderRequest = serde_json::from_slice(bytes).map_err(|e| format!("render request: {e}"))?;
-    match request {
-        RenderRequest::EditorSnapshot { project, scene_id, tile_size, padding } => {
-            let content = farm_sim::create_content_from_project(&project);
-            let graphics = GraphicsSource::from_project(&project);
-            let snapshot = decorated_editor_snapshot(&project, &content, &graphics, &scene_id, tile_size, padding)?;
-            Ok(view_json::to_json(&snapshot).into_bytes())
-        }
-        RenderRequest::Rasterize { snapshot, scale } => {
-            let pixmap = render(&mut WorldRenderer::new(), &snapshot, scale)?;
-            Ok(farm_render::encode_png(&pixmap))
-        }
-    }
-}
-
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "panic".to_owned()
-    }
-}
-
-unsafe fn bytes_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
-    if ptr.is_null() {
-        (len == 0).then_some(&[])
-    } else {
-        Some(std::slice::from_raw_parts(ptr, len))
-    }
-}
-
-unsafe fn write(out: *mut FeBytes, bytes: Vec<u8>) {
-    if !out.is_null() {
-        *out = FeBytes::from_vec(bytes);
-    }
-}
-
-unsafe fn write_empty(out: *mut FeBytes) {
-    if !out.is_null() {
-        *out = FeBytes::empty();
-    }
+/// Width and height as little-endian `u32`s, then the pixels.
+fn sized(image: Rgba) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + image.data.len());
+    out.extend_from_slice(&image.width.to_le_bytes());
+    out.extend_from_slice(&image.height.to_le_bytes());
+    out.extend_from_slice(&image.data);
+    out
 }
 
 /// Runs a stateless request. `request` is UTF-8 JSON, tagged by `type`:
@@ -208,123 +42,27 @@ pub unsafe extern "C" fn fe_render_json(request: *const u8, len: usize, out: *mu
     if out.is_null() {
         return FeResult::InvalidArgument;
     }
-    match catch_unwind(AssertUnwindSafe(|| handle_render_request(bytes))) {
-        Ok(Ok(result)) => {
-            write(out, result);
+    match farm_host::catch(|| farm_host::render::render_json(bytes)) {
+        Ok(result) => {
+            write(out, result.into_bytes());
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            write(out, message.into_bytes());
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            write(out, panic_message(payload).into_bytes());
-            FeResult::Panic
+        Err(e) => {
+            write(out, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
 
 /// An Edit Mode map preview: the project, its compiled content and art, and render caches.
 pub struct FePreview {
-    project: GameProject,
-    content: GameContent,
-    graphics: GraphicsSource,
-    renderer: WorldRenderer,
-    poisoned: bool,
+    preview: Guarded<HostPreview>,
 }
 
 impl std::fmt::Debug for FePreview {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FePreview").field("poisoned", &self.poisoned).finish_non_exhaustive()
+        f.debug_struct("FePreview").field("poisoned", &self.preview.is_poisoned()).finish_non_exhaustive()
     }
-}
-
-impl FePreview {
-    fn set_project(&mut self, project: GameProject) {
-        self.content = farm_sim::create_content_from_project(&project);
-        self.graphics = GraphicsSource::from_project(&project);
-        self.project = project;
-    }
-
-    fn render(&mut self, request: &PreviewRequest) -> Result<Vec<u8>, String> {
-        let mut snapshot = decorated_editor_snapshot(
-            &self.project,
-            &self.content,
-            &self.graphics,
-            &request.scene_id,
-            request.tile_size,
-            request.padding,
-        )?;
-        // Only the camera viewport is culled, translated and rasterized.
-        snapshot.camera = request.camera;
-        let pixmap = render(&mut self.renderer, &snapshot, request.scale)?;
-        let mut out = Vec::with_capacity(8 + pixmap.data().len());
-        out.extend_from_slice(&pixmap.width().to_le_bytes());
-        out.extend_from_slice(&pixmap.height().to_le_bytes());
-        out.extend_from_slice(pixmap.data());
-        Ok(out)
-    }
-}
-
-impl FePreview {
-    /// One frame of a visual binding, resolved exactly as the game resolves it (clip, frame at
-    /// `tick`, direction), scaled to fit `size` and centered. An empty frame (0×0) when the
-    /// binding resolves to nothing.
-    fn render_visual(&mut self, request: &VisualRequest) -> Result<Vec<u8>, String> {
-        let scale = check_scale(request.scale)?;
-        if !request.size.is_finite() || request.size < 1.0 || request.size > MAX_VISUAL_SIZE {
-            return Err(format!("Visual size must be in [1, {MAX_VISUAL_SIZE}], got {}.", request.size));
-        }
-        let tick = if request.tick.is_finite() { request.tick } else { 0.0 };
-        let sprite = farm_render::resolve_visual(
-            &self.graphics.assets,
-            request.visual.as_ref(),
-            tick,
-            &request.direction,
-            request.moving,
-        );
-        let frame = sprite.and_then(|sprite| {
-            let image = self.renderer.images.get_shared(&sprite.image_url)?;
-            let (image_width, image_height) = self.renderer.images.size(image)?;
-            let (image_width, image_height) = (f64::from(image_width), f64::from(image_height));
-            let width = if sprite.frame_width > 0.0 { sprite.frame_width } else { image_width };
-            let height = if sprite.frame_height > 0.0 { sprite.frame_height } else { image_height };
-            let x = sprite.source_x.unwrap_or(sprite.frame * width);
-            let y = sprite.source_y.unwrap_or(sprite.row * height);
-            let inside = x >= 0.0 && y >= 0.0 && x + width <= image_width && y + height <= image_height;
-            (inside && width > 0.0 && height > 0.0).then_some((image, x, y, width, height))
-        });
-        let Some((image, x, y, width, height)) = frame else {
-            return Ok(vec![0; 8]);
-        };
-        let side = request.size;
-        let fit = (side / width).min(side / height);
-        let (w, h) = (width * fit, height * fit);
-        let mut list = farm_render::DrawList::new();
-        list.push(farm_render::DrawCmd::Image {
-            image,
-            src: farm_render::Rect::new(x as f32, y as f32, width as f32, height as f32),
-            dst: farm_render::Rect::new(((side - w) / 2.0) as f32, ((side - h) / 2.0) as f32, w as f32, h as f32),
-            opacity: 1.0,
-            sampling: if self.graphics.pixel_art {
-                farm_render::Sampling::Nearest
-            } else {
-                farm_render::Sampling::Smooth
-            },
-            tint: None,
-        });
-        let pixels = (side * f64::from(scale)).ceil() as u32;
-        let pixmap = self.renderer.rasterizer.render_to_pixmap(&list, &self.renderer.images, pixels, pixels, scale);
-        let mut out = Vec::with_capacity(8 + pixmap.data().len());
-        out.extend_from_slice(&pixmap.width().to_le_bytes());
-        out.extend_from_slice(&pixmap.height().to_le_bytes());
-        out.extend_from_slice(pixmap.data());
-        Ok(out)
-    }
-}
-
-fn parse_project(bytes: &[u8]) -> Result<GameProject, String> {
-    serde_json::from_slice(bytes).map_err(|e| format!("project JSON: {e}"))
 }
 
 /// Creates a preview for a (migrated) project. On failure `error` holds the message.
@@ -345,59 +83,36 @@ pub unsafe extern "C" fn fe_preview_new(
     }
     *out = std::ptr::null_mut();
     let Some(bytes) = bytes_arg(project_json, len) else { return FeResult::InvalidArgument };
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<FePreview, String> {
-        let project = parse_project(bytes)?;
-        let mut preview = FePreview {
-            project: GameProject::default(),
-            content: GameContent::default(),
-            graphics: GraphicsSource::from_project(&GameProject::default()),
-            renderer: WorldRenderer::new(),
-            poisoned: false,
-        };
-        preview.set_project(project);
-        Ok(preview)
-    }));
-    match result {
-        Ok(Ok(preview)) => {
-            *out = Box::into_raw(Box::new(preview));
+    match farm_host::catch(|| HostPreview::new(bytes)) {
+        Ok(preview) => {
+            *out = Box::into_raw(Box::new(FePreview { preview: Guarded::new(preview) }));
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            write(error, message.into_bytes());
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            write(error, panic_message(payload).into_bytes());
-            FeResult::Panic
+        Err(e) => {
+            write(error, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
 
+/// Runs `body` on the preview. A poisoned preview answers `Poisoned` with an empty `out`.
 unsafe fn with_preview<F>(preview: *mut FePreview, out: *mut FeBytes, body: F) -> FeResult
 where
-    F: FnOnce(&mut FePreview) -> Result<Vec<u8>, String>,
+    F: FnOnce(&mut HostPreview) -> Result<Vec<u8>, String>,
 {
     write_empty(out);
     if preview.is_null() {
         return FeResult::InvalidArgument;
     }
-    let preview = &mut *preview;
-    if preview.poisoned {
-        return FeResult::Poisoned;
-    }
-    match catch_unwind(AssertUnwindSafe(|| body(preview))) {
-        Ok(Ok(bytes)) => {
+    match (*preview).preview.run(body) {
+        Ok(bytes) => {
             write(out, bytes);
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            write(out, message.into_bytes());
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            preview.poisoned = true;
-            write(out, panic_message(payload).into_bytes());
-            FeResult::Panic
+        Err(e) if e.kind == farm_host::ErrorKind::Poisoned => FeResult::Poisoned,
+        Err(e) => {
+            write(out, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
@@ -418,10 +133,7 @@ pub unsafe extern "C" fn fe_preview_set_project(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_preview(preview, out, |preview| {
-        preview.set_project(parse_project(bytes)?);
-        Ok(Vec::new())
-    })
+    with_preview(preview, out, |preview| preview.set_project(bytes).map(|()| Vec::new()))
 }
 
 /// Renders a scene: `request` is `{"sceneId":"…","tileSize":28,"padding":12,"camera":{"x":…,
@@ -442,10 +154,7 @@ pub unsafe extern "C" fn fe_preview_render(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_preview(preview, out, |preview| {
-        let request: PreviewRequest = serde_json::from_slice(bytes).map_err(|e| format!("preview request: {e}"))?;
-        preview.render(&request)
-    })
+    with_preview(preview, out, |preview| preview.render(bytes).map(sized))
 }
 
 /// Renders one frame of a visual binding of the previewed project (the art studio's preview):
@@ -466,10 +175,7 @@ pub unsafe extern "C" fn fe_preview_render_visual(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_preview(preview, out, |preview| {
-        let request: VisualRequest = serde_json::from_slice(bytes).map_err(|e| format!("visual request: {e}"))?;
-        preview.render_visual(&request)
-    })
+    with_preview(preview, out, |preview| preview.render_visual(bytes).map(sized))
 }
 
 /// Frees a preview. Null is a no-op.
@@ -486,6 +192,7 @@ pub unsafe extern "C" fn fe_preview_free(preview: *mut FePreview) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use farm_render::WorldSnapshot;
 
     fn starter_project() -> String {
         let path: std::path::PathBuf =

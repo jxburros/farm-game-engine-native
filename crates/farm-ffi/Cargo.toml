@@ -14,13 +14,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 farm-sim = { path = "../farm-sim" }
-farm-cart = { path = "../farm-cart" }
-farm-runtime = { path = "../farm-runtime" }
-farm-render = { path = "../farm-render" }
+# The JSON protocol (shared with farm-wasm); this crate is the C ABI around it.
+farm-host = { path = "../farm-host" }
 # The embeddable player without the desktop window/audio/gamepad layer.
 farm-player = { path = "../farm-player", default-features = false, features = ["audio-out"] }
-farm-ui = { path = "../farm-ui" }
-serde.workspace = true
+
+[dev-dependencies]
+farm-cart = { path = "../farm-cart" }
+farm-render = { path = "../farm-render" }
 serde_json.workspace = true
 
 [lints.rust]

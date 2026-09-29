@@ -725,6 +725,18 @@ name = "farm-ffi"
 version = "0.2.0"
 dependencies = [
  "farm-cart",
+ "farm-host",
+ "farm-player",
+ "farm-render",
+ "farm-sim",
+ "serde_json",
+]
+
+[[package]]
+name = "farm-host"
+version = "0.2.0"
+dependencies = [
+ "farm-cart",
  "farm-player",
  "farm-render",
  "farm-runtime",
@@ -809,6 +821,21 @@ dependencies = [
  "farm-sim",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "farm-wasm"
+version = "0.2.0"
+dependencies = [
+ "base64",
+ "farm-host",
+ "farm-player",
+ "farm-runtime",
+ "farm-sim",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
