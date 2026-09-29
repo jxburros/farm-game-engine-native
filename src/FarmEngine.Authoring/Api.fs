@@ -398,6 +398,19 @@ type ArtLibrary =
     /// Every unused asset removed as one undo step.
     static member RemoveUnused(project: GameProject) : Edit = ArtLibrary.removeUnused project
 
+/// The project list's Rename and Duplicate (web ProjectManager.tsx, projects.ts).
+[<AbstractClass; Sealed>]
+type ProjectList =
+    /// The name a duplicate gets ("Name (copy)").
+    static member CopyName(name: string) : string = Defaults.copyName name
+    /// A copy under `newId` (from `ProjectCatalog.NewProjectId`) named `name` (the copy name when blank).
+    static member Duplicate(project: GameProject, newId: string, name: string | null) : GameProject =
+        Defaults.duplicateProject project newId (match name with null -> "" | value -> value)
+    /// The project renamed (trimmed); the same instance for a blank or unchanged name.
+    static member Rename(project: GameProject, name: string) : GameProject =
+        if System.String.IsNullOrWhiteSpace name then project
+        else Document.run project (SetProjectInfo(name, project.Version))
+
 /// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
 [<AbstractClass; Sealed>]
 type SettingsForm =

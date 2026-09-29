@@ -47,6 +47,18 @@ module Defaults =
             GameId = "local." + slugId project.Id Seq.empty "game"
             ExecutableName = Some(slugId project.Name Seq.empty "game") }
 
+    /// ProjectManager "Duplicate": the name the copy gets.
+    let copyName (name: string) : string =
+        let name = if String.IsNullOrWhiteSpace name then "Untitled Game" else name.Trim()
+        sprintf "%s (copy)" name
+
+    /// ProjectManager `duplicateProject`: the same project under a new id and name. A copy is a
+    /// separate game, so export settings get a game id of their own (a shared one would share
+    /// save folders); the rest of the export identity is kept.
+    let duplicateProject (project: GameProject) (newId: string) (name: string) : GameProject =
+        let export = project.Export |> Option.map (fun settings -> { settings with GameId = "local." + slugId newId Seq.empty "game" })
+        { project with Id = newId; Name = (if String.IsNullOrWhiteSpace name then copyName project.Name else name.Trim()); Export = export }
+
     /// Every id in the project, so a new id collides with nothing (web `creator-patterns.ts` `ids`).
     let allIds (project: GameProject) : seq<string> = Proj.allIds project :> seq<string>
 

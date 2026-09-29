@@ -50,6 +50,16 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         ArgumentNullException.ThrowIfNull(shell);
         _workspace.FlushPendingSave();
         var id = await _dialogs.ChooseProjectAsync(shell, _workspace.Store, _workspace.Current?.Id).ConfigureAwait(true);
+        // The list may have renamed the open project on disk; the open document takes that name.
+        if (_workspace.Current is { } open && !string.IsNullOrWhiteSpace(open.Name) && _workspace.StoredName(open.Id) is { } stored && stored != open.Name)
+        {
+            LeavePlayMode(shell);
+            if (_workspace.AdoptStoredName())
+            {
+                shell.ShowStatus($"Renamed the project to \"{_workspace.Current!.Name}\".");
+            }
+        }
+
         if (id is null)
         {
             return;

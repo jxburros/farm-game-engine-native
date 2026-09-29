@@ -123,6 +123,55 @@ public sealed class ProjectStore
         }
     }
 
+    /// <summary>
+    /// Project list "Rename" (web <c>renameProject</c>): rewrites the stored project with the new
+    /// name. Blank names are refused. Never throws.
+    /// </summary>
+    public ProjectLoadResult Rename(string id, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return ProjectLoadResult.Fail("A project needs a name.");
+        }
+
+        var loaded = Load(id);
+        if (!loaded.Ok)
+        {
+            return loaded;
+        }
+
+        var renamed = ProjectList.Rename(loaded.Project!, name);
+        return TrySave(renamed);
+    }
+
+    /// <summary>
+    /// Project list "Duplicate" (web <c>duplicateProject</c>): a copy under a fresh id, named
+    /// "Name (copy)" unless <paramref name="name"/> is given. Never throws.
+    /// </summary>
+    public ProjectLoadResult Duplicate(string id, string? name = null)
+    {
+        var loaded = Load(id);
+        if (!loaded.Ok)
+        {
+            return loaded;
+        }
+
+        return TrySave(ProjectList.Duplicate(loaded.Project!, NewId(), name));
+    }
+
+    private ProjectLoadResult TrySave(GameProject project)
+    {
+        try
+        {
+            Save(project);
+            return new ProjectLoadResult(project, []);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ProjectLoadResult.Fail($"Could not write the project file: {ex.Message}");
+        }
+    }
+
     /// <summary>A fresh unique project id (web <c>proj-&lt;base36 time&gt;</c>).</summary>
     public string NewId()
     {
