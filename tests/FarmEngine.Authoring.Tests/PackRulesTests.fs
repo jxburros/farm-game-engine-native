@@ -95,3 +95,86 @@ let ``localization respects load order disabled packs missing locales and empty 
     let disabled = [{ PackInstallation.Default with Pack = first }; { PackInstallation.Default with Pack = second; Enabled = false }]
     let translated = PackMerge.applyLocaleStrings content disabled "fr"
     Assert.Equal("Pomme", (translated.Items |> Seq.find (fun i -> i.Id = "orchard:fruit")).Name)
+
+// ── Mods view: registry and "Export selection as pack" ─────────────────────
+
+[<Fact>]
+let ``the registry ships the demo mod and the starter template, validated`` () =
+    let entries = ModRegistry.entries ()
+    Assert.Equal<string list>([ "demo-glow-farm"; "my-first-mod" ], entries |> List.map (fun e -> e.Id))
+    let demo = entries.Head
+    Assert.Equal("Glow Farm Demo Mod", demo.Name)
+    Assert.Equal("farm-game-engine", demo.Author)
+    Assert.NotEmpty demo.Pack.Plugins
+    Assert.Equal("you", entries.[1].Author)
+    // The embedded packs are the fixture files, value for value.
+    for text, file in [ ModRegistry.demoModJson, "demo-mod.json"; ModRegistry.templateModJson, "my-first-mod.json" ] do
+        match Json.parse text with
+        | Ok parsed -> Assert.Equal(Json.stableStringify (readJson [ "Fixtures"; file ]), Json.stableStringify parsed)
+        | Error message -> failwith message
+    Assert.True((ModRegistry.entry "{ not json").IsNone)
+    Assert.True((ModRegistry.entry """{ "manifest": { "id": "Bad Id", "name": "x", "version": "1" } }""").IsNone)
+    let project = starter ()
+    Assert.False(ModRegistry.isInstalled project "demo-glow-farm")
+    let installed = project |> apply (InstallPack demo.Pack)
+    Assert.True(ModRegistry.isInstalled installed "demo-glow-farm")
+    let problems = errors installed
+    Assert.True(problems.IsEmpty, describe problems)
+
+[<Fact>]
+let ``export builds a valid pack from the chosen entries`` () =
+    let project = starter ()
+    let categories = PackExport.categories project
+    Assert.Equal<string list>(
+        [ "crops"; "items"; "recipes"; "machineTypes"; "nodeTypes"; "animalSpecies"; "fishTables"; "weatherTypes"
+          "npcs"; "dialogues"; "scenes"; "events"; "quests"; "shops"; "actions"; "minigames" ],
+        categories |> List.map (fun c -> c.Key))
+    let items = categories |> List.find (fun c -> c.Key = "items")
+    Assert.Equal(project.Items.Length, items.Entries.Length)
+    let wood = project.Items |> List.find (fun i -> i.Id = "material-wood")
+    let chosen = [ project.Items.[2].Id; "material-wood"; "no-such-item" ]
+    let recipeIds = project.Recipes |> List.map (fun r -> r.Id)
+    match PackExport.build project "  My Cool Pack! " [ "items", chosen; "recipes", recipeIds; "unknown", [ "x" ]; "npcs", [] ] with
+    | Error errors -> failwithf "%A" errors
+    | Ok pack ->
+        Assert.Equal("my-cool-pack", pack.Manifest.Id)
+        Assert.Equal("My Cool Pack!", pack.Manifest.Name)
+        Assert.Equal("1.0.0", pack.Manifest.Version)
+        Assert.Equal(">=" + PackRules.EngineVersion, pack.Manifest.EngineCompatibility)
+        Assert.Equal(Some(sprintf "Exported from %s" project.Name), pack.Manifest.Description)
+        Assert.Empty pack.Plugins
+        Assert.Empty pack.Manifest.Permissions.Hooks
+        // Project order, not selection order; unknown ids and empty types are skipped.
+        let expected = project.Items |> List.filter (fun i -> List.contains i.Id chosen) |> List.map (fun i -> i.Id)
+        Assert.Equal<string list>(expected, pack.Content.Items |> List.map (fun i -> i.Id))
+        Assert.Equal(wood, pack.Content.Items |> List.find (fun i -> i.Id = "material-wood"))
+        Assert.Equal<string list>(recipeIds, pack.Content.Recipes |> List.map (fun r -> r.Id))
+        Assert.Empty pack.Content.Npcs
+        Assert.Equal("my-cool-pack.json", PackExport.fileName pack)
+        // The file reads back as the same pack.
+        match Json.parse (PackExport.toText pack) with
+        | Ok raw ->
+            match PackRules.validateContentPack raw with
+            | Ok back -> Assert.Equal(pack, back)
+            | Error errors -> failwithf "%A" errors
+        | Error message -> failwith message
+    Assert.Equal("my-pack", PackExport.packId "!!!")
+    Assert.True(Result.isError (PackExport.build project "x" []))
+    Assert.True(Result.isError (PackExport.build project "x" [ "items", [] ]))
+
+[<Fact>]
+let ``export leaves generated mine floors out and carries crops and actions`` () =
+    let project = starter ()
+    let floor = { (project.Scenes.Head) with Id = "mine-1"; Name = "Mine Floor 1"; Extra = [ "generated", JBool true ] }
+    let crop = Defaults.newCrop project
+    let project = project |> apply (Batch("setup", [ AddScene floor; UpsertCrop crop; UpsertAction(Defaults.newAction project) ]))
+    let scenes = PackExport.categories project |> List.find (fun c -> c.Key = "scenes")
+    Assert.DoesNotContain("mine-1", scenes.Entries |> List.map (fun e -> e.Id))
+    let all key = key, (PackExport.categories project |> List.find (fun c -> c.Key = key)).Entries |> List.map (fun e -> e.Id)
+    match PackExport.build project "farm" [ all "scenes"; all "crops"; all "actions"; "scenes", [ "mine-1" ] ] with
+    | Error errors -> failwithf "%A" errors
+    | Ok pack ->
+        Assert.DoesNotContain("mine-1", pack.Content.Scenes |> List.map (fun s -> s.Id))
+        Assert.Equal<string list>(project.CustomCrops.Value |> List.map (fun c -> c.Id), pack.Content.Crops |> List.map (fun c -> c.Id))
+        Assert.Contains(crop.Id, pack.Content.Crops |> List.map (fun c -> c.Id))
+        Assert.Equal(project.Actions.Length, pack.Content.Actions.Length)

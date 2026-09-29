@@ -411,6 +411,37 @@ type ProjectList =
         if System.String.IsNullOrWhiteSpace name then project
         else Document.run project (SetProjectInfo(name, project.Version))
 
+/// What `Mods.ExportPack` hands to C#: the validated pack and its file, or why there is none.
+[<Sealed>]
+type PackExportResult internal (pack: ContentPack option, errors: string list) =
+    member _.Ok = pack.IsSome
+    member _.Pack: ContentPack | null = Option.toObj pack
+    member _.Errors: IReadOnlyList<string> = errors |> Array.ofList :> IReadOnlyList<string>
+    /// The pack as indented JSON (empty when there is no pack).
+    member _.Text: string = match pack with Some p -> PackExport.toText p | None -> ""
+    /// The suggested file name (`{id}.json`).
+    member _.FileName: string = match pack with Some p -> PackExport.fileName p | None -> ""
+
+/// The Mods view's registry and "Export selection as pack" (`ModRegistry`, `PackExport`).
+[<AbstractClass; Sealed>]
+type Mods =
+    /// The curated packs that ship with the editor, validated.
+    static member Registry: IReadOnlyList<RegistryEntry> = ModRegistry.entries () |> Array.ofList :> IReadOnlyList<RegistryEntry>
+    static member IsInstalled(project: GameProject, packId: string) : bool = ModRegistry.isInstalled project packId
+    /// The exportable content types with their entries, in pack order.
+    static member ExportCategories(project: GameProject) : IReadOnlyList<PackExportCategory> =
+        PackExport.categories project |> Array.ofList :> IReadOnlyList<PackExportCategory>
+    /// The types ticked at first (web: items and recipes).
+    static member DefaultExportKeys: IReadOnlyList<string> = PackExport.defaultKeys |> Array.ofList :> IReadOnlyList<string>
+    /// The pack id a name becomes.
+    static member PackId(name: string) : string = PackExport.packId name
+    /// A validated pack of the chosen entries: content key → ids.
+    static member ExportPack(project: GameProject, name: string, selection: IReadOnlyDictionary<string, IReadOnlyList<string>>) : PackExportResult =
+        let pairs = [ for pair in selection -> pair.Key, List.ofSeq pair.Value ]
+        match PackExport.build project name pairs with
+        | Ok pack -> PackExportResult(Some pack, [])
+        | Error errors -> PackExportResult(None, errors)
+
 /// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
 [<AbstractClass; Sealed>]
 type SettingsForm =

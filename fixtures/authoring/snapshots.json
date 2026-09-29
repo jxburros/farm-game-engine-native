@@ -1181,6 +1181,23 @@
     "gameErrors": [],
     "game": "7add952665f6b127"
   },
+  "fixtures/my-first-mod.json": {
+    "ok": true,
+    "fromVersion": 1,
+    "migrated": true,
+    "errors": [],
+    "json": "9654315520e1c0cc",
+    "stable": "6fd8d23d57cb2dca",
+    "problems": [
+      "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+    ],
+    "content": "9b3f6ebdc23a003d",
+    "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "f89ffd5b66320f2f"
+  },
   "fixtures/packs-project.json": {
     "ok": true,
     "fromVersion": 8,
