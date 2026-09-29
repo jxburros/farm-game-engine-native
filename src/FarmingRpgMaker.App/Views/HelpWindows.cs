@@ -220,6 +220,9 @@ public sealed class ShortcutsWindow : HelpWindowBase
         ("F6", "shortcuts.editMode"),
         ("Ctrl+Z", "shortcuts.undo"),
         ("Ctrl+Y / Ctrl+Shift+Z", "shortcuts.redo"),
+        ("←↑→↓", "shortcuts.mapCursor"),
+        ("Enter / Space", "shortcuts.mapApply"),
+        ("Esc", "shortcuts.mapCancel"),
         ("F1", "shortcuts.guide"),
         ("Alt+F4", "shortcuts.exit"),
     ];

@@ -29,7 +29,11 @@ Undo and redo work everywhere: **Ctrl+Z** and **Ctrl+Y**.
 ### Map
 
 Pick a scene in the **Scene** list above the map; zoom with **−**, **+** and
-**Fit**. Hover a tile to inspect it. The side panel holds the tools:
+**Fit**. Hover a tile to inspect it. The map works from the keyboard too: click
+it or Tab to it, move the gold editing cursor with the **arrow keys**, and
+press **Enter** or **Space** to use the current tool there (Rectangle and
+Select take two presses, one per corner; **Esc** cancels). Screen readers
+announce the tile under the cursor. The side panel holds the tools:
 
 - **Tile brush**: the terrain to paint (grass, soil, water, path, wall, door,
   floor, and your own tiles from the Art tab).
@@ -45,28 +49,41 @@ Pick a scene in the **Scene** list above the map; zoom with **−**, **+** and
   placed there.
 - **Scene**: add a scene, rename, resize, duplicate or delete it, **Set as
   start**, **Fill scene** with one tile, **Clear crops/items** and **Reset soil**.
+  Under the size boxes, the calculator shows the tile count and aspect ratio,
+  and warns when a resize would cut tiles off.
 - **Transitions**: choose **Door**, click the departure tile, then pick the
   destination scene and tile. **Return door** adds the way back. The list
-  below shows every door of the scene.
+  below shows every door of the scene; **Duplicate** starts a copy of a door
+  on the next free tile, ready to adjust and save.
 
 ### Content
 
 The Content tab edits everything the game is made of. Pick a category, select
-an entry (or **Add** one), change its fields and **Save**:
+an entry (or **Add** one), change its fields and **Save**. Lists show each
+entry's art, and forms preview the art they point to:
 
 - **NPCs** and **Dialogue**: characters, where they stand, their daily
-  schedules and gift tastes, and dialogue trees whose options can open shops,
-  offer quests, or depend on friendship, items and flags.
+  schedules (a row per stop: the time of day, the scene and the tile), patrol
+  waypoints and gift tastes, and dialogue trees whose options can open shops,
+  offer quests, or depend on friendship, items and flags. In the game the
+  dialogue box shows the NPC's art.
 - **Items** and **Crops**: the item catalog (tools and their tiers, seeds,
-  materials, gifts) and crops with growth days, seasons, regrowth and yields.
+  materials, gifts) and crops with growth days, seasons, regrowth and yields,
+  on **Basic**, **Growth** and **Asset** tabs. A crop shows its profit per
+  harvest and a summary card. The built-in crops are listed too: **Customize**
+  one to change it (deleting your version brings the built-in back).
 - **Quests**: objectives (harvest, collect, talk, visit, craft, gift),
   rewards, prerequisites and when they are available.
 - **Events**: triggers (entering a tile, interacting, time passing),
   conditions and outcomes, for story beats and flags.
-- **Shops**: stock, prices, daily limits and tool repair.
+- **Shops**: stock (a card per item with its price override, daily limit and
+  the seasons it's sold in), prices and tool repair.
 - **Recipes**, **Node types** and **Machine types**: hand crafting, the
   resources trees and rocks drop, and machines that process ingredients. A
-  recipe's category groups it in the game's crafting menu.
+  recipe's category groups it in the game's crafting menu, and the editor
+  shows its profit per craft and per hour of machine time. The built-in node
+  types (trees, rocks, weeds, mine rocks and ore) are listed and can be
+  customized like crops.
 - **Animal species** and **Fish tables**: what animals produce, and which fish
   bite in each scene and season.
 - **Actions** and **Minigames**: an action is a named bundle of effects (give
@@ -74,7 +91,8 @@ an entry (or **Add** one), change its fields and **Save**:
   **Use** button, a dialogue option, an event or a hotkey can run. A minigame
   is a short challenge whose score picks the reward.
 
-A few advanced fields are still edited as JSON; the form says which.
+Every nested field also has an **Edit as JSON** box, for pasting or bulk
+changes.
 
 ### Problems
 
@@ -86,7 +104,8 @@ scene that needs a fix.
 ### Settings
 
 Project settings: name, version and the game-text **locale**; gameplay
-(energy, skills, player speed, collapse penalties); the clock (day start and
+(energy, skills and the XP each skill level needs, player speed, collapse
+penalties); the clock (day start and
 end, game minutes per real second); the calendar's **seasons** (add, rename,
 reorder, change their length) and **festivals**. The **Export** section holds
 what the exported game shows: its title, executable name, version, author,
@@ -106,8 +125,12 @@ ordinary content.
 
 ### Art
 
-**Import image** takes PNG, JPEG, WebP, GIF, BMP and SVG files. Slice a sheet
-into **animation clips**, then **Assign artwork** to the player, a map brush
+**Import image** takes PNG, JPEG, WebP, GIF, BMP and SVG files; the list shows
+a thumbnail of each. Make **animation clips** by slicing a whole sheet, by
+clicking cells of the sheet (each click adds that cell as the next frame), or
+from separate images (**Add image frame** adds another picture as a frame, so
+one animation can use several files). The preview plays the clip; **Pause
+preview** holds a frame. Then **Assign artwork** to the player, a map brush
 (with its tile behavior), an NPC, an item, a crop, a node, an animal or a
 machine. Mark pixel art as **Crisp pixel art** so it stays sharp.
 
@@ -118,14 +141,27 @@ a branching story, a romance milestone, a letter and mailbox, a building with
 an interior, a watering spell, a combat encounter, a fishing challenge, a
 catchable insect, forageables, trees, rocks, weeds and a crafting discipline.
 Fill in the name and text, **Create pattern**, then **Open its editor** to
-fine-tune what it made.
+fine-tune what it made. **Build your game** links jump straight to each part
+of the editor: art, scenes, crops, animals, items, recipes, characters,
+quests, events, actions and the Problems check.
 
 ### Interface
 
 Game panels appear on the game screen: live counters, story status or action
 buttons. Give a panel a title, optionally a story flag that must be set before
-it shows, and entries (a label, what it shows, and a value, item id or action
-id).
+it shows, and entries: a label, what it shows (text, money, energy, day, an
+item count, a flag or an action button), and for items and actions a pick
+from your game's list.
+
+### If something goes wrong
+
+If the editor hits an unexpected error, it shows what happened instead of
+closing: **Try Again** reopens the editor on the same project, and **Undo last
+change and try again** helps when the error came right after an edit. Your
+project is saved up to the error. If the project can't be saved (a full disk,
+a folder you can't write to), a red banner above the editor says why and keeps
+your changes open; **Retry save** tries again, and File → Export Project JSON…
+keeps a copy anywhere.
 
 ## 3. Playtest in Play Mode
 
@@ -151,6 +187,10 @@ play; no editor, browser or install is needed. The exported game has a title
 screen, three save slots with autosave each morning, a pause menu, settings
 (display, audio, rebindable controls, language, text size, a readable font and
 reduced motion) and gamepad support.
+
+The **Web (browser demo)** target makes a page for itch.io; on phones and
+tablets it shows touch controls (a D-pad, Interact, Sleep, Inventory and
+Menu).
 
 Export stops when the Problems tab has errors. Bump the version in Settings
 when you ship an update: saves from the older version keep loading.
