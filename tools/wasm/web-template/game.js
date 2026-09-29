@@ -100,6 +100,15 @@ async function main() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) send({ type: "focusLost" });
   });
+  // Pointer capture keeps a held button pressed while the finger slides; a browser that refuses
+  // it must not stop the press.
+  const capture = (element, pointerId) => {
+    try {
+      element.setPointerCapture?.(pointerId);
+    } catch {
+      // No active pointer (synthetic events) or capture unsupported.
+    }
+  };
   const point = (event) => {
     const box = canvas.getBoundingClientRect();
     return { x: ((event.clientX - box.left) / box.width) * canvas.width, y: ((event.clientY - box.top) / box.height) * canvas.height };
@@ -109,7 +118,7 @@ async function main() {
   canvas.addEventListener("pointerdown", (event) => {
     unlockAudio();
     canvas.focus();
-    canvas.setPointerCapture?.(event.pointerId);
+    capture(canvas, event.pointerId);
     send({ type: "pointerDown", ...point(event), button: button(event.button) });
   });
   canvas.addEventListener("pointerup", (event) => send({ type: "pointerUp", ...point(event), button: button(event.button) }));
@@ -143,8 +152,8 @@ async function main() {
     button.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       unlockAudio();
-      button.setPointerCapture?.(event.pointerId);
       hold(button, true);
+      capture(button, event.pointerId);
     });
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(type, () => hold(button, false));
     button.addEventListener("contextmenu", (event) => event.preventDefault());
