@@ -50,7 +50,7 @@ fn the_dialogue_portrait_shows_the_npcs_art() {
     with_dialogue(&mut fixture, "npc-merchant", "dialogue-merchant-greeting");
     assert_eq!(images(&fixture), without + 1, "the portrait is drawn from the NPC's art");
     let portrait = fixture.last.commands.iter().rev().find_map(|command| match command {
-        farm_render::DrawCmd::Image { dst, .. } if dst.width <= 40.0 && dst.height <= 40.0 => Some(*dst),
+        farm_render::DrawCmd::Image { dst, .. } if dst.width <= 48.0 && dst.height <= 48.0 => Some(*dst),
         _ => None,
     });
     assert!(portrait.is_some_and(|dst| dst.width >= 16.0), "{portrait:?}");

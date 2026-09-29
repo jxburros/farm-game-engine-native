@@ -86,8 +86,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 28.0, colors.secondary);
     let sprite = npc.and_then(|npc| portrait_sprite(view, npc));
     let drawn = sprite.is_some_and(|sprite| {
-        ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 24.0, colors.row);
-        draw_sprite(ui, images, &sprite, portrait.centered(40.0, 40.0), view.art.pixel_art)
+        ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 25.0, colors.row);
+        // 48 px: the built-in 32×48 characters draw 1:1, crisp.
+        draw_sprite(ui, images, &sprite, portrait.centered(48.0, 48.0), view.art.pixel_art)
     });
     if !drawn {
         ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 28.0, colors.secondary);
