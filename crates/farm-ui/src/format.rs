@@ -2,14 +2,43 @@
 
 use crate::i18n::Lang;
 
+/// A number the screens print: whole numbers as they are, doubles like JavaScript's
+/// `String(n)`.
+pub trait DisplayNumber {
+    fn display(self) -> String;
+}
+
+impl DisplayNumber for f64 {
+    fn display(self) -> String {
+        farm_sim::units::format_number(self)
+    }
+}
+
+macro_rules! display_integer {
+    ($($ty:ty),*) => {
+        $(impl DisplayNumber for $ty {
+            fn display(self) -> String {
+                self.to_string()
+            }
+        })*
+    };
+}
+
+display_integer!(i32, i64, u32, u64, usize);
+
 /// A number as JavaScript's `String(n)` prints it.
-pub fn num(value: f64) -> String {
-    farm_sim::js::num(value)
+pub fn num(value: impl DisplayNumber) -> String {
+    value.display()
 }
 
 /// Money like the web UI (`$123`).
-pub fn money(amount: f64) -> String {
-    format!("${}", num(amount))
+pub fn money(amount: i64) -> String {
+    format!("${amount}")
+}
+
+/// Energy points as the HUD prints them (`97.5`).
+pub fn energy(value: i32) -> String {
+    farm_sim::units::text::<farm_sim::units::Energy>(value)
 }
 
 /// "spring" → "Spring" (CSS `capitalize`).
@@ -80,8 +109,9 @@ mod tests {
 
     #[test]
     fn formats_like_the_web_ui() {
-        assert_eq!(money(1250.0), "$1250");
-        assert_eq!(money(0.5), "$0.5");
+        assert_eq!(money(1250), "$1250");
+        assert_eq!(num(0.5), "0.5");
+        assert_eq!(num(7_u32), "7");
         assert_eq!(capitalize("spring"), "Spring");
         assert_eq!(capitalize(""), "");
         assert_eq!(season_name("spring", Lang::En), "Spring");

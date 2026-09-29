@@ -31,7 +31,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         for digit in ui.input().digits() {
             let index = usize::from(digit) - 1;
             if index < options.len() {
-                actions.push(GameAction::Command(Command::ChooseDialogueOption { index: index as f64 }));
+                actions.push(GameAction::Command(Command::ChooseDialogueOption { index: index as i32 }));
                 return;
             }
         }
@@ -151,7 +151,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             TextAlign::Left,
         );
         if state.clicked {
-            actions.push(GameAction::Command(Command::ChooseDialogueOption { index: index as f64 }));
+            actions.push(GameAction::Command(Command::ChooseDialogueOption { index: index as i32 }));
         }
         y += height + 8.0;
     }

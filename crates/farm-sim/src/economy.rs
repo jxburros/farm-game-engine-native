@@ -7,9 +7,9 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
-use crate::js;
 use crate::quests;
-use crate::schema::{GameState, ShopDefinition, ShopSession};
+use crate::schema::{GameState, Item, ShopDefinition, ShopSession};
+use crate::units;
 
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
     ctx.content.shops.iter().find(|shop| shop.id == shop_id)
@@ -33,31 +33,41 @@ pub fn handle_close_shop(state: &mut GameState) -> Effects {
     Vec::new()
 }
 
-/// JS `!!n` for an optional number: `undefined`, `0` and `NaN` are falsy.
-fn truthy_number(value: Option<f64>) -> Option<f64> {
-    value.filter(|n| *n != 0.0 && !n.is_nan())
+/// JS `!!n` for an optional number: `undefined` and `0` are falsy.
+fn truthy_number(value: Option<u32>) -> Option<u32> {
+    value.filter(|n| *n != 0)
 }
 
-/// Units of an item still purchasable today under a stock entry's daily limit.
-pub fn remaining_daily_stock(state: &GameState, shop_id: &str, item_id: &str, daily_limit: Option<f64>) -> f64 {
-    // `!dailyLimit`: undefined, 0 and NaN all mean unlimited.
-    let Some(limit) = truthy_number(daily_limit) else {
-        return f64::INFINITY;
-    };
-    let bought = purchased_today(state, shop_id, item_id).unwrap_or(0.0);
-    (limit - bought).max(0.0)
+/// Units of an item still purchasable today under a stock entry's daily limit; `None` when the
+/// stock is unlimited (`!dailyLimit`: undefined and 0 mean unlimited).
+pub fn remaining_daily_stock(state: &GameState, shop_id: &str, item_id: &str, daily_limit: Option<u32>) -> Option<u32> {
+    let limit = truthy_number(daily_limit)?;
+    let bought = purchased_today(state, shop_id, item_id).unwrap_or(0);
+    Some(limit.saturating_sub(bought))
 }
 
 /// TS `state.shopPurchasesToday[shopId]?.[itemId]`.
-fn purchased_today(state: &GameState, shop_id: &str, item_id: &str) -> Option<f64> {
+fn purchased_today(state: &GameState, shop_id: &str, item_id: &str) -> Option<u32> {
     state.shop_purchases_today.get(shop_id).and_then(|per_item| per_item.get(item_id)).copied()
 }
 
-pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: f64) -> Effects {
+/// What `shop` pays for one `item`: `floor(value × sellPriceMultiplier)` (the multiplier in
+/// thousandths).
+pub fn sell_unit_price(item: &Item, shop: &ShopDefinition) -> i64 {
+    item.value.saturating_mul(i64::from(shop.sell_price_multiplier)).div_euclid(i64::from(units::MILLI_ONE))
+}
+
+/// What `shop` charges to restore `missing` durability points: `ceil(missing ×
+/// repairCostPerPoint)` (the cost per point in thousandths of a gold).
+pub fn repair_cost(missing: i64, shop: &ShopDefinition) -> i64 {
+    units::div_ceil(missing.saturating_mul(i64::from(shop.repair_cost_per_point)), i64::from(units::MILLI_ONE))
+}
+
+pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
     let Some(session) = &state.shop else {
         return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
     };
-    if quantity <= 0.0 {
+    if quantity == 0 {
         return Vec::new();
     }
 
@@ -75,14 +85,12 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
         }
     }
 
-    let remaining = remaining_daily_stock(state, &shop.id, item_id, entry.daily_limit);
-    if quantity > remaining {
-        let text = if remaining == 0.0 {
-            "Sold out for today!".to_owned()
-        } else {
-            format!("Only {} left today.", js::num(remaining))
-        };
-        return vec![Effect::message(message_levels::ERROR, text)];
+    if let Some(remaining) = remaining_daily_stock(state, &shop.id, item_id, entry.daily_limit) {
+        if quantity > remaining {
+            let text =
+                if remaining == 0 { "Sold out for today!".to_owned() } else { format!("Only {remaining} left today.") };
+            return vec![Effect::message(message_levels::ERROR, text)];
+        }
     }
 
     let Some(item) = ctx.content.items.iter().find(|i| i.id == item_id) else {
@@ -90,7 +98,7 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
     };
 
     let price = entry.price.unwrap_or(item.value);
-    let total = price * quantity;
+    let total = price.saturating_mul(i64::from(quantity));
     if state.player.money < total {
         return vec![Effect::message(message_levels::ERROR, "Not enough money!")];
     }
@@ -101,29 +109,31 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
     }
 
     if truthy_number(entry.daily_limit).is_some() {
-        let already = purchased_today(state, &shop.id, item_id).unwrap_or(0.0);
-        state.shop_purchases_today.entry(shop.id.clone()).or_default().insert(item_id.to_owned(), already + quantity);
+        let already = purchased_today(state, &shop.id, item_id).unwrap_or(0);
+        state
+            .shop_purchases_today
+            .entry(shop.id.clone())
+            .or_default()
+            .insert(item_id.to_owned(), already.saturating_add(quantity));
     }
 
     state.player.inventory = result.inventory;
-    state.player.money -= total;
+    state.player.money = state.player.money.saturating_sub(total);
 
     // Buying counts toward collect objectives (M3).
     let quest_effects = quests::progress_quests(ctx, state, "collect", item_id, quantity);
 
-    let mut effects = vec![Effect::message(
-        message_levels::SUCCESS,
-        format!("Bought {}x {} for ${}", js::num(quantity), item.name, js::num(total)),
-    )];
+    let mut effects =
+        vec![Effect::message(message_levels::SUCCESS, format!("Bought {quantity}x {} for ${total}", item.name))];
     effects.extend(quest_effects);
     effects
 }
 
-pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: f64) -> Effects {
+pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
     let Some(session) = &state.shop else {
         return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
     };
-    if quantity <= 0.0 {
+    if quantity == 0 {
         return Vec::new();
     }
 
@@ -139,16 +149,13 @@ pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &st
         return vec![Effect::message(message_levels::ERROR, "You don't have that many.")];
     };
 
-    let unit_price = (slot.item.value * shop.sell_price_multiplier).floor();
-    let total = unit_price * quantity;
+    let unit_price = sell_unit_price(&slot.item, shop);
+    let total = unit_price.saturating_mul(i64::from(quantity));
     let item_name = slot.item.name.clone();
 
     state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, quantity);
-    state.player.money += total;
-    vec![Effect::message(
-        message_levels::SUCCESS,
-        format!("Sold {}x {} for ${}", js::num(quantity), item_name, js::num(total)),
-    )]
+    state.player.money = state.player.money.saturating_add(total);
+    vec![Effect::message(message_levels::SUCCESS, format!("Sold {quantity}x {item_name} for ${total}"))]
 }
 
 pub fn handle_repair_tool(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
@@ -168,22 +175,19 @@ pub fn handle_repair_tool(ctx: &EngineContext, state: &mut GameState, item_id: &
     else {
         return vec![Effect::message(message_levels::ERROR, "That can't be repaired.")];
     };
-    let missing = max_durability - durability;
-    if missing <= 0.0 {
+    let missing = i64::from(max_durability) - i64::from(durability);
+    if missing <= 0 {
         return vec![Effect::message(message_levels::INFO, format!("{} is in perfect shape.", slot.item.name))];
     }
 
-    let cost = (missing * shop.repair_cost_per_point).ceil();
+    let cost = repair_cost(missing, shop);
     if state.player.money < cost {
-        return vec![Effect::message(
-            message_levels::ERROR,
-            format!("Repair costs ${} — not enough money!", js::num(cost)),
-        )];
+        return vec![Effect::message(message_levels::ERROR, format!("Repair costs ${cost} — not enough money!"))];
     }
 
     let repaired = crate::schema::Item { durability: Some(max_durability), ..slot.item.clone() };
     let item_name = slot.item.name.clone();
     state.player.inventory = inventory::replace_item(&state.player.inventory, item_id, &repaired);
-    state.player.money -= cost;
-    vec![Effect::message(message_levels::SUCCESS, format!("Repaired {} for ${}", item_name, js::num(cost)))]
+    state.player.money = state.player.money.saturating_sub(cost);
+    vec![Effect::message(message_levels::SUCCESS, format!("Repaired {item_name} for ${cost}"))]
 }

@@ -13,6 +13,7 @@ use farm_sim::schema::{
     DialogueOption, DialogueState, GameProject, GameState, Quest, QuestObjective, QuestRewards, ShopDefinition,
     ShopSession, ShopStockEntry,
 };
+use farm_sim::units;
 use farm_sim::EngineContext;
 use fixture_project::{has_message, make_engine, message_texts, quantity};
 use indexmap::IndexMap;
@@ -32,15 +33,15 @@ fn test_shop() -> ShopDefinition {
             },
             ShopStockEntry {
                 item_id: "fertilizer-quality".to_owned(),
-                daily_limit: Some(2.0),
+                daily_limit: Some(2),
                 ..ShopStockEntry::default()
             },
-            ShopStockEntry { item_id: "seed-carrot".to_owned(), price: Some(3.0), ..ShopStockEntry::default() },
+            ShopStockEntry { item_id: "seed-carrot".to_owned(), price: Some(3), ..ShopStockEntry::default() },
         ],
-        sell_price_multiplier: 1.0,
+        sell_price_multiplier: units::MILLI_ONE,
         buys_items: true,
         repairs_tools: true,
-        repair_cost_per_point: 0.5,
+        repair_cost_per_point: 500,
         ..ShopDefinition::default()
     }
 }
@@ -63,9 +64,9 @@ fn open_shop(ctx: &EngineContext, state: &mut GameState) {
 fn buys_stock_charging_money() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    let effects = handle_buy_item(&ctx, &mut state, "seed-wheat", 2.0);
-    assert_eq!(state.player.money, 100.0 - 20.0);
-    assert_eq!(quantity(&state, "seed-wheat"), Some(12.0)); // 10 starting + 2
+    let effects = handle_buy_item(&ctx, &mut state, "seed-wheat", 2);
+    assert_eq!(state.player.money, 100 - 20);
+    assert_eq!(quantity(&state, "seed-wheat"), Some(12)); // 10 starting + 2
     assert_eq!(message_texts(&effects)[0], "Bought 2x Wheat Seeds for $20");
 }
 
@@ -73,19 +74,19 @@ fn buys_stock_charging_money() {
 fn honors_price_overrides() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    handle_buy_item(&ctx, &mut state, "seed-carrot", 1.0);
-    assert_eq!(state.player.money, 97.0);
+    handle_buy_item(&ctx, &mut state, "seed-carrot", 1);
+    assert_eq!(state.player.money, 97);
 }
 
 #[test]
 fn rejects_purchases_without_enough_money() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    state.player.money = 5.0;
+    state.player.money = 5;
     let before = state.clone();
-    let effects = handle_buy_item(&ctx, &mut state, "seed-wheat", 1.0);
+    let effects = handle_buy_item(&ctx, &mut state, "seed-wheat", 1);
     assert!(has_message(&effects, |t| t == "Not enough money!"));
-    assert_eq!(state.player.money, 5.0);
+    assert_eq!(state.player.money, 5);
     assert_eq!(state, before);
 }
 
@@ -93,7 +94,7 @@ fn rejects_purchases_without_enough_money() {
 fn enforces_seasonal_stock() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    let effects = handle_buy_item(&ctx, &mut state, "seed-tomato", 1.0);
+    let effects = handle_buy_item(&ctx, &mut state, "seed-tomato", 1);
     assert!(has_message(&effects, |t| t.contains("Not available in spring")));
     assert_eq!(effects, vec![Effect::message("error", "Not available in spring.")]);
 }
@@ -102,14 +103,14 @@ fn enforces_seasonal_stock() {
 fn enforces_and_resets_daily_limits() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    handle_buy_item(&ctx, &mut state, "fertilizer-quality", 2.0);
-    let blocked = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1.0);
+    handle_buy_item(&ctx, &mut state, "fertilizer-quality", 2);
+    let blocked = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1);
     assert!(has_message(&blocked, |t| t.contains("Sold out for today")));
 
     // Next day the limit resets.
     farm_sim::game_time::perform_sleep(&ctx, &mut state, farm_sim::game_time::SleepOptions::default());
     open_shop(&ctx, &mut state);
-    let again = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1.0);
+    let again = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1);
     assert!(has_message(&again, |t| t.starts_with("Bought")));
 }
 
@@ -117,8 +118,8 @@ fn enforces_and_resets_daily_limits() {
 fn sells_items_for_their_value() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 10.0);
-    assert_eq!(state.player.money, 100.0 + 100.0);
+    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 10);
+    assert_eq!(state.player.money, 100 + 100);
     assert!(!state.player.inventory.iter().any(|s| s.item.id == "seed-wheat"));
     assert_eq!(effects, vec![Effect::message("success", "Sold 10x Wheat Seeds for $100")]);
 }
@@ -129,13 +130,13 @@ fn repairs_damaged_tools_for_a_fee() {
     open_shop(&ctx, &mut state);
     for slot in &mut state.player.inventory {
         if slot.item.id == "tool-hoe" {
-            slot.item.durability = Some(0.0);
+            slot.item.durability = Some(0);
         }
     }
     let effects = handle_repair_tool(&ctx, &mut state, "tool-hoe");
     let hoe = state.player.inventory.iter().find(|s| s.item.id == "tool-hoe").expect("hoe stays in the inventory");
-    assert_eq!(hoe.item.durability, Some(100.0));
-    assert_eq!(state.player.money, 100.0 - 50.0); // 100 points * 0.5
+    assert_eq!(hoe.item.durability, Some(100));
+    assert_eq!(state.player.money, 100 - 50); // 100 points * 0.5
     assert_eq!(effects, vec![Effect::message("success", "Repaired Hoe for $50")]);
 }
 
@@ -152,7 +153,7 @@ fn opens_a_shop_from_a_dialogue_option() {
     });
     state.dialogue =
         Some(DialogueState { npc_id: "npc-farmer".to_owned(), dialogue_id: "dialogue-farmer-greeting".to_owned() });
-    let effects = farm_sim::dialogue_system::handle_choose_dialogue_option(&ctx, &mut state, 2.0);
+    let effects = farm_sim::dialogue_system::handle_choose_dialogue_option(&ctx, &mut state, 2);
     assert!(effects.is_empty());
     assert_eq!(state.shop, Some(ShopSession { shop_id: "shop-test".to_owned() }));
     assert_eq!(state.dialogue, None);
@@ -173,10 +174,10 @@ fn buying_items_progresses_collect_objectives() {
                 r#type: "collect".to_owned(),
                 description: "x".to_owned(),
                 target_item_id: Some("seed-carrot".to_owned()),
-                target_item_quantity: Some(2.0),
+                target_item_quantity: Some(2),
                 ..QuestObjective::default()
             }],
-            rewards: QuestRewards { money: Some(5.0), ..QuestRewards::default() },
+            rewards: QuestRewards { money: Some(5), ..QuestRewards::default() },
             ..Quest::default()
         });
         project.player.active_quests.push("quest-buy".to_owned());
@@ -184,15 +185,15 @@ fn buying_items_progresses_collect_objectives() {
             id: "shop-s".to_owned(),
             name: "S".to_owned(),
             stock: vec![ShopStockEntry { item_id: "seed-carrot".to_owned(), ..ShopStockEntry::default() }],
-            sell_price_multiplier: 1.0,
+            sell_price_multiplier: units::MILLI_ONE,
             buys_items: true,
             repairs_tools: false,
-            repair_cost_per_point: 0.5,
+            repair_cost_per_point: 500,
             ..ShopDefinition::default()
         }];
     });
     handle_open_shop(&ctx, &mut state, "shop-s");
-    handle_buy_item(&ctx, &mut state, "seed-carrot", 2.0);
+    handle_buy_item(&ctx, &mut state, "seed-carrot", 2);
     assert!(state.player.completed_quests.iter().any(|id| id == "quest-buy"));
 }
 
@@ -201,16 +202,15 @@ fn buying_items_progresses_collect_objectives() {
 #[test]
 fn remaining_daily_stock_treats_missing_zero_and_nan_limits_as_unlimited() {
     let (_, mut state) = make_m2_engine(|_| {});
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", None), f64::INFINITY);
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(0.0)), f64::INFINITY);
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(f64::NAN)), f64::INFINITY);
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(3.0)), 3.0);
+    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", None), None);
+    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(0)), None);
+    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(3)), Some(3));
     let mut per_item = IndexMap::new();
-    per_item.insert("x".to_owned(), 5.0);
+    per_item.insert("x".to_owned(), 5);
     state.shop_purchases_today.insert("shop-test".to_owned(), per_item);
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(3.0)), 0.0);
-    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(7.0)), 2.0);
-    assert_eq!(remaining_daily_stock(&state, "shop-other", "x", Some(7.0)), 7.0);
+    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(3)), Some(0));
+    assert_eq!(remaining_daily_stock(&state, "shop-test", "x", Some(7)), Some(2));
+    assert_eq!(remaining_daily_stock(&state, "shop-other", "x", Some(7)), Some(7));
 }
 
 #[test]
@@ -243,23 +243,17 @@ fn buy_rejects_without_a_session_for_unsold_and_unknown_items_and_for_non_positi
     let (ctx, mut state) = make_m2_engine(|project| {
         project.shops[0].stock.push(ShopStockEntry { item_id: "ghost".to_owned(), ..ShopStockEntry::default() });
     });
-    assert_eq!(
-        handle_buy_item(&ctx, &mut state, "seed-wheat", 1.0),
-        vec![Effect::message("error", "No shop is open.")]
-    );
+    assert_eq!(handle_buy_item(&ctx, &mut state, "seed-wheat", 1), vec![Effect::message("error", "No shop is open.")]);
     open_shop(&ctx, &mut state);
-    assert!(handle_buy_item(&ctx, &mut state, "seed-wheat", 0.0).is_empty());
-    assert!(handle_buy_item(&ctx, &mut state, "seed-wheat", -2.0).is_empty());
-    assert_eq!(handle_buy_item(&ctx, &mut state, "gift-flower", 1.0), vec![Effect::message("error", "Not sold here.")]);
-    assert_eq!(handle_buy_item(&ctx, &mut state, "ghost", 1.0), vec![Effect::message("error", "Unknown item.")]);
-    assert_eq!(state.player.money, 100.0);
+    assert!(handle_buy_item(&ctx, &mut state, "seed-wheat", 0).is_empty());
+    assert!(handle_buy_item(&ctx, &mut state, "seed-wheat", 0).is_empty());
+    assert_eq!(handle_buy_item(&ctx, &mut state, "gift-flower", 1), vec![Effect::message("error", "Not sold here.")]);
+    assert_eq!(handle_buy_item(&ctx, &mut state, "ghost", 1), vec![Effect::message("error", "Unknown item.")]);
+    assert_eq!(state.player.money, 100);
 
     // A session naming a shop that no longer exists reads as closed.
     state.shop = Some(ShopSession { shop_id: "shop-gone".to_owned() });
-    assert_eq!(
-        handle_buy_item(&ctx, &mut state, "seed-wheat", 1.0),
-        vec![Effect::message("error", "No shop is open.")]
-    );
+    assert_eq!(handle_buy_item(&ctx, &mut state, "seed-wheat", 1), vec![Effect::message("error", "No shop is open.")]);
 }
 
 #[test]
@@ -267,25 +261,25 @@ fn buy_reports_the_remaining_daily_stock_before_selling_out() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
     let mut per_item = IndexMap::new();
-    per_item.insert("fertilizer-quality".to_owned(), 1.0);
+    per_item.insert("fertilizer-quality".to_owned(), 1);
     state.shop_purchases_today.insert("shop-test".to_owned(), per_item);
-    let some_left = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 2.0);
+    let some_left = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 2);
     assert_eq!(some_left, vec![Effect::message("error", "Only 1 left today.")]);
 
-    state.shop_purchases_today["shop-test"].insert("fertilizer-quality".to_owned(), 2.0);
-    let sold_out = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1.0);
+    state.shop_purchases_today["shop-test"].insert("fertilizer-quality".to_owned(), 2);
+    let sold_out = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1);
     assert_eq!(sold_out, vec![Effect::message("error", "Sold out for today!")]);
-    assert_eq!(state.player.money, 100.0);
+    assert_eq!(state.player.money, 100);
 }
 
 #[test]
 fn buy_rejects_when_the_inventory_is_full() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    state.player.max_inventory_size = state.player.inventory.len() as f64;
-    let effects = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1.0);
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    let effects = handle_buy_item(&ctx, &mut state, "fertilizer-quality", 1);
     assert_eq!(effects, vec![Effect::message("error", "Inventory is full!")]);
-    assert_eq!(state.player.money, 100.0);
+    assert_eq!(state.player.money, 100);
     assert!(state.shop_purchases_today.is_empty());
 }
 
@@ -299,40 +293,37 @@ fn sell_rejects_non_buying_shops_and_missing_quantities() {
             ..ShopDefinition::default()
         });
     });
-    assert_eq!(
-        handle_sell_item(&ctx, &mut state, "seed-wheat", 1.0),
-        vec![Effect::message("error", "No shop is open.")]
-    );
+    assert_eq!(handle_sell_item(&ctx, &mut state, "seed-wheat", 1), vec![Effect::message("error", "No shop is open.")]);
     open_shop(&ctx, &mut state);
-    assert!(handle_sell_item(&ctx, &mut state, "seed-wheat", 0.0).is_empty());
+    assert!(handle_sell_item(&ctx, &mut state, "seed-wheat", 0).is_empty());
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "seed-wheat", 11.0),
+        handle_sell_item(&ctx, &mut state, "seed-wheat", 11),
         vec![Effect::message("error", "You don't have that many.")]
     );
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "gift-flower", 1.0),
+        handle_sell_item(&ctx, &mut state, "gift-flower", 1),
         vec![Effect::message("error", "You don't have that many.")]
     );
     state.shop = Some(ShopSession { shop_id: "shop-museum".to_owned() });
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "seed-wheat", 1.0),
+        handle_sell_item(&ctx, &mut state, "seed-wheat", 1),
         vec![Effect::message("error", "Museum doesn't buy items.")]
     );
-    assert_eq!(state.player.money, 100.0);
-    assert_eq!(quantity(&state, "seed-wheat"), Some(10.0));
+    assert_eq!(state.player.money, 100);
+    assert_eq!(quantity(&state, "seed-wheat"), Some(10));
 }
 
 #[test]
 fn sell_floors_the_unit_price_through_the_multiplier() {
     let (ctx, mut state) = make_m2_engine(|project| {
-        project.shops[0].sell_price_multiplier = 0.75;
+        project.shops[0].sell_price_multiplier = 750;
     });
     open_shop(&ctx, &mut state);
     // Wheat seeds are worth 10: floor(7.5) = 7 each.
-    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 3.0);
+    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 3);
     assert_eq!(effects, vec![Effect::message("success", "Sold 3x Wheat Seeds for $21")]);
-    assert_eq!(state.player.money, 121.0);
-    assert_eq!(quantity(&state, "seed-wheat"), Some(7.0));
+    assert_eq!(state.player.money, 121);
+    assert_eq!(quantity(&state, "seed-wheat"), Some(7));
 }
 
 #[test]
@@ -362,16 +353,16 @@ fn repair_rejects_non_tools_perfect_tools_and_reports_the_cost_when_broke() {
 
     for slot in &mut state.player.inventory {
         if slot.item.id == "tool-hoe" {
-            slot.item.durability = Some(37.0);
+            slot.item.durability = Some(37);
         }
     }
-    state.player.money = 10.0;
+    state.player.money = 10;
     // 63 missing points * 0.5 = 31.5 → ceil → 32.
     assert_eq!(
         handle_repair_tool(&ctx, &mut state, "tool-hoe"),
         vec![Effect::message("error", "Repair costs $32 — not enough money!")]
     );
-    assert_eq!(state.player.money, 10.0);
+    assert_eq!(state.player.money, 10);
 
     state.shop = Some(ShopSession { shop_id: "shop-stall".to_owned() });
     assert_eq!(

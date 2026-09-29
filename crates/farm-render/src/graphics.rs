@@ -2,7 +2,7 @@
 //! the decoration of a world snapshot with the art a project binds. Nothing here changes a
 //! gameplay rule; it only picks images and frames.
 
-use crate::num::{cs_max, cs_min, to_int};
+use crate::num::{cs_max, cs_min};
 use crate::snapshot::{SnapshotSprite, WorldSnapshot};
 use farm_sim::schema::{
     AnimationClip, ArtFrame, CustomAsset, CustomCropDefinition, GameContent, GameProject, GameState, GraphicsSettings,
@@ -380,8 +380,7 @@ pub fn apply_graphics(snapshot: &mut WorldSnapshot, source: &GraphicsSource, sce
                     .and_then(|clips| clips.iter().find(|clip| clip.name == "growth"));
                 let visual = match (growth, visual) {
                     (Some(growth), Some(visual)) if !growth.frames.is_empty() => {
-                        let last = (growth.frames.len() - 1) as f64;
-                        let index = to_int(cs_min(cs_max(0.0, crop.stage), last)).max(0) as usize;
+                        let index = (crop.stage as usize).min(growth.frames.len() - 1);
                         Some(VisualRef { frame: Some(growth.frames[index].clone()), ..visual })
                     }
                     (_, visual) => visual,

@@ -1,6 +1,7 @@
 //! Port of `Mining.cs` (packages/engine-schemas/src/mining.ts).
 //! Mining (M4f) — procedurally generated floors, deterministic per seed.
 
+use crate::units;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -10,25 +11,29 @@ use serde_json::{Map, Value};
 pub struct MineRockWeight {
     pub node_type_id: String,
     /// positive.
-    pub weight: f64,
+    #[serde(with = "crate::units::count")]
+    pub weight: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MineBand {
     /// int, positive.
-    pub from_floor: f64,
+    #[serde(with = "crate::units::count")]
+    pub from_floor: u32,
     /// int, positive.
-    pub to_floor: f64,
+    #[serde(with = "crate::units::count")]
+    pub to_floor: u32,
     /// Weighted node types spawned in this depth band.
     pub rocks: Vec<MineRockWeight>,
     /// Rock density (fraction of floor tiles occupied). 0..1.
-    pub density: f64,
+    #[serde(with = "crate::units::milli")]
+    pub density: u32,
 }
 
 impl Default for MineBand {
     fn default() -> Self {
-        Self { from_floor: 0.0, to_floor: 0.0, rocks: Vec::new(), density: 0.35 }
+        Self { from_floor: 0, to_floor: 0, rocks: Vec::new(), density: 350 }
     }
 }
 
@@ -40,22 +45,27 @@ pub struct MineConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entrance_scene_id: Option<String>,
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entrance_x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub entrance_x: Option<i32>,
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entrance_y: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub entrance_y: Option<i32>,
     /// int, positive.
-    pub floors: f64,
+    #[serde(with = "crate::units::count")]
+    pub floors: u32,
     /// int, positive.
-    pub floor_width: f64,
+    #[serde(with = "crate::units::count")]
+    pub floor_width: u32,
     /// int, positive.
-    pub floor_height: f64,
+    #[serde(with = "crate::units::count")]
+    pub floor_height: u32,
     pub bands: Vec<MineBand>,
     /// Chance a broken rock reveals the ladder down. 0..1.
-    pub ladder_chance: f64,
+    #[serde(with = "crate::units::probability")]
+    pub ladder_chance: u64,
     /// Elevator checkpoint every N floors. int, positive.
-    pub elevator_every: f64,
+    #[serde(with = "crate::units::count")]
+    pub elevator_every: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -67,12 +77,12 @@ impl Default for MineConfig {
             entrance_scene_id: None,
             entrance_x: None,
             entrance_y: None,
-            floors: 20.0,
-            floor_width: 14.0,
-            floor_height: 12.0,
+            floors: 20,
+            floor_width: 14,
+            floor_height: 12,
             bands: Vec::new(),
-            ladder_chance: 0.18,
-            elevator_every: 5.0,
+            ladder_chance: units::from_authoring::<units::Probability>(0.18),
+            elevator_every: 5,
             extra: Map::new(),
         }
     }

@@ -9,8 +9,8 @@
 //! keys stripped. Error texts are the C# host's, word for word.
 
 use crate::{PluginError, PluginErrorKind};
-use farm_sim::js;
 use farm_sim::schema::PluginMutation;
+use farm_sim::units;
 use serde_json::{Map, Value};
 
 /// Validate a handler's return value. A non-array yields nothing; each entry is parsed with
@@ -49,14 +49,14 @@ pub fn parse_mutation(entry: &Value) -> Result<PluginMutation, String> {
     let parsed = match kind.as_str() {
         "giveItem" => {
             let item_id = fields.string("itemId");
-            PluginMutation::GiveItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) }
+            PluginMutation::GiveItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) as u32 }
         }
         "takeItem" => {
             let item_id = fields.string("itemId");
-            PluginMutation::TakeItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) }
+            PluginMutation::TakeItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) as u32 }
         }
-        "giveMoney" => PluginMutation::GiveMoney { amount: fields.int("amount", 1.0, 1_000_000.0) },
-        "takeMoney" => PluginMutation::TakeMoney { amount: fields.int("amount", 1.0, 1_000_000.0) },
+        "giveMoney" => PluginMutation::GiveMoney { amount: fields.int("amount", 1.0, 1_000_000.0) as i64 },
+        "takeMoney" => PluginMutation::TakeMoney { amount: fields.int("amount", 1.0, 1_000_000.0) as i64 },
         "setFlag" => {
             let flag = fields.string("flag");
             PluginMutation::SetFlag { flag, value: fields.flag_value() }
@@ -69,18 +69,21 @@ pub fn parse_mutation(entry: &Value) -> Result<PluginMutation, String> {
         "setWeather" => PluginMutation::SetWeather { weather_id: fields.string("weatherId") },
         "modifyFriendship" => {
             let npc_id = fields.string("npcId");
-            PluginMutation::ModifyFriendship { npc_id, delta: fields.int("delta", -1000.0, 1000.0) }
+            PluginMutation::ModifyFriendship { npc_id, delta: fields.int("delta", -1000.0, 1000.0) as i32 }
         }
         "grantXp" => {
             let skill = fields.string("skill");
-            PluginMutation::GrantXp { skill, amount: fields.int("amount", 1.0, 10_000.0) }
+            PluginMutation::GrantXp { skill, amount: fields.int("amount", 1.0, 10_000.0) as u32 }
         }
-        "modifyEnergy" => PluginMutation::ModifyEnergy { delta: fields.int("delta", -1000.0, 1000.0) },
+        "modifyEnergy" => {
+            // Whole energy points, stored in thousandths.
+            PluginMutation::ModifyEnergy { delta: units::points(fields.int("delta", -1000.0, 1000.0) as i32) }
+        }
         "startQuest" => PluginMutation::StartQuest { quest_id: fields.string("questId") },
         "warpPlayer" => {
             let scene_id = fields.string("sceneId");
-            let x = fields.int("x", 0.0, f64::INFINITY);
-            PluginMutation::WarpPlayer { scene_id, x, y: fields.int("y", 0.0, f64::INFINITY) }
+            let x = fields.int("x", 0.0, f64::INFINITY) as i32;
+            PluginMutation::WarpPlayer { scene_id, x, y: fields.int("y", 0.0, f64::INFINITY) as i32 }
         }
         "startDialogue" => {
             let npc_id = fields.string("npcId");
@@ -139,18 +142,19 @@ impl Fields<'_> {
         }
     }
 
-    /// zod `.number().int().min(min).max(max)`.
+    /// zod `.number().int().min(min).max(max)` (the caller casts a valid value to its integer
+    /// type; an invalid one fails the whole mutation).
     fn int(&mut self, key: &str, min: f64, max: f64) -> f64 {
         let Some(n) = self.object.get(key).and_then(Value::as_f64) else {
             self.failures.push(format!("{key}: expected number"));
             return 0.0;
         };
-        if !js::is_integer(n) {
+        if !units::is_integer(n) {
             self.failures.push(format!("{key}: expected integer"));
         } else if n < min {
-            self.failures.push(format!("{key}: must be >= {}", js::num(min)));
+            self.failures.push(format!("{key}: must be >= {}", units::format_number(min)));
         } else if n > max {
-            self.failures.push(format!("{key}: must be <= {}", js::num(max)));
+            self.failures.push(format!("{key}: must be <= {}", units::format_number(max)));
         }
         n
     }
@@ -248,11 +252,11 @@ mod tests {
     fn unknown_keys_are_stripped_and_values_typed() {
         let parsed =
             parse_mutation(&json!({"type":"giveItem","itemId":"seed-wheat","quantity":2,"extra":"x"})).unwrap();
-        assert_eq!(parsed, PluginMutation::GiveItem { item_id: "seed-wheat".to_owned(), quantity: 2.0 });
+        assert_eq!(parsed, PluginMutation::GiveItem { item_id: "seed-wheat".to_owned(), quantity: 2 });
         let parsed = parse_mutation(&json!({"type":"startDialogue","npcId":"n"})).unwrap();
         assert_eq!(parsed, PluginMutation::StartDialogue { npc_id: "n".to_owned(), dialogue_id: None });
         let parsed = parse_mutation(&json!({"type":"warpPlayer","sceneId":"s","x":1e6,"y":0})).unwrap();
-        assert_eq!(parsed, PluginMutation::WarpPlayer { scene_id: "s".to_owned(), x: 1e6, y: 0.0 });
+        assert_eq!(parsed, PluginMutation::WarpPlayer { scene_id: "s".to_owned(), x: 1_000_000, y: 0 });
     }
 
     #[test]

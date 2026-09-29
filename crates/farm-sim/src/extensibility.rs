@@ -11,35 +11,9 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{HookEvent, MinigameResolveHookPayload};
 use crate::schema::GameState;
+use crate::units;
 use crate::{events, fishing, inventory};
 use serde_json::Value;
-use std::cmp::Ordering;
-
-/// JS `Math.min`: NaN propagates (Rust's `f64::min` returns the other operand).
-fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
-
-/// JS `Math.max`: NaN propagates (Rust's `f64::max` returns the other operand).
-fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.max(b)
-    }
-}
-
-/// Clamp an untrusted score into [0, 1]; NaN counts as 0.
-pub fn clamp_score(score: f64) -> f64 {
-    if !score.is_finite() {
-        return 0.0;
-    }
-    js_max(0.0, js_min(1.0, score))
-}
 
 pub fn handle_start_minigame(ctx: &EngineContext, state: &mut GameState, minigame_id: &str) -> Effects {
     events::start_minigame_session(ctx, state, minigame_id, None)
@@ -56,34 +30,28 @@ pub fn handle_cancel_minigame(state: &mut GameState) -> Effects {
 /// Resolve the open minigame with a score in [0, 1]: built-in bindings run first (fishing), then
 /// the def's score tiers (highest matching `minScore` wins), then the `onMinigameResolve` hook for
 /// plugins.
-pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, raw_score: f64) -> Effects {
+pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, score: u64) -> Effects {
     // The session closes as soon as it resolves (C# `state with { Minigame = null }`).
     let Some(session) = state.minigame.take() else { return vec![] };
-    let score = clamp_score(raw_score);
+    // The score reads as a 0–1 fraction clamped onto the grid, like v8's `clampScore`.
+    let score = score.min(units::PROBABILITY_ONE);
     let definition = ctx.content.minigames.iter().find(|def| def.id == session.minigame_id);
 
     let mut effects = Vec::new();
 
     // Built-in binding: the fishing minigame resolves the pending cast.
     if session.context.get("builtin").and_then(Value::as_str) == Some("fishing") {
-        let rod_tier = session.context.get("rodTier").and_then(Value::as_f64).unwrap_or(1.0);
+        let rod_tier =
+            session.context.get("rodTier").and_then(units::json_int).map_or(1, |tier| i32::try_from(tier).unwrap_or(1));
         effects.extend(fishing::resolve_fishing(ctx, state, rod_tier, Some(score)).effects);
     }
 
     if let Some(definition) = definition.filter(|def| !def.result_tiers.is_empty()) {
         let mut tiers: Vec<_> = definition.result_tiers.iter().collect();
-        tiers.sort_by(|a, b| {
-            let d = b.min_score - a.min_score;
-            if d > 0.0 {
-                Ordering::Greater
-            } else if d < 0.0 {
-                Ordering::Less
-            } else {
-                Ordering::Equal
-            }
-        });
+        // Highest minScore first (stable for equal scores).
+        tiers.sort_by(|a, b| b.min_score.cmp(&a.min_score));
         if let Some(tier) = tiers.into_iter().find(|candidate| score >= candidate.min_score) {
-            effects.extend(events::apply_outcomes(ctx, state, &tier.outcomes, 0.0));
+            effects.extend(events::apply_outcomes(ctx, state, &tier.outcomes, 0));
         }
     }
 
@@ -104,7 +72,7 @@ pub fn handle_use_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
 
     let result = events::perform_action(ctx, state, &use_action_id);
     if result.ran && consume_on_use {
-        state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1.0);
+        state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1);
     }
     result.effects
 }

@@ -7,26 +7,16 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
-use crate::js;
 use crate::schema::{GameState, Quest, QuestObjective, QuestObjectiveProgress, QuestProgress};
 use indexmap::IndexMap;
-
-/// JS `Math.min`: NaN propagates (Rust's `f64::min` returns the other operand).
-fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
 
 fn get_quest_definition<'a>(ctx: &'a EngineContext, quest_id: &str) -> Option<&'a Quest> {
     ctx.content.quests.iter().find(|quest| quest.id == quest_id)
 }
 
-fn objective_target(objective: &QuestObjective) -> f64 {
+fn objective_target(objective: &QuestObjective) -> u32 {
     // ?? not ||: an authored target of 0 means "already satisfied", not 1.
-    objective.target_item_quantity.or(objective.target_crop_quantity).unwrap_or(1.0)
+    objective.target_item_quantity.or(objective.target_crop_quantity).unwrap_or(1)
 }
 
 /// Complete a quest: move it to completed, grant rewards.
@@ -36,8 +26,8 @@ fn complete_quest(ctx: &EngineContext, state: &mut GameState, quest_id: &str) ->
     state.player.active_quests.retain(|id| id != quest_id);
     state.player.completed_quests.push(quest_id.to_owned());
 
-    if let Some(money) = quest.rewards.money.filter(|money| *money != 0.0 && !money.is_nan()) {
-        state.player.money += money;
+    if let Some(money) = quest.rewards.money.filter(|money| *money != 0) {
+        state.player.money = state.player.money.saturating_add(money);
     }
 
     let mut effects = Vec::new();
@@ -57,7 +47,7 @@ fn complete_quest(ctx: &EngineContext, state: &mut GameState, quest_id: &str) ->
                 // discarding it.
                 effects.push(Effect::message(
                     message_levels::ERROR,
-                    format!("Inventory full — quest reward lost: {}× {}", js::num(reward.quantity), item.name),
+                    format!("Inventory full — quest reward lost: {}× {}", reward.quantity, item.name),
                 ));
             }
         }
@@ -89,7 +79,7 @@ pub fn progress_quests(
     state: &mut GameState,
     kind: &str,
     target_id: &str,
-    amount: f64,
+    amount: u32,
 ) -> Effects {
     let mut effects = Vec::new();
 
@@ -108,7 +98,7 @@ pub fn progress_quests(
             let objective_state = objectives
                 .get(&objective.id)
                 .cloned()
-                .unwrap_or(QuestObjectiveProgress { progress: 0.0, completed: false });
+                .unwrap_or(QuestObjectiveProgress { progress: 0, completed: false });
             if objective.r#type != kind || objective_state.completed {
                 continue;
             }
@@ -124,7 +114,7 @@ pub fn progress_quests(
             }
 
             let target = objective_target(objective);
-            let new_progress = js_min(objective_state.progress + amount, target);
+            let new_progress = objective_state.progress.saturating_add(amount).min(target);
             objectives.insert(
                 objective.id.clone(),
                 QuestObjectiveProgress { progress: new_progress, completed: new_progress >= target },

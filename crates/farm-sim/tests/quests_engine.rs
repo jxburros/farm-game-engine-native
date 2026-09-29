@@ -11,6 +11,7 @@ use farm_sim::schema::{
     default_weather_config, GameProject, GameState, InventorySlot, MineConfig, Player, ProjectSettings, Quest,
     QuestObjective, QuestRewardItem, QuestRewards,
 };
+use farm_sim::units;
 use farm_sim::{content_builtin, quests, state, Effect, EngineContext};
 
 fn make_quest(id: &str) -> Quest {
@@ -24,9 +25,9 @@ fn make_quest(id: &str) -> Quest {
             r#type: "collect".to_owned(),
             description: "collect wood".to_owned(),
             target_item_id: Some("material-wood".to_owned()),
-            target_item_quantity: Some(2.0),
+            target_item_quantity: Some(2),
             completed: false,
-            progress: 0.0,
+            progress: 0,
             ..QuestObjective::default()
         }],
         rewards: QuestRewards::default(),
@@ -36,20 +37,20 @@ fn make_quest(id: &str) -> Quest {
 
 fn make_project(mutate: impl FnOnce(&mut GameProject)) -> GameProject {
     let mut project = GameProject {
-        schema_version: 7.0,
+        schema_version: 7,
         id: "quest-test".to_owned(),
         name: "Quest Test".to_owned(),
-        version: "2.0".to_owned(),
-        scenes: vec![empty_scene("farm", "Farm", 8.0, 8.0)],
+        version: "2".to_owned(),
+        scenes: vec![empty_scene("farm", "Farm", 8, 8)],
         items: content_builtin::create_default_items(),
         player: Player {
-            x: 4.0,
-            y: 4.0,
+            x: units::tiles(4),
+            y: units::tiles(4),
             direction: "up".to_owned(),
             scene_id: "farm".to_owned(),
             inventory: vec![],
-            max_inventory_size: 3.0,
-            money: 100.0,
+            max_inventory_size: 3,
+            money: 100,
             ..Player::default()
         },
         start_scene_id: "farm".to_owned(),
@@ -57,9 +58,9 @@ fn make_project(mutate: impl FnOnce(&mut GameProject)) -> GameProject {
         selected_tile_type: "grass".to_owned(),
         current_time: 1.0,
         current_season: "spring".to_owned(),
-        current_day: 1.0,
-        current_time_minutes: 6.0 * 60.0,
-        current_year: 1.0,
+        current_day: 1,
+        current_time_minutes: units::minutes(6 * 60),
+        current_year: 1,
         shops: vec![content_builtin::create_default_shop()],
         settings: ProjectSettings::default(),
         weather: default_weather_config(),
@@ -99,7 +100,7 @@ fn completed(state: &GameState, ids: &[&str]) -> GameState {
     next
 }
 
-fn objective_progress(state: &GameState, quest_id: &str, objective_id: &str) -> f64 {
+fn objective_progress(state: &GameState, quest_id: &str, objective_id: &str) -> u32 {
     state.quests[quest_id].objectives.as_ref().expect("objectives")[objective_id].progress
 }
 
@@ -144,16 +145,16 @@ fn gates_on_prerequisites() {
 
 #[test]
 fn accumulates_and_clamps_progress_to_the_objective_target_then_auto_completes() {
-    let quest = Quest { rewards: QuestRewards { money: Some(10.0), ..QuestRewards::default() }, ..make_quest("q1") };
+    let quest = Quest { rewards: QuestRewards { money: Some(10), ..QuestRewards::default() }, ..make_quest("q1") };
     let (ctx, mut state) = make_engine(activate(quest, None));
-    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 1.0);
-    assert_eq!(objective_progress(&state, "q1", "obj-1"), 1.0);
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 1);
+    assert_eq!(objective_progress(&state, "q1", "obj-1"), 1);
     assert!(!state.player.completed_quests.contains(&"q1".to_owned()));
 
-    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 5.0);
+    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 5);
     assert!(state.player.completed_quests.contains(&"q1".to_owned()));
     assert!(!state.player.active_quests.contains(&"q1".to_owned()));
-    assert_eq!(state.player.money, 110.0);
+    assert_eq!(state.player.money, 110);
     assert!(effects.iter().any(|e| matches!(e, Effect::QuestCompleted { .. })));
 }
 
@@ -165,15 +166,15 @@ fn treats_an_authored_target_of_0_as_already_satisfied() {
             r#type: "collect".to_owned(),
             description: "none".to_owned(),
             target_item_id: Some("material-wood".to_owned()),
-            target_item_quantity: Some(0.0),
+            target_item_quantity: Some(0),
             completed: false,
-            progress: 0.0,
+            progress: 0,
             ..QuestObjective::default()
         }],
         ..make_quest("q0")
     };
     let (ctx, mut state) = make_engine(activate(quest, None));
-    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 0.0);
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 0);
     assert!(state.player.completed_quests.contains(&"q0".to_owned()));
 }
 
@@ -181,11 +182,11 @@ fn treats_an_authored_target_of_0_as_already_satisfied() {
 fn ignores_non_matching_kinds_and_target_ids() {
     let (ctx, state) = make_engine(activate(make_quest("q1"), None));
     let mut wrong_kind = state.clone();
-    quests::progress_quests(&ctx, &mut wrong_kind, "harvest", "material-wood", 1.0);
-    assert_eq!(objective_progress(&wrong_kind, "q1", "obj-1"), 0.0);
+    quests::progress_quests(&ctx, &mut wrong_kind, "harvest", "material-wood", 1);
+    assert_eq!(objective_progress(&wrong_kind, "q1", "obj-1"), 0);
     let mut wrong_target = state.clone();
-    quests::progress_quests(&ctx, &mut wrong_target, "collect", "material-stone", 1.0);
-    assert_eq!(objective_progress(&wrong_target, "q1", "obj-1"), 0.0);
+    quests::progress_quests(&ctx, &mut wrong_target, "collect", "material-stone", 1);
+    assert_eq!(objective_progress(&wrong_target, "q1", "obj-1"), 0);
 }
 
 #[test]
@@ -193,15 +194,14 @@ fn announces_item_rewards_that_do_not_fit_instead_of_dropping_them_silently() {
     let items = content_builtin::create_default_items();
     let quest = Quest {
         rewards: QuestRewards {
-            items: Some(vec![QuestRewardItem { item_id: "seed-wheat".to_owned(), quantity: 3.0 }]),
+            items: Some(vec![QuestRewardItem { item_id: "seed-wheat".to_owned(), quantity: 3 }]),
             ..QuestRewards::default()
         },
         ..make_quest("q1")
     };
-    let inventory =
-        vec![slot(&items, "tool-hoe", 1.0), slot(&items, "tool-axe", 1.0), slot(&items, "tool-pickaxe", 1.0)];
+    let inventory = vec![slot(&items, "tool-hoe", 1), slot(&items, "tool-axe", 1), slot(&items, "tool-pickaxe", 1)];
     let (ctx, mut state) = make_engine(activate(quest, Some(inventory)));
-    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2.0);
+    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2);
     assert!(state.player.completed_quests.contains(&"q1".to_owned()));
     assert!(effects
         .iter()
@@ -214,15 +214,15 @@ fn announces_item_rewards_that_do_not_fit_instead_of_dropping_them_silently() {
 fn only_completes_active_quests_and_only_once() {
     let (ctx, mut state) = make_engine(|p| {
         p.quests =
-            vec![Quest { rewards: QuestRewards { money: Some(25.0), ..QuestRewards::default() }, ..make_quest("q1") }];
+            vec![Quest { rewards: QuestRewards { money: Some(25), ..QuestRewards::default() }, ..make_quest("q1") }];
         p.player.active_quests = vec!["q1".to_owned()];
     });
     quests::complete_quest_by_id(&ctx, &mut state, "q1");
-    assert_eq!(state.player.money, 125.0);
+    assert_eq!(state.player.money, 125);
     assert_eq!(state.player.completed_quests, vec!["q1".to_owned()]);
     // Second completion is a no-op: not active any more.
     assert!(quests::complete_quest_by_id(&ctx, &mut state, "q1").is_empty());
-    assert_eq!(state.player.money, 125.0);
+    assert_eq!(state.player.money, 125);
     assert_eq!(state.player.completed_quests, vec!["q1".to_owned()]);
 }
 

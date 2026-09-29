@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn replay_and_save_are_deterministic() {
-        let replay = ReplayFile { inputs: vec![ReplayInput::Tick { ticks: 20.0 }], ..ReplayFile::default() };
+        let replay = ReplayFile { inputs: vec![ReplayInput::Tick { ticks: 20 }], ..ReplayFile::default() };
         let first = run_cartridge(CART, &replay, None).unwrap();
         let second = run_cartridge(CART, &replay, None).unwrap();
         assert_eq!(first.report.state_hash, second.report.state_hash);

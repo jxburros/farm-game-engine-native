@@ -12,18 +12,19 @@ pub struct QuestObjective {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_item_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_item_quantity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub target_item_quantity: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_crop_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_crop_quantity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub target_crop_quantity: Option<u32>,
     #[serde(rename = "targetNPCId", skip_serializing_if = "Option::is_none")]
     pub target_npc_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_scene_id: Option<String>,
     pub completed: bool,
-    pub progress: f64,
+    #[serde(with = "crate::units::count")]
+    pub progress: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -33,18 +34,19 @@ pub struct QuestObjective {
 #[serde(rename_all = "camelCase", default)]
 pub struct QuestRewardItem {
     pub item_id: String,
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct QuestRewards {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub money: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::money::opt")]
+    pub money: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<QuestRewardItem>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub experience: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub experience: Option<u32>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -71,10 +73,10 @@ pub struct Quest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_seasons: Option<Vec<String>>,
     /// Absolute-day window (M3): offered from/until these days (inclusive).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub available_from_day: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub available_to_day: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub available_from_day: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub available_to_day: Option<u32>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

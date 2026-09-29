@@ -12,6 +12,7 @@ use crate::quests;
 use crate::rng::Rng;
 use crate::schema::{FishTable, GameState};
 use crate::skills;
+use crate::units;
 
 /// TS `FishingResult` minus the state (updated in place).
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -36,20 +37,23 @@ pub fn active_fish_table<'a>(ctx: &'a EngineContext, state: &GameState) -> Optio
     })
 }
 
-fn clamp01(value: f64) -> f64 {
-    if value.is_finite() {
-        value.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
 /// Resolve a cast into water (caller already validated rod + water tile).
 /// `score` (0–1, from the fishing minigame when one is declared)
 /// reduces the escape chance: a perfect score always lands the fish.
 ///
 /// TS `resolveFishing(ctx, state, rodTier, options?)`; `score` is `options.score`.
-pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: f64, score: Option<f64>) -> FishingResult {
+/// The chance a hooked fish escapes: `max(0, difficulty − 0.15 × (rodTier − 1)) × (1 − score)`,
+/// as an exact fraction (numerator, denominator) of 2³² units: each rod tier above 1 takes 15%
+/// off the difficulty, and a minigame score (0–1) scales what is left.
+pub fn escape_chance(difficulty: u64, rod_tier: i32, score: Option<u64>) -> (u128, u128) {
+    let one = i128::from(units::PROBABILITY_ONE);
+    // 20 × (difficulty − 3/20 × (tier − 1) × 2³²)
+    let scaled = (20 * i128::from(difficulty) - 3 * (i128::from(rod_tier) - 1) * one).max(0) as u128;
+    let skill = u128::from(units::PROBABILITY_ONE - score.unwrap_or(0).min(units::PROBABILITY_ONE));
+    (scaled * skill, 20 * units::PROBABILITY_ONE as u128)
+}
+
+pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32, score: Option<u64>) -> FishingResult {
     let Some(table) = active_fish_table(ctx, state) else {
         return FishingResult {
             effects: vec![Effect::message(message_levels::INFO, "The water is quiet — nothing seems to live here.")],
@@ -63,14 +67,14 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: f64
 
     // Junk first, then the weighted fish roll, then the escape check.
     // (The float is drawn only when junkChance > 0; `&&` short-circuits.)
-    if table.junk_chance > 0.0
-        && rng.float() < table.junk_chance
+    if table.junk_chance > 0
+        && rng.chance(table.junk_chance)
         && table.junk_item_id.as_deref().is_some_and(|id| !id.is_empty())
     {
         let junk = ctx.content.items.iter().find(|i| Some(i.id.as_str()) == table.junk_item_id.as_deref());
         state.rng = rng.state;
         if let Some(junk) = junk {
-            let added = inventory::add_item(&state.player.inventory, junk, 1.0, state.player.max_inventory_size, None);
+            let added = inventory::add_item(&state.player.inventory, junk, 1, state.player.max_inventory_size, None);
             if added.added {
                 state.player.inventory = added.inventory;
                 effects.push(Effect::message(message_levels::INFO, format!("You fished up {}…", junk.name)));
@@ -81,25 +85,19 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: f64
         return FishingResult { effects, caught: false };
     }
 
-    let weights: Vec<f64> = table.entries.iter().map(|entry| entry.weight).collect();
-    let index = rng.weighted(&weights);
-    if index < 0 {
+    let weights: Vec<u32> = table.entries.iter().map(|entry| entry.weight).collect();
+    let Some(index) = rng.weighted(&weights) else {
         state.rng = rng.state;
         return FishingResult {
             effects: vec![Effect::message(message_levels::INFO, "Not even a nibble.")],
             caught: false,
         };
-    }
-    let entry = &table.entries[index as usize];
+    };
+    let entry = &table.entries[index];
 
     // Escape roll: difficulty reduced 15% per rod tier above 1, then scaled
     // down by minigame skill (score 1 → no escape chance at all).
-    let skill_scale = match score {
-        Some(score) => 1.0 - clamp01(score),
-        None => 1.0,
-    };
-    let effective_difficulty = (entry.difficulty - 0.15 * (rod_tier - 1.0)).max(0.0) * skill_scale;
-    if rng.float() < effective_difficulty {
+    if rng.chance_below(escape_chance(entry.difficulty, rod_tier, score)) {
         state.rng = rng.state;
         return FishingResult { effects: vec![Effect::message(message_levels::INFO, "It got away!")], caught: false };
     }
@@ -107,7 +105,7 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: f64
     state.rng = rng.state;
     let fish = ctx.content.items.iter().find(|i| i.id == entry.item_id);
     if let Some(fish) = fish {
-        let added = inventory::add_item(&state.player.inventory, fish, 1.0, state.player.max_inventory_size, None);
+        let added = inventory::add_item(&state.player.inventory, fish, 1, state.player.max_inventory_size, None);
         if added.added {
             state.player.inventory = added.inventory;
             effects.push(Effect::message(message_levels::SUCCESS, format!("Caught a {}!", fish.name)));
@@ -118,8 +116,8 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: f64
     }
 
     if caught {
-        effects.extend(skills::grant_xp(ctx, state, "fishing", 8.0));
-        effects.extend(quests::progress_quests(ctx, state, "collect", &entry.item_id, 1.0));
+        effects.extend(skills::grant_xp(ctx, state, "fishing", 8));
+        effects.extend(quests::progress_quests(ctx, state, "collect", &entry.item_id, 1));
     }
 
     FishingResult { effects, caught }

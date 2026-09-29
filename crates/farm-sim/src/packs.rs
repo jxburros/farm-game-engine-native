@@ -714,7 +714,7 @@ mod tests {
                 manifest: PackManifest {
                     id: id.to_owned(),
                     name: id.to_uppercase(),
-                    version: "1.0.0".to_owned(),
+                    version: "1.0".to_owned(),
                     dependencies: dependencies
                         .iter()
                         .map(|dependency| PackDependency { pack_id: (*dependency).to_owned(), version: None })
@@ -757,7 +757,7 @@ mod tests {
             player: PlayerState {
                 inventory: vec![InventorySlot {
                     item: Item { id: "wheat".to_owned(), ..Item::default() },
-                    quantity: 1.0,
+                    quantity: 1,
                 }],
                 ..PlayerState::default()
             },
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn reconcile_quarantines_and_restores_pack_items() {
-        let slot = |id: &str| InventorySlot { item: Item { id: id.to_owned(), ..Item::default() }, quantity: 1.0 };
+        let slot = |id: &str| InventorySlot { item: Item { id: id.to_owned(), ..Item::default() }, quantity: 1 };
         let state = GameState {
             player: PlayerState { inventory: vec![slot("wheat"), slot("gone:thing")], ..PlayerState::default() },
             quarantined_items: vec![slot("back:thing")],

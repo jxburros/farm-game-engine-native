@@ -2,7 +2,7 @@
 //! object keys sorted by UTF-16 code unit and JavaScript number/string formatting, so a Rust
 //! state and a TypeScript state that are equal produce identical text.
 
-use crate::js;
+use crate::{text, units};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -64,14 +64,14 @@ fn write(out: &mut String, value: &Value) {
         Value::Object(map) => {
             // Later duplicates win (JS object semantics); serde_json objects have no duplicates.
             let mut props: Vec<(&str, &Value)> = map.iter().map(|(k, v)| (k.as_str(), v)).collect();
-            props.sort_by(|a, b| js::compare_strings(a.0, b.0));
+            props.sort_by(|a, b| text::compare_strings(a.0, b.0));
             let props = order_like_js_object(props, |p| p.0);
             out.push('{');
             for (i, (name, item)) in props.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                js::push_quoted(out, name);
+                text::push_quoted(out, name);
                 out.push(':');
                 write(out, item);
             }
@@ -87,11 +87,11 @@ fn write(out: &mut String, value: &Value) {
             }
             out.push(']');
         }
-        Value::String(s) => js::push_quoted(out, s),
+        Value::String(s) => text::push_quoted(out, s),
         Value::Number(n) => {
             // JSON.stringify writes non-finite numbers as null.
             match n.as_f64() {
-                Some(d) if d.is_finite() => out.push_str(&js::num(d)),
+                Some(d) if d.is_finite() => out.push_str(&units::format_number(d)),
                 _ => out.push_str("null"),
             }
         }

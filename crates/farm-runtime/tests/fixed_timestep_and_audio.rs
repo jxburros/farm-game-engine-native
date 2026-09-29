@@ -5,7 +5,7 @@ use farm_runtime::audio::{
     SfxPreset, DEFAULT_SETTINGS,
 };
 use farm_runtime::timestep::FixedTimestep;
-use farm_sim::{js, Effect};
+use farm_sim::{units, Effect};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -40,7 +40,12 @@ impl RecordingBackend {
 
 impl AudioBackend for RecordingBackend {
     fn set_volumes(&mut self, master: f64, sfx: f64, music: f64) {
-        self.record(format!("volumes {} {} {}", js::num(master), js::num(sfx), js::num(music)));
+        self.record(format!(
+            "volumes {} {} {}",
+            units::format_number(master),
+            units::format_number(sfx),
+            units::format_number(music)
+        ));
     }
     fn play_tone(&mut self, name: &str, _preset: &SfxPreset) {
         self.record(format!("tone {name}"));
@@ -116,16 +121,16 @@ fn maps_effects_to_sfx() {
     assert_eq!(audio::sfx_for_effect(&message("success")), Some("success"));
     assert_eq!(audio::sfx_for_effect(&message("info")), None);
     assert_eq!(
-        audio::sfx_for_effect(&Effect::CropHarvested { crop_type: "wheat".to_owned(), quantity: 1.0 }),
+        audio::sfx_for_effect(&Effect::CropHarvested { crop_type: "wheat".to_owned(), quantity: 1 }),
         Some("harvest")
     );
     assert_eq!(audio::sfx_for_effect(&Effect::QuestCompleted { quest_id: "q".to_owned() }), Some("quest"));
     assert_eq!(
-        audio::sfx_for_effect(&Effect::DayStarted { day: 2.0, season: "spring".to_owned(), year: 1.0 }),
+        audio::sfx_for_effect(&Effect::DayStarted { day: 2, season: "spring".to_owned(), year: 1 }),
         Some("sleep")
     );
-    assert_eq!(audio::sfx_for_effect(&Effect::SceneChanged { scene_id: "s".to_owned(), x: 0.0, y: 0.0 }), Some("ui"));
-    assert_eq!(audio::sfx_for_effect(&Effect::PlayerMoved { x: 0.0, y: 0.0 }), None);
+    assert_eq!(audio::sfx_for_effect(&Effect::SceneChanged { scene_id: "s".to_owned(), x: 0, y: 0 }), Some("ui"));
+    assert_eq!(audio::sfx_for_effect(&Effect::PlayerMoved { x: 0, y: 0 }), None);
 }
 
 #[test]

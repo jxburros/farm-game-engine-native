@@ -1,16 +1,22 @@
-//! Rust twin of the retired C# `GoldenParityTests.cs::ReplayMatchesTypeScript`.
+//! The golden replays.
 //!
-//! Every fixture under `fixtures/golden/replays` was recorded from the TypeScript reference
-//! engine; the Rust port must reproduce each state hash, effect list and final state byte for
-//! byte. All replays run in one test so the merge wave sees every divergence at once: a replay
-//! that panics (a `todo!()` in a module that is still being ported, for instance) is reported
-//! with the panic location and message, and the run continues with the next replay.
+//! `fixtures/golden/v8/replays` holds the replays the TypeScript reference engine recorded
+//! (project, seed and input log, with its hashes, effects and states). Since v9 Rust is the
+//! reference (docs/NUMERICS.md "Goldens"): `fixtures/golden/replays` holds the same inputs with
+//! the hashes, effects and states this engine produces, recorded with
+//! `FARM_RECORD_GOLDENS=1 cargo test -p farm-sim --test golden_replays` and reviewed as a diff.
+//! Every replay must reproduce its recorded hash after every step, byte for byte. (The v8
+//! replays themselves are still played by `v8_outcomes`, which checks that v9 plays the same
+//! game as v8.)
+//!
+//! All replays run in one test so a change shows every divergence at once: a replay that
+//! panics is reported with the panic location and message, and the run continues.
 
 use farm_sim::replay::ReplayInput;
 use farm_sim::schema::GameProject;
 use farm_sim::{engine, hash, quests, stable_json, state, EngineContext};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Map, Value};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -33,128 +39,123 @@ fn fixture_names(folder: &str) -> Vec<String> {
         .map(|entry| entry.expect("directory entry").path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .map(|path| path.file_stem().expect("file stem").to_string_lossy().into_owned())
+        .filter(|name| name != "index")
         .collect();
     names.sort();
     names
 }
 
-/// Port of the C# `AssertSameStable`: the first differing character with context on each side.
-fn same_stable(what: &str, expected: &str, actual: &str) -> Result<(), String> {
-    if expected == actual {
-        return Ok(());
-    }
-    let expected_chars: Vec<char> = expected.chars().collect();
-    let actual_chars: Vec<char> = actual.chars().collect();
-    let mut at = 0;
-    while at < expected_chars.len() && at < actual_chars.len() && expected_chars[at] == actual_chars[at] {
-        at += 1;
-    }
-    let excerpt = |chars: &[char]| -> String {
-        let from = at.saturating_sub(300);
-        let to = (at + 400).min(chars.len());
-        chars[from..to].iter().collect()
-    };
-    Err(format!(
-        "{what}: stable JSON differs at char {at} (expected {} chars, got {}).\nTS:   …{}…\nRust: …{}…",
-        expected_chars.len(),
-        actual_chars.len(),
-        excerpt(&expected_chars),
-        excerpt(&actual_chars)
-    ))
+fn recording() -> bool {
+    std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1")
 }
 
-/// Port of the C# `AssertSameJson`: optional stable-JSON equality, then the hash.
-fn same_json<T: Serialize>(
-    what: &str,
-    expected_hash: &str,
-    expected_json: Option<&Value>,
-    actual: &T,
-) -> Result<(), String> {
-    let actual_stable = hash::stable_stringify(actual);
-    if let Some(json) = expected_json {
-        same_stable(what, &stable_json::stringify_value(json), &actual_stable)?;
-    }
-    let actual_hash = hash::hash_text(&actual_stable);
-    if actual_hash != expected_hash {
-        return Err(format!("{what}: expected hash {expected_hash}, got {actual_hash}"));
-    }
-    Ok(())
+/// A value as the fixtures store it: its stable JSON, parsed (keys sorted, JS numbers).
+fn stable_value<T: Serialize>(value: &T) -> Value {
+    serde_json::from_str(&stable_json::stringify(value)).expect("stable JSON parses")
 }
 
-fn truncate_chars(text: &str, max: usize) -> String {
-    text.chars().take(max).collect()
-}
-
-fn string_field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
-    value[key].as_str().ok_or_else(|| format!("fixture has no string '{key}'"))
-}
-
-/// One replay, start to finish. `Err` carries the first divergence with the same diagnostics the
-/// C# test prints (step index, input, state before the step, both effect lists).
-fn run_replay(name: &str) -> Result<(), String> {
-    let fixture = golden(&format!("replays/{name}.json"));
+/// Plays one replay's inputs and returns the fixture this engine records for it.
+fn play(source: &Value) -> Result<Value, String> {
     let project: GameProject =
-        serde_json::from_value(fixture["project"].clone()).map_err(|e| format!("project does not parse: {e}"))?;
-
+        serde_json::from_value(source["project"].clone()).map_err(|e| format!("project does not parse: {e}"))?;
     let content = state::create_content_from_project(&project);
-    let expected_content_hash = string_field(&fixture, "contentHash")?;
-    let actual_content_hash = hash::hash_state(&content);
-    if actual_content_hash != expected_content_hash {
-        return Err(format!("content: expected hash {expected_content_hash}, got {actual_content_hash}"));
-    }
+    let content_hash = hash::hash_state(&content);
     let ctx = EngineContext::new(content);
 
-    let seed = fixture["seed"].as_str();
-    let mut game_state = state::create_game_state(&project, seed);
-    same_json("created state", string_field(&fixture, "createdHash")?, None, &game_state)?;
-
-    if fixture["autoStartQuests"].as_bool() == Some(true) {
-        quests::auto_start_quests(&ctx, &mut game_state);
+    let seed = source["seed"].as_str();
+    let mut game = state::create_game_state(&project, seed);
+    let created_hash = hash::hash_state(&game);
+    if source["autoStartQuests"].as_bool() == Some(true) {
+        quests::auto_start_quests(&ctx, &mut game);
     }
-    same_json("initial state", string_field(&fixture, "initialHash")?, Some(&fixture["initialState"]), &game_state)?;
+    let initial_hash = hash::hash_state(&game);
+    let initial_state = stable_value(&game);
 
-    let steps = fixture["steps"].as_array().ok_or("fixture has no 'steps' array")?;
-    for (index, step) in steps.iter().enumerate() {
+    let inputs = source["steps"].as_array().ok_or("fixture has no 'steps' array")?;
+    let mut steps = Vec::with_capacity(inputs.len());
+    for (index, step) in inputs.iter().enumerate() {
         let input: ReplayInput = serde_json::from_value(step["input"].clone())
             .map_err(|e| format!("step {index}: input does not parse ({}): {e}", step["input"]))?;
-        let before = game_state.clone();
         let effects = match &input {
-            ReplayInput::Command { command } => engine::apply_command(&ctx, &mut game_state, command),
-            ReplayInput::Tick { ticks } => engine::advance_tick(&ctx, &mut game_state, *ticks),
+            ReplayInput::Command { command } => engine::apply_command(&ctx, &mut game, command),
+            ReplayInput::Tick { ticks } => engine::advance_tick(&ctx, &mut game, *ticks),
         };
+        steps.push(json!({
+            "input": step["input"],
+            "hash": hash::hash_state(&game),
+            "effects": stable_value(&effects),
+        }));
+    }
 
-        let expected_hash = string_field(step, "hash")?;
-        let actual_hash = hash::hash_state(&game_state);
-        let ts_effects = stable_json::stringify_value(&step["effects"]);
-        let rust_effects = stable_json::stringify(&effects);
-        if actual_hash != expected_hash {
-            return Err(format!(
-                "state diverged at step {index} ({}).\nexpected hash {expected_hash}, got {actual_hash}.\n\
-                 state before step: {}\nRust effects: {rust_effects}\nTS effects: {ts_effects}",
-                step["input"],
-                truncate_chars(&hash::stable_stringify(&before), 4000),
-            ));
+    let mut fixture = Map::new();
+    for key in ["name", "description", "seed", "autoStartQuests", "project"] {
+        fixture.insert(key.to_owned(), source[key].clone());
+    }
+    fixture.insert("contentHash".to_owned(), Value::String(content_hash));
+    fixture.insert("createdHash".to_owned(), Value::String(created_hash));
+    fixture.insert("initialHash".to_owned(), Value::String(initial_hash));
+    fixture.insert("initialState".to_owned(), initial_state);
+    fixture.insert("stepCount".to_owned(), json!(steps.len()));
+    fixture.insert("steps".to_owned(), Value::Array(steps));
+    fixture.insert("finalHash".to_owned(), Value::String(hash::hash_state(&game)));
+    fixture.insert("finalState".to_owned(), stable_value(&game));
+    fixture.insert("finalProject".to_owned(), stable_value(&state::apply_state_to_project(&project, &game)));
+    Ok(Value::Object(fixture))
+}
+
+/// The first place `actual` departs from the recorded fixture: the first step whose hash or
+/// effects differ, else the first differing top-level key.
+fn first_difference(recorded: &Value, actual: &Value) -> Option<String> {
+    for key in ["contentHash", "createdHash", "initialHash"] {
+        if recorded[key] != actual[key] {
+            return Some(format!("{key}: recorded {}, now {}", recorded[key], actual[key]));
         }
-        if ts_effects != rust_effects {
-            return Err(format!(
-                "effects differ at step {index} ({}).\nTS:   {ts_effects}\nRust: {rust_effects}",
-                step["input"]
+    }
+    let (recorded_steps, actual_steps) = (recorded["steps"].as_array(), actual["steps"].as_array());
+    if let (Some(recorded_steps), Some(actual_steps)) = (recorded_steps, actual_steps) {
+        for (index, (want, got)) in recorded_steps.iter().zip(actual_steps).enumerate() {
+            if want["hash"] != got["hash"] {
+                return Some(format!(
+                    "state diverged at step {index} ({}): recorded hash {}, now {}",
+                    want["input"], want["hash"], got["hash"]
+                ));
+            }
+            if want["effects"] != got["effects"] {
+                return Some(format!(
+                    "effects differ at step {index} ({}).\nrecorded: {}\nnow:      {}",
+                    want["input"], want["effects"], got["effects"]
+                ));
+            }
+        }
+    }
+    let keys: Vec<&String> = actual.as_object().map(|map| map.keys().collect()).unwrap_or_default();
+    for key in keys {
+        if recorded[key.as_str()] != actual[key.as_str()] {
+            let text = |value: &Value| value.to_string().chars().take(400).collect::<String>();
+            return Some(format!(
+                "{key}: recorded {}…, now {}…",
+                text(&recorded[key.as_str()]),
+                text(&actual[key.as_str()])
             ));
         }
     }
+    None
+}
 
-    let step_count = fixture["stepCount"].as_f64().ok_or("fixture has no 'stepCount'")?;
-    if step_count != steps.len() as f64 {
-        return Err(format!("stepCount {step_count} but {} steps ran", steps.len()));
+fn check(name: &str) -> Result<(), String> {
+    let source = golden(&format!("v8/replays/{name}.json"));
+    let actual = play(&source)?;
+    let path = golden_dir(&format!("replays/{name}.json"));
+    if recording() {
+        let text = serde_json::to_string(&actual).map_err(|e| e.to_string())? + "\n";
+        std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))?;
+        return Ok(());
     }
-    same_json("final state", string_field(&fixture, "finalHash")?, Some(&fixture["finalState"]), &game_state)?;
-
-    let final_project = state::apply_state_to_project(&project, &game_state);
-    same_stable(
-        "final project",
-        &stable_json::stringify_value(&fixture["finalProject"]),
-        &hash::stable_stringify(&final_project),
-    )
+    let recorded = golden(&format!("replays/{name}.json"));
+    match first_difference(&recorded, &actual) {
+        Some(difference) => Err(difference),
+        None => Ok(()),
+    }
 }
 
 /// Location and message of the most recent panic, recorded by the hook installed below (the
@@ -166,9 +167,12 @@ fn take_last_panic() -> Option<String> {
 }
 
 #[test]
-fn replays_match_the_typescript_engine() {
-    let names: Vec<String> = fixture_names("replays").into_iter().filter(|name| name != "index").collect();
+fn replays_match_the_recorded_goldens() {
+    let names = fixture_names("v8/replays");
     assert!(!names.is_empty(), "no replay fixtures found");
+    if !recording() {
+        assert_eq!(fixture_names("replays"), names, "every v8 replay has a recorded v9 golden");
+    }
 
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(|info| {
@@ -187,7 +191,7 @@ fn replays_match_the_typescript_engine() {
     let mut failures = Vec::new();
     for name in &names {
         let _ = take_last_panic();
-        match panic::catch_unwind(AssertUnwindSafe(|| run_replay(name))) {
+        match panic::catch_unwind(AssertUnwindSafe(|| check(name))) {
             Ok(Ok(())) => println!("{name}: ok"),
             Ok(Err(message)) => failures.push(format!("{name}: {message}")),
             Err(_) => {
@@ -200,7 +204,7 @@ fn replays_match_the_typescript_engine() {
 
     assert!(
         failures.is_empty(),
-        "{} of {} replays diverged from the TypeScript engine:\n\n{}",
+        "{} of {} replays diverged from their recorded goldens:\n\n{}",
         failures.len(),
         names.len(),
         failures.join("\n\n")

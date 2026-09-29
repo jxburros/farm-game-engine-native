@@ -13,15 +13,18 @@ pub struct AnimalSpeciesDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual: Option<VisualRef>,
     /// nonnegative.
-    pub purchase_cost: f64,
+    #[serde(with = "crate::units::money")]
+    pub purchase_cost: i64,
     /// Item consumed daily; absent = grazes for free.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feed_item_id: Option<String>,
     pub product_item_id: String,
     /// Days between products (when fed and adult). int, positive.
-    pub product_interval_days: f64,
+    #[serde(with = "crate::units::count")]
+    pub product_interval_days: u32,
     /// int, nonnegative.
-    pub days_to_adult: f64,
+    #[serde(with = "crate::units::count")]
+    pub days_to_adult: u32,
     /// Renderer hint.
     pub color: String,
     #[serde(flatten)]
@@ -34,11 +37,11 @@ impl Default for AnimalSpeciesDefinition {
             id: String::new(),
             name: String::new(),
             visual: None,
-            purchase_cost: 0.0,
+            purchase_cost: 0,
             feed_item_id: None,
             product_item_id: String::new(),
-            product_interval_days: 1.0,
-            days_to_adult: 3.0,
+            product_interval_days: 1,
+            days_to_adult: 3,
             color: "#e8d8c3".to_owned(),
             extra: Map::new(),
         }
@@ -54,17 +57,22 @@ pub struct AnimalState {
     pub name: String,
     pub scene_id: String,
     /// int.
-    pub x: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
     /// int.
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     /// 0..100; fed & petted raise it, neglect lowers it.
-    pub mood: f64,
+    #[serde(with = "crate::units::int")]
+    pub mood: i32,
     pub fed_today: bool,
     pub petted_today: bool,
     /// int.
-    pub age_days: f64,
+    #[serde(with = "crate::units::count")]
+    pub age_days: u32,
     /// int.
-    pub days_since_product: f64,
+    #[serde(with = "crate::units::count")]
+    pub days_since_product: u32,
     /// Product waiting to be collected.
     pub product_ready: bool,
     #[serde(flatten)]
@@ -78,13 +86,13 @@ impl Default for AnimalState {
             species_id: String::new(),
             name: String::new(),
             scene_id: String::new(),
-            x: 0.0,
-            y: 0.0,
-            mood: 70.0,
+            x: 0,
+            y: 0,
+            mood: 70,
             fed_today: false,
             petted_today: false,
-            age_days: 0.0,
-            days_since_product: 0.0,
+            age_days: 0,
+            days_since_product: 0,
             product_ready: false,
             extra: Map::new(),
         }

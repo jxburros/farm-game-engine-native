@@ -7,9 +7,9 @@ use crate::engine_types::{Effects, EngineContext};
 use crate::farming::farming_actions;
 use crate::game_time::SleepOptions;
 use crate::hooks::{CommandHookPayload, HookEvent, RelationshipChangeHookPayload};
-use crate::js;
 use crate::npcs::npc_movement;
 use crate::schema::{EventOutcome, GameState, MoveIntent, NpcSocialState, PluginMutation, MAX_FRIENDSHIP};
+use crate::units;
 use crate::world::world_movement;
 use crate::{
     crafting, dialogue_system, economy, energy, events, extensibility, game_time, inventory, mines, skills, social,
@@ -17,38 +17,15 @@ use crate::{
 };
 
 /// Simulation runs at a fixed rate; rendering interpolates between ticks.
-pub const TICKS_PER_SECOND: f64 = 20.0;
-pub const MS_PER_TICK: f64 = 1000.0 / TICKS_PER_SECOND;
-
-/// Clock quantum: game-minute values are kept on a 1e-6 grid. Per-tick float accumulation would
-/// otherwise drift (24 000 × 0.05 ≠ 1200 in IEEE-754) and make minute/day boundaries land one
-/// tick late. Rounding is deterministic, so this preserves the replay guarantee.
-const MINUTE_QUANTUM: f64 = 1e6;
-
-/// JS `Math.min`: NaN propagates (Rust's `f64::min` returns the other operand).
-fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
-
-/// JS `Math.max`: NaN propagates (Rust's `f64::max` returns the other operand).
-fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.max(b)
-    }
-}
+pub const TICKS_PER_SECOND: u32 = units::TICKS_PER_SECOND;
 
 pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Command) -> Effects {
     ctx.emit(HookEvent::Command(CommandHookPayload { command_type: command.type_name().to_owned() }));
     match command {
         Command::SetMoveIntent { dx, dy } => {
-            let dx = js_max(-1.0, js_min(1.0, js::trunc(*dx)));
-            let dy = js_max(-1.0, js_min(1.0, js::trunc(*dy)));
+            // Read with Math.trunc; clamped to −1..1.
+            let dx = (*dx).clamp(-1, 1);
+            let dy = (*dy).clamp(-1, 1);
             let intent = MoveIntent { dx, dy };
             let direction = world_movement::direction_from_intent(&intent, &state.player.direction);
             state.player.move_intent = intent;
@@ -84,6 +61,11 @@ pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Comma
 /// Apply a plugin-declared mutation (M5). Plugins run sandboxed and return these instead of
 /// mutating state; each is validated by the schema layer before it becomes a command, and unknown
 /// references fail soft here.
+/// A whole-gold plugin amount as an outcome `amount` (thousandths).
+fn money_amount(gold: i64) -> i64 {
+    gold.saturating_mul(i64::from(units::MILLI_ONE))
+}
+
 fn apply_plugin_mutation(
     ctx: &EngineContext,
     state: &mut GameState,
@@ -104,7 +86,7 @@ fn apply_plugin_mutation(
                 return vec![Effect::message(message_levels::INFO, "Inventory full!")];
             }
             state.player.inventory = result.inventory;
-            vec![Effect::message(message_levels::INFO, format!("Received {}× {}", js::num(*quantity), item.name))]
+            vec![Effect::message(message_levels::INFO, format!("Received {quantity}× {}", item.name))]
         }
         PluginMutation::SetFlag { flag, value } => {
             state.flags.insert(flag.clone(), value.clone());
@@ -130,19 +112,27 @@ fn apply_plugin_mutation(
                 item_quantity: Some(*quantity),
                 ..EventOutcome::default()
             }],
-            0.0,
+            0,
         ),
         PluginMutation::GiveMoney { amount } => events::apply_outcomes(
             ctx,
             state,
-            &[EventOutcome { r#type: "giveMoney".to_owned(), amount: Some(*amount), ..EventOutcome::default() }],
-            0.0,
+            &[EventOutcome {
+                r#type: "giveMoney".to_owned(),
+                amount: Some(money_amount(*amount)),
+                ..EventOutcome::default()
+            }],
+            0,
         ),
         PluginMutation::TakeMoney { amount } => events::apply_outcomes(
             ctx,
             state,
-            &[EventOutcome { r#type: "takeMoney".to_owned(), amount: Some(*amount), ..EventOutcome::default() }],
-            0.0,
+            &[EventOutcome {
+                r#type: "takeMoney".to_owned(),
+                amount: Some(money_amount(*amount)),
+                ..EventOutcome::default()
+            }],
+            0,
         ),
         PluginMutation::StartQuest { quest_id } => events::apply_outcomes(
             ctx,
@@ -152,7 +142,7 @@ fn apply_plugin_mutation(
                 quest_id: Some(quest_id.clone()),
                 ..EventOutcome::default()
             }],
-            0.0,
+            0,
         ),
         PluginMutation::WarpPlayer { scene_id, x, y } => events::apply_outcomes(
             ctx,
@@ -164,7 +154,7 @@ fn apply_plugin_mutation(
                 y: Some(*y),
                 ..EventOutcome::default()
             }],
-            0.0,
+            0,
         ),
         PluginMutation::StartDialogue { npc_id, dialogue_id } => events::apply_outcomes(
             ctx,
@@ -175,7 +165,7 @@ fn apply_plugin_mutation(
                 dialogue_id: dialogue_id.clone(),
                 ..EventOutcome::default()
             }],
-            0.0,
+            0,
         ),
         PluginMutation::PlaySound { sound_id } => events::apply_outcomes(
             ctx,
@@ -185,7 +175,7 @@ fn apply_plugin_mutation(
                 sound_id: Some(sound_id.clone()),
                 ..EventOutcome::default()
             }],
-            0.0,
+            0,
         ),
 
         PluginMutation::ModifyFriendship { npc_id, delta } => {
@@ -193,11 +183,11 @@ fn apply_plugin_mutation(
                 return plugin_error(format!("unknown NPC '{npc_id}'"));
             }
             let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
-                friendship: 0.0,
-                gifts_today: 0.0,
+                friendship: 0,
+                gifts_today: 0,
                 last_gift_day: None,
             });
-            let friendship = js_max(0.0, js_min(MAX_FRIENDSHIP, current.friendship + delta));
+            let friendship = current.friendship.saturating_add(*delta).clamp(0, MAX_FRIENDSHIP);
             state.social.insert(npc_id.clone(), NpcSocialState { friendship, ..current });
             ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload {
                 npc_id: npc_id.clone(),
@@ -209,13 +199,13 @@ fn apply_plugin_mutation(
         PluginMutation::GrantXp { skill, amount } => skills::grant_xp(ctx, state, skill, *amount),
 
         PluginMutation::ModifyEnergy { delta } => {
-            if !ctx.content.settings.energy_enabled || *delta == 0.0 {
+            if !ctx.content.settings.energy_enabled || *delta == 0 {
                 return vec![];
             }
-            if *delta < 0.0 {
-                return energy::spend_energy(ctx, state, -delta).effects;
+            if *delta < 0 {
+                return energy::spend_energy(ctx, state, delta.saturating_neg()).effects;
             }
-            state.player.energy = js_min(state.player.max_energy, state.player.energy + delta);
+            state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(*delta));
             vec![]
         }
 
@@ -226,50 +216,42 @@ fn apply_plugin_mutation(
 
 /// Advance simulation time by whole ticks. The game clock accrues in-game minutes; passing the
 /// configured day end forces a collapse (the world moves on without you).
-pub fn advance_tick(ctx: &EngineContext, state: &mut GameState, ticks: f64) -> Effects {
-    if ticks <= 0.0 {
-        return vec![];
-    }
-
+pub fn advance_tick(ctx: &EngineContext, state: &mut GameState, ticks: u64) -> Effects {
     // Ticks are processed one at a time so that advanceTick(N) is exactly equivalent to
     // N × advanceTick(1). The batched fast-path used to evaluate minute-boundary systems once per
     // *call*, which made live simulation frame-rate dependent (a slow frame delivering 3 ticks
     // skipped minute boundaries a fast machine would have hit).
     let mut effects = Vec::new();
-    let mut i = 0.0;
-    while i < ticks {
+    for _ in 0..ticks {
         effects.extend(advance_single_tick(ctx, state));
-        i += 1.0;
     }
     effects
 }
 
 fn advance_single_tick(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let settings = &ctx.content.settings;
-    let minutes_per_tick = settings.time.minutes_per_real_second / TICKS_PER_SECOND;
-
-    let before_minute = state.clock.time_minutes.floor();
-    state.clock.tick += 1.0;
-    state.clock.time_minutes =
-        js::round((state.clock.time_minutes + minutes_per_tick) * MINUTE_QUANTUM) / MINUTE_QUANTUM;
+    // The time rate is stored in micro-minutes per tick.
+    let before_minute = units::whole_minute(state.clock.time_minutes);
+    state.clock.tick = state.clock.tick.saturating_add(1);
+    state.clock.time_minutes = state.clock.time_minutes.saturating_add(settings.time.minutes_per_real_second);
     let mut effects = Vec::new();
 
     // Free movement integrates every tick from the held intent. Frozen while a dialogue, shop or
     // minigame is open (modal interactions pause the body).
     if state.dialogue.is_none() && state.shop.is_none() && state.minigame.is_none() {
-        effects.extend(world_movement::integrate_movement(ctx, state, 1.0 / TICKS_PER_SECOND));
+        effects.extend(world_movement::integrate_movement(ctx, state));
     }
 
     // Minute boundary: NPC movement/schedules step and tick-events evaluate once per whole in-game
     // minute (bounds evaluation cost).
-    let after_minute = state.clock.time_minutes.floor();
+    let after_minute = units::whole_minute(state.clock.time_minutes);
     if after_minute > before_minute {
         npc_movement::advance_npcs(ctx, state, after_minute - before_minute);
         crafting::settle_machines(ctx, state);
         effects.extend(events::evaluate_events(ctx, state, "tick", None));
     }
 
-    if state.clock.time_minutes >= settings.time.day_end_minute {
+    if u64::from(state.clock.time_minutes) >= u64::from(settings.time.day_end_minute) * u64::from(units::MINUTE) {
         effects.extend(game_time::perform_sleep(ctx, state, SleepOptions { collapsed: true }));
     }
 

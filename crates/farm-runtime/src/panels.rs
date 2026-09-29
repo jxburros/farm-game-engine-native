@@ -3,8 +3,8 @@
 //! view models the host draws; [`mount`] keeps the TS update/dispose lifecycle and routes action
 //! clicks.
 
-use farm_sim::js;
 use farm_sim::schema::{game_panel_entry_kinds as kinds, GamePanel, GamePanelEntry, InventorySlot};
+use farm_sim::{text, units};
 use farm_sim::{GameProject, GameState};
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -27,9 +27,9 @@ impl PanelState {
     /// The exported shell's view of the running game (game-shell main.ts).
     pub fn from_game_state(state: &GameState, host_modal_open: bool) -> Self {
         Self {
-            money: state.player.money,
-            energy: state.player.energy,
-            day: state.clock.day,
+            money: state.player.money as f64,
+            energy: units::to_f64::<units::Energy>(state.player.energy),
+            day: f64::from(state.clock.day),
             flags: state.flags.clone(),
             inventory: state.player.inventory.clone(),
             blocked: state.dialogue.is_some() || state.minigame.is_some() || state.shop.is_some() || host_modal_open,
@@ -39,9 +39,9 @@ impl PanelState {
     /// The editor play view's projection (src/components/GamePanels.tsx): the synced project.
     pub fn from_project(project: &GameProject, blocked: bool) -> Self {
         Self {
-            money: project.player.money,
-            energy: project.player.energy.unwrap_or(0.0),
-            day: project.current_day,
+            money: project.player.money as f64,
+            energy: units::to_f64::<units::Energy>(project.player.energy.unwrap_or(0)),
+            day: f64::from(project.current_day),
             flags: project.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect(),
             inventory: project.player.inventory.clone(),
             blocked,
@@ -77,13 +77,16 @@ pub struct PanelView {
 pub fn entry_value(entry: &GamePanelEntry, state: &PanelState) -> String {
     match entry.kind.as_str() {
         kinds::TEXT => entry.value.clone(),
-        kinds::FLAG => if js::truthy(state.flags.get(&entry.value)) { "Yes" } else { "No" }.to_owned(),
-        kinds::ITEM => js::num(
-            state.inventory.iter().filter(|slot| slot.item.id == entry.value).fold(0.0, |n, slot| n + slot.quantity),
-        ),
-        kinds::MONEY => js::num(state.money),
-        kinds::ENERGY => js::num(state.energy),
-        kinds::DAY => js::num(state.day),
+        kinds::FLAG => if text::truthy(state.flags.get(&entry.value)) { "Yes" } else { "No" }.to_owned(),
+        kinds::ITEM => state
+            .inventory
+            .iter()
+            .filter(|slot| slot.item.id == entry.value)
+            .fold(0_u64, |n, slot| n + u64::from(slot.quantity))
+            .to_string(),
+        kinds::MONEY => units::format_number(state.money),
+        kinds::ENERGY => units::format_number(state.energy),
+        kinds::DAY => units::format_number(state.day),
         // TS `state[entry.kind]` for an unknown kind → undefined.
         _ => "undefined".to_owned(),
     }
@@ -99,7 +102,7 @@ pub fn render<'a>(panels: impl IntoIterator<Item = &'a GamePanel>, state: &Panel
             hidden: panel
                 .visible_flag
                 .as_deref()
-                .is_some_and(|flag| !flag.is_empty() && !js::truthy(state.flags.get(flag))),
+                .is_some_and(|flag| !flag.is_empty() && !text::truthy(state.flags.get(flag))),
             entries: panel
                 .entries
                 .iter()

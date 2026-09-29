@@ -28,12 +28,12 @@ fn dialogue_options_pick_by_click_digit_and_navigation() {
     let mut fixture = Fixture::starter();
     with_dialogue(&mut fixture, "npc-merchant", "dialogue-merchant-greeting");
     let second = WidgetId::new("dialogue-option").with("dialogue-merchant-greeting").with(1usize);
-    assert_eq!(command(&fixture.click(second)), Some(&Command::ChooseDialogueOption { index: 1.0 }));
-    assert_eq!(command(&fixture.keys(&["1"])), Some(&Command::ChooseDialogueOption { index: 0.0 }));
+    assert_eq!(command(&fixture.click(second)), Some(&Command::ChooseDialogueOption { index: 1 }));
+    assert_eq!(command(&fixture.keys(&["1"])), Some(&Command::ChooseDialogueOption { index: 0 }));
     // A digit past the visible options does nothing.
     assert_eq!(command(&fixture.keys(&["9"])), None);
     fixture.nav(&[NavAction::Down]);
-    assert_eq!(command(&fixture.nav(&[NavAction::Accept])), Some(&Command::ChooseDialogueOption { index: 1.0 }));
+    assert_eq!(command(&fixture.nav(&[NavAction::Accept])), Some(&Command::ChooseDialogueOption { index: 1 }));
     let texts = fixture.texts();
     assert!(texts.iter().any(|text| text == "Merchant Mia"), "{texts:?}");
 }
@@ -67,13 +67,13 @@ fn shop_buys_sells_and_repairs_through_commands() {
     fixture.state.shop = Some(ShopSession { shop_id: "shop-general".into() });
     fixture.idle();
     let buy = WidgetId::new("shop-buy").with("seed-wheat");
-    assert_eq!(command(&fixture.click(buy)), Some(&Command::BuyItem { item_id: "seed-wheat".into(), quantity: 1.0 }));
+    assert_eq!(command(&fixture.click(buy)), Some(&Command::BuyItem { item_id: "seed-wheat".into(), quantity: 1 }));
     assert_eq!(
         command(&fixture.click(buy.with("5"))),
-        Some(&Command::BuyItem { item_id: "seed-wheat".into(), quantity: 5.0 })
+        Some(&Command::BuyItem { item_id: "seed-wheat".into(), quantity: 5 })
     );
     // Without money the buttons are disabled: a click does nothing.
-    fixture.state.player.money = 0.0;
+    fixture.state.player.money = 0;
     fixture.idle();
     assert!(fixture.ui.last_rect(buy).is_none(), "disabled buttons take no input");
     let rect = fixture.ui.last_rect(buy.with("5"));
@@ -84,16 +84,16 @@ fn shop_buys_sells_and_repairs_through_commands() {
     assert_eq!(fixture.game_ui.shop_tab, ShopTab::Sell);
     fixture.idle();
     let sell = WidgetId::new("shop-sell").with("seed-wheat");
-    assert_eq!(command(&fixture.click(sell)), Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1.0 }));
+    assert_eq!(command(&fixture.click(sell)), Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1 }));
     assert_eq!(
         command(&fixture.click(sell.with("all"))),
-        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10.0 })
+        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10 })
     );
 
     // Repair a worn hoe.
     let hoe = fixture.state.player.inventory.iter_mut().find(|slot| slot.item.id == "tool-hoe").unwrap();
-    hoe.item.durability = Some(40.0);
-    fixture.state.player.money = 1000.0;
+    hoe.item.durability = Some(40);
+    fixture.state.player.money = 1000;
     fixture.click(WidgetId::new("shop-tab").with("Repair"));
     assert_eq!(fixture.game_ui.shop_tab, ShopTab::Repair);
     fixture.idle();
@@ -106,7 +106,7 @@ fn shop_buys_sells_and_repairs_through_commands() {
 fn daily_limits_disable_purchases_past_what_is_left() {
     let mut fixture = Fixture::starter();
     fixture.state.shop = Some(ShopSession { shop_id: "shop-general".into() });
-    fixture.state.player.money = 10_000.0;
+    fixture.state.player.money = 10_000;
     let limited =
         fixture.ctx.content.shops[0].stock.iter().find(|entry| entry.daily_limit.is_some()).unwrap().item_id.clone();
     fixture.idle();
@@ -120,7 +120,7 @@ fn daily_limits_disable_purchases_past_what_is_left() {
         let effects = farm_sim::apply_command(
             &fixture.ctx,
             &mut fixture.state,
-            &Command::BuyItem { item_id: limited.clone(), quantity: 1.0 },
+            &Command::BuyItem { item_id: limited.clone(), quantity: 1 },
         );
         let _ = effects;
     }
@@ -133,7 +133,7 @@ fn daily_limits_disable_purchases_past_what_is_left() {
 fn crafting_crafts_loads_machines_and_places_them() {
     let mut fixture = Fixture::starter();
     fixture.game_ui.panel = Some(Panel::Crafting);
-    let item = |id: &str, quantity: f64| {
+    let item = |id: &str, quantity: u32| {
         let item = fixture_item(id);
         InventorySlot { item, quantity }
     };
@@ -142,7 +142,7 @@ fn crafting_crafts_loads_machines_and_places_them() {
         let content = farm_sim::create_content_from_project(&project);
         content.items.iter().find(|item| item.id == id).unwrap_or_else(|| panic!("{id}")).clone()
     }
-    fixture.state.player.inventory.push(item("material-fiber", 3.0));
+    fixture.state.player.inventory.push(item("material-fiber", 3));
     fixture.idle();
     fixture.idle();
     let hay = WidgetId::new("craft").with("recipe-craft-hay");
@@ -152,7 +152,7 @@ fn crafting_crafts_loads_machines_and_places_them() {
     assert!(fixture.ui.last_rect(WidgetId::new("craft").with("recipe-craft-furnace")).is_none());
 
     // Place a machine the player holds on the faced tile.
-    fixture.state.player.inventory.push(item("machine-furnace", 1.0));
+    fixture.state.player.inventory.push(item("machine-furnace", 1));
     fixture.idle();
     let place = WidgetId::new("craft-place").with("machine-furnace");
     fixture.scroll_to(place);
@@ -166,8 +166,8 @@ fn crafting_crafts_loads_machines_and_places_them() {
     let scene = fixture.state.world.scenes.iter_mut().find(|scene| scene.id == fixture.state.player.scene_id).unwrap();
     scene.tiles[facing.y as usize][facing.x as usize].machine =
         Some(TileMachine { type_id: "machine-furnace".into(), ..TileMachine::default() });
-    fixture.state.player.inventory.push(item("ore-copper", 3.0));
-    fixture.state.player.inventory.push(item("material-wood", 1.0));
+    fixture.state.player.inventory.push(item("ore-copper", 3));
+    fixture.state.player.inventory.push(item("material-wood", 1));
     fixture.idle();
     fixture.idle();
     let load = WidgetId::new("craft-load").with("recipe-smelt-copper");

@@ -23,12 +23,12 @@ public sealed class RustSessionTests
             return;
         }
 
-        // The content golden records hashState(createGameState(project, "content:starter-farm")).
+        // The content golden records the state hash of createGameState(project, "content:starter-farm")
+        // (xxh3 over the canonical binary state since v9, docs/NUMERICS.md).
         using var golden = JsonDocument.Parse(File.ReadAllText(RepoFile("fixtures", "golden", "content", "starter-farm.json")));
         var project = RecordJson.Parse<GameProject>(golden.RootElement.GetProperty("project").GetRawText());
         using var session = RustSession.Create(project, "content:starter-farm");
         Assert.Equal(golden.RootElement.GetProperty("stateHash").GetString(), session.StateHash());
-        Assert.Equal(FarmFfi.HashText(session.StateJson()), session.StateHash());
         Assert.Equal(project.Player.SceneId, (string?)session.State()["player"]!["sceneId"]);
     }
 

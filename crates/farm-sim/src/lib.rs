@@ -4,17 +4,17 @@
 //! It does no I/O, spawns no threads and never reads a clock. Same seed + same command log ⇒
 //! the same state, byte for byte, on every platform (and in the web version through wasm).
 //!
-//! **Compatibility phase** (docs/LANGUAGES.md, phases 1–6): every number is an `f64` and the
-//! [`js`] module reproduces the JavaScript semantics the TypeScript reference engine has
-//! (`Math.round`, stable sort, `String(number)`), so the golden replays recorded from the
-//! TypeScript engine hash identically here. The native-numerics switch (phase 7) replaces
-//! this with integer and fixed-point types.
+//! **Native numerics** (schema v9, docs/NUMERICS.md): every quantity is an integer in a fixed
+//! unit ([`units`]); game logic never does float arithmetic (`clippy::float_arithmetic` is
+//! denied outside [`units`], which converts authoring numbers at the JSON boundary). The state
+//! hash is xxh3-64 over a canonical binary encoding ([`hash`]). Rust is the reference
+//! implementation: the golden replays are recorded from this crate.
 //!
 //! Layout mirrors the retired C# `FarmEngine.Core` (docs/PORTING.md): the data shapes live in [`schema`],
 //! the root modules are the engine files, and gameplay systems live in their folders
 //! (`farming`, …).
 #![forbid(unsafe_code)]
-#![deny(clippy::disallowed_types, clippy::disallowed_methods)]
+#![deny(clippy::disallowed_types, clippy::disallowed_methods, clippy::float_arithmetic)]
 
 pub mod animals;
 pub mod commands;
@@ -35,7 +35,6 @@ pub mod gathering;
 pub mod hash;
 pub mod hooks;
 pub mod inventory;
-pub mod js;
 pub mod mines;
 pub mod npcs;
 pub mod overlay;
@@ -49,7 +48,9 @@ pub mod social;
 pub mod stable_json;
 pub mod start;
 pub mod state;
+pub mod text;
 pub mod tools;
+pub mod units;
 pub mod weather;
 pub mod world;
 

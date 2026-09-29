@@ -166,7 +166,7 @@ pub fn slots(ui: &mut Ui, view: &SlotsView) -> Option<ShellAction> {
                     (lang.format("slots.slotFarm", &[&slot.slot, &preview.farm_name]), 15.0, FontId::Bold, colors.text),
                     (date_line(preview, lang), 13.0, FontId::Regular, colors.text),
                     (
-                        lang.format("slots.played", &[&money(preview.money), &play_time(preview.play_seconds)]),
+                        lang.format("slots.played", &[&money(preview.money as i64), &play_time(preview.play_seconds)]),
                         12.5,
                         FontId::Regular,
                         colors.muted,

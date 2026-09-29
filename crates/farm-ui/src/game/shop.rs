@@ -9,6 +9,7 @@ use crate::layout::{Align, RectExt};
 use crate::ui::{Ui, WidgetId};
 use crate::widgets::{Button, ButtonKind, ModalSpec};
 use farm_render::{FontId, Rect};
+use farm_sim::economy;
 use farm_sim::schema::item_types;
 use farm_sim::{tools, Command};
 
@@ -120,11 +121,11 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 );
             }
             for slot in sellable {
-                let unit = (slot.item.value * shop.sell_price_multiplier).floor();
+                let unit = economy::sell_unit_price(&slot.item, shop);
                 let sell_one = Button::new(lang.tr("shop.sellOne")).primary().size(12.5);
                 let sell_all = Button::new(lang.tr("shop.sellAll")).size(12.5);
                 let mut widths = vec![ui.button_width(&sell_one)];
-                if slot.quantity > 1.0 {
+                if slot.quantity > 1 {
                     widths.push(ui.button_width(&sell_all));
                 }
                 let actions_width = widths.iter().sum::<f32>() + 6.0 * (widths.len() - 1) as f32;
@@ -135,10 +136,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 let rects = right_aligned(buttons, &widths, small, 6.0);
                 let id = WidgetId::new("shop-sell").with(&slot.item.id);
                 if ui.button(id, rects[0], sell_one) {
-                    actions
-                        .push(GameAction::Command(Command::SellItem { item_id: slot.item.id.clone(), quantity: 1.0 }));
+                    actions.push(GameAction::Command(Command::SellItem { item_id: slot.item.id.clone(), quantity: 1 }));
                 }
-                if slot.quantity > 1.0 && ui.button(id.with("all"), rects[1], sell_all) {
+                if slot.quantity > 1 && ui.button(id.with("all"), rects[1], sell_all) {
                     actions.push(GameAction::Command(Command::SellItem {
                         item_id: slot.item.id.clone(),
                         quantity: slot.quantity,
@@ -158,8 +158,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 y += ui.empty_state(area, y, Icon::Hammer, lang.tr("shop.toolsFine"), lang.tr("shop.toolsFineDetail"));
             }
             for slot in damaged {
-                let (durability, max) = (slot.item.durability.unwrap_or(0.0), slot.item.max_durability.unwrap_or(0.0));
-                let cost = ((max - durability) * shop.repair_cost_per_point).ceil();
+                let (durability, max) = (slot.item.durability.unwrap_or(0), slot.item.max_durability.unwrap_or(0));
+                let cost = economy::repair_cost(i64::from(max) - i64::from(durability), shop);
                 let broken = tools::is_tool_broken(&slot.item);
                 let label = lang.format("shop.repairFor", &[&money(cost)]);
                 let button = Button::new(&label).primary().size(12.5).enabled(player.money >= cost);
@@ -200,15 +200,18 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                     if !detail.is_empty() {
                         detail.push_str(" \u{00b7} ");
                     }
-                    detail.push_str(&lang.format("shop.leftToday", &[&num(remaining.max(0.0)), &num(limit)]));
+                    let left = remaining.map_or_else(|| "Infinity".to_owned(), num);
+                    detail.push_str(&lang.format("shop.leftToday", &[&left, &num(limit)]));
                 }
                 let price_text = money(price);
                 let price_width = ui.measure(&price_text, 14.0, farm_render::FontId::Bold).ceil();
                 let buy = Button::new(lang.tr("shop.buy"))
                     .primary()
                     .size(12.5)
-                    .enabled(player.money >= price && remaining >= 1.0);
-                let five = Button::new("\u{00d7}5").size(12.5).enabled(player.money >= price * 5.0 && remaining >= 5.0);
+                    .enabled(player.money >= price && remaining.is_none_or(|left| left >= 1));
+                let five = Button::new("\u{00d7}5")
+                    .size(12.5)
+                    .enabled(player.money >= price.saturating_mul(5) && remaining.is_none_or(|left| left >= 5));
                 let mut widths = vec![price_width, ui.button_width(&buy).max(52.0)];
                 if item.stackable {
                     widths.push(ui.button_width(&five).max(40.0));
@@ -220,12 +223,10 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 ui.label(rects[0], &price_text, 14.0, FontId::Bold, colors.text, Align::End);
                 let id = WidgetId::new("shop-buy").with(&entry.item_id);
                 if ui.button(id, rects[1], buy) {
-                    actions
-                        .push(GameAction::Command(Command::BuyItem { item_id: entry.item_id.clone(), quantity: 1.0 }));
+                    actions.push(GameAction::Command(Command::BuyItem { item_id: entry.item_id.clone(), quantity: 1 }));
                 }
                 if item.stackable && ui.button(id.with("5"), rects[2], five) {
-                    actions
-                        .push(GameAction::Command(Command::BuyItem { item_id: entry.item_id.clone(), quantity: 5.0 }));
+                    actions.push(GameAction::Command(Command::BuyItem { item_id: entry.item_id.clone(), quantity: 5 }));
                 }
                 y += row_height + ROW_GAP;
             }

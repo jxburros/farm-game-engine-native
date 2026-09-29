@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-fn one() -> f64 {
-    1.0
+fn one() -> u32 {
+    1
 }
 
 fn default_true() -> bool {
@@ -22,41 +22,41 @@ pub enum EventCondition {
     /// Player entered a tile (or region when x2/y2 present).
     #[serde(rename = "enterTile")]
     EnterTile {
-        #[serde(default)]
-        x: f64,
-        #[serde(default)]
-        y: f64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        x2: Option<f64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        y2: Option<f64>,
+        #[serde(default, with = "crate::units::int")]
+        x: i32,
+        #[serde(default, with = "crate::units::int")]
+        y: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+        x2: Option<i32>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+        y2: Option<i32>,
     },
     /// Player interacted while facing a tile (or region).
     #[serde(rename = "interactTile")]
     InteractTile {
-        #[serde(default)]
-        x: f64,
-        #[serde(default)]
-        y: f64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        x2: Option<f64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        y2: Option<f64>,
+        #[serde(default, with = "crate::units::int")]
+        x: i32,
+        #[serde(default, with = "crate::units::int")]
+        y: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+        x2: Option<i32>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+        y2: Option<i32>,
     },
     #[serde(rename = "hasItem")]
     HasItem {
         #[serde(default)]
         item_id: String,
-        #[serde(default = "one")]
-        quantity: f64,
+        #[serde(default = "one", with = "crate::units::count")]
+        quantity: u32,
     },
     #[serde(rename = "inventorySpace")]
     InventorySpace {
         #[serde(default)]
         item_id: String,
         /// int, positive.
-        #[serde(default = "one")]
-        quantity: f64,
+        #[serde(default = "one", with = "crate::units::count")]
+        quantity: u32,
     },
     #[serde(rename = "flag")]
     Flag {
@@ -67,10 +67,10 @@ pub enum EventCondition {
     },
     #[serde(rename = "dayRange")]
     DayRange {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        min_day: Option<f64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_day: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+        min_day: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+        max_day: Option<u32>,
     },
     #[serde(rename = "season")]
     Season {
@@ -79,17 +79,17 @@ pub enum EventCondition {
     },
     #[serde(rename = "yearRange")]
     YearRange {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        min_year: Option<f64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_year: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+        min_year: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+        max_year: Option<u32>,
     },
     #[serde(rename = "timeOfDay")]
     TimeOfDay {
-        #[serde(default)]
-        min_minute: f64,
-        #[serde(default)]
-        max_minute: f64,
+        #[serde(default, with = "crate::units::micro_minutes")]
+        min_minute: u32,
+        #[serde(default, with = "crate::units::micro_minutes")]
+        max_minute: u32,
     },
     #[serde(rename = "questStatus")]
     QuestStatus {
@@ -104,8 +104,8 @@ pub enum EventCondition {
     Friendship {
         #[serde(default)]
         npc_id: String,
-        #[serde(default)]
-        min: f64,
+        #[serde(default, with = "crate::units::int")]
+        min: i32,
     },
     /// Current weather (M4).
     #[serde(rename = "weather")]
@@ -209,14 +209,14 @@ pub struct EventOutcome {
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item_quantity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub item_quantity: Option<u32>,
     /// finite.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::signed_milli::opt")]
+    pub amount: Option<i64>,
     /// int, 0..10.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub radius: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub radius: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flag_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,19 +225,19 @@ pub struct EventOutcome {
     pub npc_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dialogue_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tile_x: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tile_y: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub tile_x: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub tile_y: Option<i32>,
     /// One of [`super::tile_types`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_tile_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scene_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub x: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub y: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub x: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub y: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sound_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

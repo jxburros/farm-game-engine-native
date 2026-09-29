@@ -13,29 +13,30 @@ use farm_sim::schema::{
     EventOutcome, GameContent, GameEvent, GameProject, GameState, InventorySlot, Item, ProjectSettings, WeatherConfig,
     WeatherTableEntry, WeatherTypeDefinition,
 };
+use farm_sim::units;
 use farm_sim::{game_time, state, weather, Command, Effect, Effects, EngineContext};
 use indexmap::IndexMap;
 use std::path::PathBuf;
 
-fn season(id: &str, name: &str, days: f64) -> CalendarSeason {
+fn season(id: &str, name: &str, days: u32) -> CalendarSeason {
     CalendarSeason { id: id.to_owned(), name: name.to_owned(), days }
 }
 
 fn custom_calendar() -> CalendarConfig {
     CalendarConfig {
-        seasons: vec![season("a", "Alpha", 10.0), season("b", "Beta", 10.0), season("c", "Gamma", 10.0)],
+        seasons: vec![season("a", "Alpha", 10), season("b", "Beta", 10), season("c", "Gamma", 10)],
         festivals: Vec::new(),
     }
 }
 
 fn calendar_with_festival() -> CalendarConfig {
     CalendarConfig {
-        seasons: vec![season("a", "Alpha", 10.0)],
+        seasons: vec![season("a", "Alpha", 10)],
         festivals: vec![CalendarFestival {
             id: "harvest-fest".to_owned(),
             name: "Harvest Festival".to_owned(),
             season_id: "a".to_owned(),
-            day: 5.0,
+            day: 5,
         }],
     }
 }
@@ -60,8 +61,8 @@ fn with_custom_calendar(calendar: CalendarConfig) -> impl FnOnce(&mut GameProjec
     move |project| {
         project.current_season = calendar.seasons[0].id.clone();
         project.settings.calendar = calendar;
-        project.current_day = 1.0;
-        project.current_year = 1.0;
+        project.current_day = 1;
+        project.current_year = 1;
     }
 }
 
@@ -79,44 +80,42 @@ fn season_ids(seasons: &[CalendarSeason]) -> Vec<&str> {
 fn resolves_day_of_season_season_year_across_uneven_and_even_custom_calendars() {
     let calendar = custom_calendar();
     assert_eq!(season_ids(&game_time::calendar_seasons(&calendar)), ["a", "b", "c"]);
-    assert_eq!(game_time::day_of_season(&calendar, 1.0), 1.0);
-    assert_eq!(game_time::day_of_season(&calendar, 10.0), 10.0);
-    assert_eq!(game_time::day_of_season(&calendar, 11.0), 1.0);
-    assert_eq!(game_time::season_for_day(&calendar, 1.0), "a");
-    assert_eq!(game_time::season_for_day(&calendar, 10.0), "a");
-    assert_eq!(game_time::season_for_day(&calendar, 11.0), "b");
-    assert_eq!(game_time::season_for_day(&calendar, 21.0), "c");
-    assert_eq!(game_time::season_for_day(&calendar, 30.0), "c");
-    assert_eq!(game_time::season_for_day(&calendar, 31.0), "a");
-    assert_eq!(game_time::year_for_day(&calendar, 30.0), 1.0);
-    assert_eq!(game_time::year_for_day(&calendar, 31.0), 2.0);
+    assert_eq!(game_time::day_of_season(&calendar, 1), 1);
+    assert_eq!(game_time::day_of_season(&calendar, 10), 10);
+    assert_eq!(game_time::day_of_season(&calendar, 11), 1);
+    assert_eq!(game_time::season_for_day(&calendar, 1), "a");
+    assert_eq!(game_time::season_for_day(&calendar, 10), "a");
+    assert_eq!(game_time::season_for_day(&calendar, 11), "b");
+    assert_eq!(game_time::season_for_day(&calendar, 21), "c");
+    assert_eq!(game_time::season_for_day(&calendar, 30), "c");
+    assert_eq!(game_time::season_for_day(&calendar, 31), "a");
+    assert_eq!(game_time::year_for_day(&calendar, 30), 1);
+    assert_eq!(game_time::year_for_day(&calendar, 31), 2);
 }
 
 #[test]
 fn honors_each_seasons_own_length_for_heterogeneous_calendars() {
-    let uneven = CalendarConfig {
-        seasons: vec![season("short", "Short", 5.0), season("long", "Long", 20.0)],
-        festivals: vec![],
-    };
-    assert_eq!(game_time::day_of_season(&uneven, 5.0), 5.0);
-    assert_eq!(game_time::season_for_day(&uneven, 5.0), "short");
-    assert_eq!(game_time::day_of_season(&uneven, 6.0), 1.0);
-    assert_eq!(game_time::season_for_day(&uneven, 6.0), "long");
-    assert_eq!(game_time::day_of_season(&uneven, 25.0), 20.0);
-    assert_eq!(game_time::season_for_day(&uneven, 25.0), "long");
-    assert_eq!(game_time::season_for_day(&uneven, 26.0), "short"); // year wraps: 5 + 20 = 25 days/year
-    assert_eq!(game_time::year_for_day(&uneven, 25.0), 1.0);
-    assert_eq!(game_time::year_for_day(&uneven, 26.0), 2.0);
+    let uneven =
+        CalendarConfig { seasons: vec![season("short", "Short", 5), season("long", "Long", 20)], festivals: vec![] };
+    assert_eq!(game_time::day_of_season(&uneven, 5), 5);
+    assert_eq!(game_time::season_for_day(&uneven, 5), "short");
+    assert_eq!(game_time::day_of_season(&uneven, 6), 1);
+    assert_eq!(game_time::season_for_day(&uneven, 6), "long");
+    assert_eq!(game_time::day_of_season(&uneven, 25), 20);
+    assert_eq!(game_time::season_for_day(&uneven, 25), "long");
+    assert_eq!(game_time::season_for_day(&uneven, 26), "short"); // year wraps: 5 + 20 = 25 days/year
+    assert_eq!(game_time::year_for_day(&uneven, 25), 1);
+    assert_eq!(game_time::year_for_day(&uneven, 26), 2);
 }
 
 #[test]
 fn falls_back_to_the_classic_four_season_calendar_when_seasons_is_empty_or_degenerate() {
     let empty = CalendarConfig { seasons: vec![], festivals: vec![] };
     assert_eq!(season_ids(&game_time::calendar_seasons(&empty)), ["spring", "summer", "fall", "winter"]);
-    assert_eq!(game_time::season_for_day(&empty, 1.0), "spring");
-    assert_eq!(game_time::season_for_day(&empty, 29.0), "summer");
+    assert_eq!(game_time::season_for_day(&empty, 1), "spring");
+    assert_eq!(game_time::season_for_day(&empty, 29), "summer");
 
-    let all_zero = CalendarConfig { seasons: vec![season("x", "X", 0.0)], festivals: vec![] };
+    let all_zero = CalendarConfig { seasons: vec![season("x", "X", 0)], festivals: vec![] };
     assert_eq!(season_ids(&game_time::calendar_seasons(&all_zero)), ["spring", "summer", "fall", "winter"]);
 }
 
@@ -135,38 +134,38 @@ fn season_by_id_looks_up_the_effective_fallback_safe_season_list() {
 fn rolls_season_and_year_correctly_across_a_3x10_day_calendar() {
     let calendar = custom_calendar();
     let (ctx, mut current) = make_engine(with_custom_calendar(calendar.clone()));
-    assert_eq!(current.clock.day, 1.0);
+    assert_eq!(current.clock.day, 1);
     assert_eq!(current.clock.season, "a");
-    assert_eq!(current.clock.year, 1.0);
+    assert_eq!(current.clock.year, 1);
 
     // Sleep 9 times: day 1 → day 10, season stays 'a'.
     for _ in 0..9 {
         game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
     }
-    assert_eq!(current.clock.day, 10.0);
+    assert_eq!(current.clock.day, 10);
     assert_eq!(current.clock.season, "a");
-    assert_eq!(game_time::day_of_season(&calendar, current.clock.day), 10.0);
+    assert_eq!(game_time::day_of_season(&calendar, current.clock.day), 10);
 
     // Sleep once more: day 10 → 11 crosses into season 'b'.
     let rolled = game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
-    assert_eq!(current.clock.day, 11.0);
+    assert_eq!(current.clock.day, 11);
     assert_eq!(current.clock.season, "b");
-    assert_eq!(current.clock.year, 1.0);
+    assert_eq!(current.clock.year, 1);
     assert!(has_message(&rolled, |text| text.contains("Beta has arrived")));
 
     // Sleep through 'b' and 'c' (19 more days) to complete the year: day 11 → day 30.
     for _ in 0..19 {
         game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
     }
-    assert_eq!(current.clock.day, 30.0);
+    assert_eq!(current.clock.day, 30);
     assert_eq!(current.clock.season, "c");
-    assert_eq!(current.clock.year, 1.0);
+    assert_eq!(current.clock.year, 1);
 
     // One more sleep wraps back to season 'a' and rolls the year.
     let year_rolled = game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
-    assert_eq!(current.clock.day, 31.0);
+    assert_eq!(current.clock.day, 31);
     assert_eq!(current.clock.season, "a");
-    assert_eq!(current.clock.year, 2.0);
+    assert_eq!(current.clock.year, 2);
     assert!(has_message(&year_rolled, |text| text.contains("Year 2 begins")));
 }
 
@@ -190,9 +189,9 @@ fn announces_the_festival_only_on_its_configured_day() {
     for _ in 0..2 {
         game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
     }
-    assert_eq!(current.clock.day, 4.0);
+    assert_eq!(current.clock.day, 4);
     let festival_day = game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
-    assert_eq!(current.clock.day, 5.0);
+    assert_eq!(current.clock.day, 5);
     assert!(has_message(&festival_day, |text| text == "Today is the Harvest Festival!"));
 
     // The day after is quiet again.
@@ -203,10 +202,10 @@ fn announces_the_festival_only_on_its_configured_day() {
 #[test]
 fn festival_on_day_resolves_the_festival_for_its_day_only() {
     let calendar = calendar_with_festival();
-    assert_eq!(game_time::festival_on_day(&calendar, 5.0).map(|f| f.id.as_str()), Some("harvest-fest"));
-    assert!(game_time::festival_on_day(&calendar, 4.0).is_none());
+    assert_eq!(game_time::festival_on_day(&calendar, 5).map(|f| f.id.as_str()), Some("harvest-fest"));
+    assert!(game_time::festival_on_day(&calendar, 4).is_none());
     // next year, same day-of-season
-    assert_eq!(game_time::festival_on_day(&calendar, 15.0).map(|f| f.id.as_str()), Some("harvest-fest"));
+    assert_eq!(game_time::festival_on_day(&calendar, 15).map(|f| f.id.as_str()), Some("harvest-fest"));
 }
 
 #[test]
@@ -233,7 +232,7 @@ fn the_festival_id_event_condition_is_true_only_on_the_festival_day() {
 
     // Not the festival day yet: the tick event does not fire.
     let mut early = state.clone();
-    advance_tick(&ctx, &mut early, 20.0);
+    advance_tick(&ctx, &mut early, 20);
     assert!(!early.flags.contains_key("festival-seen"));
 
     // Sleep to the festival day (day 5), then tick.
@@ -241,14 +240,14 @@ fn the_festival_id_event_condition_is_true_only_on_the_festival_day() {
     for _ in 0..4 {
         game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
     }
-    assert_eq!(current.clock.day, 5.0);
-    advance_tick(&ctx, &mut current, 20.0);
+    assert_eq!(current.clock.day, 5);
+    advance_tick(&ctx, &mut current, 20);
     assert_eq!(current.flags.get("festival-seen"), Some(&serde_json::Value::Bool(true)));
 
     // The next day, the condition is false again.
     game_time::perform_sleep(&ctx, &mut current, game_time::SleepOptions::default());
     current.flags = IndexMap::new();
-    advance_tick(&ctx, &mut current, 20.0);
+    advance_tick(&ctx, &mut current, 20);
     assert!(!current.flags.contains_key("festival-seen"));
 }
 
@@ -266,7 +265,7 @@ fn context_with_weather(weather: WeatherConfig) -> EngineContext {
 }
 
 fn sun_entry() -> WeatherTableEntry {
-    WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1.0 }
+    WeatherTableEntry { weather_id: "sun".to_owned(), weight: 1 }
 }
 
 #[test]
@@ -279,7 +278,7 @@ fn falls_back_to_another_configured_table_when_a_custom_season_has_none_of_its_o
             id: "sun".to_owned(),
             name: "Sunny".to_owned(),
             waters_outdoor_soil: false,
-            crop_damage_chance: 0.0,
+            crop_damage_chance: 0,
             npcs_stay_inside: false,
             overlay: None,
             ..WeatherTypeDefinition::default()
@@ -304,16 +303,16 @@ fn custom_crop() -> CustomCropDefinition {
     CustomCropDefinition {
         id: "moonflower".to_owned(),
         name: "Moonflower".to_owned(),
-        seed_cost: 10.0,
-        base_harvest_value: 20.0,
-        growth_time: 15000.0,
-        growth_days: Some(3.0),
-        stages: 4.0,
+        seed_cost: 10,
+        base_harvest_value: 20,
+        growth_time: 15000,
+        growth_days: Some(3),
+        stages: 4,
         seasons: vec!["a".to_owned()],
         can_regrow: false,
-        yield_min: 1.0,
-        yield_max: 2.0,
-        mutation_chance: Some(0.01),
+        yield_min: 1,
+        yield_max: 2,
+        mutation_chance: Some(farm_sim::units::chance(0.01)),
         ..CustomCropDefinition::default()
     }
 }
@@ -325,8 +324,8 @@ fn seed_item() -> Item {
         description: "A custom-season seed".to_owned(),
         r#type: "seed".to_owned(),
         stackable: true,
-        max_stack: 99.0,
-        value: 10.0,
+        max_stack: 99,
+        value: 10,
         crop_type: Some("moonflower".to_owned()),
         ..Item::default()
     }
@@ -345,14 +344,12 @@ fn grows_while_its_season_is_current_and_withers_once_the_calendar_rolls_out_of_
         with_custom_calendar(custom_calendar())(project);
         project.custom_crops = Some(vec![custom_crop()]);
         // Stand on the starter farm's soil bed (5..11, 4..6) facing an empty soil tile at (8,4).
-        project.player.x = 8.0;
-        project.player.y = 5.0;
+        project.player.x = units::tiles(8);
+        project.player.y = units::tiles(5);
         project.player.direction = "up".to_owned();
         let watering_can = project.items.iter().find(|i| i.id == "tool-watering-can").expect("watering can").clone();
-        project.player.inventory = vec![
-            InventorySlot { item: seed_item(), quantity: 1.0 },
-            InventorySlot { item: watering_can, quantity: 1.0 },
-        ];
+        project.player.inventory =
+            vec![InventorySlot { item: seed_item(), quantity: 1 }, InventorySlot { item: watering_can, quantity: 1 }];
     });
 
     // Plant on the soil tile (facing up from (8,5) → (8,4)).
@@ -369,10 +366,10 @@ fn grows_while_its_season_is_current_and_withers_once_the_calendar_rolls_out_of_
     }
     let tile = &current.world.scenes[0].tiles[4][8];
     assert_ne!(tile.crop.as_ref().and_then(|c| c.withered), Some(true));
-    assert_eq!(tile.crop.as_ref().and_then(|c| c.days_grown), Some(2.0));
+    assert_eq!(tile.crop.as_ref().and_then(|c| c.days_grown), Some(2));
 
     // Jump to the last day of season 'a' and sleep past the boundary into 'b'.
-    current.clock.day = 10.0;
+    current.clock.day = 10;
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
     assert_eq!(current.clock.season, "b");
     assert_eq!(current.world.scenes[0].tiles[4][8].crop.as_ref().and_then(|c| c.withered), Some(true));

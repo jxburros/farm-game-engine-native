@@ -15,8 +15,8 @@ use farm_sim::schema::{quest_statuses, Quest, QuestProgress};
 struct Objective {
     text: String,
     done: bool,
-    amount: f64,
-    target: f64,
+    amount: u32,
+    target: u32,
 }
 
 fn objectives(quest: &Quest, progress: Option<&QuestProgress>, completed: bool) -> Vec<Objective> {
@@ -28,8 +28,8 @@ fn objectives(quest: &Quest, progress: Option<&QuestProgress>, completed: bool) 
             let target = [objective.target_item_quantity, objective.target_crop_quantity]
                 .into_iter()
                 .flatten()
-                .find(|value| *value != 0.0)
-                .unwrap_or(1.0);
+                .find(|value| *value != 0)
+                .unwrap_or(1);
             Objective {
                 text: objective.description.clone(),
                 done: completed || entry.is_some_and(|entry| entry.completed),
@@ -43,7 +43,7 @@ fn objectives(quest: &Quest, progress: Option<&QuestProgress>, completed: bool) 
 fn rewards_line(view: &GameView<'_>, quest: &Quest, completed: bool, lang: Lang) -> Option<String> {
     let rewards = &quest.rewards;
     let mut parts = Vec::new();
-    if let Some(amount) = rewards.money.filter(|amount| *amount > 0.0) {
+    if let Some(amount) = rewards.money.filter(|amount| *amount > 0) {
         parts.push(money(amount));
     }
     for reward in rewards.items.iter().flatten() {
@@ -127,7 +127,7 @@ fn card(ui: &mut Ui, view: &GameView<'_>, area: Rect, top: f32, quest: &Quest, c
             Align::End,
         );
         if !objective.done {
-            let ratio = (objective.amount / objective.target).clamp(0.0, 1.0) as f32;
+            let ratio = (f64::from(objective.amount) / f64::from(objective.target)).clamp(0.0, 1.0) as f32;
             ui.progress(Rect::new(text_x, y + used + 3.0, width - 22.0, 6.0), ratio, colors.primary);
         }
         y += objective_height;

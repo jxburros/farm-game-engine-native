@@ -33,9 +33,9 @@
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/projects/migrated/*.json" Link="Migrated/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../fixtures/golden/content/*.json" Link="Golden/content/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/v8/content/*.json" Link="Golden/content/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/golden/cartridges/*.cart" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../fixtures/golden/replays/*.json" Link="Golden/replays/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../fixtures/golden/v8/replays/*.json" Link="Golden/replays/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/projects/*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../fixtures/authoring/*.json" Link="Snapshots/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

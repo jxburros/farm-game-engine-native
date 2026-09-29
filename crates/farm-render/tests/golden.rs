@@ -40,7 +40,7 @@ fn shell(project: &GameProject, pops: bool) -> WorldSnapshot {
         ]);
     }
     let source = GraphicsSource::from_state(&Presentation::from_project(project), &content, &state);
-    apply_graphics(&mut snapshot, &source, scene, state.clock.tick, false);
+    apply_graphics(&mut snapshot, &source, scene, state.clock.tick as f64, false);
     snapshot
 }
 

@@ -115,7 +115,7 @@ fn bridge_queues_mutations_from_hooks_and_drains_them_as_commands() {
     for command in &commands {
         apply_command(&session.ctx, &mut session.state, command);
     }
-    assert_eq!(session.state.player.money, money + 20.0);
+    assert_eq!(session.state.player.money, money + 20);
 
     // The drained commands are ordinary, serializable command-log entries.
     assert_eq!(
@@ -190,7 +190,7 @@ fn only_granted_hooks_are_dispatched_and_recent_errors_are_bounded() {
             self.calls.push((hook.to_owned(), payload_json.to_owned()));
             vec![farm_plugins::PluginDispatchResult {
                 plugin_id: "p:x".to_owned(),
-                mutations: vec![PluginMutation::GiveMoney { amount: 1.0 }],
+                mutations: vec![PluginMutation::GiveMoney { amount: 1 }],
                 errors: vec![farm_plugins::PluginError {
                     plugin_id: "p:x".to_owned(),
                     kind: PluginErrorKind::Threw,
@@ -212,7 +212,7 @@ fn only_granted_hooks_are_dispatched_and_recent_errors_are_bounded() {
     assert_eq!(runtime.hook_names(), ["onEffect", "onDayStart"]);
     let events = [
         HookEvent::Command(farm_sim::hooks::CommandHookPayload { command_type: "sleep".to_owned() }),
-        HookEvent::DayStart(farm_sim::hooks::DayHookPayload { day: 2.0, season: "spring".to_owned(), year: 1.0 }),
+        HookEvent::DayStart(farm_sim::hooks::DayHookPayload { day: 2, season: "spring".to_owned(), year: 1 }),
     ];
     runtime.handle_step(&events, &[Effect::message("info", "hi")]);
     let calls: Vec<(&str, &str)> = runtime.host().calls.iter().map(|(h, p)| (h.as_str(), p.as_str())).collect();
@@ -275,8 +275,9 @@ fn the_echo_plugin_sees_engine_order_payloads_for_every_hook() {
         let npc = session.state.npcs.get("npc-farmer").expect("the starter farm has a farmer");
         (npc.x, npc.y)
     };
-    session.state.player.x = x + 0.5;
-    session.state.player.y = y + 1.5;
+    // Positions are 1/8192 tile: half a tile right, one and a half down.
+    session.state.player.x = x + farm_sim::units::TILE / 2;
+    session.state.player.y = y + farm_sim::units::TILE * 3 / 2;
     session.state.player.direction = "up".to_owned();
     session.frame(&[Command::Interact]);
     session.frame(&[Command::CloseDialogue]);

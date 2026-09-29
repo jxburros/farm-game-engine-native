@@ -25,7 +25,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", default)]
 pub struct GameContent {
     /// int.
-    pub content_version: f64,
+    #[serde(with = "crate::units::count")]
+    pub content_version: u32,
     /// Crop definitions by id (built-in merged with project custom crops).
     pub crops: IndexMap<String, CropDefinition>,
     pub items: Vec<Item>,
@@ -51,4 +52,4 @@ pub struct GameContent {
     pub start_scene_id: String,
 }
 
-pub const CURRENT_CONTENT_VERSION: f64 = 1.0;
+pub const CURRENT_CONTENT_VERSION: u32 = 1;

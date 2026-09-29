@@ -10,11 +10,14 @@ use serde_json::{Map, Value};
 pub struct NodeDrop {
     pub item_id: String,
     /// int, nonnegative.
-    pub min: f64,
+    #[serde(with = "crate::units::count")]
+    pub min: u32,
     /// int, nonnegative.
-    pub max: f64,
+    #[serde(with = "crate::units::count")]
+    pub max: u32,
     /// positive.
-    pub weight: f64,
+    #[serde(with = "crate::units::count")]
+    pub weight: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -29,19 +32,21 @@ pub struct NodeTypeDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual: Option<VisualRef>,
     /// Number of tool hits required to break the node. int, positive.
-    pub health: f64,
+    #[serde(with = "crate::units::int")]
+    pub health: i32,
     /// One of [`super::tool_types`].
     pub required_tool: String,
     /// Minimum tool tier required (tools default to tier 1). int, positive.
-    pub required_tool_tier: f64,
+    #[serde(with = "crate::units::int")]
+    pub required_tool_tier: i32,
     /// Weighted drop table; each hit that depletes the node rolls once per entry range.
     pub drops: Vec<NodeDrop>,
     /// Days until a depleted node respawns; null/absent = never. int, positive.
     /// TS is `.nullable().optional()` and the two hash differently, so absent (`None`, the
     /// default, as in hand-written packs) and `null` (`Some(None)`, as the built-in content
     /// spells it) stay apart. Read it with [`NodeTypeDefinition::respawn_after`].
-    #[serde(skip_serializing_if = "Option::is_none", with = "super::nullable")]
-    pub respawn_days: Option<Option<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::nullable")]
+    pub respawn_days: Option<Option<u32>>,
     /// Renderer hint (hex color).
     pub color: String,
     /// Whether the node blocks movement while present.
@@ -52,7 +57,7 @@ pub struct NodeTypeDefinition {
 
 impl NodeTypeDefinition {
     /// Days until a depleted node respawns, or `None` for never (absent or null alike).
-    pub fn respawn_after(&self) -> Option<f64> {
+    pub fn respawn_after(&self) -> Option<u32> {
         self.respawn_days.flatten()
     }
 }
@@ -63,9 +68,9 @@ impl Default for NodeTypeDefinition {
             id: String::new(),
             name: String::new(),
             visual: None,
-            health: 0.0,
+            health: 0,
             required_tool: String::new(),
-            required_tool_tier: 1.0,
+            required_tool_tier: 1,
             drops: Vec::new(),
             respawn_days: None,
             color: "#7a5a3a".to_owned(),
@@ -81,10 +86,11 @@ impl Default for NodeTypeDefinition {
 pub struct TileNode {
     pub type_id: String,
     /// int.
-    pub remaining_health: f64,
+    #[serde(with = "crate::units::int")]
+    pub remaining_health: i32,
     /// Set when depleted; used for respawn scheduling. int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depleted_on_day: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub depleted_on_day: Option<u32>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

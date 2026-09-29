@@ -1,6 +1,7 @@
 //! Port of `Weather.cs` (packages/engine-schemas/src/weather.ts).
 //! Weather (M4b) — content-defined weather types + per-season roll tables.
 
+use crate::units;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -13,7 +14,8 @@ pub struct WeatherTypeDefinition {
     /// Rain-like: outdoor soil is watered automatically at day start.
     pub waters_outdoor_soil: bool,
     /// Chance (0..1) each outdoor crop is destroyed overnight (storms).
-    pub crop_damage_chance: f64,
+    #[serde(with = "crate::units::probability")]
+    pub crop_damage_chance: u64,
     /// NPCs with schedules stay home (skip schedule walking).
     pub npcs_stay_inside: bool,
     /// Renderer overlay hint: 'rain' | 'snow' | null (present-as-null).
@@ -27,7 +29,8 @@ pub struct WeatherTypeDefinition {
 pub struct WeatherTableEntry {
     pub weather_id: String,
     /// positive.
-    pub weight: f64,
+    #[serde(with = "crate::units::count")]
+    pub weight: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -52,14 +55,14 @@ fn weather_type(
         id: id.to_owned(),
         name: name.to_owned(),
         waters_outdoor_soil: waters,
-        crop_damage_chance: damage,
+        crop_damage_chance: units::from_authoring::<units::Probability>(damage),
         npcs_stay_inside: inside,
         overlay: overlay.map(str::to_owned),
         extra: Map::new(),
     }
 }
 
-fn entry(weather_id: &str, weight: f64) -> WeatherTableEntry {
+fn entry(weather_id: &str, weight: u32) -> WeatherTableEntry {
     WeatherTableEntry { weather_id: weather_id.to_owned(), weight }
 }
 
@@ -68,10 +71,10 @@ fn entry(weather_id: &str, weight: f64) -> WeatherTableEntry {
 /// assembly needs it while project migrations move to F#.
 pub fn default_weather_config() -> WeatherConfig {
     let mut table = IndexMap::new();
-    table.insert("spring".to_owned(), vec![entry("sun", 6.0), entry("rain", 3.0), entry("storm", 1.0)]);
-    table.insert("summer".to_owned(), vec![entry("sun", 7.0), entry("rain", 1.0), entry("storm", 2.0)]);
-    table.insert("fall".to_owned(), vec![entry("sun", 6.0), entry("rain", 3.0), entry("storm", 1.0)]);
-    table.insert("winter".to_owned(), vec![entry("sun", 5.0), entry("snow", 5.0)]);
+    table.insert("spring".to_owned(), vec![entry("sun", 6), entry("rain", 3), entry("storm", 1)]);
+    table.insert("summer".to_owned(), vec![entry("sun", 7), entry("rain", 1), entry("storm", 2)]);
+    table.insert("fall".to_owned(), vec![entry("sun", 6), entry("rain", 3), entry("storm", 1)]);
+    table.insert("winter".to_owned(), vec![entry("sun", 5), entry("snow", 5)]);
     WeatherConfig {
         types: vec![
             weather_type("sun", "Sunny", false, 0.0, false, None),

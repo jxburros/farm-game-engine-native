@@ -9,21 +9,22 @@ use crate::events;
 use crate::game_time;
 use crate::hooks::{GiftGivenHookPayload, HookEvent};
 use crate::inventory;
-use crate::js;
 use crate::quests;
 use crate::schema::{
     gift_friendship_delta, gift_reactions, Dialogue, DialogueOption, GameState, Npc, NpcSocialState,
     FRIENDSHIP_PER_HEART, MAX_FRIENDSHIP,
 };
 use crate::skills;
+use crate::text;
+use crate::units;
 use crate::world::world_movement;
 
-pub fn friendship_with(state: &GameState, npc_id: &str) -> f64 {
-    state.social.get(npc_id).map(|social| social.friendship).unwrap_or(0.0)
+pub fn friendship_with(state: &GameState, npc_id: &str) -> i32 {
+    state.social.get(npc_id).map(|social| social.friendship).unwrap_or(0)
 }
 
-pub fn hearts(friendship: f64) -> f64 {
-    (friendship / FRIENDSHIP_PER_HEART).floor()
+pub fn hearts(friendship: i32) -> i32 {
+    friendship.div_euclid(FRIENDSHIP_PER_HEART)
 }
 
 /// Returns one of [`gift_reactions`].
@@ -72,7 +73,9 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
     let npc_entry_id = state
         .npcs
         .iter()
-        .find(|(_, npc)| npc.scene_id == state.player.scene_id && npc.x == target_x && npc.y == target_y)
+        .find(|(_, npc)| {
+            npc.scene_id == state.player.scene_id && npc.x == units::tiles(target_x) && npc.y == units::tiles(target_y)
+        })
         .map(|(id, _)| id.clone());
     let Some(npc_entry_id) = npc_entry_id else {
         return vec![Effect::message(message_levels::INFO, "No one to give that to.")];
@@ -87,16 +90,16 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
     }
 
     let social = state.social.get(&npc_def.id).cloned().unwrap_or(NpcSocialState {
-        friendship: 0.0,
-        gifts_today: 0.0,
+        friendship: 0,
+        gifts_today: 0,
         last_gift_day: None,
     });
     let social_today = if social.last_gift_day == Some(state.clock.day) {
         social
     } else {
-        NpcSocialState { gifts_today: 0.0, ..social }
+        NpcSocialState { gifts_today: 0, ..social }
     };
-    if social_today.gifts_today >= 1.0 {
+    if social_today.gifts_today >= 1 {
         return vec![Effect::message(
             message_levels::INFO,
             format!("{} has already received a gift today.", npc_def.name),
@@ -104,36 +107,36 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
     }
 
     let reaction = gift_reaction(npc_def, item_id);
-    let mut delta = gift_friendship_delta(&reaction).unwrap_or(0.0);
+    let mut delta = gift_friendship_delta(&reaction).unwrap_or(0);
     let is_birthday = npc_def.birthday.as_ref().is_some_and(|birthday| {
         birthday.season == state.clock.season
             && birthday.day == game_time::day_of_season(&ctx.content.settings.calendar, state.clock.day)
     });
     if is_birthday {
-        delta *= 2.0;
+        delta *= 2;
     }
 
-    let friendship = (social_today.friendship + delta).clamp(0.0, MAX_FRIENDSHIP);
+    let friendship = social_today.friendship.saturating_add(delta).clamp(0, MAX_FRIENDSHIP);
 
-    state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1.0);
+    state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1);
     state.social.insert(
         npc_def.id.clone(),
         NpcSocialState {
             friendship,
-            gifts_today: social_today.gifts_today + 1.0,
+            gifts_today: social_today.gifts_today.saturating_add(1),
             last_gift_day: Some(state.clock.day),
         },
     );
 
     let mut effects = vec![Effect::message(
-        if delta >= 0.0 { message_levels::SUCCESS } else { message_levels::INFO },
+        if delta >= 0 { message_levels::SUCCESS } else { message_levels::INFO },
         format!(
             "{}: {}{} ({}{})",
             npc_def.name,
             reaction_line(&reaction),
             if is_birthday { " (Birthday!)" } else { "" },
-            if delta >= 0.0 { "+" } else { "" },
-            js::num(delta)
+            if delta >= 0 { "+" } else { "" },
+            delta
         ),
     )];
     ctx.emit(HookEvent::GiftGiven(GiftGivenHookPayload {
@@ -142,9 +145,9 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
         reaction: reaction.clone(),
     }));
 
-    effects.extend(skills::grant_xp(ctx, state, "social", 4.0));
+    effects.extend(skills::grant_xp(ctx, state, "social", 4));
 
-    effects.extend(quests::progress_quests(ctx, state, "gift", &npc_def.id, 1.0));
+    effects.extend(quests::progress_quests(ctx, state, "gift", &npc_def.id, 1));
     effects
 }
 
@@ -168,7 +171,7 @@ pub fn visible_dialogue_options(ctx: &EngineContext, state: &GameState, dialogue
                 }
             }
             if let Some(requires_flag) = non_empty(option.requires_flag.as_deref()) {
-                if !js::truthy(events::flag_value(state, requires_flag)) {
+                if !text::truthy(events::flag_value(state, requires_flag)) {
                     return false;
                 }
             }

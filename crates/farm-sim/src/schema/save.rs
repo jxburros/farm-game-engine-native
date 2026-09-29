@@ -20,7 +20,7 @@ use super::content::InventorySlot;
 use super::extensibility::MinigameSession;
 use super::social::NpcSocialState;
 use super::world::Scene;
-use crate::js;
+use crate::units;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,30 +32,36 @@ pub use crate::rng::RngState;
 #[serde(rename_all = "camelCase", default)]
 pub struct ClockState {
     /// Fixed-timestep tick counter since game start. int.
-    pub tick: f64,
+    #[serde(with = "crate::units::ticks")]
+    pub tick: u64,
     /// Minute-of-day of the game clock (e.g. 360 = 6:00).
-    pub time_minutes: f64,
+    #[serde(with = "crate::units::micro_minutes")]
+    pub time_minutes: u32,
     /// Absolute in-game day, 1-based, monotonically increasing. int.
-    pub day: f64,
+    #[serde(with = "crate::units::count")]
+    pub day: u32,
     pub season: String,
     /// int.
-    pub year: f64,
+    #[serde(with = "crate::units::count")]
+    pub year: u32,
     /// Today's weather (rolled at day start, M4).
     pub weather_id: String,
 }
 
 impl Default for ClockState {
     fn default() -> Self {
-        Self { tick: 0.0, time_minutes: 0.0, day: 0.0, season: String::new(), year: 0.0, weather_id: "sun".to_owned() }
+        Self { tick: 0, time_minutes: 0, day: 0, season: String::new(), year: 0, weather_id: "sun".to_owned() }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SkillState {
-    pub xp: f64,
+    #[serde(with = "crate::units::count")]
+    pub xp: u32,
     /// int.
-    pub level: f64,
+    #[serde(with = "crate::units::count")]
+    pub level: u32,
 }
 
 /// Held movement input (v4 free movement). Player intent enters the command log as
@@ -65,9 +71,11 @@ pub struct SkillState {
 #[serde(rename_all = "camelCase", default)]
 pub struct MoveIntent {
     /// int, -1..1.
-    pub dx: f64,
+    #[serde(with = "crate::units::truncated")]
+    pub dx: i32,
     /// int, -1..1.
-    pub dy: f64,
+    #[serde(with = "crate::units::truncated")]
+    pub dy: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -76,17 +84,23 @@ pub struct PlayerState {
     /// Player position in tile units — the CENTER of the player's collision box. Fractional
     /// since v4 (free movement); the occupied tile is `Math.floor(x/y)`. Tiles are
     /// layout/terrain, not a movement grid.
-    pub x: f64,
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     pub move_intent: MoveIntent,
     /// One of [`super::directions`].
     pub direction: String,
     pub scene_id: String,
     pub inventory: Vec<InventorySlot>,
-    pub max_inventory_size: f64,
-    pub money: f64,
-    pub energy: f64,
-    pub max_energy: f64,
+    #[serde(with = "crate::units::count")]
+    pub max_inventory_size: u32,
+    #[serde(with = "crate::units::money")]
+    pub money: i64,
+    #[serde(with = "crate::units::energy")]
+    pub energy: i32,
+    #[serde(with = "crate::units::energy")]
+    pub max_energy: i32,
     /// Per-category skill XP/levels (M4g).
     pub skills: IndexMap<String, SkillState>,
     pub active_quests: Vec<String>,
@@ -99,22 +113,25 @@ pub struct PlayerState {
 #[serde(rename_all = "camelCase", default)]
 pub struct NpcState {
     /// int.
-    pub x: f64,
+    #[serde(with = "crate::units::position")]
+    pub x: i32,
     /// int.
-    pub y: f64,
+    #[serde(with = "crate::units::position")]
+    pub y: i32,
     pub scene_id: String,
     /// Remaining A* path steps toward the current destination (M3 schedules).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<Vec<GridPoint>>,
     /// Index of the patrol waypoint the NPC is heading to. int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub patrol_index: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub patrol_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct QuestObjectiveProgress {
-    pub progress: f64,
+    #[serde(with = "crate::units::count")]
+    pub progress: u32,
     pub completed: bool,
 }
 
@@ -158,7 +175,8 @@ pub struct SavePackRef {
 #[serde(rename_all = "camelCase", default)]
 pub struct GameStateMeta {
     /// int.
-    pub save_version: f64,
+    #[serde(with = "crate::units::count")]
+    pub save_version: u32,
     pub engine_seed: String,
     /// Packs this save was created with ("this save uses packs X, Y").
     pub packs: Vec<SavePackRef>,
@@ -177,9 +195,11 @@ pub struct WorldState {
 #[serde(rename_all = "camelCase", default)]
 pub struct MineProgress {
     /// int.
-    pub deepest_floor: f64,
+    #[serde(with = "crate::units::count")]
+    pub deepest_floor: u32,
     /// int.
-    pub current_floor: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_floor: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -198,14 +218,15 @@ pub struct GameState {
     /// Open minigame session (modal, like dialogue/shop). Present-as-null when closed.
     pub minigame: Option<MinigameSession>,
     /// Per-shop, per-item units bought today (daily stock limits); reset nightly.
-    pub shop_purchases_today: IndexMap<String, IndexMap<String, f64>>,
+    #[serde(with = "crate::units::count::nested_map")]
+    pub shop_purchases_today: IndexMap<String, IndexMap<String, u32>>,
     /// Friendship & gifting state per NPC (M4d).
     pub social: IndexMap<String, NpcSocialState>,
     /// Live animals (M4c).
     pub animals: Vec<AnimalState>,
     /// Mining progress (M4f): deepest floor reached + current floor.
     pub mine: MineProgress,
-    /// Values are `boolean | number | string` (see [`crate::js::value`], [`crate::js::truthy`]).
+    /// Values are `boolean | number | string` (see [`crate::units::value`], [`crate::text::truthy`]).
     pub flags: IndexMap<String, Value>,
     /// Inventory items whose owning pack is missing/disabled — quarantined, not dropped; they
     /// return to the inventory when the pack comes back (M5).
@@ -220,21 +241,23 @@ pub struct SaveMigrationResult {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<GameState>,
+    /// The version the input declared, as read (a report, not state: `2.5` stays `2.5`).
     pub from_version: f64,
     pub migrated: bool,
     pub errors: Vec<String>,
 }
 
-pub const CURRENT_SAVE_VERSION: f64 = 4.0;
+pub const CURRENT_SAVE_VERSION: u32 = 5;
 
 /// TS `SKILL_NAMES`.
 pub const SKILL_NAMES: &[&str] = &["farming", "foraging", "fishing", "mining", "social"];
 
-/// Tile index → tile center; already-fractional coordinates pass through.
-pub fn center_coordinate(value: f64) -> f64 {
-    if js::is_integer(value) {
-        value + 0.5
+/// Tile index → tile center; positions already inside a tile pass through (projects may store
+/// either).
+pub fn center_coordinate(position: i32) -> i32 {
+    if position % units::TILE == 0 {
+        position.saturating_add(units::TILE / 2)
     } else {
-        value
+        position
     }
 }

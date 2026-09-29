@@ -12,9 +12,11 @@ use serde_json::{Map, Value};
 #[serde(rename_all = "camelCase", default)]
 pub struct CropMultiTile {
     /// int, positive.
-    pub width: f64,
+    #[serde(with = "crate::units::count")]
+    pub width: u32,
     /// int, positive.
-    pub height: f64,
+    #[serde(with = "crate::units::count")]
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -24,28 +26,34 @@ pub struct CropDefinition {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual: Option<VisualRef>,
-    pub seed_cost: f64,
-    pub base_harvest_value: f64,
+    #[serde(with = "crate::units::money")]
+    pub seed_cost: i64,
+    #[serde(with = "crate::units::money")]
+    pub base_harvest_value: i64,
     /// Legacy wall-clock growth duration (ms). Kept for pre-v4 data; the engine uses growthDays.
-    pub growth_time: f64,
+    #[serde(with = "crate::units::long")]
+    pub growth_time: i64,
     /// In-game days from planting to maturity (authoritative from schema v4). positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub growth_days: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub growth_days: Option<u32>,
     /// int, positive.
-    pub stages: f64,
+    #[serde(with = "crate::units::count")]
+    pub stages: u32,
     pub seasons: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub regrowth_time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::long::opt")]
+    pub regrowth_time: Option<i64>,
     /// In-game days between repeat harvests for regrowing crops. positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub regrowth_days: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub regrowth_days: Option<u32>,
     pub can_regrow: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_tile: Option<CropMultiTile>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mutation_chance: Option<f64>,
-    pub yield_min: f64,
-    pub yield_max: f64,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::probability::opt")]
+    pub mutation_chance: Option<u64>,
+    #[serde(with = "crate::units::count")]
+    pub yield_min: u32,
+    #[serde(with = "crate::units::count")]
+    pub yield_max: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -60,28 +68,34 @@ pub struct CustomCropDefinition {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual: Option<VisualRef>,
-    pub seed_cost: f64,
-    pub base_harvest_value: f64,
+    #[serde(with = "crate::units::money")]
+    pub seed_cost: i64,
+    #[serde(with = "crate::units::money")]
+    pub base_harvest_value: i64,
     /// Legacy wall-clock growth duration (ms). Kept for pre-v4 data; the engine uses growthDays.
-    pub growth_time: f64,
+    #[serde(with = "crate::units::long")]
+    pub growth_time: i64,
     /// In-game days from planting to maturity (authoritative from schema v4). positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub growth_days: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub growth_days: Option<u32>,
     /// int, positive.
-    pub stages: f64,
+    #[serde(with = "crate::units::count")]
+    pub stages: u32,
     pub seasons: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub regrowth_time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::long::opt")]
+    pub regrowth_time: Option<i64>,
     /// In-game days between repeat harvests for regrowing crops. positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub regrowth_days: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub regrowth_days: Option<u32>,
     pub can_regrow: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_tile: Option<CropMultiTile>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mutation_chance: Option<f64>,
-    pub yield_min: f64,
-    pub yield_max: f64,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::probability::opt")]
+    pub mutation_chance: Option<u64>,
+    #[serde(with = "crate::units::count")]
+    pub yield_min: u32,
+    #[serde(with = "crate::units::count")]
+    pub yield_max: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_asset: Option<String>,
     #[serde(flatten)]
@@ -99,8 +113,10 @@ pub struct Item {
     /// One of [`super::item_types`].
     pub r#type: String,
     pub stackable: bool,
-    pub max_stack: f64,
-    pub value: f64,
+    #[serde(with = "crate::units::count")]
+    pub max_stack: u32,
+    #[serde(with = "crate::units::money")]
+    pub value: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crop_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,15 +124,15 @@ pub struct Item {
     /// One of [`super::tool_types`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_power: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub tool_power: Option<i32>,
     /// Tool tier: 1 = basic. Higher tiers hit harder, cost less energy, gain AoE. int, positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_tier: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub durability: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_durability: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub tool_tier: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub durability: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::int::opt")]
+    pub max_durability: Option<i32>,
     /// Action performed when the item is used from the inventory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_action_id: Option<String>,
@@ -131,7 +147,8 @@ pub struct Item {
 #[serde(rename_all = "camelCase", default)]
 pub struct InventorySlot {
     pub item: Item,
-    pub quantity: f64,
+    #[serde(with = "crate::units::count")]
+    pub quantity: u32,
 }
 
 /// A dropped/growing crop instance on a tile (game state, not content).
@@ -140,20 +157,22 @@ pub struct InventorySlot {
 pub struct Crop {
     pub r#type: String,
     /// Legacy wall-clock plant timestamp (ms). Superseded by plantedOnDay from schema v4.
-    pub planted_at: f64,
+    #[serde(with = "crate::units::long")]
+    pub planted_at: i64,
     /// Absolute in-game day the crop was planted (schema v4+). int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub planted_on_day: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub planted_on_day: Option<u32>,
     /// Watered in-game days accumulated toward growthDays (schema v4+).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub days_grown: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub days_grown: Option<u32>,
     /// Killed by season change; renders dead and can be cleared.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub withered: Option<bool>,
-    pub stage: f64,
+    #[serde(with = "crate::units::count")]
+    pub stage: u32,
     pub watered: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_watered_day: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub last_watered_day: Option<u32>,
     /// One of [`super::crop_qualities`].
     pub quality: String,
     /// One of [`super::crop_mutations`] or `null` (required key, present-as-null).
@@ -162,8 +181,10 @@ pub struct Crop {
     pub is_multi_tile_root: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_tile_id: Option<String>,
-    pub harvest_count: f64,
-    pub days_without_water: f64,
+    #[serde(with = "crate::units::count")]
+    pub harvest_count: u32,
+    #[serde(with = "crate::units::count")]
+    pub days_without_water: u32,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -175,12 +196,16 @@ pub struct Crop {
 #[serde(rename_all = "camelCase", default)]
 pub struct SpriteSheet {
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub frame_width: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub frame_height: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub frames: f64,
     /// int, positive.
+    #[serde(with = "crate::units::screen")]
     pub ticks_per_frame: f64,
     pub directional: bool,
     #[serde(flatten)]
@@ -219,10 +244,10 @@ pub struct CustomAsset {
     /// One of [`custom_asset_types`].
     pub r#type: String,
     /// int, positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::screen::opt")]
     pub width: Option<f64>,
     /// int, positive.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::screen::opt")]
     pub height: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<Vec<AnimationClip>>,

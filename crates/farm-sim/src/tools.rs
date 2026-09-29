@@ -38,33 +38,34 @@ pub fn get_tool_from_item(item: &Item) -> Option<ToolDefinition> {
 }
 
 /// JS truthiness of an optional number: `undefined`, `0` and `NaN` are falsy (`None`).
-fn truthy_number(value: Option<f64>) -> Option<f64> {
-    value.filter(|v| *v != 0.0 && !v.is_nan())
+/// JS `value || undefined` for an optional number: 0 counts as absent.
+fn truthy_number(value: Option<i32>) -> Option<i32> {
+    value.filter(|v| *v != 0)
 }
 
-pub fn damage_tool_durability(tool: &Item, amount: f64) -> Item {
+pub fn damage_tool_durability(tool: &Item, amount: i32) -> Item {
     let (Some(durability), Some(_)) = (truthy_number(tool.durability), truthy_number(tool.max_durability)) else {
         return tool.clone();
     };
-    Item { durability: Some(f64::max(0.0, durability - amount)), ..tool.clone() }
+    Item { durability: Some(durability.saturating_sub(amount).max(0)), ..tool.clone() }
 }
 
 pub fn is_tool_broken(tool: &Item) -> bool {
     // M2 fix: a tool at exactly 0 durability IS broken (the old falsy check
     // meant tools could never break; repair shops make breakage meaningful).
     match (tool.durability, tool.max_durability) {
-        (Some(durability), Some(_)) => durability <= 0.0,
+        (Some(durability), Some(_)) => durability <= 0,
         _ => false,
     }
 }
 
-pub fn repair_tool(tool: &Item, amount: Option<f64>) -> Item {
+pub fn repair_tool(tool: &Item, amount: Option<i32>) -> Item {
     let (Some(durability), Some(max_durability)) = (truthy_number(tool.durability), truthy_number(tool.max_durability))
     else {
         return tool.clone();
     };
     let repair_amount = truthy_number(amount).unwrap_or(max_durability);
-    Item { durability: Some(f64::min(max_durability, durability + repair_amount)), ..tool.clone() }
+    Item { durability: Some(max_durability.min(durability.saturating_add(repair_amount))), ..tool.clone() }
 }
 
 /// Port of tests/unit/tools.characterization.test.ts (`ToolsCharacterizationTests.cs`;
@@ -74,20 +75,20 @@ pub fn repair_tool(tool: &Item, amount: Option<f64>) -> Item {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::js;
     use crate::stable_json;
+    use crate::text;
 
     const ALL_TOOL_TYPES: [&str; 6] = ["watering-can", "hoe", "axe", "pickaxe", "scythe", "fishing-rod"];
 
-    fn make_item(r#type: &str, tool_type: Option<&str>, durability: Option<f64>, max_durability: Option<f64>) -> Item {
+    fn make_item(r#type: &str, tool_type: Option<&str>, durability: Option<i32>, max_durability: Option<i32>) -> Item {
         Item {
             id: "item-1".to_owned(),
             name: "Test Item".to_owned(),
             description: "A test item".to_owned(),
             r#type: r#type.to_owned(),
             stackable: false,
-            max_stack: 1.0,
-            value: 10.0,
+            max_stack: 1,
+            value: 10,
             tool_type: tool_type.map(str::to_owned),
             durability,
             max_durability,
@@ -95,21 +96,21 @@ mod tests {
         }
     }
 
-    fn make_tool(tool_type: &str, durability: Option<f64>, max_durability: Option<f64>) -> Item {
+    fn make_tool(tool_type: &str, durability: Option<i32>, max_durability: Option<i32>) -> Item {
         make_item("tool", Some(tool_type), durability, max_durability)
     }
 
     fn make_tile(r#type: &str, background: &str, overlay: Option<&str>, object: Option<&str>) -> Tile {
         Tile {
-            x: 0.0,
-            y: 0.0,
+            x: 0,
+            y: 0,
             r#type: r#type.to_owned(),
             background: background.to_owned(),
             overlay: overlay.map(str::to_owned),
             object: object.map(str::to_owned),
             collision: false,
-            soil_moisture: 0.0,
-            soil_fertility: 0.0,
+            soil_moisture: 0,
+            soil_fertility: 0,
             ..Tile::default()
         }
     }
@@ -124,9 +125,9 @@ mod tests {
     fn contains_exactly_the_six_known_tool_types() {
         let definitions = content_builtin::tool_definitions();
         let mut keys: Vec<&str> = definitions.keys().map(String::as_str).collect();
-        keys.sort_by(|a, b| js::compare_strings(a, b));
+        keys.sort_by(|a, b| text::compare_strings(a, b));
         let mut expected = ALL_TOOL_TYPES.to_vec();
-        expected.sort_by(|a, b| js::compare_strings(a, b));
+        expected.sort_by(|a, b| text::compare_strings(a, b));
         assert_eq!(keys, expected);
     }
 
@@ -142,7 +143,7 @@ mod tests {
     fn only_the_scythe_has_power_level_2() {
         let definitions = content_builtin::tool_definitions();
         for tool_type in ALL_TOOL_TYPES {
-            assert_eq!(definitions[tool_type].power_level, if tool_type == "scythe" { 2.0 } else { 1.0 });
+            assert_eq!(definitions[tool_type].power_level, if tool_type == "scythe" { 2 } else { 1 });
         }
     }
 
@@ -220,7 +221,7 @@ mod tests {
 
     #[test]
     fn ignores_durability_entirely() {
-        assert!(can_use_tool(&make_tool("hoe", Some(0.0), Some(100.0)), &tile("grass")));
+        assert!(can_use_tool(&make_tool("hoe", Some(0), Some(100)), &tile("grass")));
     }
 
     // --- getToolFromItem ---
@@ -239,30 +240,30 @@ mod tests {
 
     #[test]
     fn subtracts_the_given_amount_and_returns_a_new_object() {
-        let tool = make_tool("axe", Some(50.0), Some(100.0));
-        let result = damage_tool_durability(&tool, 10.0);
+        let tool = make_tool("axe", Some(50), Some(100));
+        let result = damage_tool_durability(&tool, 10);
         assert_ne!(tool, result);
-        assert_eq!(result.durability, Some(40.0));
-        assert_eq!(result.max_durability, Some(100.0));
-        assert_eq!(tool.durability, Some(50.0));
+        assert_eq!(result.durability, Some(40));
+        assert_eq!(result.max_durability, Some(100));
+        assert_eq!(tool.durability, Some(50));
     }
 
     #[test]
     fn damage_pins_its_behavior() {
-        assert_eq!(damage_tool_durability(&make_tool("axe", Some(50.0), Some(100.0)), 1.0).durability, Some(49.0)); // the TS default amount
-        assert_eq!(damage_tool_durability(&make_tool("axe", Some(3.0), Some(100.0)), 10.0).durability, Some(0.0)); // clamps at 0
-        let no_durability = make_tool("axe", None, Some(100.0));
-        assert_eq!(damage_tool_durability(&no_durability, 5.0), no_durability);
-        let no_max = make_tool("axe", Some(50.0), None);
-        assert_eq!(damage_tool_durability(&no_max, 5.0), no_max);
+        assert_eq!(damage_tool_durability(&make_tool("axe", Some(50), Some(100)), 1).durability, Some(49)); // the TS default amount
+        assert_eq!(damage_tool_durability(&make_tool("axe", Some(3), Some(100)), 10).durability, Some(0)); // clamps at 0
+        let no_durability = make_tool("axe", None, Some(100));
+        assert_eq!(damage_tool_durability(&no_durability, 5), no_durability);
+        let no_max = make_tool("axe", Some(50), None);
+        assert_eq!(damage_tool_durability(&no_max, 5), no_max);
         // QUIRK: durability 0 is falsy, so a fully depleted tool is a no-op
-        let depleted = make_tool("axe", Some(0.0), Some(100.0));
-        assert_eq!(damage_tool_durability(&depleted, 5.0), depleted);
+        let depleted = make_tool("axe", Some(0), Some(100));
+        assert_eq!(damage_tool_durability(&depleted, 5), depleted);
         // QUIRK: maxDurability 0 is falsy
-        let zero_max = make_tool("axe", Some(50.0), Some(0.0));
-        assert_eq!(damage_tool_durability(&zero_max, 5.0), zero_max);
+        let zero_max = make_tool("axe", Some(50), Some(0));
+        assert_eq!(damage_tool_durability(&zero_max, 5), zero_max);
         // QUIRK: a negative amount heals the tool with no upper clamp
-        assert_eq!(damage_tool_durability(&make_tool("axe", Some(95.0), Some(100.0)), -10.0).durability, Some(105.0));
+        assert_eq!(damage_tool_durability(&make_tool("axe", Some(95), Some(100)), -10).durability, Some(105));
     }
 
     // --- isToolBroken ---
@@ -270,40 +271,40 @@ mod tests {
     #[test]
     fn is_tool_broken_pins_its_behavior() {
         assert!(!is_tool_broken(&make_tool("hoe", None, None)));
-        assert!(is_tool_broken(&make_tool("hoe", Some(0.0), Some(100.0)))); // M2 fix: exactly 0 IS broken
-        assert!(is_tool_broken(&make_tool("hoe", Some(-1.0), Some(100.0))));
-        assert!(is_tool_broken(&make_tool("hoe", Some(-100.0), Some(100.0))));
-        assert!(!is_tool_broken(&make_tool("hoe", Some(1.0), Some(100.0))));
-        assert!(!is_tool_broken(&make_tool("hoe", Some(100.0), Some(100.0))));
-        assert!(!is_tool_broken(&make_tool("hoe", Some(-5.0), None))); // requires maxDurability
+        assert!(is_tool_broken(&make_tool("hoe", Some(0), Some(100)))); // M2 fix: exactly 0 IS broken
+        assert!(is_tool_broken(&make_tool("hoe", Some(-1), Some(100))));
+        assert!(is_tool_broken(&make_tool("hoe", Some(-100), Some(100))));
+        assert!(!is_tool_broken(&make_tool("hoe", Some(1), Some(100))));
+        assert!(!is_tool_broken(&make_tool("hoe", Some(100), Some(100))));
+        assert!(!is_tool_broken(&make_tool("hoe", Some(-5), None))); // requires maxDurability
     }
 
     // --- repairTool ---
 
     #[test]
     fn partial_repair_adds_the_given_amount_and_returns_a_new_object() {
-        let tool = make_tool("pickaxe", Some(40.0), Some(100.0));
-        let result = repair_tool(&tool, Some(25.0));
+        let tool = make_tool("pickaxe", Some(40), Some(100));
+        let result = repair_tool(&tool, Some(25));
         assert_ne!(tool, result);
-        assert_eq!(result.durability, Some(65.0));
-        assert_eq!(tool.durability, Some(40.0));
+        assert_eq!(result.durability, Some(65));
+        assert_eq!(tool.durability, Some(40));
     }
 
     #[test]
     fn repair_pins_its_behavior() {
-        assert_eq!(repair_tool(&make_tool("pickaxe", Some(7.0), Some(100.0)), None).durability, Some(100.0)); // full repair
-        assert_eq!(repair_tool(&make_tool("pickaxe", Some(90.0), Some(100.0)), Some(50.0)).durability, Some(100.0)); // clamps
-        let no_durability = make_tool("pickaxe", None, Some(100.0));
-        assert_eq!(repair_tool(&no_durability, Some(10.0)), no_durability);
-        let no_max = make_tool("pickaxe", Some(40.0), None);
-        assert_eq!(repair_tool(&no_max, Some(10.0)), no_max);
+        assert_eq!(repair_tool(&make_tool("pickaxe", Some(7), Some(100)), None).durability, Some(100)); // full repair
+        assert_eq!(repair_tool(&make_tool("pickaxe", Some(90), Some(100)), Some(50)).durability, Some(100)); // clamps
+        let no_durability = make_tool("pickaxe", None, Some(100));
+        assert_eq!(repair_tool(&no_durability, Some(10)), no_durability);
+        let no_max = make_tool("pickaxe", Some(40), None);
+        assert_eq!(repair_tool(&no_max, Some(10)), no_max);
         // QUIRK: a fully depleted tool can NEVER be repaired
-        let depleted = make_tool("pickaxe", Some(0.0), Some(100.0));
-        assert_eq!(repair_tool(&depleted, Some(50.0)), depleted);
+        let depleted = make_tool("pickaxe", Some(0), Some(100));
+        assert_eq!(repair_tool(&depleted, Some(50)), depleted);
         assert_eq!(repair_tool(&depleted, None), depleted);
         // QUIRK: amount 0 is falsy → FULL repair
-        assert_eq!(repair_tool(&make_tool("pickaxe", Some(30.0), Some(100.0)), Some(0.0)).durability, Some(100.0));
+        assert_eq!(repair_tool(&make_tool("pickaxe", Some(30), Some(100)), Some(0)).durability, Some(100));
         // a negative amount reduces durability (upper clamp only)
-        assert_eq!(repair_tool(&make_tool("pickaxe", Some(30.0), Some(100.0)), Some(-10.0)).durability, Some(20.0));
+        assert_eq!(repair_tool(&make_tool("pickaxe", Some(30), Some(100)), Some(-10)).durability, Some(20));
     }
 }

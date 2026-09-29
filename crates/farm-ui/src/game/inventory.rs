@@ -131,7 +131,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     }
     ui.end_modal_body(y);
     if let Some(footer) = modal.footer {
-        let total: f64 = player.inventory.iter().map(|slot| slot.item.value * slot.quantity).sum();
+        let total: i64 =
+            player.inventory.iter().map(|slot| slot.item.value.saturating_mul(i64::from(slot.quantity))).sum();
         let mut footer = footer;
         let close = Button::new(lang.tr("common.close")).primary();
         let width = ui.button_width(&close);

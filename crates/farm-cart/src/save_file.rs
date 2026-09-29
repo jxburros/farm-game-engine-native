@@ -26,9 +26,8 @@ use crate::save::{migrate_game_state, MAX_ERRORS};
 use farm_cart_schema::farm_engine::save as fb_save;
 use farm_cart_schema::farm_engine::save::save_file_buffer_has_identifier;
 use farm_cart_schema::flatbuffers::FlatBufferBuilder;
-use farm_sim::js;
 use farm_sim::schema::{GameContent, GameProject, GameState, InventorySlot, Item};
-use farm_sim::{hash_state, stable_json};
+use farm_sim::{hash_state, stable_json, text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -88,8 +87,9 @@ pub struct SaveHeader {
     pub cart_hash: String,
 }
 
-/// Content hash of a cartridge. In the compatibility phase the cartridge is the `GameContent`,
-/// hashed like state (FNV-1a over stable JSON).
+/// Content hash of a cartridge: the `GameContent`, hashed like state (xxh3-64 over the
+/// canonical encoding). A save written against other content (or before v9, when this was
+/// FNV-1a over stable JSON) reconciles its items with the current content when it loads.
 pub fn cart_hash(content: &GameContent) -> String {
     hash_state(content)
 }
@@ -248,10 +248,12 @@ impl SavePreview {
     /// thumbnail it knows.
     pub fn of_state(state: &GameState) -> Self {
         Self {
-            day: state.clock.day,
+            // The FlatBuffers fields stay `double` (a schema field is never retyped); they hold
+            // whole numbers.
+            day: f64::from(state.clock.day),
             season: state.clock.season.clone(),
-            year: state.clock.year,
-            money: state.player.money,
+            year: f64::from(state.clock.year),
+            money: state.player.money as f64,
             ..Self::default()
         }
     }
@@ -424,7 +426,7 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
         let y = b.get(i).copied().unwrap_or("0");
         let order = match (x.parse::<u64>(), y.parse::<u64>()) {
             (Ok(x), Ok(y)) => x.cmp(&y),
-            _ => js::compare_strings(x, y),
+            _ => text::compare_strings(x, y),
         };
         if order != Ordering::Equal {
             return order;

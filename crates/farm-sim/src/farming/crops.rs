@@ -91,74 +91,81 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
 
 // ─── Growth and harvest math (port of the rest of Farming/Crops.cs) ─────────────────────────
 
-use crate::js;
 use crate::rng::RandomSource;
 use crate::schema::{crop_mutations, crop_qualities, tile_types, Crop, GameContent, Tile};
+use crate::units;
 
 pub fn get_crop_definition_from_content<'a>(content: &'a GameContent, crop_type: &str) -> Option<&'a CropDefinition> {
     content.crops.get(crop_type)
 }
 
-pub fn get_crop_stage(planted_at: f64, current_time: f64, growth_time: f64, stages: f64, watered: bool) -> f64 {
-    let elapsed = current_time - planted_at;
-    let stage_time = growth_time / stages;
-    let water_penalty = if watered { 1.0 } else { 0.5 };
-    let adjusted_elapsed = elapsed * water_penalty;
-    f64::min((adjusted_elapsed / stage_time).floor(), stages - 1.0)
+/// Legacy wall-clock stage (pre-v4 data): `min(floor(elapsed × waterFactor / (growthTime /
+/// stages)), stages − 1)`, where an unwatered crop grows at half speed. Times in milliseconds.
+pub fn get_crop_stage(planted_at: i64, current_time: i64, growth_time: i64, stages: i64, watered: bool) -> i64 {
+    let elapsed = i128::from(current_time) - i128::from(planted_at);
+    // adjusted / stageTime = elapsed × stages / growthTime (÷ 2 when unwatered).
+    let numerator = elapsed * i128::from(stages);
+    let denominator = i128::from(growth_time) * if watered { 1 } else { 2 };
+    let last = stages - 1;
+    if denominator <= 0 {
+        // JS divides by zero into ±Infinity (or NaN), which `Math.min` clamps to the last stage.
+        return last;
+    }
+    let stage = numerator.div_euclid(denominator);
+    i64::try_from(stage).map_or(last, |stage| stage.min(last))
 }
 
-pub fn is_crop_mature(stage: f64, stages: f64) -> bool {
-    stage >= stages - 1.0
+pub fn is_crop_mature(stage: i64, stages: i64) -> bool {
+    stage >= stages - 1
 }
 
 /// Returns one of [`crop_qualities`].
-pub fn calculate_crop_quality(watered: bool, fertilized: bool, days_without_water: f64) -> String {
-    let mut quality_score = 0.0;
+pub fn calculate_crop_quality(watered: bool, fertilized: bool, days_without_water: u32) -> String {
+    let mut quality_score: i64 = 0;
     if watered {
-        quality_score += 2.0;
+        quality_score += 2;
     }
     if fertilized {
-        quality_score += 3.0;
+        quality_score += 3;
     }
-    quality_score -= days_without_water;
+    quality_score -= i64::from(days_without_water);
 
-    if quality_score >= 4.0 {
+    if quality_score >= 4 {
         return crop_qualities::IRIDIUM.to_owned();
     }
-    if quality_score >= 2.0 {
+    if quality_score >= 2 {
         return crop_qualities::GOLD.to_owned();
     }
-    if quality_score >= 1.0 {
+    if quality_score >= 1 {
         return crop_qualities::SILVER.to_owned();
     }
     crop_qualities::NORMAL.to_owned()
 }
 
-/// Returns one of [`crop_mutations`] or `None`. Always draws exactly one float when a definition
-/// is given.
+/// Returns one of [`crop_mutations`] or `None`. Always draws exactly once when a definition is
+/// given. The chance is scaled by the quality bonus (×1.2 silver, ×1.5 gold, ×2 iridium); a roll
+/// under a tenth of it is ancient, under three tenths golden, under all of it giant.
 pub fn roll_mutation(definition: Option<&CropDefinition>, quality: &str, rng: &mut dyn RandomSource) -> Option<String> {
     let definition = definition?;
     // `definition.mutationChance || 0`
-    let base_chance = match definition.mutation_chance {
-        Some(chance) if chance != 0.0 && !chance.is_nan() => chance,
-        _ => 0.0,
-    };
-    let quality_bonus = if quality == crop_qualities::IRIDIUM {
-        2.0
+    let base_chance = definition.mutation_chance.unwrap_or(0);
+    let quality_bonus_milli: u64 = if quality == crop_qualities::IRIDIUM {
+        2000
     } else if quality == crop_qualities::GOLD {
-        1.5
+        1500
     } else if quality == crop_qualities::SILVER {
-        1.2
+        1200
     } else {
-        1.0
+        1000
     };
-    let final_chance = base_chance * quality_bonus;
+    // Unclamped like v8 (a chance above 1 still splits into tiers).
+    let final_chance = u128::from(base_chance) * u128::from(quality_bonus_milli);
+    let roll = u128::from(rng.next_u32()) * 1000;
 
-    let roll = rng.float();
-    if roll < final_chance * 0.1 {
+    if roll * 10 < final_chance {
         return Some(crop_mutations::ANCIENT.to_owned());
     }
-    if roll < final_chance * 0.3 {
+    if roll * 10 < final_chance * 3 {
         return Some(crop_mutations::GOLDEN.to_owned());
     }
     if roll < final_chance {
@@ -172,46 +179,52 @@ pub fn roll_yield(
     quality: &str,
     mutation: Option<&str>,
     rng: &mut dyn RandomSource,
-) -> f64 {
+) -> u32 {
     let Some(definition) = definition else {
-        return 1.0;
+        return 1;
     };
-    let base_yield = rng.int(definition.yield_min, definition.yield_max);
-    let quality_bonus = if quality == crop_qualities::IRIDIUM {
-        1.5
+    let base_yield = rng.int(i64::from(definition.yield_min), i64::from(definition.yield_max));
+    // Bonuses in thousandths: quality ×1.1/×1.3/×1.5, mutation ×2/×2.5/×3.
+    let quality_bonus: i64 = if quality == crop_qualities::IRIDIUM {
+        1500
     } else if quality == crop_qualities::GOLD {
-        1.3
+        1300
     } else if quality == crop_qualities::SILVER {
-        1.1
+        1100
     } else {
-        1.0
+        1000
     };
-    let mutation_bonus = match mutation {
-        Some(crop_mutations::ANCIENT) => 3.0,
-        Some(crop_mutations::GOLDEN) => 2.5,
-        Some(crop_mutations::GIANT) => 2.0,
-        _ => 1.0,
+    let mutation_bonus: i64 = match mutation {
+        Some(crop_mutations::ANCIENT) => 3000,
+        Some(crop_mutations::GOLDEN) => 2500,
+        Some(crop_mutations::GIANT) => 2000,
+        _ => 1000,
     };
-    (base_yield * quality_bonus * mutation_bonus).floor()
+    let quantity = (base_yield * quality_bonus * mutation_bonus).div_euclid(1_000_000);
+    u32::try_from(quantity.max(0)).unwrap_or(u32::MAX)
 }
 
 pub fn calculate_harvest_value(
     definition: Option<&CropDefinition>,
     quality: &str,
     mutation: Option<&str>,
-    quantity: f64,
-) -> f64 {
+    quantity: u32,
+) -> Option<i64> {
     let Some(definition) = definition else {
-        return 0.0;
+        return Some(0);
     };
-    // Unknown keys read `undefined` in JS → NaN through the multiplication.
-    let quality_multiplier = content_builtin::quality_multipliers().get(quality).copied().unwrap_or(f64::NAN);
+    // Unknown keys read `undefined` in JS: the value is NaN, shown as "NaN" (here `None`).
+    let quality_multiplier = content_builtin::quality_multipliers().get(quality).copied()?;
     let mutation_key = match mutation {
         Some(mutation) if !mutation.is_empty() => mutation,
         _ => "none",
     };
-    let mutation_multiplier = content_builtin::mutation_multipliers().get(mutation_key).copied().unwrap_or(f64::NAN);
-    (definition.base_harvest_value * quality_multiplier * mutation_multiplier * quantity).floor()
+    let mutation_multiplier = content_builtin::mutation_multipliers().get(mutation_key).copied()?;
+    let value = i128::from(definition.base_harvest_value)
+        * i128::from(quality_multiplier)
+        * i128::from(mutation_multiplier)
+        * i128::from(quantity);
+    Some(i64::try_from(value.div_euclid(1_000_000)).unwrap_or(i64::MAX))
 }
 
 pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> bool {
@@ -224,59 +237,63 @@ pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> 
 /// TS `SEASON_ORDER[Math.floor(gameDay / DAYS_PER_SEASON) % SEASON_ORDER.length]`, which reads
 /// `undefined` for a negative day. This signature cannot say `undefined`, so a negative day
 /// yields `""`; [`try_get_current_season`] keeps the JS shape.
-pub fn get_current_season(game_day: f64) -> String {
+pub fn get_current_season(game_day: i64) -> String {
     try_get_current_season(game_day).unwrap_or_default()
 }
 
 /// JS-faithful `getCurrentSeason`: `None` where JS reads `undefined` (negative index).
-pub fn try_get_current_season(game_day: f64) -> Option<String> {
-    let season_count = content_builtin::SEASON_ORDER.len() as f64;
-    let season_index = (game_day / content_builtin::DAYS_PER_SEASON).floor() % season_count;
-    // JS returns undefined for a negative index; mirror with a bounds check.
-    if season_index >= 0.0 && season_index < season_count {
-        Some(content_builtin::SEASON_ORDER[season_index as usize].to_owned())
-    } else {
-        None
-    }
+pub fn try_get_current_season(game_day: i64) -> Option<String> {
+    let season_count = content_builtin::SEASON_ORDER.len() as i64;
+    // JS `%` keeps the dividend's sign; a negative index reads undefined.
+    let season_index = game_day.div_euclid(i64::from(content_builtin::DAYS_PER_SEASON)) % season_count;
+    usize::try_from(season_index).ok().map(|index| content_builtin::SEASON_ORDER[index].to_owned())
 }
 
-pub fn get_day_in_season(game_day: f64) -> f64 {
-    (game_day % content_builtin::DAYS_PER_SEASON) + 1.0
+/// JS `(gameDay % DAYS_PER_SEASON) + 1` (the remainder keeps the dividend's sign).
+pub fn get_day_in_season(game_day: i64) -> i64 {
+    (game_day % i64::from(content_builtin::DAYS_PER_SEASON)) + 1
+}
+
+/// Legacy millisecond growth time → days: `min(28, max(1, round(ms / 5000)))`.
+fn legacy_days(ms: i64) -> u32 {
+    let days = units::div_round(ms, 5000).clamp(1, 28);
+    u32::try_from(days).unwrap_or(1)
 }
 
 /// In-game days to maturity for a definition (with legacy-ms fallback).
-pub fn crop_growth_days(definition: &CropDefinition) -> f64 {
+pub fn crop_growth_days(definition: &CropDefinition) -> u32 {
     if let Some(days) = definition.growth_days {
-        if days > 0.0 {
+        if days > 0 {
             return days;
         }
     }
-    // `Math.min(28, Math.max(1, x))`; clamp keeps a NaN input NaN like the JS does.
-    js::round(definition.growth_time / 5000.0).clamp(1.0, 28.0)
+    legacy_days(definition.growth_time)
 }
 
 /// In-game days between repeat harvests for regrowing crops.
-pub fn crop_regrowth_days(definition: &CropDefinition) -> f64 {
+pub fn crop_regrowth_days(definition: &CropDefinition) -> u32 {
     if let Some(days) = definition.regrowth_days {
-        if days > 0.0 {
+        if days > 0 {
             return days;
         }
     }
-    // `if (definition.regrowthTime)` — 0 and NaN are falsy.
+    // `if (definition.regrowthTime)` — 0 is falsy.
     if let Some(time) = definition.regrowth_time {
-        if time != 0.0 && !time.is_nan() {
-            return js::round(time / 5000.0).clamp(1.0, 28.0);
+        if time != 0 {
+            return legacy_days(time);
         }
     }
-    1.0
+    1
 }
 
 /// Visual growth stage for the day-based model (0 .. stages-1).
-pub fn compute_crop_stage(crop: &Crop, definition: &CropDefinition) -> f64 {
-    let growth_days = crop_growth_days(definition);
-    let days_grown = crop.days_grown.unwrap_or(0.0);
-    let progress = f64::min(1.0, days_grown / growth_days);
-    f64::min((progress * (definition.stages - 1.0)).floor(), definition.stages - 1.0)
+pub fn compute_crop_stage(crop: &Crop, definition: &CropDefinition) -> u32 {
+    let growth_days = u64::from(crop_growth_days(definition));
+    let days_grown = u64::from(crop.days_grown.unwrap_or(0)).min(growth_days);
+    let last = definition.stages.saturating_sub(1);
+    // floor(min(1, daysGrown / growthDays) × (stages − 1)); growth days are at least 1.
+    let stage = days_grown * u64::from(last) / growth_days;
+    u32::try_from(stage).unwrap_or(last).min(last)
 }
 
 /// Mature when it has accumulated enough watered days.
@@ -284,61 +301,60 @@ pub fn is_crop_mature_by_days(crop: &Crop, definition: &CropDefinition) -> bool 
     if crop.withered == Some(true) {
         return false;
     }
-    crop.days_grown.unwrap_or(0.0) >= crop_growth_days(definition)
+    crop.days_grown.unwrap_or(0) >= crop_growth_days(definition)
 }
 
 /// Day-based planting (M2+): crops start unwatered — water them or they won't grow.
-pub fn create_planted_crop(crop_type: &str, planted_on_day: f64, fertilized: bool) -> Crop {
+pub fn create_planted_crop(crop_type: &str, planted_on_day: u32, fertilized: bool) -> Crop {
     Crop {
         r#type: crop_type.to_owned(),
-        planted_at: 0.0,
+        planted_at: 0,
         planted_on_day: Some(planted_on_day),
-        days_grown: Some(0.0),
-        stage: 0.0,
+        days_grown: Some(0),
+        stage: 0,
         watered: false,
         last_watered_day: None,
         quality: if fertilized { crop_qualities::SILVER.to_owned() } else { crop_qualities::NORMAL.to_owned() },
         mutation: None,
-        harvest_count: 0.0,
-        days_without_water: 0.0,
+        harvest_count: 0,
+        days_without_water: 0,
         ..Crop::default()
     }
 }
 
-pub fn initialize_crop(crop_type: &str, planted_at: f64, fertilized: bool) -> Crop {
+pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Crop {
     Crop {
         r#type: crop_type.to_owned(),
         planted_at,
-        stage: 0.0,
+        stage: 0,
         watered: true,
-        last_watered_day: Some(0.0),
+        last_watered_day: Some(0),
         quality: if fertilized { crop_qualities::SILVER.to_owned() } else { crop_qualities::NORMAL.to_owned() },
         mutation: None,
-        harvest_count: 0.0,
-        days_without_water: 0.0,
+        harvest_count: 0,
+        days_without_water: 0,
         ..Crop::default()
     }
 }
 
 /// Bounds come from `tiles.length` and `tiles[0].length` like the TS; a ragged grid panics on
 /// the row index exactly where the TS reads `undefined.type` (and the C# throws).
-pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: f64, y: f64, width: f64, height: f64) -> bool {
-    let mut dy = 0.0;
-    while dy < height {
-        let mut dx = 0.0;
-        while dx < width {
-            let check_x = x + dx;
-            let check_y = y + dy;
-            if check_y < 0.0 || check_y >= tiles.len() as f64 || check_x < 0.0 || check_x >= tiles[0].len() as f64 {
+pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32, height: u32) -> bool {
+    for dy in 0..i64::from(height) {
+        for dx in 0..i64::from(width) {
+            let check_x = i64::from(x) + dx;
+            let check_y = i64::from(y) + dy;
+            let (Ok(row), Ok(column)) = (usize::try_from(check_y), usize::try_from(check_x)) else {
+                return false;
+            };
+            if row >= tiles.len() || column >= tiles[0].len() {
                 return false;
             }
-            let tile = &tiles[check_y as usize][check_x as usize];
+            let tile = &tiles[row][column];
             if tile.r#type != tile_types::SOIL || tile.crop.is_some() {
                 return false;
             }
-            dx += 1.0;
         }
-        dy += 1.0;
     }
     true
 }
@@ -376,28 +392,31 @@ mod tests {
 mod characterization_tests {
     use super::*;
     use crate::stable_json;
+    use crate::text;
 
     /// TS legacyRandom with Math.random pinned to a fixed roll; counts draws.
+    /// The pinned roll is a fraction of 2³², like v8's `Math.random()` value.
     struct PinnedRandom {
-        value: f64,
+        draw: u32,
         draws: usize,
     }
 
     impl PinnedRandom {
-        fn new(value: f64) -> Self {
-            Self { value, draws: 0 }
+        fn new(roll: f64) -> Self {
+            let draw = units::from_authoring::<units::Probability>(roll).min(u64::from(u32::MAX)) as u32;
+            Self { draw, draws: 0 }
         }
     }
 
     impl RandomSource for PinnedRandom {
-        fn float(&mut self) -> f64 {
+        fn next_u32(&mut self) -> u32 {
             self.draws += 1;
-            self.value
+            self.draw
         }
 
-        fn int(&mut self, min: f64, max: f64) -> f64 {
+        fn int(&mut self, min: i64, max: i64) -> i64 {
             self.draws += 1;
-            (self.value * (max - min + 1.0)).floor() + min
+            crate::rng::scale_draw(self.draw, max - min + 1) + min
         }
     }
 
@@ -405,15 +424,15 @@ mod characterization_tests {
         CustomCropDefinition {
             id: id.to_owned(),
             name: "Custom".to_owned(),
-            seed_cost: 5.0,
-            base_harvest_value: 100.0,
-            growth_time: 10000.0,
-            stages: 5.0,
+            seed_cost: 5,
+            base_harvest_value: 100,
+            growth_time: 10000,
+            stages: 5,
             seasons: vec!["winter".to_owned()],
             can_regrow: false,
-            yield_min: 1.0,
-            yield_max: 1.0,
-            mutation_chance: Some(0.5),
+            yield_min: 1,
+            yield_max: 1,
+            mutation_chance: Some(units::from_authoring::<units::Probability>(0.5)),
             ..CustomCropDefinition::default()
         }
     }
@@ -422,12 +441,13 @@ mod characterization_tests {
         CustomCropDefinition { name: name.to_owned(), ..make_custom_crop(id) }
     }
 
-    fn with_value(id: &str, name: &str, base_harvest_value: f64) -> CustomCropDefinition {
+    fn with_value(id: &str, name: &str, base_harvest_value: i64) -> CustomCropDefinition {
         CustomCropDefinition { base_harvest_value, ..named(id, name) }
     }
 
     fn with_chance(id: &str, mutation_chance: f64) -> CustomCropDefinition {
-        CustomCropDefinition { mutation_chance: Some(mutation_chance), ..make_custom_crop(id) }
+        let mutation_chance = Some(units::from_authoring::<units::Probability>(mutation_chance));
+        CustomCropDefinition { mutation_chance, ..make_custom_crop(id) }
     }
 
     fn with_seasons(id: &str, seasons: &[&str]) -> CustomCropDefinition {
@@ -451,7 +471,7 @@ mod characterization_tests {
         roll_mutation(get_crop_definition(crop_type, custom_crops).as_ref(), quality, &mut PinnedRandom::new(roll))
     }
 
-    fn calculate_yield(crop_type: &str, quality: &str, mutation: Option<&str>, roll: f64) -> f64 {
+    fn calculate_yield(crop_type: &str, quality: &str, mutation: Option<&str>, roll: f64) -> u32 {
         roll_yield(get_crop_definition(crop_type, &[]).as_ref(), quality, mutation, &mut PinnedRandom::new(roll))
     }
 
@@ -459,9 +479,9 @@ mod characterization_tests {
         crop_type: &str,
         quality: &str,
         mutation: Option<&str>,
-        quantity: f64,
+        quantity: u32,
         custom_crops: &[CustomCropDefinition],
-    ) -> f64 {
+    ) -> Option<i64> {
         calculate_harvest_value(get_crop_definition(crop_type, custom_crops).as_ref(), quality, mutation, quantity)
     }
 
@@ -478,8 +498,8 @@ mod characterization_tests {
 
     #[test]
     fn quality_multipliers_values() {
-        let actual: Vec<(String, f64)> = content_builtin::quality_multipliers().into_iter().collect();
-        let expected: Vec<(String, f64)> = [("normal", 1.0), ("silver", 1.25), ("gold", 1.5), ("iridium", 2.0)]
+        let actual: Vec<(String, u32)> = content_builtin::quality_multipliers().into_iter().collect();
+        let expected: Vec<(String, u32)> = [("normal", 1000), ("silver", 1250), ("gold", 1500), ("iridium", 2000)]
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect();
@@ -488,8 +508,8 @@ mod characterization_tests {
 
     #[test]
     fn mutation_multipliers_values() {
-        let actual: Vec<(String, f64)> = content_builtin::mutation_multipliers().into_iter().collect();
-        let expected: Vec<(String, f64)> = [("none", 1.0), ("giant", 2.5), ("golden", 3.0), ("ancient", 4.0)]
+        let actual: Vec<(String, u32)> = content_builtin::mutation_multipliers().into_iter().collect();
+        let expected: Vec<(String, u32)> = [("none", 1000), ("giant", 2500), ("golden", 3000), ("ancient", 4000)]
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect();
@@ -498,7 +518,7 @@ mod characterization_tests {
 
     #[test]
     fn days_per_season_is_28() {
-        assert_eq!(content_builtin::DAYS_PER_SEASON, 28.0);
+        assert_eq!(content_builtin::DAYS_PER_SEASON, 28);
     }
 
     #[test]
@@ -510,7 +530,7 @@ mod characterization_tests {
     fn crop_definitions_contains_exactly_the_9_built_in_crops_keyed_by_id() {
         let definitions = content_builtin::crop_definitions();
         let mut keys: Vec<&str> = definitions.keys().map(String::as_str).collect();
-        keys.sort_by(|a, b| js::compare_strings(a, b));
+        keys.sort_by(|a, b| text::compare_strings(a, b));
         assert_eq!(
             keys,
             ["blueberry", "carrot", "cauliflower", "corn", "potato", "pumpkin", "strawberry", "tomato", "wheat"]
@@ -522,9 +542,11 @@ mod characterization_tests {
 
     #[test]
     fn wheat_built_in_definition_is_pinned_exactly() {
+        // The 0.01 mutation chance is stored as the threshold round(0.01 × 2³²) = 42949673,
+        // written back as its exact value.
         assert_eq!(
             stable_json::stringify(&content_builtin::crop_definitions()["wheat"]),
-            r#"{"baseHarvestValue":25,"canRegrow":false,"growthDays":3,"growthTime":15000,"id":"wheat","mutationChance":0.01,"name":"Wheat","seasons":["spring","fall"],"seedCost":10,"stages":4,"yieldMax":2,"yieldMin":1}"#
+            r#"{"baseHarvestValue":25,"canRegrow":false,"growthDays":3,"growthTime":15000,"id":"wheat","mutationChance":0.010000000009313226,"name":"Wheat","seasons":["spring","fall"],"seedCost":10,"stages":4,"yieldMax":2,"yieldMin":1}"#
         );
     }
 
@@ -549,10 +571,10 @@ mod characterization_tests {
 
     #[test]
     fn custom_crop_with_a_built_in_id_overrides_the_built_in_definition() {
-        let all = get_all_crop_definitions(&[with_value("wheat", "Evil Wheat", 999.0)]);
+        let all = get_all_crop_definitions(&[with_value("wheat", "Evil Wheat", 999)]);
         assert_eq!(all.len(), 9);
         assert_eq!(all["wheat"].name, "Evil Wheat");
-        assert_eq!(all["wheat"].base_harvest_value, 999.0);
+        assert_eq!(all["wheat"].base_harvest_value, 999);
     }
 
     #[test]
@@ -568,45 +590,45 @@ mod characterization_tests {
 
     #[test]
     fn get_crop_stage_pins_its_behavior() {
-        assert_eq!(get_crop_stage(0.0, 0.0, 15000.0, 4.0, true), 0.0);
-        assert_eq!(get_crop_stage(0.0, 3749.0, 15000.0, 4.0, true), 0.0);
-        assert_eq!(get_crop_stage(0.0, 3750.0, 15000.0, 4.0, true), 1.0);
+        assert_eq!(get_crop_stage(0, 0, 15000, 4, true), 0);
+        assert_eq!(get_crop_stage(0, 3749, 15000, 4, true), 0);
+        assert_eq!(get_crop_stage(0, 3750, 15000, 4, true), 1);
         // clamps to stages - 1 at and beyond full growth time
-        assert_eq!(get_crop_stage(0.0, 15000.0, 15000.0, 4.0, true), 3.0);
-        assert_eq!(get_crop_stage(0.0, 1_000_000.0, 15000.0, 4.0, true), 3.0);
+        assert_eq!(get_crop_stage(0, 15000, 15000, 4, true), 3);
+        assert_eq!(get_crop_stage(0, 1_000_000, 15000, 4, true), 3);
         // unwatered halves effective elapsed time (0.5 penalty)
-        assert_eq!(get_crop_stage(0.0, 7500.0, 15000.0, 4.0, true), 2.0);
-        assert_eq!(get_crop_stage(0.0, 7500.0, 15000.0, 4.0, false), 1.0);
-        assert_eq!(get_crop_stage(0.0, 15000.0, 15000.0, 4.0, false), 2.0);
-        assert_eq!(get_crop_stage(0.0, 30000.0, 15000.0, 4.0, false), 3.0);
+        assert_eq!(get_crop_stage(0, 7500, 15000, 4, true), 2);
+        assert_eq!(get_crop_stage(0, 7500, 15000, 4, false), 1);
+        assert_eq!(get_crop_stage(0, 15000, 15000, 4, false), 2);
+        assert_eq!(get_crop_stage(0, 30000, 15000, 4, false), 3);
         // QUIRK: currentTime before plantedAt yields a NEGATIVE stage (no lower clamp)
-        assert_eq!(get_crop_stage(1000.0, 0.0, 15000.0, 4.0, true), -1.0);
+        assert_eq!(get_crop_stage(1000, 0, 15000, 4, true), -1);
     }
 
     #[test]
     fn is_mature_exactly_when_stage_is_at_least_stages_minus_one() {
-        assert!(is_crop_mature(3.0, 4.0));
-        assert!(!is_crop_mature(2.0, 4.0));
-        assert!(is_crop_mature(4.0, 4.0)); // over-shoot still mature
-        assert!(is_crop_mature(0.0, 1.0));
+        assert!(is_crop_mature(3, 4));
+        assert!(!is_crop_mature(2, 4));
+        assert!(is_crop_mature(4, 4)); // over-shoot still mature
+        assert!(is_crop_mature(0, 1));
     }
 
     // --- calculateCropQuality: score = (watered ? 2 : 0) + (fertilized ? 3 : 0) - daysWithoutWater ---
 
     #[test]
     fn calculate_crop_quality_boundaries() {
-        let cases: [(bool, bool, f64, &str); 11] = [
-            (true, true, 0.0, "iridium"),
-            (true, true, 1.0, "iridium"),
-            (true, true, 2.0, "gold"),
-            (true, true, 3.0, "gold"),
-            (true, true, 4.0, "silver"),
-            (true, true, 5.0, "normal"),
-            (true, false, 0.0, "gold"),
-            (true, false, 1.0, "silver"),
-            (true, false, 2.0, "normal"),
-            (false, true, 0.0, "gold"), // QUIRK: fertilized only caps at gold
-            (false, false, 0.0, "normal"),
+        let cases: [(bool, bool, u32, &str); 11] = [
+            (true, true, 0, "iridium"),
+            (true, true, 1, "iridium"),
+            (true, true, 2, "gold"),
+            (true, true, 3, "gold"),
+            (true, true, 4, "silver"),
+            (true, true, 5, "normal"),
+            (true, false, 0, "gold"),
+            (true, false, 1, "silver"),
+            (true, false, 2, "normal"),
+            (false, true, 0, "gold"), // QUIRK: fertilized only caps at gold
+            (false, false, 0, "normal"),
         ];
         for (watered, fertilized, days_without_water, expected) in cases {
             assert_eq!(
@@ -621,12 +643,15 @@ mod characterization_tests {
 
     #[test]
     fn roll_bands_for_a_half_chance_crop_at_normal_quality() {
-        let cases: [(f64, Option<&str>); 8] = [
+        let cases: [(f64, Option<&str>); 9] = [
             (0.0, Some("ancient")),
             (0.0499, Some("ancient")),
             (0.05, Some("golden")), // exact ancient boundary falls through to golden
             (0.1, Some("golden")),
-            (0.15, Some("giant")), // exact golden boundary falls through to giant
+            // The golden boundary 0.15 × 2³² = 644245094.4 is not a draw: 0.15 reads as draw
+            // 644245094 (golden), and the first draw past the boundary, 644245095, is giant.
+            (0.15, Some("golden")),
+            (0.1500000001, Some("giant")),
             (0.4999, Some("giant")),
             (0.5, None), // exact chance boundary is NOT a mutation
             (0.999, None),
@@ -667,13 +692,13 @@ mod characterization_tests {
 
     #[test]
     fn base_yield_roll_spans_yield_min_to_yield_max_inclusive() {
-        let cases: [(&str, f64, f64); 6] = [
-            ("wheat", 0.0, 1.0),
-            ("wheat", 0.4999, 1.0),
-            ("wheat", 0.5, 2.0),
-            ("wheat", 0.9999, 2.0),
-            ("blueberry", 0.0, 2.0),
-            ("blueberry", 0.9999, 5.0),
+        let cases: [(&str, f64, u32); 6] = [
+            ("wheat", 0.0, 1),
+            ("wheat", 0.4999, 1),
+            ("wheat", 0.5, 2),
+            ("wheat", 0.9999, 2),
+            ("blueberry", 0.0, 2),
+            ("blueberry", 0.9999, 5),
         ];
         for (crop, roll, expected) in cases {
             assert_eq!(calculate_yield(crop, "normal", None, roll), expected, "crop={crop} roll={roll}");
@@ -683,25 +708,25 @@ mod characterization_tests {
     #[test]
     fn quality_and_mutation_bonuses_are_floored_and_compound() {
         // quality bonus is floored away on small yields (base 1)
-        assert_eq!(calculate_yield("wheat", "silver", None, 0.0), 1.0);
-        assert_eq!(calculate_yield("wheat", "gold", None, 0.0), 1.0);
-        assert_eq!(calculate_yield("wheat", "iridium", None, 0.0), 1.0);
+        assert_eq!(calculate_yield("wheat", "silver", None, 0.0), 1);
+        assert_eq!(calculate_yield("wheat", "gold", None, 0.0), 1);
+        assert_eq!(calculate_yield("wheat", "iridium", None, 0.0), 1);
         // quality bonus applies on larger base yields (base 2)
-        assert_eq!(calculate_yield("wheat", "silver", None, 0.9999), 2.0);
-        assert_eq!(calculate_yield("wheat", "gold", None, 0.9999), 2.0);
-        assert_eq!(calculate_yield("wheat", "iridium", None, 0.9999), 3.0);
+        assert_eq!(calculate_yield("wheat", "silver", None, 0.9999), 2);
+        assert_eq!(calculate_yield("wheat", "gold", None, 0.9999), 2);
+        assert_eq!(calculate_yield("wheat", "iridium", None, 0.9999), 3);
         // mutation bonus: giant x2, golden x2.5, ancient x3 (pumpkin base yield always 1)
-        assert_eq!(calculate_yield("pumpkin", "normal", Some("giant"), 0.0), 2.0);
-        assert_eq!(calculate_yield("pumpkin", "normal", Some("golden"), 0.0), 2.0);
-        assert_eq!(calculate_yield("pumpkin", "normal", Some("ancient"), 0.0), 3.0);
+        assert_eq!(calculate_yield("pumpkin", "normal", Some("giant"), 0.0), 2);
+        assert_eq!(calculate_yield("pumpkin", "normal", Some("golden"), 0.0), 2);
+        assert_eq!(calculate_yield("pumpkin", "normal", Some("ancient"), 0.0), 3);
         // compound
-        assert_eq!(calculate_yield("wheat", "iridium", Some("ancient"), 0.9999), 9.0);
+        assert_eq!(calculate_yield("wheat", "iridium", Some("ancient"), 0.9999), 9);
     }
 
     #[test]
     fn unknown_crop_type_yield_returns_1_without_consuming_a_random_roll() {
         let mut rng = PinnedRandom::new(0.9999);
-        assert_eq!(roll_yield(get_crop_definition("nope", &[]).as_ref(), "iridium", Some("ancient"), &mut rng), 1.0);
+        assert_eq!(roll_yield(get_crop_definition("nope", &[]).as_ref(), "iridium", Some("ancient"), &mut rng), 1);
         assert_eq!(rng.draws, 0);
     }
 
@@ -709,23 +734,23 @@ mod characterization_tests {
 
     #[test]
     fn calculate_harvest_value_pins_its_behavior() {
-        assert_eq!(harvest_value("wheat", "normal", None, 1.0, &[]), 25.0);
-        assert_eq!(harvest_value("wheat", "silver", None, 1.0, &[]), 31.0);
-        assert_eq!(harvest_value("wheat", "gold", None, 1.0, &[]), 37.0);
-        assert_eq!(harvest_value("wheat", "iridium", None, 1.0, &[]), 50.0);
-        assert_eq!(harvest_value("wheat", "normal", Some("giant"), 1.0, &[]), 62.0);
-        assert_eq!(harvest_value("wheat", "normal", Some("golden"), 1.0, &[]), 75.0);
-        assert_eq!(harvest_value("wheat", "normal", Some("ancient"), 1.0, &[]), 100.0);
-        assert_eq!(harvest_value("wheat", "iridium", Some("ancient"), 3.0, &[]), 600.0);
-        assert_eq!(harvest_value("wheat", "iridium", Some("ancient"), 0.0, &[]), 0.0);
-        assert_eq!(harvest_value("nope", "iridium", Some("ancient"), 5.0, &[]), 0.0);
-        assert_eq!(harvest_value("wheat", "normal", None, 1.0, &[with_value("wheat", "Custom", 1000.0)]), 1000.0);
+        assert_eq!(harvest_value("wheat", "normal", None, 1, &[]), Some(25));
+        assert_eq!(harvest_value("wheat", "silver", None, 1, &[]), Some(31));
+        assert_eq!(harvest_value("wheat", "gold", None, 1, &[]), Some(37));
+        assert_eq!(harvest_value("wheat", "iridium", None, 1, &[]), Some(50));
+        assert_eq!(harvest_value("wheat", "normal", Some("giant"), 1, &[]), Some(62));
+        assert_eq!(harvest_value("wheat", "normal", Some("golden"), 1, &[]), Some(75));
+        assert_eq!(harvest_value("wheat", "normal", Some("ancient"), 1, &[]), Some(100));
+        assert_eq!(harvest_value("wheat", "iridium", Some("ancient"), 3, &[]), Some(600));
+        assert_eq!(harvest_value("wheat", "iridium", Some("ancient"), 0, &[]), Some(0));
+        assert_eq!(harvest_value("nope", "iridium", Some("ancient"), 5, &[]), Some(0));
+        assert_eq!(harvest_value("wheat", "normal", None, 1, &[with_value("wheat", "Custom", 1000)]), Some(1000));
     }
 
     #[test]
     fn unknown_quality_or_mutation_keys_read_nan_like_javascript() {
-        assert!(harvest_value("wheat", "legendary", None, 1.0, &[]).is_nan());
-        assert!(harvest_value("wheat", "normal", Some("cursed"), 1.0, &[]).is_nan());
+        assert!(harvest_value("wheat", "legendary", None, 1, &[]).is_none());
+        assert!(harvest_value("wheat", "normal", Some("cursed"), 1, &[]).is_none());
     }
 
     // --- canGrowInSeason ---
@@ -747,17 +772,17 @@ mod characterization_tests {
 
     #[test]
     fn game_day_is_zero_based_season_rolls_over_at_day_28() {
-        let cases: [(f64, Option<&str>); 10] = [
-            (0.0, Some("spring")),
-            (27.0, Some("spring")),
-            (28.0, Some("summer")),
-            (55.0, Some("summer")),
-            (56.0, Some("fall")),
-            (83.0, Some("fall")),
-            (84.0, Some("winter")),
-            (111.0, Some("winter")),
-            (112.0, Some("spring")), // full year wraps
-            (-1.0, None),            // QUIRK: negative gameDay gives undefined season
+        let cases: [(i64, Option<&str>); 10] = [
+            (0, Some("spring")),
+            (27, Some("spring")),
+            (28, Some("summer")),
+            (55, Some("summer")),
+            (56, Some("fall")),
+            (83, Some("fall")),
+            (84, Some("winter")),
+            (111, Some("winter")),
+            (112, Some("spring")), // full year wraps
+            (-1, None),            // QUIRK: negative gameDay gives undefined season
         ];
         for (day, season) in cases {
             assert_eq!(try_get_current_season(day).as_deref(), season, "day={day}");
@@ -767,7 +792,7 @@ mod characterization_tests {
 
     #[test]
     fn get_day_in_season_is_one_based_within_a_28_day_season() {
-        let cases: [(f64, f64); 6] = [(0.0, 1.0), (27.0, 28.0), (28.0, 1.0), (55.0, 28.0), (112.0, 1.0), (-1.0, 0.0)];
+        let cases: [(i64, i64); 6] = [(0, 1), (27, 28), (28, 1), (55, 28), (112, 1), (-1, 0)];
         for (day, expected) in cases {
             // QUIRK: (-1 % 28) + 1 = 0
             assert_eq!(get_day_in_season(day), expected, "day={day}");
@@ -779,15 +804,15 @@ mod characterization_tests {
     #[test]
     fn unfertilized_crop_starts_normal_quality_with_all_counters_zeroed() {
         assert_eq!(
-            stable_json::stringify(&initialize_crop("wheat", 12345.0, false)),
+            stable_json::stringify(&initialize_crop("wheat", 12345, false)),
             r#"{"daysWithoutWater":0,"harvestCount":0,"lastWateredDay":0,"mutation":null,"plantedAt":12345,"quality":"normal","stage":0,"type":"wheat","watered":true}"#
         );
     }
 
     #[test]
     fn fertilized_crop_starts_at_silver_quality_and_types_are_unvalidated() {
-        assert_eq!(initialize_crop("tomato", 0.0, true).quality, "silver");
-        assert_eq!(initialize_crop("not-a-real-crop", 7.0, false).r#type, "not-a-real-crop");
+        assert_eq!(initialize_crop("tomato", 0, true).quality, "silver");
+        assert_eq!(initialize_crop("not-a-real-crop", 7, false).r#type, "not-a-real-crop");
     }
 
     // --- createPlantedCrop / day-based helpers ---
@@ -795,50 +820,50 @@ mod characterization_tests {
     #[test]
     fn planted_crop_starts_unwatered_on_its_planting_day() {
         assert_eq!(
-            stable_json::stringify(&create_planted_crop("wheat", 3.0, false)),
+            stable_json::stringify(&create_planted_crop("wheat", 3, false)),
             r#"{"daysGrown":0,"daysWithoutWater":0,"harvestCount":0,"mutation":null,"plantedAt":0,"plantedOnDay":3,"quality":"normal","stage":0,"type":"wheat","watered":false}"#
         );
-        assert_eq!(create_planted_crop("wheat", 3.0, true).quality, "silver");
+        assert_eq!(create_planted_crop("wheat", 3, true).quality, "silver");
     }
 
     #[test]
     fn growth_days_prefer_the_day_field_and_fall_back_to_legacy_ms() {
         let wheat = &content_builtin::crop_definitions()["wheat"];
-        assert_eq!(crop_growth_days(wheat), 3.0);
-        let legacy = CropDefinition { growth_days: None, growth_time: 15000.0, ..wheat.clone() };
-        assert_eq!(crop_growth_days(&legacy), 3.0);
-        let tiny = CropDefinition { growth_days: None, growth_time: 1.0, ..wheat.clone() };
-        assert_eq!(crop_growth_days(&tiny), 1.0);
-        let huge = CropDefinition { growth_days: None, growth_time: 1_000_000.0, ..wheat.clone() };
-        assert_eq!(crop_growth_days(&huge), 28.0);
+        assert_eq!(crop_growth_days(wheat), 3);
+        let legacy = CropDefinition { growth_days: None, growth_time: 15000, ..wheat.clone() };
+        assert_eq!(crop_growth_days(&legacy), 3);
+        let tiny = CropDefinition { growth_days: None, growth_time: 1, ..wheat.clone() };
+        assert_eq!(crop_growth_days(&tiny), 1);
+        let huge = CropDefinition { growth_days: None, growth_time: 1_000_000, ..wheat.clone() };
+        assert_eq!(crop_growth_days(&huge), 28);
     }
 
     #[test]
     fn regrowth_days_prefer_the_day_field_then_legacy_ms_then_one() {
         let tomato = &content_builtin::crop_definitions()["tomato"];
-        assert_eq!(crop_regrowth_days(tomato), 2.0);
-        let legacy = CropDefinition { regrowth_days: None, regrowth_time: Some(20000.0), ..tomato.clone() };
-        assert_eq!(crop_regrowth_days(&legacy), 4.0);
-        let zero = CropDefinition { regrowth_days: None, regrowth_time: Some(0.0), ..tomato.clone() };
-        assert_eq!(crop_regrowth_days(&zero), 1.0);
+        assert_eq!(crop_regrowth_days(tomato), 2);
+        let legacy = CropDefinition { regrowth_days: None, regrowth_time: Some(20000), ..tomato.clone() };
+        assert_eq!(crop_regrowth_days(&legacy), 4);
+        let zero = CropDefinition { regrowth_days: None, regrowth_time: Some(0), ..tomato.clone() };
+        assert_eq!(crop_regrowth_days(&zero), 1);
         let none = CropDefinition { regrowth_days: None, regrowth_time: None, ..tomato.clone() };
-        assert_eq!(crop_regrowth_days(&none), 1.0);
+        assert_eq!(crop_regrowth_days(&none), 1);
     }
 
     #[test]
     fn stage_and_maturity_follow_watered_days() {
         let wheat = &content_builtin::crop_definitions()["wheat"];
-        let mut crop = create_planted_crop("wheat", 1.0, false);
-        assert_eq!(compute_crop_stage(&crop, wheat), 0.0);
+        let mut crop = create_planted_crop("wheat", 1, false);
+        assert_eq!(compute_crop_stage(&crop, wheat), 0);
         assert!(!is_crop_mature_by_days(&crop, wheat));
-        crop.days_grown = Some(2.0);
-        assert_eq!(compute_crop_stage(&crop, wheat), 2.0);
+        crop.days_grown = Some(2);
+        assert_eq!(compute_crop_stage(&crop, wheat), 2);
         assert!(!is_crop_mature_by_days(&crop, wheat));
-        crop.days_grown = Some(3.0);
-        assert_eq!(compute_crop_stage(&crop, wheat), 3.0);
+        crop.days_grown = Some(3);
+        assert_eq!(compute_crop_stage(&crop, wheat), 3);
         assert!(is_crop_mature_by_days(&crop, wheat));
-        crop.days_grown = Some(99.0);
-        assert_eq!(compute_crop_stage(&crop, wheat), 3.0);
+        crop.days_grown = Some(99);
+        assert_eq!(compute_crop_stage(&crop, wheat), 3);
         crop.withered = Some(true);
         assert!(!is_crop_mature_by_days(&crop, wheat));
     }
@@ -847,24 +872,24 @@ mod characterization_tests {
 
     #[test]
     fn can_place_multi_tile_crop_pins_its_behavior() {
-        assert!(can_place_multi_tile_crop(&soil_grid(4, 4), 0.0, 0.0, 2.0, 2.0));
-        assert!(can_place_multi_tile_crop(&soil_grid(4, 4), 2.0, 2.0, 2.0, 2.0)); // flush with edge
-        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 3.0, 0.0, 2.0, 2.0)); // off right edge
-        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 0.0, 3.0, 2.0, 2.0)); // off bottom edge
-        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), -1.0, 0.0, 2.0, 2.0));
-        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 0.0, -1.0, 2.0, 2.0));
+        assert!(can_place_multi_tile_crop(&soil_grid(4, 4), 0, 0, 2, 2));
+        assert!(can_place_multi_tile_crop(&soil_grid(4, 4), 2, 2, 2, 2)); // flush with edge
+        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 3, 0, 2, 2)); // off right edge
+        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 0, 3, 2, 2)); // off bottom edge
+        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), -1, 0, 2, 2));
+        assert!(!can_place_multi_tile_crop(&soil_grid(4, 4), 0, -1, 2, 2));
 
         let mut occupied = soil_grid(4, 4);
         occupied[1][1].crop = Some(Crop { r#type: "wheat".to_owned(), ..Crop::default() });
-        assert!(!can_place_multi_tile_crop(&occupied, 0.0, 0.0, 2.0, 2.0));
-        assert!(can_place_multi_tile_crop(&occupied, 2.0, 2.0, 2.0, 2.0)); // clear region still fine
+        assert!(!can_place_multi_tile_crop(&occupied, 0, 0, 2, 2));
+        assert!(can_place_multi_tile_crop(&occupied, 2, 2, 2, 2)); // clear region still fine
 
         let mut grass = soil_grid(4, 4);
         grass[0][1].r#type = "grass".to_owned();
-        assert!(!can_place_multi_tile_crop(&grass, 0.0, 0.0, 2.0, 2.0));
+        assert!(!can_place_multi_tile_crop(&grass, 0, 0, 2, 2));
 
         // QUIRK: zero-sized footprint is always placeable, even out of bounds
-        assert!(can_place_multi_tile_crop(&soil_grid(2, 2), 99.0, 99.0, 0.0, 0.0));
+        assert!(can_place_multi_tile_crop(&soil_grid(2, 2), 99, 99, 0, 0));
     }
 
     #[test]
@@ -872,6 +897,6 @@ mod characterization_tests {
     fn quirk_bounds_use_the_first_row_length_so_ragged_grids_throw() {
         let soil = || Tile { r#type: "soil".to_owned(), ..Tile::default() };
         let ragged = vec![vec![soil(), soil()], vec![soil()]];
-        can_place_multi_tile_crop(&ragged, 0.0, 0.0, 2.0, 2.0);
+        can_place_multi_tile_crop(&ragged, 0, 0, 2, 2);
     }
 }

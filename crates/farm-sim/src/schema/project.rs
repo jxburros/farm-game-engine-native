@@ -27,7 +27,8 @@ use serde_json::{Map, Value};
 #[serde(rename_all = "camelCase", default)]
 pub struct GameProject {
     /// int.
-    pub schema_version: f64,
+    #[serde(with = "crate::units::count")]
+    pub schema_version: u32,
     pub id: String,
     pub name: String,
     pub version: String,
@@ -51,6 +52,7 @@ pub struct GameProject {
     pub selected_npc_id: Option<String>,
     /// Present-as-null.
     pub selected_item_id: Option<String>,
+    #[serde(with = "crate::units::exact")]
     pub current_time: f64,
     pub custom_assets: Vec<CustomAsset>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,11 +66,15 @@ pub struct GameProject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_panels: Option<Vec<GamePanel>>,
     pub current_season: String,
-    pub current_day: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_day: u32,
     /// Minute-of-day of the game clock (v4+).
-    pub current_time_minutes: f64,
+    #[serde(with = "crate::units::micro_minutes")]
+    pub current_time_minutes: u32,
     /// int.
-    pub current_year: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_year: u32,
+    #[serde(with = "crate::units::exact")]
     pub game_start_time: f64,
     pub shops: Vec<ShopDefinition>,
     pub node_types: Vec<NodeTypeDefinition>,
@@ -96,8 +102,8 @@ pub struct GameProject {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub social_state: Option<IndexMap<String, NpcSocialState>>,
     /// Deepest mine floor reached (mirrors GameState.mine.deepestFloor). int, nonnegative.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mine_deepest_floor: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub mine_deepest_floor: Option<u32>,
     /// Items whose owning pack is missing/disabled (mirrors GameState.quarantinedItems).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quarantined_items: Option<Vec<InventorySlot>>,
@@ -109,8 +115,8 @@ pub struct GameProject {
 #[serde(rename_all = "camelCase", default)]
 pub struct ExportedGame {
     /// int.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema_version: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub schema_version: Option<u32>,
     pub version: String,
     pub name: String,
     pub scenes: Vec<Scene>,
@@ -132,10 +138,14 @@ pub struct ExportedGame {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_panels: Option<Vec<GamePanel>>,
     pub current_season: String,
-    pub current_day: f64,
-    pub current_time_minutes: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_day: u32,
+    #[serde(with = "crate::units::micro_minutes")]
+    pub current_time_minutes: u32,
     /// int.
-    pub current_year: f64,
+    #[serde(with = "crate::units::count")]
+    pub current_year: u32,
+    #[serde(with = "crate::units::exact")]
     pub game_start_time: f64,
     pub shops: Vec<ShopDefinition>,
     pub node_types: Vec<NodeTypeDefinition>,
@@ -160,8 +170,8 @@ pub struct ExportedGame {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub social_state: Option<IndexMap<String, NpcSocialState>>,
     /// int, nonnegative.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mine_deepest_floor: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub mine_deepest_floor: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quarantined_items: Option<Vec<InventorySlot>>,
     #[serde(flatten)]
@@ -184,4 +194,4 @@ pub struct ExportedGame {
 /// - v7 — content packs (M5): installed packs (with load order + enable flags) travel inside the
 ///   project
 /// - v8 — graphics settings (pixel-art rendering on by default)
-pub const CURRENT_PROJECT_SCHEMA_VERSION: f64 = 9.0;
+pub const CURRENT_PROJECT_SCHEMA_VERSION: u32 = 9;

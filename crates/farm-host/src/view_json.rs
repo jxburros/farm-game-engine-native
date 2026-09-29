@@ -6,7 +6,7 @@
 //! lists its entries in engine order. Numbers and strings are written like JavaScript's
 //! `JSON.stringify`, as in stable JSON.
 
-use farm_sim::js;
+use farm_sim::{text, units};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -26,7 +26,7 @@ fn write(out: &mut String, value: &Value) {
                 if i > 0 {
                     out.push(',');
                 }
-                js::push_quoted(out, name);
+                text::push_quoted(out, name);
                 out.push(':');
                 write(out, item);
             }
@@ -42,10 +42,10 @@ fn write(out: &mut String, value: &Value) {
             }
             out.push(']');
         }
-        Value::String(s) => js::push_quoted(out, s),
+        Value::String(s) => text::push_quoted(out, s),
         // JSON.stringify writes non-finite numbers as null.
         Value::Number(n) => match n.as_f64() {
-            Some(d) if d.is_finite() => out.push_str(&js::num(d)),
+            Some(d) if d.is_finite() => out.push_str(&units::format_number(d)),
             _ => out.push_str("null"),
         },
         Value::Bool(true) => out.push_str("true"),
