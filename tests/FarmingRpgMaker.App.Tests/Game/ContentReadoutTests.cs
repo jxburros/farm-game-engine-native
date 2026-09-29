@@ -102,6 +102,10 @@ public sealed class ContentReadoutTests
         Assert.Equal("$45", Card(host, "CropSummary")[5]);
         Type(host, "ContentField_BaseHarvestValue", "1");
         Assert.Equal("Profit per harvest: -$4", Text(host, "CropProfit"));
+        // Regrowth is on the Growth tab.
+        var tabs = FindByName<TabControl>(host.Window, "ContentTabs");
+        tabs.SelectedItem = FindByName<TabItem>(host.Window, "ContentTab_Growth");
+        Pump();
         var regrow = FindByName<CheckBox>(host.Window, "ContentField_CanRegrow");
         regrow.IsChecked = false;
         Pump();

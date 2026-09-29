@@ -1059,20 +1059,10 @@ internal sealed class ContentForm
         if (url.Length == 0) return null;
         if (!url.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             url = _project.CustomAssets.FirstOrDefault(asset => asset.Id == url)?.DataUrl ?? "";
-        var comma = url.IndexOf(',', StringComparison.Ordinal);
-        if (comma < 0 || !url.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
-            || !url[..comma].EndsWith(";base64", StringComparison.OrdinalIgnoreCase)) return null;
-        try
-        {
-            using var stream = new MemoryStream(Convert.FromBase64String(url[(comma + 1)..]));
-            var image = new Image { Source = new Bitmap(stream), Stretch = Stretch.Uniform };
-            RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.None);
-            return image;
-        }
-        catch (Exception error) when (error is FormatException or ArgumentException or InvalidOperationException or NotSupportedException or IOException)
-        {
-            return null;
-        }
+        if (ArtBitmaps.Decode(url) is not { } bitmap) return null;
+        var image = new Image { Source = bitmap, Stretch = Stretch.Uniform };
+        RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.None);
+        return image;
     }
 
     // ---- Condition and outcome vocabulary ----
