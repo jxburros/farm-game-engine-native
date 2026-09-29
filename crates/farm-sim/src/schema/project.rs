@@ -184,4 +184,4 @@ pub struct ExportedGame {
 /// - v7 — content packs (M5): installed packs (with load order + enable flags) travel inside the
 ///   project
 /// - v8 — graphics settings (pixel-art rendering on by default)
-pub const CURRENT_PROJECT_SCHEMA_VERSION: f64 = 8.0;
+pub const CURRENT_PROJECT_SCHEMA_VERSION: f64 = 9.0;

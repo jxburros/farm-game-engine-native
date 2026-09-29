@@ -566,6 +566,69 @@ module internal ChecksContent =
             if not (PackRules.isEngineCompatible (Some manifest.EngineCompatibility) PackRules.EngineVersion) then
                 sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
 
+    /// Whole-number fields (money, counts) with a fraction: the engine keeps them as integers and
+    /// rounds them when it loads the game (docs/NUMERICS.md), so say so.
+    let private offGridNumbers (context: Context) (sink: Sink) =
+        let p = context.Project
+        let check (path: string) (what: string) (value: float) (target: NavigationTarget option) =
+            if not (System.Double.IsNaN value || System.Double.IsInfinity value) && value <> System.Math.Truncate value then
+                sink.Warning(
+                    "numbers.offGrid",
+                    path,
+                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (Migrations.roundAway value)),
+                    target
+                )
+        let checkSome path what (value: float option) target = value |> Option.iter (fun v -> check path what v target)
+        p.Items
+        |> List.iteri (fun i item ->
+            let target = Some(NavigationTarget.Item item.Id)
+            check (sprintf "items[%d].value" i) (sprintf "The value of \"%s\"" item.Name) item.Value target
+            check (sprintf "items[%d].maxStack" i) (sprintf "The stack size of \"%s\"" item.Name) item.MaxStack target)
+        p.CustomCrops
+        |> Option.defaultValue []
+        |> List.iteri (fun i crop ->
+            let target = Some(NavigationTarget.Crop crop.Id)
+            let path = sprintf "customCrops[%d]" i
+            check (path + ".seedCost") (sprintf "The seed cost of \"%s\"" crop.Name) crop.SeedCost target
+            check (path + ".baseHarvestValue") (sprintf "The harvest value of \"%s\"" crop.Name) crop.BaseHarvestValue target
+            check (path + ".yieldMin") (sprintf "The minimum yield of \"%s\"" crop.Name) crop.YieldMin target
+            check (path + ".yieldMax") (sprintf "The maximum yield of \"%s\"" crop.Name) crop.YieldMax target)
+        p.Shops
+        |> List.iteri (fun i shop ->
+            let target = Some(NavigationTarget.Shop shop.Id)
+            shop.Stock
+            |> List.iteri (fun k entry ->
+                let path = sprintf "shops[%d].stock[%d]" i k
+                checkSome (path + ".price") (sprintf "The price of \"%s\" in \"%s\"" entry.ItemId shop.Name) entry.Price target
+                checkSome (path + ".dailyLimit") (sprintf "The daily limit of \"%s\" in \"%s\"" entry.ItemId shop.Name) entry.DailyLimit target))
+        p.Recipes
+        |> List.iteri (fun i recipe ->
+            let target = Some(NavigationTarget.Recipe recipe.Id)
+            let ingredients (key: string) (list: RecipeIngredient list) =
+                list
+                |> List.iteri (fun k ingredient ->
+                    check (sprintf "recipes[%d].%s[%d].quantity" i key k) (sprintf "A quantity in \"%s\"" recipe.Name) ingredient.Quantity target)
+            ingredients "inputs" recipe.Inputs
+            ingredients "outputs" recipe.Outputs)
+        p.Quests
+        |> List.iteri (fun i quest ->
+            let target = Some(NavigationTarget.Quest quest.Id)
+            checkSome (sprintf "quests[%d].rewards.money" i) (sprintf "The money reward of \"%s\"" quest.Name) quest.Rewards.Money target
+            quest.Rewards.Items
+            |> Option.defaultValue []
+            |> List.iteri (fun k reward ->
+                check (sprintf "quests[%d].rewards.items[%d].quantity" i k) (sprintf "A reward quantity of \"%s\"" quest.Name) reward.Quantity target))
+        p.AnimalSpecies
+        |> List.iteri (fun i species ->
+            check (sprintf "animalSpecies[%d].purchaseCost" i) (sprintf "The price of \"%s\"" species.Name) species.PurchaseCost (Some(NavigationTarget.AnimalSpecies species.Id)))
+        p.NodeTypes
+        |> List.iteri (fun i node ->
+            let target = Some(NavigationTarget.NodeType node.Id)
+            node.Drops
+            |> List.iteri (fun k drop ->
+                check (sprintf "nodeTypes[%d].drops[%d].min" i k) (sprintf "A drop amount of \"%s\"" node.Name) drop.Min target
+                check (sprintf "nodeTypes[%d].drops[%d].max" i k) (sprintf "A drop amount of \"%s\"" node.Name) drop.Max target))
+
     let run (context: Context) (sink: Sink) =
         duplicates context sink
         items context sink
@@ -581,3 +644,4 @@ module internal ChecksContent =
         wildlife context sink
         graphics context sink
         packs context sink
+        offGridNumbers context sink

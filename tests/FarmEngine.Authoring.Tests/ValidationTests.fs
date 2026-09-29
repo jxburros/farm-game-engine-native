@@ -47,8 +47,12 @@ let ``native export settings survive the web compatible import path`` () =
 let ``F sharp compiler reproduces the checked-in cartridge and blocks errors`` () =
     let imported = ProjectMigrations.migrateProject (v8Json ())
     Assert.True imported.Ok
-    let expected = File.ReadAllBytes(fixture "project-v8.cart")
-    Assert.Equal<byte>(expected, CartridgeCompiler.Compile imported.Data.Value)
+    let compiled = CartridgeCompiler.Compile imported.Data.Value
+    // After an intended format or content change: FARM_RECORD_CARTRIDGES=1 rewrites the file.
+    if Environment.GetEnvironmentVariable "FARM_RECORD_CARTRIDGES" = "1" then
+        File.WriteAllBytes(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "fixtures", "golden", "cartridges", "project-v8.cart"), compiled)
+    else
+        Assert.Equal<byte>(File.ReadAllBytes(fixture "project-v8.cart"), compiled)
     let broken = { imported.Data.Value with SelectedTileType = "lava" }
     Assert.Throws<InvalidOperationException>(fun () -> CartridgeCompiler.Compile broken |> ignore) |> ignore
 

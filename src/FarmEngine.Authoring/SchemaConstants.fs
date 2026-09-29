@@ -418,9 +418,10 @@ module ProjectSchema =
     /// availability; v6 — simulation depth (M4): recipes, machine types, weather config, animal
     /// species + animals, fish tables, mine config, gift tastes, player skills; v7 — content packs
     /// (M5): installed packs (with load order + enable flags) travel inside the project; v8 —
-    /// project graphics settings (`graphics`, pixel art by default).
+    /// project graphics settings (`graphics`, pixel art by default); v9 — the native numerics
+    /// grid (docs/NUMERICS.md): positions, energy, money and the time of day on the engine's grid.
     [<Literal>]
-    let CurrentProjectSchemaVersion = 8.0
+    let CurrentProjectSchemaVersion = 9.0
 
 [<RequireQualifiedAccess>]
 module GameContentSchema =

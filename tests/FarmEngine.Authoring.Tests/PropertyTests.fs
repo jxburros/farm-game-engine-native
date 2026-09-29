@@ -281,7 +281,7 @@ let ``migrating a vN project gives a project that passes the schema checks of th
         let again = ProjectMigrations.migrateProjectText stable
         project.SchemaVersion = ProjectSchema.CurrentProjectSchemaVersion
         && result.FromVersion = float version
-        && result.Migrated = (version < 8)
+        && result.Migrated = (version < 9)
         && again.Ok
         && not again.Migrated
         && stableOf SchemaJson.encodeGameProject again.Data.Value = stable)

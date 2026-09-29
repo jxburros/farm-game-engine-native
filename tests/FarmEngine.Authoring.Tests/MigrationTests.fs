@@ -30,6 +30,28 @@ let private stableGame = stable SchemaJson.encodeExportedGame
 
 let private strings (element: JsonElement) : string list = [ for e in element.EnumerateArray() -> e.GetString() |> string ]
 
+// The TypeScript goldens stop at schema v8; the F# pipeline adds the v8 → v9 step
+// (docs/NUMERICS.md). Expected v8 results pass through that step before comparing, so the
+// goldens keep pinning v1 → v8 and the step itself is checked on every golden.
+
+/// A v8 golden result as v9: the numerics grid and the new version.
+let private toV9 (json: Json) : Json =
+    match json with
+    | JObject _ -> json |> Migrations.migrateV8ToV9 |> Json.set "schemaVersion" (JNumber Migrations.CurrentProjectSchemaVersion)
+    | other -> other
+
+/// A golden's stable text as v9 ("null" stays).
+let private toV9Text (text: string) : string =
+    if text = "null" then text
+    else
+        match Json.parse text with
+        | Ok json -> Json.stableStringify (toV9 json)
+        | Error message -> failwith message
+
+/// "… supports (8)." as the current engine says it.
+let private currentVersionText (message: string) =
+    message.Replace("supports (8)", "supports (" + JsNumber.format Migrations.CurrentProjectSchemaVersion + ")")
+
 /// The first difference between two stable JSON strings, with context, for failure messages.
 let private assertSameStable (label: string) (expected: string) (actual: string) =
     if expected <> actual then
@@ -40,10 +62,12 @@ let private assertSameStable (label: string) (expected: string) (actual: string)
         failwithf "%s: stable JSON differs at %d\nexpected: …%s…\nactual:   …%s…" label i (around expected) (around actual)
 
 let private assertResult (label: string) (expected: JsonElement) (result: MigrationResult<'T>) =
-    Assert.Equal<string list>(strings (expected.GetProperty "errors"), List.ofSeq result.Errors)
+    Assert.Equal<string list>(strings (expected.GetProperty "errors") |> List.map currentVersionText, List.ofSeq result.Errors)
     Assert.Equal(expected.GetProperty("ok").GetBoolean(), result.Ok)
     Assert.Equal(expected.GetProperty("fromVersion").GetDouble(), result.FromVersion)
-    Assert.Equal(expected.GetProperty("migrated").GetBoolean(), result.Migrated)
+    // A v8 project is now migrated too (to v9).
+    let fromV8 = result.Ok && result.FromVersion = 8.0
+    Assert.Equal(expected.GetProperty("migrated").GetBoolean() || fromV8, result.Migrated)
     if expected.GetProperty("data").ValueKind = JsonValueKind.Null then
         Assert.True(result.Data.IsNone, label + ": expected no data")
 
@@ -61,8 +85,13 @@ let ``project migration matches TypeScript`` (name: string) =
     let fixture = golden name
     let result = ProjectMigrations.migrateProject (node (fixture.GetProperty "input"))
     assertResult name (fixture.GetProperty "result") result
-    assertSameStable name (fixture.GetProperty("stable").GetString() |> string) (stableProject result.Data)
-    Assert.Equal(fixture.GetProperty("hash").GetString(), TestProjects.hashJson (SchemaJson.encodeGameProject result.Data.Value))
+    let expected = toV9Text (fixture.GetProperty("stable").GetString() |> string)
+    assertSameStable name expected (stableProject result.Data)
+    // The golden hash pins the v8 text; the v9 result hashes as the v9 text of the golden.
+    let v8Hash = fixture.GetProperty("hash").GetString()
+    let golden = match Json.parse (fixture.GetProperty("stable").GetString() |> string) with Ok j -> j | Error m -> failwith m
+    Assert.Equal(v8Hash, TestProjects.hashJson golden)
+    Assert.Equal(TestProjects.hashJson (toV9 golden), TestProjects.hashJson (SchemaJson.encodeGameProject result.Data.Value))
 
 [<Theory>]
 [<MemberData(nameof projectFixtures)>]
@@ -72,7 +101,7 @@ let ``exported game migration matches TypeScript`` (name: string) =
     let result = ProjectMigrations.migrateExportedGame (node (fixture.GetProperty "input"))
     assertResult name (exported.GetProperty "result") result
     let expected = exported.GetProperty "stable"
-    let expectedText = if expected.ValueKind = JsonValueKind.Null then "null" else expected.GetString() |> string
+    let expectedText = if expected.ValueKind = JsonValueKind.Null then "null" else toV9Text (expected.GetString() |> string)
     assertSameStable name expectedText (stableGame result.Data)
 
 [<Fact>]
@@ -97,7 +126,7 @@ let ``the stable JSON writer reproduces the golden stable text`` () =
 [<InlineData("exported-legacy.input.json", "exported", "exported-legacy.stable.json")>]
 let ``edge-case migrations match TypeScript`` (input: string, kind: string, expected: string) =
     let raw = JsonNode.Parse(File.ReadAllText(Path.Combine(migratedDir, input)))
-    let expectedText = File.ReadAllText(Path.Combine(migratedDir, expected)).TrimEnd('\n')
+    let expectedText = toV9Text (File.ReadAllText(Path.Combine(migratedDir, expected)).TrimEnd('\n'))
     let errors, data =
         if kind = "project" then
             let r = ProjectMigrations.migrateProject raw
@@ -188,3 +217,31 @@ let ``invalid JSON text is reported, not thrown`` () =
     Assert.StartsWith("Project data is not valid JSON: ", result.Errors.[0])
     let exported = ProjectMigrations.migrateExportedGameText "{"
     Assert.StartsWith("Game data is not valid JSON: ", exported.Errors.[0])
+
+// ── v8 → v9 (docs/NUMERICS.md) ─────────────────────────────────────────────
+
+[<Fact>]
+let ``v9 moves the values a project plays with onto the engine grid`` () =
+    let parse text = match Json.parse text with Ok json -> json | Error message -> failwith message
+    let v8 =
+        parse
+            """{"player":{"x":5.00001,"y":2.5,"money":10.5,"energy":99.99999,"maxEnergy":100},"currentTimeMinutes":390.0000004,
+                "npcs":[{"id":"a","x":1.0001,"y":-0.5}],"animals":[{"id":"b","x":3,"y":4.25,"mood":72.5}],"items":[{"value":2.5}]}"""
+    let v9 = Migrations.migrateV8ToV9 v8
+    Assert.Equal(
+        """{"player":{"x":5,"y":2.5,"money":11,"energy":100,"maxEnergy":100},"currentTimeMinutes":390,"npcs":[{"id":"a","x":1.0001220703125,"y":-0.5}],"animals":[{"id":"b","x":3,"y":4.25,"mood":73}],"items":[{"value":2.5}]}""",
+        Json.stringify v9)
+    // Values already on the grid stay as they are, and the step is idempotent.
+    Assert.Equal(Json.stringify v9, Json.stringify (Migrations.migrateV8ToV9 v9))
+    Assert.Equal(-3.0, Migrations.roundAway -2.5)
+    Assert.Equal(0.0, Migrations.roundAway 0.49999999999999994)
+
+[<Fact>]
+let ``whole-number fields with a fraction are reported`` () =
+    let project = TestProjects.starter ()
+    let item = { project.Items.Head with Value = 12.5 }
+    let problems = Problems.collect { project with Items = item :: project.Items.Tail }
+    let found = problems |> List.filter (fun p -> p.Code = "numbers.offGrid")
+    Assert.Equal<string list>([ "items[0].value" ], found |> List.map (fun p -> p.Path))
+    Assert.EndsWith("it plays as 13", found.Head.Message)
+    Assert.Empty(Problems.collect project |> List.filter (fun p -> p.Code = "numbers.offGrid"))

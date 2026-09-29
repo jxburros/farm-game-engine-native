@@ -76,3 +76,22 @@ let stableJson (json: string) : string =
     match Json.parse json with
     | Ok value -> Json.stableStringify value
     | Error message -> failwith message
+
+/// The cartridge Play Mode runs: `compileCartridge` without refusing a project that still has
+/// errors (a playtest of unfinished work). Throws when the project does not parse.
+let compilePlaytestCartridge (projectJson: string) : byte[] =
+    match project projectJson with
+    | Ok parsed -> CartridgeCompiler.CompileForPlaytest parsed
+    | Error issue -> failwith issue
+
+/// Keep changes: `{ ok, errors, data }` with the project after a playtest, given the engine's
+/// final `GameState` JSON (`Player.stateJson()` of farm-wasm).
+let applyPlaytestState (projectJson: string) (stateJson: string) : string =
+    let result =
+        match project projectJson, Json.parse stateJson with
+        | Error issue, _ | _, Error issue -> Error issue
+        | Ok parsed, Ok state -> Playtest.applyState parsed state
+    match result with
+    | Ok kept -> JObject [ "ok", JBool true; "errors", JArray []; "data", SchemaJson.encodeGameProject kept ]
+    | Error issue -> JObject [ "ok", JBool false; "errors", strings [ issue ]; "data", JNull ]
+    |> text

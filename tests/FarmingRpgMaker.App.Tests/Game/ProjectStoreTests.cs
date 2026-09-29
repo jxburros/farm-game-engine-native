@@ -46,7 +46,7 @@ public sealed class ProjectStoreTests
         Assert.Equal("Second", Assert.Single(store.List()).Name);
         // Web-compatible JSON: camelCase, indented, parseable by the migrations.
         var text = File.ReadAllText(Path.Combine(dir.Path, "projects", "proj-a.json"));
-        Assert.Contains("\n  \"schemaVersion\": 8", text, StringComparison.Ordinal);
+        Assert.Contains("\n  \"schemaVersion\": 9", text, StringComparison.Ordinal);
     }
 
     [Fact]

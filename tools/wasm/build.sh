@@ -41,7 +41,15 @@ bound="$out/farm_wasm_bg.wasm"
 size() { wc -c < "$1" | tr -d ' '; }
 echo "farm_wasm_bg.wasm: $(size "$bound") bytes after wasm-bindgen"
 
-if [[ "${FARM_WASM_OPT:-1}" != "0" ]] && command -v wasm-opt >/dev/null 2>&1; then
+# binaryen before 116 writes an externref table the browsers and Node refuse to load.
+wasm_opt_usable() {
+  command -v wasm-opt >/dev/null 2>&1 || return 1
+  local version
+  version=$(wasm-opt --version | sed -n 's/.*version \([0-9][0-9]*\).*/\1/p')
+  [[ -n "$version" && "$version" -ge 116 ]]
+}
+
+if [[ "${FARM_WASM_OPT:-1}" != "0" ]] && wasm_opt_usable; then
   # The features rustc enables by default for wasm32-unknown-unknown.
   wasm-opt -O3 \
     --enable-bulk-memory --enable-mutable-globals --enable-nontrapping-float-to-int \
@@ -50,7 +58,7 @@ if [[ "${FARM_WASM_OPT:-1}" != "0" ]] && command -v wasm-opt >/dev/null 2>&1; th
   mv "$bound.opt" "$bound"
   echo "farm_wasm_bg.wasm: $(size "$bound") bytes after wasm-opt -O3"
 else
-  echo "wasm-opt not found (or FARM_WASM_OPT=0): skipped"
+  echo "wasm-opt 116 or newer not found (or FARM_WASM_OPT=0): skipped"
 fi
 echo "gzip -9: $(gzip -9 -c "$bound" | wc -c | tr -d ' ') bytes"
 echo "Wrote $out"

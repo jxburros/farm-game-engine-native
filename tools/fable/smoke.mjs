@@ -29,7 +29,10 @@ for (const name of readdirSync(migrations).filter((f) => /^project-v\d+\.json$/.
   const golden = JSON.parse(readFileSync(join(migrations, name), "utf8"));
   const result = JSON.parse(WebApi.migrateProject(JSON.stringify(golden.input)));
   check(result.ok === golden.result.ok, `${name}: ok ${result.ok}`);
-  check(result.data !== null && WebApi.stableJson(JSON.stringify(result.data)) === golden.stable, `${name}: stable JSON differs`);
+  // The goldens are the TypeScript v8 results; the F# pipeline continues to v9 (docs/NUMERICS.md),
+  // which for a v8 golden is just the v8 → v9 step.
+  const expected = JSON.parse(WebApi.migrateProject(golden.stable)).data;
+  check(result.data !== null && WebApi.stableJson(JSON.stringify(result.data)) === WebApi.stableJson(JSON.stringify(expected)), `${name}: stable JSON differs`);
 }
 
 // Templates: valid projects with no errors, whose content compiles.

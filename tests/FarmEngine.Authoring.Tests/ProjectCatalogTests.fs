@@ -25,7 +25,12 @@ let private build (name: string) =
 
 [<Theory; MemberData(nameof samples)>]
 let ``sample projects match TypeScript`` (name: string) =
-    let expected = Json.stableStringify (Json.get "project" (readJson [ "Golden"; "content"; name + ".json" ]))
+    // The golden is the v8 project; the factories make v9 ones (docs/NUMERICS.md).
+    let expected =
+        Json.get "project" (readJson [ "Golden"; "content"; name + ".json" ])
+        |> Migrations.migrateV8ToV9
+        |> Json.set "schemaVersion" (JNumber Migrations.CurrentProjectSchemaVersion)
+        |> Json.stableStringify
     let project = build name
     // The factory output is already in the current schema shape…
     assertSameStable name expected (stableOf SchemaJson.encodeGameProject project)
