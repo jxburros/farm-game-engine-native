@@ -78,7 +78,7 @@ type CartridgeCompiler =
 
     /// Moves every base64 `data:` URL string inside `json` into `assets` (id → mime, bytes) and
     /// replaces it with `asset:<id>`. Other strings (and malformed data URLs) stay as they are.
-    static member ExtractAssets(json: Json, assets: SortedDictionary<string, string * byte[]>) : Json =
+    static member ExtractAssets(json: Json, assets: Dictionary<string, string * byte[]>) : Json =
         let rewrite (text: string) : string option =
             if not (text.Length >= 5 && text.Substring(0, 5).ToLowerInvariant() = "data:") then None
             else
@@ -119,7 +119,7 @@ type CartridgeCompiler =
         let executable = defaultArg settings.ExecutableName (Defaults.slugId title Seq.empty "game")
 
         // JSON sections, with their embedded files moved to the asset table.
-        let assets = SortedDictionary<string, string * byte[]>(StringComparer.Ordinal)
+        let assets = Dictionary<string, string * byte[]>()
         let section (json: Json) = Bytes.utf8 (Json.stringify (CartridgeCompiler.ExtractAssets(json, assets)))
         let contentBytes = section (SchemaJson.encodeGameContent (ContentCompiler.compile project))
         let startBytes = section (CartridgeCompiler.StartSection project)
@@ -134,7 +134,9 @@ type CartridgeCompiler =
         // FlatBuffers writes back-to-front. Create all referenced values before each table; the
         // fields go in the order flatc's `Create…` helpers add them.
         let assetOffsets =
-            [| for KeyValue(id, (mime, bytes)) in assets ->
+            // In id order (lowercase hex, so `compare` is ordinal).
+            [| for id in assets.Keys |> Seq.sortWith compare ->
+                   let mime, bytes = assets.[id]
                    let idOffset = builder.CreateString id
                    let mimeOffset = builder.CreateString mime
                    let dataOffset = builder.CreateByteVector bytes

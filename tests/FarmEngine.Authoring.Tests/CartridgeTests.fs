@@ -111,3 +111,16 @@ let ``the reader refuses what is not a cartridge`` () =
     match CartridgeReader.read (Array.sub bytes 0 64) with
     | Error message -> Assert.StartsWith("Malformed cartridge: ", message)
     | Ok _ -> failwith "a truncated cartridge read"
+
+/// The sample-game cartridges farm-bench and the Rust tests load
+/// (`fixtures/golden/cartridges/<sample>.cart`) are what the compiler makes of the samples today.
+/// After an intended format or content change, rerun with FARM_RECORD_CARTRIDGES=1 to rewrite them.
+[<Theory>]
+[<InlineData("starter-farm", "starter"); InlineData("cozy-garden", "cozy"); InlineData("quest-rpg", "quest")>]
+let ``the sample cartridges are current`` (file: string, sampleId: string) =
+    let path = IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "fixtures", "golden", "cartridges", file + ".cart")
+    let bytes = CartridgeCompiler.Compile(ProjectCatalog.CreateSampleProject(sampleId, 1.7e12))
+    if Environment.GetEnvironmentVariable "FARM_RECORD_CARTRIDGES" = "1" then IO.File.WriteAllBytes(path, bytes)
+    else
+        Assert.True((IO.File.ReadAllBytes path = bytes), file + ".cart is stale; rerun with FARM_RECORD_CARTRIDGES=1")
+        Assert.Equal(ProjectCatalog.CreateSampleProject(sampleId, 1.7e12).Name, (read bytes).Info.Title)

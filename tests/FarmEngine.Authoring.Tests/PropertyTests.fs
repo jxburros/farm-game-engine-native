@@ -273,18 +273,18 @@ let ``migrating a vN project gives a project that passes the schema checks of th
     Prop.forAll (Arb.fromGen cases) (fun (version, variations) ->
         let result = ProjectMigrations.migrateProjectText (variedFixture version variations)
         if not result.Ok then failwithf "v%d did not migrate: %A" version (List.ofSeq result.Errors)
-        let project = result.Data
+        let project = result.Data.Value
         let issues = SchemaChecks.projectIssues project
         if not issues.IsEmpty then failwithf "v%d migrated with schema issues: %A" version issues
         // Migrating the result again changes nothing: it is a current project.
-        let stable = FarmEngine.Json.StableJson.Stringify project
+        let stable = stableOf SchemaJson.encodeGameProject project
         let again = ProjectMigrations.migrateProjectText stable
-        project.SchemaVersion = Migrations.CurrentProjectSchemaVersion
+        project.SchemaVersion = ProjectSchema.CurrentProjectSchemaVersion
         && result.FromVersion = float version
         && result.Migrated = (version < 8)
         && again.Ok
         && not again.Migrated
-        && FarmEngine.Json.StableJson.Stringify again.Data = stable)
+        && stableOf SchemaJson.encodeGameProject again.Data.Value = stable)
 
 // ── Compiling ──────────────────────────────────────────────────────────────
 
