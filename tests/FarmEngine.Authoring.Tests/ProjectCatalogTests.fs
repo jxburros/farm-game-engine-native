@@ -179,3 +179,34 @@ let ``sample transformations leave the initial game independent`` () =
     Assert.Equal(20.0, cozy.Player.Inventory[0].Quantity)
     Assert.Equal(2, starter.Npcs.Length)
     Assert.Equal(3, quest.Npcs.Length)
+
+// ── Project list: rename and duplicate ──────────────────────────────────────
+
+[<Fact>]
+let ``duplicate copies the project under a new id with its own game id`` () =
+    let project = starter ()
+    let project = { project with Export = Some(Defaults.newExportSettings project) }
+    let newId = ProjectCatalog.NewProjectId 1790553600000.0
+    let copy = ProjectList.Duplicate(project, newId, null)
+    Assert.Equal(newId, copy.Id)
+    Assert.Equal(sprintf "%s (copy)" project.Name, copy.Name)
+    Assert.Equal("Farm (copy)", ProjectList.CopyName "  Farm ")
+    Assert.Equal("Untitled Game (copy)", ProjectList.CopyName "")
+    Assert.NotEqual<string>(project.Export.Value.GameId, copy.Export.Value.GameId)
+    Assert.Equal("local." + newId, copy.Export.Value.GameId)
+    Assert.Equal(project.Export.Value.ExecutableName, copy.Export.Value.ExecutableName)
+    // Everything else is the same game.
+    same { project with Id = newId; Name = copy.Name; Export = copy.Export } copy
+    Assert.Equal("Second Farm", (ProjectList.Duplicate(project, newId, " Second Farm ")).Name)
+    Assert.True((ProjectList.Duplicate(starter (), newId, null)).Export.IsNone)
+    let problems = errors copy
+    Assert.True(problems.IsEmpty, describe problems)
+
+[<Fact>]
+let ``rename trims and refuses a blank name`` () =
+    let project = starter ()
+    let renamed = ProjectList.Rename(project, "  Moonlit Acres ")
+    Assert.Equal("Moonlit Acres", renamed.Name)
+    Assert.Equal(project.Version, renamed.Version)
+    Assert.Same(project, ProjectList.Rename(project, "   "))
+    Assert.Same(renamed, ProjectList.Rename(renamed, "Moonlit Acres"))

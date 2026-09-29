@@ -3,6 +3,14 @@ namespace FarmEngine.Authoring
 open System.Collections.Generic
 open FarmEngine.Schemas
 
+/// What ItemEditor "Add to inventory" does (its toasts).
+[<RequireQualifiedAccess>]
+type InventoryAddResult =
+    | Added
+    | StackFull
+    | InventoryFull
+    | UnknownItem
+
 /// The content edits (NPCEditor, ItemEditor, CropEditor, QuestEditor, EventsEditor, ShopEditor,
 /// RecipeEditor, NodeTypeEditor, WildlifeEditor, ActionsEditor, ProjectSettingsEditor weather and
 /// mine sections, InterfaceEditor). Each function returns the same instance when nothing changed.
@@ -122,25 +130,27 @@ module internal EditContent =
         remove items withItems (fun (i: Item) -> i.Id) Cleanup.dropItem itemId project
 
     /// ItemEditor `handleAddToInventory`: stack when stackable and under the max, else a new slot
-    /// when there is room; otherwise nothing happens.
-    let addToInventory (itemId: string) (project: GameProject) =
+    /// when there is room; otherwise nothing happens. Also says which of its toasts applies.
+    let inventoryAdd (itemId: string) (project: GameProject) : InventoryAddResult * GameProject =
         match project.Items |> List.tryFind (fun i -> i.Id = itemId) with
-        | None -> project
+        | None -> InventoryAddResult.UnknownItem, project
         | Some item ->
             let inventory = project.Player.Inventory
             let next =
                 match List.tryFindIndex (fun (slot: InventorySlot) -> slot.Item.Id = itemId) inventory with
                 | Some index when item.Stackable ->
                     let slot = inventory.[index]
-                    if slot.Quantity < item.MaxStack then Some(List.updateAt index { slot with Quantity = slot.Quantity + 1.0 } inventory)
-                    else None
+                    if slot.Quantity < item.MaxStack then Ok(List.updateAt index { slot with Quantity = slot.Quantity + 1.0 } inventory)
+                    else Error InventoryAddResult.StackFull
                 | _ ->
                     if float inventory.Length < project.Player.MaxInventorySize then
-                        Some(Lists.append ({ Item = item; Quantity = 1.0 } : InventorySlot) inventory)
-                    else None
+                        Ok(Lists.append ({ Item = item; Quantity = 1.0 } : InventorySlot) inventory)
+                    else Error InventoryAddResult.InventoryFull
             match next with
-            | Some slots -> { project with Player = { project.Player with Inventory = slots } }
-            | None -> project
+            | Ok slots -> InventoryAddResult.Added, { project with Player = { project.Player with Inventory = slots } }
+            | Error result -> result, project
+
+    let addToInventory (itemId: string) (project: GameProject) = inventoryAdd itemId project |> snd
 
     // ---- Crops (CropEditor.tsx) ----
 

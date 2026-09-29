@@ -102,6 +102,8 @@ type Edits =
     static member SetSettings(settings: ProjectSettings) : Edit = SetSettings settings
     static member SetExportSettings(settings: ExportSettings | null) : Edit = SetExportSettings(Option.ofObj settings)
     static member RemoveSeason(seasonId: string) : Edit = RemoveSeason seasonId
+    /// Season arrows: swap with the season `delta` places away (festivals and weather follow by id).
+    static member MoveSeason(seasonId: string, delta: int) : Edit = MoveSeason(seasonId, delta)
     static member SetGraphics(graphics: GraphicsSettings) : Edit = SetGraphics graphics
     static member SetPlayerVisual(visual: VisualRef | null) : Edit = SetPlayerVisual(Edits.Visual visual)
     static member BindPlayerVisual(visual: VisualRef | null) : Edit = BindVisual(PlayerVisual, Edits.Visual visual)
@@ -386,6 +388,91 @@ type ExportSettingsForm =
         let sink = Sink()
         ChecksExport.run (Document.run project (SetExportSettings(Some settings))) sink
         sink.ToList() |> Array.ofList :> IReadOnlyList<Problem>
+
+/// Content list actions beyond add/save/delete (ItemEditor, CropEditor, ActionsEditor).
+[<AbstractClass; Sealed>]
+type ContentActions =
+    /// What `Edits.AddToInventory(itemId)` does to `project`, as ItemEditor's toast.
+    static member AddToInventoryMessage(project: GameProject, itemId: string) : string =
+        let name () = project.Items |> List.tryFind (fun i -> i.Id = itemId) |> Option.map (fun i -> i.Name) |> Option.defaultValue itemId
+        match fst (EditContent.inventoryAdd itemId project) with
+        | InventoryAddResult.Added -> sprintf "Added %s to inventory" (name ())
+        | InventoryAddResult.StackFull -> sprintf "%s stack is full" (name ())
+        | InventoryAddResult.InventoryFull -> "Inventory is full!"
+        | InventoryAddResult.UnknownItem -> sprintf "Save %s before adding it to the inventory." itemId
+
+/// The art studio's list actions (`ArtLibrary`).
+[<AbstractClass; Sealed>]
+type ArtLibrary =
+    /// Several imported images as one undo step; colliding ids become the next free `art-N`.
+    static member Import(project: GameProject, assets: seq<CustomAsset>) : Edit = ArtLibrary.importAssets project (List.ofSeq assets)
+    /// What "Remove unused art" would delete, for the confirmation.
+    static member Unused(project: GameProject) : IReadOnlyList<CustomAsset> = ArtLibrary.unused project |> Array.ofList :> IReadOnlyList<CustomAsset>
+    /// Every unused asset removed as one undo step.
+    static member RemoveUnused(project: GameProject) : Edit = ArtLibrary.removeUnused project
+
+/// The project list's Rename and Duplicate (web ProjectManager.tsx, projects.ts).
+[<AbstractClass; Sealed>]
+type ProjectList =
+    /// The name a duplicate gets ("Name (copy)").
+    static member CopyName(name: string) : string = Defaults.copyName name
+    /// A copy under `newId` (from `ProjectCatalog.NewProjectId`) named `name` (the copy name when blank).
+    static member Duplicate(project: GameProject, newId: string, name: string | null) : GameProject =
+        Defaults.duplicateProject project newId (match name with null -> "" | value -> value)
+    /// The project renamed (trimmed); the same instance for a blank or unchanged name.
+    static member Rename(project: GameProject, name: string) : GameProject =
+        if System.String.IsNullOrWhiteSpace name then project
+        else Document.run project (SetProjectInfo(name, project.Version))
+
+/// What `Mods.ExportPack` hands to C#: the validated pack and its file, or why there is none.
+[<Sealed>]
+type PackExportResult internal (pack: ContentPack option, errors: string list) =
+    member _.Ok = pack.IsSome
+    member _.Pack: ContentPack | null = Option.toObj pack
+    member _.Errors: IReadOnlyList<string> = errors |> Array.ofList :> IReadOnlyList<string>
+    /// The pack as indented JSON (empty when there is no pack).
+    member _.Text: string = match pack with Some p -> PackExport.toText p | None -> ""
+    /// The suggested file name (`{id}.json`).
+    member _.FileName: string = match pack with Some p -> PackExport.fileName p | None -> ""
+
+/// The Mods view's registry and "Export selection as pack" (`ModRegistry`, `PackExport`).
+[<AbstractClass; Sealed>]
+type Mods =
+    /// The curated packs that ship with the editor, validated.
+    static member Registry: IReadOnlyList<RegistryEntry> = ModRegistry.entries () |> Array.ofList :> IReadOnlyList<RegistryEntry>
+    static member IsInstalled(project: GameProject, packId: string) : bool = ModRegistry.isInstalled project packId
+    /// The exportable content types with their entries, in pack order.
+    static member ExportCategories(project: GameProject) : IReadOnlyList<PackExportCategory> =
+        PackExport.categories project |> Array.ofList :> IReadOnlyList<PackExportCategory>
+    /// The types ticked at first (web: items and recipes).
+    static member DefaultExportKeys: IReadOnlyList<string> = PackExport.defaultKeys |> Array.ofList :> IReadOnlyList<string>
+    /// The pack id a name becomes.
+    static member PackId(name: string) : string = PackExport.packId name
+    /// A validated pack of the chosen entries: content key → ids.
+    static member ExportPack(project: GameProject, name: string, selection: IReadOnlyDictionary<string, IReadOnlyList<string>>) : PackExportResult =
+        let pairs = [ for pair in selection -> pair.Key, List.ofSeq pair.Value ]
+        match PackExport.build project name pairs with
+        | Ok pack -> PackExportResult(Some pack, [])
+        | Error errors -> PackExportResult(None, errors)
+
+/// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
+[<AbstractClass; Sealed>]
+type SettingsForm =
+    /// The weight shown for one season and weather type (0 without an entry).
+    static member WeatherWeight(project: GameProject, seasonId: string, weatherId: string) : float =
+        SettingsForms.weatherWeight project seasonId weatherId
+
+    /// The weather table as one undo step: (season id, weather id, weight) per cell; only the
+    /// changed cells become edits, negative and non-finite weights read as 0 (no entry).
+    static member WeatherOdds(project: GameProject, weights: seq<struct (string * string * float)>) : Edit =
+        SettingsForms.weatherOdds project (weights |> Seq.map (fun (struct (s, w, v)) -> (s, w, v)) |> List.ofSeq)
+
+    /// The mine config from the card's fields, clamped like the web inputs.
+    static member Mine(project: GameProject, enabled: bool, entranceSceneId: string, x: float, y: float, floors: float, ladderChance: float) : MineConfig =
+        SettingsForms.mine project enabled entranceSceneId x y floors ladderChance
+
+    static member CanMoveSeason(project: GameProject, seasonId: string, delta: int) : bool =
+        SettingsForms.canMoveSeason project seasonId delta
 
 /// What `Patterns.Build` hands to C#: the edit to apply, or the message to show.
 [<Sealed>]

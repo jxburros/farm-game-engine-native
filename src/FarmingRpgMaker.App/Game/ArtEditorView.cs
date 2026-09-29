@@ -41,6 +41,7 @@ public sealed class ArtEditorView : UserControl
     private readonly TextBox _cellRow = new() { Name = "ArtCellRow", Text = "0", Width = 55 };
     private readonly CheckBox _pixelArt = new() { Name = "ArtPixelArt", Content = "Crisp pixel art" };
     private readonly TextBox _svgSize = new() { Name = "ArtSvgSize", Width = 70, Watermark = "own" };
+    private readonly Border _unusedConfirm = new() { Name = "UnusedArtConfirm", IsVisible = false };
     private string? _selectedAssetId;
     private bool _refreshing;
     private double _tick;
@@ -84,13 +85,19 @@ public sealed class ArtEditorView : UserControl
         var left = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(Ui.Text("ARTWORK", "section"));
         left.Children.Add(Ui.Wrapped("Import PNG, JPEG, WebP, GIF, BMP or SVG. Animated images and SVGs become a still PNG; add clips below.", "muted", "small"));
-        var import = Ui.Button("Import image", async () => await PickImageAsync(), "accent");
+        var import = Ui.Button("Import images", async () => await PickImagesAsync(), "accent");
         import.Name = "ImportArtButton";
+        ToolTip.SetTip(import, "Choose one or more images; they are added as one undo step.");
         left.Children.Add(import);
         var svgSize = Ui.HStack(6, Ui.Text("SVG size (longest side, px)", "muted", "small"), _svgSize);
         ToolTip.SetTip(svgSize, "Leave empty to use the SVG's own size.");
         left.Children.Add(svgSize);
         left.Children.Add(_assets);
+        var removeUnused = Ui.Button("Remove unused art…", ConfirmRemoveUnused, "tool");
+        removeUnused.Name = "RemoveUnusedArtButton";
+        ToolTip.SetTip(removeUnused, "Delete every asset nothing in the game uses");
+        left.Children.Add(removeUnused);
+        left.Children.Add(_unusedConfirm);
         left.Children.Add(_pixelArt);
         _pixelArt.Click += (_, _) => _workspace.Apply(Edits.SetGraphics(GraphicsSettings.Default.WithPixelArt(_pixelArt.IsChecked == true)));
         left.Children.Add(_message);
@@ -174,57 +181,141 @@ public sealed class ArtEditorView : UserControl
         Refresh();
     }
 
-    public void ImportBytes(string fileName, byte[] bytes)
+    public void ImportBytes(string fileName, byte[] bytes) => ImportFiles([(fileName, bytes)]);
+
+    /// <summary>
+    /// Imports several images as ONE undo step (web AssetManager multi-file upload). Files that
+    /// fail are reported by name; the rest are still imported.
+    /// </summary>
+    public void ImportFiles(IReadOnlyList<(string FileName, byte[] Bytes)> files) => ImportFiles(files, []);
+
+    private void ImportFiles(IReadOnlyList<(string FileName, byte[] Bytes)> files, IReadOnlyList<string> readErrors)
     {
         if (_workspace.Current is not { } project) return;
-        try
+        var errors = new List<string>(readErrors);
+        int? svgSide = null;
+        if (!string.IsNullOrWhiteSpace(_svgSize.Text))
         {
-            int? svgSide = null;
-            if (!string.IsNullOrWhiteSpace(_svgSize.Text))
+            if (!int.TryParse(_svgSize.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var side) || side <= 0)
             {
-                if (!int.TryParse(_svgSize.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var side) || side <= 0)
-                    throw new ArgumentException("The SVG size must be a positive whole number of pixels.");
-                svgSide = side;
+                _message.Text = "The SVG size must be a positive whole number of pixels.";
+                return;
             }
 
-            var asset = ArtImport.FromBytes(project, fileName, bytes, svgSide);
-            _selectedAssetId = asset.Id;
-            _workspace.Apply(Edits.UpsertAsset(asset));
-            _message.Text = $"Imported {asset.Name} ({asset.Width}×{asset.Height}).";
+            svgSide = side;
         }
-        catch (ArgumentException error)
+
+        var assets = new List<CustomAsset>();
+        foreach (var (fileName, bytes) in files)
         {
-            _message.Text = error.Message;
+            try
+            {
+                assets.Add(ArtImport.FromBytes(project, fileName, bytes, svgSide));
+            }
+            catch (ArgumentException error)
+            {
+                errors.Add($"{fileName}: {error.Message}");
+            }
         }
+
+        var imported = new List<CustomAsset>();
+        if (assets.Count > 0)
+        {
+            var edit = ArtLibrary.Import(project, assets);
+            _workspace.Apply(edit);
+            var before = project.CustomAssets.Select(asset => asset.Id).ToHashSet();
+            imported = _workspace.Current!.CustomAssets.Where(asset => !before.Contains(asset.Id)).ToList();
+            if (imported.Count > 0)
+            {
+                _selectedAssetId = imported[^1].Id;
+                Refresh();
+            }
+        }
+
+        var summary = imported.Count switch
+        {
+            0 => "",
+            1 => $"Imported {imported[0].Name} ({imported[0].Width}×{imported[0].Height}).",
+            _ => $"Imported {imported.Count} images.",
+        };
+        _message.Text = errors.Count == 0 ? summary : string.Join(" ", new[] { summary, $"Could not import {string.Join("; ", errors)}" }.Where(part => part.Length > 0));
     }
 
-    private async Task PickImageAsync()
+    private async Task PickImagesAsync()
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return;
-        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Import artwork", AllowMultiple = false, FileTypeFilter = [ArtFiles, FilePickerFileTypes.All] });
-        if (files.Count == 0) return;
-        try
+        var picked = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Import artwork", AllowMultiple = true, FileTypeFilter = [ArtFiles, FilePickerFileTypes.All] });
+        if (picked.Count == 0) return;
+        var files = new List<(string, byte[])>();
+        var errors = new List<string>();
+        foreach (var file in picked)
         {
-            await using var stream = await files[0].OpenReadAsync();
-            using var memory = new MemoryStream();
-            var buffer = new byte[81920];
-            int read;
-            while ((read = await stream.ReadAsync(buffer)) > 0)
+            try
             {
-                if (memory.Length + read > ArtImport.MaxBytes) throw new ArgumentException("Each image must be under 16 MB.");
-                await memory.WriteAsync(buffer.AsMemory(0, read));
+                await using var stream = await file.OpenReadAsync();
+                using var memory = new MemoryStream();
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await stream.ReadAsync(buffer)) > 0)
+                {
+                    if (memory.Length + read > ArtImport.MaxBytes) throw new ArgumentException("Each image must be under 16 MB.");
+                    await memory.WriteAsync(buffer.AsMemory(0, read));
+                }
+
+                files.Add((file.Name, memory.ToArray()));
             }
-            ImportBytes(files[0].Name, memory.ToArray());
+            catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+            {
+                errors.Add($"{file.Name}: {error.Message}");
+            }
         }
-        catch (Exception error) when (error is IOException or ArgumentException)
+
+        ImportFiles(files, errors);
+    }
+
+    /// <summary>Shows what "Remove unused art" would delete, with Remove and Cancel.</summary>
+    public void ConfirmRemoveUnused()
+    {
+        if (_workspace.Current is not { } project) return;
+        var unused = ArtLibrary.Unused(project);
+        if (unused.Count == 0)
         {
-            _message.Text = $"Could not import art: {error.Message}";
+            _unusedConfirm.IsVisible = false;
+            _message.Text = "All art is in use; nothing to remove.";
+            return;
+        }
+
+        var list = new StackPanel { Spacing = 2 };
+        list.Children.Add(Ui.Wrapped($"Remove {unused.Count} unused asset{(unused.Count == 1 ? "" : "s")}? Nothing in the game uses {(unused.Count == 1 ? "it" : "them")}. Undo brings {(unused.Count == 1 ? "it" : "them")} back.", "small"));
+        var names = new StackPanel { Name = "UnusedArtList", Spacing = 1 };
+        foreach (var asset in unused) names.Children.Add(Ui.Text($"• {asset.Name} · {asset.Id}", "muted", "small"));
+        list.Children.Add(new ScrollViewer { Content = names, MaxHeight = 160 });
+        var confirm = Ui.Button($"Remove {unused.Count}", RemoveUnused, "accent");
+        confirm.Name = "ConfirmRemoveUnusedArtButton";
+        var cancel = Ui.Button("Cancel", () => _unusedConfirm.IsVisible = false, "tool");
+        cancel.Name = "CancelRemoveUnusedArtButton";
+        list.Children.Add(Ui.HStack(8, confirm, cancel));
+        _unusedConfirm.Child = list;
+        _unusedConfirm.IsVisible = true;
+    }
+
+    private void RemoveUnused()
+    {
+        _unusedConfirm.IsVisible = false;
+        if (_workspace.Current is not { } project) return;
+        var count = ArtLibrary.Unused(project).Count;
+        if (_workspace.Apply(ArtLibrary.RemoveUnused(project)))
+        {
+            if (_workspace.Current?.CustomAssets.Any(asset => asset.Id == _selectedAssetId) != true) _selectedAssetId = null;
+            Refresh();
+            _message.Text = $"Removed {count} unused asset{(count == 1 ? "" : "s")}.";
         }
     }
 
     public void Refresh()
     {
         if (_workspace.Current is not { } project) return;
+        _unusedConfirm.IsVisible = false;
         _refreshing = true;
         try
         {

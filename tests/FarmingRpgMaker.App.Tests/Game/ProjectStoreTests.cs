@@ -32,6 +32,30 @@ public sealed class ProjectStoreTests
     }
 
     [Fact]
+    public void RenameAndDuplicate_RewriteTheStoreAndIndex()
+    {
+        using var dir = new TempDir();
+        var time = new TestTime(new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero));
+        var store = new ProjectStore(dir.Path, time);
+        store.Save(FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "First", "proj-a", 0));
+
+        var renamed = store.Rename("proj-a", " Meadow ");
+        Assert.True(renamed.Ok, string.Join("; ", renamed.Errors));
+        Assert.Equal("Meadow", store.Load("proj-a").Project!.Name);
+        Assert.Equal("Meadow", Assert.Single(store.List()).Name);
+        Assert.False(store.Rename("proj-a", "  ").Ok);
+        Assert.False(store.Rename("proj-missing", "Name").Ok);
+
+        var copy = store.Duplicate("proj-a");
+        Assert.True(copy.Ok, string.Join("; ", copy.Errors));
+        Assert.NotEqual("proj-a", copy.Project!.Id);
+        Assert.StartsWith("proj-", copy.Project.Id, StringComparison.Ordinal);
+        Assert.Equal("Meadow (copy)", store.Load(copy.Project.Id).Project!.Name);
+        Assert.Equal(2, store.List().Count);
+        Assert.False(store.Duplicate("proj-missing").Ok);
+    }
+
+    [Fact]
     public void Save_IsAtomic_ReplacesTheFileAndLeavesNoTempFiles()
     {
         using var dir = new TempDir();

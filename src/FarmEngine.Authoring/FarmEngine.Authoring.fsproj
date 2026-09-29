@@ -29,6 +29,7 @@
     <Compile Include="EditProject.fs" />
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
+    <Compile Include="SettingsForms.fs" />
     <Compile Include="References.fs" />
     <Compile Include="Vocabulary.fs" />
     <Compile Include="Problem.fs" />
@@ -40,6 +41,9 @@
     <Compile Include="Problems.fs" />
     <Compile Include="ProjectLoad.fs" />
     <Compile Include="AssetUsage.fs" />
+    <Compile Include="ArtLibrary.fs" />
+    <Compile Include="PackExport.fs" />
+    <Compile Include="ModRegistry.fs" />
     <Compile Include="Bytes.fs" />
     <Compile Include="FlatBuffers.fs" />
     <Compile Include="CartridgeCompiler.fs" />

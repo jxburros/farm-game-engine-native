@@ -47,6 +47,18 @@ module Defaults =
             GameId = "local." + slugId project.Id Seq.empty "game"
             ExecutableName = Some(slugId project.Name Seq.empty "game") }
 
+    /// ProjectManager "Duplicate": the name the copy gets.
+    let copyName (name: string) : string =
+        let name = if String.IsNullOrWhiteSpace name then "Untitled Game" else name.Trim()
+        sprintf "%s (copy)" name
+
+    /// ProjectManager `duplicateProject`: the same project under a new id and name. A copy is a
+    /// separate game, so export settings get a game id of their own (a shared one would share
+    /// save folders); the rest of the export identity is kept.
+    let duplicateProject (project: GameProject) (newId: string) (name: string) : GameProject =
+        let export = project.Export |> Option.map (fun settings -> { settings with GameId = "local." + slugId newId Seq.empty "game" })
+        { project with Id = newId; Name = (if String.IsNullOrWhiteSpace name then copyName project.Name else name.Trim()); Export = export }
+
     /// Every id in the project, so a new id collides with nothing (web `creator-patterns.ts` `ids`).
     let allIds (project: GameProject) : seq<string> = Proj.allIds project :> seq<string>
 
@@ -290,11 +302,19 @@ module Defaults =
                 { Id = nextId "festival" (allIds project |> Seq.append (calendar.Festivals |> Seq.map (fun f -> f.Id)))
                   Name = "New Festival"; SeasonId = season.Id; Day = 1.0 }
 
-    /// ProjectSettingsEditor mine toggle: enabling fills in the default bands when there are none.
+    /// ProjectSettingsEditor mine toggle: switching on fills in the default entrance (the start
+    /// scene at 1,1) and depth bands where they are missing; switching off only clears the flag,
+    /// so the settings come back when it is switched on again.
     let mineEnabled (project: GameProject) (enabled: bool) : MineConfig =
         let mine = project.Mine
-        let bands = if not mine.Bands.IsEmpty then mine.Bands else Builtin.mineBands ()
-        { mine with Enabled = enabled; Bands = bands }
+        if not enabled then { mine with Enabled = false }
+        else
+            { mine with
+                Enabled = true
+                EntranceSceneId = Some(defaultArg mine.EntranceSceneId project.StartSceneId)
+                EntranceX = Some(defaultArg mine.EntranceX 1.0)
+                EntranceY = Some(defaultArg mine.EntranceY 1.0)
+                Bands = (if mine.Bands.IsEmpty then Builtin.mineBands () else mine.Bands) }
 
     /// InterfaceEditor: an empty creator panel.
     let newGamePanel (project: GameProject) : GamePanel =

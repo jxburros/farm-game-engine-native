@@ -149,6 +149,26 @@ public sealed class ProjectWorkspace
         return loaded;
     }
 
+    /// <summary>The name the project list shows for <paramref name="id"/>, or null when it is not stored.</summary>
+    public string? StoredName(string id) => Store.List().FirstOrDefault(summary => summary.Id == id)?.Name;
+
+    /// <summary>
+    /// After the project list renamed the open project on disk: takes the stored name as an
+    /// undoable edit, so the open document and the next autosave keep it. False when the names
+    /// already agree (or nothing is open).
+    /// </summary>
+    public bool AdoptStoredName()
+    {
+        if (Current is not { } project)
+        {
+            return false;
+        }
+
+        var stored = StoredName(project.Id);
+        return stored is not null && stored != project.Name && !string.IsNullOrWhiteSpace(project.Name)
+            && Apply(Edits.SetProjectInfo(stored, project.Version));
+    }
+
     /// <summary>
     /// Editor mutation with undo capture (web <c>editProject</c>): applies an F# <see cref="Edit"/>.
     /// No-ops are not recorded and return false. Schedules an autosave.

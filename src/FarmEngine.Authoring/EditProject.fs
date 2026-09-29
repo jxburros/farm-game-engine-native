@@ -30,6 +30,20 @@ module internal EditProject =
                 { project with Settings = { project.Settings with Calendar = { calendar with Seasons = seasons } } }
                 |> Cleanup.dropSeason seasonId
 
+    /// ProjectSettingsEditor `moveSeason`: swaps with the season `delta` places away. Everything
+    /// else names seasons by id, so nothing else changes.
+    let moveSeason (seasonId: string) (delta: int) (project: GameProject) =
+        let calendar = project.Settings.Calendar
+        let seasons = Array.ofList calendar.Seasons
+        match Array.tryFindIndex (fun (s: CalendarSeason) -> s.Id = seasonId) seasons with
+        | Some index when delta <> 0 && index + delta >= 0 && index + delta < seasons.Length ->
+            let target = index + delta
+            let swapped = Array.copy seasons
+            swapped.[index] <- seasons.[target]
+            swapped.[target] <- seasons.[index]
+            { project with Settings = { project.Settings with Calendar = { calendar with Seasons = List.ofArray swapped } } }
+        | _ -> project
+
     let setGraphics (graphics: GraphicsSettings) (project: GameProject) =
         if project.Graphics = Some graphics then project else { project with Graphics = Some graphics }
 

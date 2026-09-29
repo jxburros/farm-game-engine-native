@@ -91,6 +91,7 @@ module Document =
         | SetSettings settings -> EditProject.setSettings settings project
         | SetExportSettings settings -> EditProject.setExportSettings settings project
         | RemoveSeason seasonId -> EditProject.removeSeason seasonId project
+        | MoveSeason(seasonId, delta) -> EditProject.moveSeason seasonId delta project
         | SetGraphics graphics -> EditProject.setGraphics graphics project
         | SetPlayerVisual visual -> EditProject.setPlayerVisual visual project
         | BindVisual(target, visual) -> EditProject.bindVisual target visual project
