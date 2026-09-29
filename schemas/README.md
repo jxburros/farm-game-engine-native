@@ -1,17 +1,20 @@
 # Cartridge and save schemas
 
 `cart.fbs` defines format 2 of `game.cart`; `save.fbs` defines the binary save
-file the player writes. The generated readers are committed so building the
-editor or player does not need `flatc`. When a schema changes, use `flatc`
+file the player writes. The generated Rust readers are committed so building
+the player does not need `flatc`. When a schema changes, use `flatc`
 **25.2.10** and regenerate:
 
 ```sh
-flatc --csharp -o src/FarmEngine.Schemas/Generated schemas/cart.fbs
 flatc --rust -o crates/farm-cart-schema/src schemas/cart.fbs
 flatc --rust -o crates/farm-cart-schema/src schemas/save.fbs
 ```
 
-Only Rust reads saves, so `save.fbs` has no C# code. The generated Rust
+The F# side has no generated code: `src/FarmEngine.Authoring/FlatBuffers.fs`
+is a plain-F# builder (it also runs under Fable) that writes the same bytes as
+the official builders, and `CartridgeCompiler.fs` adds the fields in the order
+`flatc`'s `Create…` helpers do; `CartridgeReader.fs` reads cartridges back.
+Update both when `cart.fbs` changes. Only Rust reads saves. The generated Rust
 accessors live in `farm-cart-schema`, which alone allows their verified
 pointer traversal. `farm-cart` and `farm-sim` forbid unsafe code. New fields
 are appended to the tables; a breaking layout change also bumps `CART_FORMAT`

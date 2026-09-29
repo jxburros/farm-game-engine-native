@@ -402,8 +402,9 @@ This material goes in the in-app help later.
   start state with state kept from playtests (`ApplyStateToProject` writes the
   day, season, animals, friendships and more back into the project). An
   exported game needs an explicit "a new game starts here" state, so that a
-  kept playtest doesn't ship as the opening of the game. Decide in phase 3,
-  when the F# schema is designed (possibly in v9).
+  kept playtest doesn't ship as the opening of the game. Still open: the
+  cartridge's start section is today built from the project as it is, kept
+  playtest state included.
 - **Player-installed mods** for exported games: see
   [LANGUAGES.md](LANGUAGES.md#open-questions).
 - **Plugin sandbox without a JIT.** Settled: `farm-plugins` runs plugins in
