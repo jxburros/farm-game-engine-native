@@ -1186,8 +1186,8 @@
     "fromVersion": 1,
     "migrated": true,
     "errors": [],
-    "json": "9654315520e1c0cc",
-    "stable": "6fd8d23d57cb2dca",
+    "json": "b222bca38d2854dd",
+    "stable": "28a6457d478188bd",
     "problems": [
       "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
       "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
@@ -1196,7 +1196,7 @@
     "cartridge": "throws InvalidOperationException: startSceneId: Start scene \"scene-farm\" does not exist\nplayer.sceneId: The player starts in missing scene \"\"",
     "gameOk": true,
     "gameErrors": [],
-    "game": "f89ffd5b66320f2f"
+    "game": "2905473d84d2ab0f"
   },
   "fixtures/packs-project.json": {
     "ok": true,
