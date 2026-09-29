@@ -4,269 +4,29 @@
 //! raw input events and the size of its surface, and shows the frames. All of Play Mode's HUD,
 //! dialogue, shop, crafting, inventory, quest, minigame and toast UI is drawn in Rust by
 //! `farm-ui`; the editor keeps only its own tools (restart, keep changes, the debug drawer),
-//! which reach the game through [`fe_player_debug`] and [`fe_player_synced_project`].
+//! which reach the game through [`fe_player_debug`] and [`fe_player_synced_project`]. The
+//! requests and answers are `farm_host::player`'s, shared with farm-wasm.
 //!
 //! Same conventions as the sessions: Rust allocates results and .NET frees them with
 //! `fe_bytes_free`; panics never unwind into .NET. On failure `out` holds the UTF-8 error
 //! message. A player is used by one thread at a time (the editor runs it on a worker thread).
 
-use crate::{view_json, FeBytes, FeResult};
-use farm_player::{DebugAction, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind};
-use farm_sim::schema::GameProject;
-use farm_sim::{stable_json, Command};
-use serde::{Deserialize, Serialize};
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
-/// Largest frame the editor may request, in pixels.
-const MAX_PIXELS: u64 = 64 * 1024 * 1024;
-
-/// Options for [`fe_player_new`].
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct PlayerCreate {
-    /// Seed of the game (the project's own seed when absent, like the C# `PlaySession`).
-    seed: Option<String>,
-    /// No floating pops, fades or flashes.
-    reduced_motion: bool,
-    /// Interface size (1 = 100 %).
-    ui_scale: Option<f32>,
-    /// Play the frames' sounds on the default output device (silent without one).
-    audio: bool,
-}
-
-/// `{dt, events, width, height, render}` for [`fe_player_frame`].
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FrameRequest {
-    dt: f64,
-    #[serde(default)]
-    events: Vec<InputEvent>,
-    width: u32,
-    height: u32,
-    /// False steps the game without drawing (`Player::step`).
-    #[serde(default = "yes")]
-    render: bool,
-}
-
-fn yes() -> bool {
-    true
-}
-
-/// What a frame tells the editor besides the pixels.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FrameInfo {
-    /// Sound cues to play, with their gain.
-    sounds: Vec<SoundInfo>,
-    /// `quit`, `fullscreen:on`, `fullscreen:off`, `title:<text>`.
-    requests: Vec<String>,
-    screen: &'static str,
-    /// An in-game panel (inventory, quests, crafting) or an engine modal is open.
-    modal: bool,
-}
-
-#[derive(Serialize)]
-struct SoundInfo {
-    cue: String,
-    gain: f32,
-}
-
-/// Queries for [`fe_player_query_json`].
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum Query {
-    /// What the debug drawer shows: clock, place, seed, scenes and seasons.
-    Summary,
-    /// The rectangle of a UI widget by its id path (`["pause", "Save"]`, numbers as slot or
-    /// list indices), in frame pixels; `null` when it was not drawn last frame (tests).
-    WidgetRect { path: Vec<serde_json::Value> },
-    /// Toasts shown so far, oldest first (tests).
-    Toasts,
-    /// Recent plugin errors, oldest first.
-    PluginErrors,
-}
+use crate::{bytes_arg, write, write_empty, FeBytes, FeResult};
+use farm_host::player::{is_engine_failure, FrameRequest, PlayerCreate};
+use farm_host::{Guarded, HostPlayer};
+use farm_player::speaker::SpeakerThread;
+use farm_player::PlayerOptions;
 
 /// An opaque embedded player.
 pub struct FePlayer {
-    player: Player,
+    player: Guarded<HostPlayer>,
     /// The output device when the editor asked for sound.
-    speaker: Option<farm_player::speaker::SpeakerThread>,
-    poisoned: bool,
-    last_error: String,
+    speaker: Option<SpeakerThread>,
 }
 
 impl std::fmt::Debug for FePlayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FePlayer").field("poisoned", &self.poisoned).finish_non_exhaustive()
-    }
-}
-
-fn screen_name(screen: ScreenKind) -> &'static str {
-    match screen {
-        ScreenKind::Title => "title",
-        ScreenKind::Playing => "playing",
-        ScreenKind::Pause => "pause",
-        ScreenKind::Settings => "settings",
-        ScreenKind::Credits => "credits",
-        ScreenKind::LoadSlots => "loadSlots",
-        ScreenKind::SaveSlots => "saveSlots",
-        ScreenKind::NewGameSlots => "newGameSlots",
-        ScreenKind::Confirm => "confirm",
-    }
-}
-
-fn request_name(request: &PlayerRequest) -> String {
-    match request {
-        PlayerRequest::Quit => "quit".to_owned(),
-        PlayerRequest::SetFullscreen(on) => format!("fullscreen:{}", if *on { "on" } else { "off" }),
-        PlayerRequest::SetTitle(title) => format!("title:{title}"),
-    }
-}
-
-fn error_text(error: &PlayerError) -> String {
-    error.to_string()
-}
-
-impl FePlayer {
-    fn modal(&self) -> bool {
-        self.player.panel().is_some()
-            || self
-                .player
-                .state()
-                .is_some_and(|state| state.dialogue.is_some() || state.shop.is_some() || state.minigame.is_some())
-    }
-
-    fn frame(&mut self, request: FrameRequest) -> Result<Vec<u8>, String> {
-        if request.width == 0 || request.height == 0 {
-            return Err("A frame needs a size.".to_owned());
-        }
-        if u64::from(request.width) * u64::from(request.height) > MAX_PIXELS {
-            return Err(format!("The requested frame is too large ({}×{}).", request.width, request.height));
-        }
-        let dt = if request.dt.is_finite() { request.dt.clamp(0.0, 0.25) } else { 0.0 };
-        let (sounds, requests, pixels) = if request.render {
-            let output =
-                self.player.frame(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
-            let pixels = Some((output.pixels.width(), output.pixels.height(), output.pixels.data().to_vec()));
-            (output.sounds, output.requests, pixels)
-        } else {
-            let output =
-                self.player.step(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
-            (output.sounds, output.requests, None)
-        };
-        if let Some(speaker) = &self.speaker {
-            for sound in &sounds {
-                speaker.play(sound.clone());
-            }
-        }
-        let info = FrameInfo {
-            sounds: sounds.into_iter().map(|sound| SoundInfo { cue: sound.cue, gain: sound.gain }).collect(),
-            requests: requests.iter().map(request_name).collect(),
-            screen: screen_name(self.player.screen()),
-            modal: self.modal(),
-        };
-        let json = view_json::to_json(&info).into_bytes();
-        let (width, height, data) = pixels.unwrap_or((0, 0, Vec::new()));
-        let mut out = Vec::with_capacity(12 + json.len() + data.len());
-        out.extend_from_slice(&width.to_le_bytes());
-        out.extend_from_slice(&height.to_le_bytes());
-        out.extend_from_slice(&(json.len() as u32).to_le_bytes());
-        out.extend_from_slice(&json);
-        out.extend_from_slice(&data);
-        Ok(out)
-    }
-
-    fn query(&self, query: Query) -> Result<String, String> {
-        match query {
-            Query::Summary => {
-                let state = self.player.state().ok_or("No game is running.")?;
-                let content = self.player.session().map(|session| session.content()).ok_or("No game is running.")?;
-                let calendar = farm_runtime::host::calendar_view(content, state);
-                let summary = serde_json::json!({
-                    "tick": state.clock.tick,
-                    "day": state.clock.day,
-                    "season": state.clock.season,
-                    "year": state.clock.year,
-                    "timeText": calendar.time_text,
-                    "sceneId": state.player.scene_id,
-                    "x": state.player.x,
-                    "y": state.player.y,
-                    "money": state.player.money,
-                    "seed": state.meta.engine_seed,
-                    "scenes": state.world.scenes.iter().map(|scene| serde_json::json!({"id": scene.id, "name": scene.name})).collect::<Vec<_>>(),
-                    "seasons": calendar.seasons.iter().map(|season| serde_json::json!({"id": season.id, "name": season.name})).collect::<Vec<_>>(),
-                });
-                Ok(view_json::to_json(&summary))
-            }
-            Query::WidgetRect { path } => {
-                let mut parts = path.iter();
-                let first =
-                    parts.next().and_then(serde_json::Value::as_str).ok_or("A widget path starts with a name.")?;
-                let mut id = farm_ui::WidgetId::new(first);
-                for part in parts {
-                    id = match part {
-                        serde_json::Value::String(text) => id.with(text.as_str()),
-                        serde_json::Value::Number(number) => {
-                            let index = number.as_u64().ok_or("Widget path numbers must be whole and positive.")?;
-                            id.with(u32::try_from(index).map_err(|_| "Widget path number too large.")?)
-                        }
-                        _ => return Err("Widget path parts are strings or numbers.".to_owned()),
-                    };
-                }
-                let rect = self
-                    .player
-                    .widget_rect(id)
-                    .map(|r| serde_json::json!({"x": r.x, "y": r.y, "width": r.width, "height": r.height}));
-                Ok(view_json::to_json(&rect))
-            }
-            Query::Toasts => {
-                let toasts: Vec<_> = self
-                    .player
-                    .toast_history()
-                    .iter()
-                    .map(|(text, kind)| {
-                        let kind = match kind {
-                            farm_ui::game::ToastKind::Info => "info",
-                            farm_ui::game::ToastKind::Success => "success",
-                            farm_ui::game::ToastKind::Error => "error",
-                        };
-                        serde_json::json!({"text": text, "kind": kind})
-                    })
-                    .collect();
-                Ok(view_json::to_json(&toasts))
-            }
-            Query::PluginErrors => Ok(view_json::to_json(&self.player.plugin_errors())),
-        }
-    }
-}
-
-unsafe fn bytes_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
-    if ptr.is_null() {
-        (len == 0).then_some(&[])
-    } else {
-        Some(std::slice::from_raw_parts(ptr, len))
-    }
-}
-
-unsafe fn write(out: *mut FeBytes, bytes: Vec<u8>) {
-    if !out.is_null() {
-        *out = FeBytes::from_vec(bytes);
-    }
-}
-
-unsafe fn write_empty(out: *mut FeBytes) {
-    if !out.is_null() {
-        *out = FeBytes::empty();
-    }
-}
-
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "panic".to_owned()
+        f.debug_struct("FePlayer").field("poisoned", &self.player.is_poisoned()).finish_non_exhaustive()
     }
 }
 
@@ -295,81 +55,43 @@ pub unsafe extern "C" fn fe_player_new(
     let (Some(game), Some(options)) = (bytes_arg(game, len), bytes_arg(options, options_len)) else {
         return FeResult::InvalidArgument;
     };
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<FePlayer, String> {
-        let create: PlayerCreate = if options.is_empty() {
-            PlayerCreate::default()
-        } else {
-            serde_json::from_slice(options).map_err(|e| format!("player options: {e}"))?
-        };
-        let mut player_options = PlayerOptions::embedded();
-        player_options.seed = create.seed.filter(|seed| !seed.is_empty());
-        let mut player = if farm_cart::is_cartridge(game) {
-            Player::from_cartridge_bytes(game, player_options)
-        } else {
-            let project: GameProject = serde_json::from_slice(game).map_err(|e| format!("project JSON: {e}"))?;
-            Player::from_project(project, player_options)
-        }
-        .map_err(|e| error_text(&e))?;
-        let mut settings = player.settings().clone();
-        settings.accessibility.reduced_motion = create.reduced_motion;
-        if let Some(scale) = create.ui_scale.filter(|scale| scale.is_finite() && *scale > 0.0) {
-            settings.display.ui_scale = scale;
-        }
-        player.set_settings(settings);
-        let speaker = create.audio.then(farm_player::speaker::SpeakerThread::start);
-        Ok(FePlayer { player, speaker, poisoned: false, last_error: String::new() })
-    }));
+    let result = farm_host::catch(|| {
+        let mut create = PlayerCreate::parse(options)?;
+        // Play Mode: the editor's accessibility option always wins (off unless it asks).
+        create.reduced_motion.get_or_insert(false);
+        let player = HostPlayer::new(game, &create, PlayerOptions::embedded())?;
+        let speaker = create.audio.then(SpeakerThread::start);
+        Ok(FePlayer { player: Guarded::new(player).poisoning_on(is_engine_failure), speaker })
+    });
     match result {
-        Ok(Ok(player)) => {
+        Ok(player) => {
             *out = Box::into_raw(Box::new(player));
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            write(error, message.into_bytes());
-            FeResult::InvalidArgument
-        }
-        Err(payload) => {
-            write(error, panic_message(payload).into_bytes());
-            FeResult::Panic
+        Err(e) => {
+            write(error, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
 
 unsafe fn with_player<F>(player: *mut FePlayer, out: *mut FeBytes, body: F) -> FeResult
 where
-    F: FnOnce(&mut FePlayer) -> Result<Vec<u8>, String>,
+    F: FnOnce(&mut HostPlayer, Option<&SpeakerThread>) -> Result<Vec<u8>, String>,
 {
     write_empty(out);
     if player.is_null() {
         return FeResult::InvalidArgument;
     }
-    let player = &mut *player;
-    if player.poisoned {
-        write(out, player.last_error.clone().into_bytes());
-        return FeResult::Poisoned;
-    }
-    match catch_unwind(AssertUnwindSafe(|| body(player))) {
-        Ok(Ok(bytes)) => {
+    let FePlayer { player, speaker } = &mut *player;
+    match player.run(|p| body(p, speaker.as_ref())) {
+        Ok(bytes) => {
             write(out, bytes);
             FeResult::Ok
         }
-        Ok(Err(message)) => {
-            // An engine failure ("The game stopped…") poisons the player, which refuses later
-            // frames itself; mirror that so every later call fails fast.
-            player.poisoned = message.starts_with("The game stopped");
-            player.last_error.clone_from(&message);
-            write(out, message.into_bytes());
-            if player.poisoned {
-                FeResult::Poisoned
-            } else {
-                FeResult::InvalidArgument
-            }
-        }
-        Err(payload) => {
-            player.poisoned = true;
-            player.last_error = panic_message(payload);
-            write(out, player.last_error.clone().into_bytes());
-            FeResult::Panic
+        Err(e) => {
+            write(out, e.message.into_bytes());
+            e.kind.into()
         }
     }
 }
@@ -393,9 +115,25 @@ pub unsafe extern "C" fn fe_player_frame(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_player(player, out, |p| {
-        let request: FrameRequest = serde_json::from_slice(bytes).map_err(|e| format!("frame request: {e}"))?;
-        p.frame(request)
+    with_player(player, out, |p, speaker| {
+        let outcome = p.frame(&FrameRequest::parse(bytes)?)?;
+        if let Some(speaker) = speaker {
+            for sound in &outcome.sounds {
+                speaker.play(sound.clone());
+            }
+        }
+        let json = outcome.info_json().into_bytes();
+        let ((width, height), data) = match outcome.size {
+            Some(size) => (size, p.pixels()),
+            None => ((0, 0), &[][..]),
+        };
+        let mut out = Vec::with_capacity(12 + json.len() + data.len());
+        out.extend_from_slice(&width.to_le_bytes());
+        out.extend_from_slice(&height.to_le_bytes());
+        out.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        out.extend_from_slice(&json);
+        out.extend_from_slice(data);
+        Ok(out)
     })
 }
 
@@ -415,11 +153,7 @@ pub unsafe extern "C" fn fe_player_debug(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_player(player, out, |p| {
-        let action: DebugAction = serde_json::from_slice(bytes).map_err(|e| format!("debug action: {e}"))?;
-        p.player.debug(&action).map_err(|e| error_text(&e))?;
-        Ok(Vec::new())
-    })
+    with_player(player, out, |p, _| p.debug(bytes).map(|()| Vec::new()))
 }
 
 /// Runs engine commands (a JSON array) as if the player had done them (tests and tools).
@@ -437,13 +171,7 @@ pub unsafe extern "C" fn fe_player_commands(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_player(player, out, |p| {
-        let commands: Vec<Command> = serde_json::from_slice(bytes).map_err(|e| format!("commands JSON: {e}"))?;
-        for command in &commands {
-            p.player.run_command(command).map_err(|e| error_text(&e))?;
-        }
-        Ok(Vec::new())
-    })
+    with_player(player, out, |p, _| p.commands(bytes).map(|()| Vec::new()))
 }
 
 /// The live game state as stable JSON.
@@ -452,10 +180,7 @@ pub unsafe extern "C" fn fe_player_commands(
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_state_json(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p| {
-        let state = p.player.state().ok_or("No game is running.")?;
-        Ok(stable_json::stringify(state).into_bytes())
-    })
+    with_player(player, out, |p, _| p.state_json().map(String::into_bytes))
 }
 
 /// The state hash (`hashState`) of the live game.
@@ -464,10 +189,7 @@ pub unsafe extern "C" fn fe_player_state_json(player: *mut FePlayer, out: *mut F
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_hash(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p| {
-        let state = p.player.state().ok_or("No game is running.")?;
-        Ok(farm_sim::hash_state(state).into_bytes())
-    })
+    with_player(player, out, |p, _| p.hash().map(String::into_bytes))
 }
 
 /// The editor project with the live state written back ("keep changes"), as stable JSON.
@@ -477,10 +199,7 @@ pub unsafe extern "C" fn fe_player_hash(player: *mut FePlayer, out: *mut FeBytes
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_synced_project(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p| {
-        let project = p.player.synced_project().ok_or("This game was not started from an editor project.")?;
-        Ok(stable_json::stringify(&project).into_bytes())
-    })
+    with_player(player, out, |p, _| p.synced_project().map(String::into_bytes))
 }
 
 /// Read-only queries (`{"type":"summary"}`, `{"type":"widgetRect","path":[…]}`,
@@ -499,10 +218,7 @@ pub unsafe extern "C" fn fe_player_query_json(
         write_empty(out);
         return FeResult::InvalidArgument;
     };
-    with_player(player, out, |p| {
-        let query: Query = serde_json::from_slice(bytes).map_err(|e| format!("player query: {e}"))?;
-        p.query(query).map(String::into_bytes)
-    })
+    with_player(player, out, |p, _| p.query_json(bytes).map(String::into_bytes))
 }
 
 /// Frees a player. Null is a no-op.

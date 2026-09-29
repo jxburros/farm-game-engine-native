@@ -3,7 +3,7 @@
 //! Plugins must see the same payload text on every host, key order included (a plugin may
 //! `JSON.stringify` its payload into a flag). The web engine builds payload objects in a
 //! fixed order; the Rust payload structs declare their fields in that order, and this module
-//! writes them like `crates/farm-ffi`'s `view_json` does for the C# bridge: fields in
+//! writes them like `crates/farm-host`'s `view_json` does for the C# bridge: fields in
 //! declaration order and numbers and strings as JavaScript's `JSON.stringify` writes them.
 
 use farm_sim::effects::Effect;
