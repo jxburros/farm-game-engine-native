@@ -38,7 +38,7 @@ use farm_render::{
 use farm_runtime::host::{calendar_view, MinigameInput};
 use farm_runtime::panels::{self, PanelState};
 use farm_sim::schema::{GameContent, GameProject, GameState};
-use farm_sim::{overlay, state, Presentation, StartState};
+use farm_sim::{overlay, state, units, Presentation, StartState};
 use farm_ui::game::{GameAction, GameUi, GameView, ItemArt, Panel, ToastKind};
 use farm_ui::settings::BindAction;
 use farm_ui::shell::{
@@ -635,8 +635,8 @@ impl Player {
             }
         }
         graphics.set_live_state(content, state);
-        let moving = state.player.move_intent.dx != 0.0 || state.player.move_intent.dy != 0.0;
-        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick, moving);
+        let moving = state.player.move_intent.dx != 0 || state.player.move_intent.dy != 0;
+        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick as f64, moving);
         Some((snapshot, session.world_size(), (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)))
     }
 
@@ -666,7 +666,8 @@ impl Player {
             else {
                 return;
             };
-            let (px, py) = (PADDING + (state.player.x - 0.5) * TILE_SIZE, PADDING + (state.player.y - 0.5) * TILE_SIZE);
+            let (x, y) = (units::position_to_tiles(state.player.x), units::position_to_tiles(state.player.y));
+            let (px, py) = (PADDING + (x - 0.5) * TILE_SIZE, PADDING + (y - 0.5) * TILE_SIZE);
             let options = SnapshotOptions {
                 tile_size: TILE_SIZE,
                 padding: PADDING,
@@ -680,7 +681,10 @@ impl Player {
             let mut graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, state);
             graphics.set_live_state(&self.def.content, state);
             apply_graphics(&mut snapshot, &graphics, scene, tick, false);
-            let world = (scene.width * TILE_SIZE + PADDING * 2.0, scene.height * TILE_SIZE + PADDING * 2.0);
+            let world = (
+                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
+                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
+            );
             self.world = Some((
                 snapshot,
                 world_view(width, height, integer, world, (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)),
@@ -879,7 +883,8 @@ impl Player {
             play_seconds: preview.play_seconds,
             saved_at: preview.saved_at,
             thumbnail,
-            day_of_season: Some(farm_sim::game_time::day_of_season(calendar, preview.day)),
+            // Preview days are whole numbers (the FlatBuffers field is a double).
+            day_of_season: Some(f64::from(farm_sim::game_time::day_of_season(calendar, preview.day as u32))),
         }
     }
 
@@ -1309,10 +1314,10 @@ impl Player {
             report.push_str(&format!(
                 "Slot: {}\nTick: {}\nDay: {} ({} year {})\nScene: {}\nState hash: {}\nRecent commands (oldest first):\n",
                 game.slot,
-                farm_sim::js::num(state.clock.tick),
-                farm_sim::js::num(state.clock.day),
+                state.clock.tick,
+                state.clock.day,
                 state.clock.season,
-                farm_sim::js::num(state.clock.year),
+                state.clock.year,
                 state.player.scene_id,
                 farm_sim::hash_state(state)
             ));

@@ -70,7 +70,7 @@ impl HostSession {
 
     /// Advances `ticks` simulation ticks and returns their effects as a JSON array.
     pub fn tick(&mut self, ticks: u32) -> String {
-        let effects = engine::advance_tick(&self.ctx, &mut self.state, f64::from(ticks));
+        let effects = engine::advance_tick(&self.ctx, &mut self.state, u64::from(ticks));
         stable_json::stringify(&effects)
     }
 

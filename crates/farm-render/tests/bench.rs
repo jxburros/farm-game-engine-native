@@ -21,11 +21,11 @@ fn play_viewport_frame_time() {
     let mut state = farm_sim::create_game_state(&project, Some("bench"));
     // Midday rain: modulate tint, weather particles and blurred shadows are all on the frame.
     state.clock.weather_id = "rain".into();
-    state.clock.time_minutes = 19.0 * 60.0;
+    state.clock.time_minutes = farm_sim::units::minutes(19 * 60);
     let scene = state.world.scenes.iter().find(|s| s.id == state.player.scene_id).unwrap().clone();
     let (ts, padding) = (32.0, 12.0);
     let (view_width, view_height) = (20.0 * ts, 13.0 * ts);
-    let world = (scene.width * ts + padding * 2.0, scene.height * ts + padding * 2.0);
+    let world = (f64::from(scene.width) * ts + padding * 2.0, f64::from(scene.height) * ts + padding * 2.0);
     let source = GraphicsSource::from_state(&farm_sim::Presentation::from_project(&project), &content, &state);
     let mut renderer = WorldRenderer::new();
     let mut pixmap = tiny_skia::Pixmap::new(view_width as u32, view_height as u32).unwrap();

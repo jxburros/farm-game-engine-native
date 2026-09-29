@@ -9,7 +9,7 @@ use farm_runtime::minigames::custom_game::SimpleBattleSession;
 use farm_runtime::minigames::{self, MinigameConfig, MinigameMountOptions};
 use farm_runtime::panels::{self, PanelState};
 use farm_sim::schema::{GamePanel, GamePanelEntry, InventorySlot, ShopSession};
-use farm_sim::{content_builtin, js, state, GameState};
+use farm_sim::{content_builtin, state, text, units, GameState};
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,7 @@ fn recorder() -> (Arc<Mutex<Vec<f64>>>, impl FnMut(f64) + Send + 'static) {
 }
 
 fn config(key: &str, value: f64) -> MinigameConfig {
-    [(key.to_owned(), js::value(value))].into_iter().collect()
+    [(key.to_owned(), units::value(value))].into_iter().collect()
 }
 
 #[test]
@@ -125,10 +125,7 @@ fn panel_entries_render_flags_items_and_text() {
         energy: 42.5,
         day: 3.0,
         flags: [("met".to_owned(), Value::from("yes"))].into_iter().collect(),
-        inventory: vec![
-            InventorySlot { item: wheat.clone(), quantity: 4.0 },
-            InventorySlot { item: wheat, quantity: 2.0 },
-        ],
+        inventory: vec![InventorySlot { item: wheat.clone(), quantity: 4 }, InventorySlot { item: wheat, quantity: 2 }],
         blocked: false,
     };
     let panel = GamePanel {
@@ -163,5 +160,5 @@ fn panel_state_projects_the_running_game_and_the_synced_project() {
 
     let synced = PanelState::from_project(&project, false);
     assert_eq!((synced.money, synced.energy, synced.day), (100.0, 0.0, 1.0));
-    assert!(js::truthy(synced.flags.get("met")));
+    assert!(text::truthy(synced.flags.get("met")));
 }

@@ -168,9 +168,15 @@ fn stats(view: &GameView<'_>, compact: bool, lang: Lang) -> Vec<Stat> {
         Stat { label: lang.tr("hud.time"), value: StatValue::Plain(calendar.time_text.clone()) },
     ];
     if content.settings.energy_enabled {
-        let max = if state.player.max_energy > 0.0 { state.player.max_energy } else { content.settings.max_energy };
-        let ratio = if max > 0.0 { (state.player.energy / max) as f32 } else { 0.0 };
-        let text = if compact { String::new() } else { format!("{} / {}", num(state.player.energy.floor()), num(max)) };
+        let max = if state.player.max_energy > 0 { state.player.max_energy } else { content.settings.max_energy };
+        let ratio = if max > 0 { (f64::from(state.player.energy) / f64::from(max)) as f32 } else { 0.0 };
+        // Whole points, rounded down like the web HUD.
+        let point = farm_sim::units::ENERGY_POINT;
+        let text = if compact {
+            String::new()
+        } else {
+            format!("{} / {}", num(state.player.energy.div_euclid(point)), crate::format::energy(max))
+        };
         stats.push(Stat { label: lang.tr("hud.energy"), value: StatValue::Energy { ratio, text } });
     }
     stats

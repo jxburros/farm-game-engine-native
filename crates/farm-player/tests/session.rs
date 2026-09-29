@@ -40,10 +40,10 @@ fn held_keys_walk_the_player_and_release_stops_it() {
     session.key_down("d");
     frames(&mut session, 30);
     assert!(session.state().player.x > start.0, "moved right: {start:?} → {}", session.state().player.x);
-    assert_eq!(session.state().player.move_intent.dx, 1.0);
+    assert_eq!(session.state().player.move_intent.dx, 1);
     session.key_up("d");
     frames(&mut session, 2);
-    assert_eq!(session.state().player.move_intent.dx, 0.0);
+    assert_eq!(session.state().player.move_intent.dx, 0);
     let stopped = session.state().player.x;
     frames(&mut session, 20);
     assert_eq!(session.state().player.x, stopped);
@@ -55,7 +55,7 @@ fn a_host_modal_pauses_movement_and_hotkeys_report_toggles() {
     session.key_down("d");
     let toggles = session.update(FRAME, true);
     assert_eq!(toggles, FrameToggles::default());
-    assert_eq!(session.state().player.move_intent.dx, 0.0);
+    assert_eq!(session.state().player.move_intent.dx, 0);
     session.key_up("d");
     session.key_down("i");
     assert!(session.update(FRAME, false).inventory);
@@ -71,7 +71,7 @@ fn effects_become_events_and_pops() {
     session.run_command(&Command::Sleep);
     let events = session.drain_events();
     assert!(
-        events.iter().any(|event| matches!(event, SessionEvent::DayStarted { day, .. } if *day == 2.0)),
+        events.iter().any(|event| matches!(event, SessionEvent::DayStarted { day, .. } if *day == 2)),
         "{events:?}"
     );
     assert!(events.iter().any(|event| matches!(event, SessionEvent::Toast { .. })), "{events:?}");
@@ -172,7 +172,7 @@ fn plugin_mutations_enter_the_command_log_at_the_next_frame() {
     assert!(seen.lock().unwrap()[..first_effect].iter().all(|hook| hook != "onEffect"));
     assert_eq!(session.state().player.money, money, "not applied mid-step");
     session.update(0.0, false);
-    assert_eq!(session.state().player.money, money + 25.0);
+    assert_eq!(session.state().player.money, money + 25);
 }
 
 /// The golden plugin scenario's project with the real sandbox: its `onDayStart` plugin speaks
@@ -217,9 +217,9 @@ fn debug_actions_change_state_without_commands() {
     let mut session = session_for(&starter());
     let money = session.state().player.money;
     session.debug(&DebugAction::AddMoney { amount: 500.0 });
-    assert_eq!(session.state().player.money, money + 500.0);
+    assert_eq!(session.state().player.money, money + 500);
     session.debug(&DebugAction::AddMoney { amount: f64::NAN });
-    assert_eq!(session.state().player.money, money + 500.0);
+    assert_eq!(session.state().player.money, money + 500);
     session.debug(&DebugAction::SetSeason { season: "winter".into() });
     assert_eq!(session.state().clock.season, "winter");
     session.debug(&DebugAction::SetFlag { flag: "  met-mayor ".into() });
@@ -227,16 +227,16 @@ fn debug_actions_change_state_without_commands() {
     session.debug(&DebugAction::GiveFirst { item_type: "seed".into() });
     session.debug(&DebugAction::GiveFirst { item_type: "seed".into() });
     let seed = session.content().items.iter().find(|item| item.r#type == "seed").unwrap().id.clone();
-    let quantity: f64 =
+    let quantity: u32 =
         session.state().player.inventory.iter().filter(|slot| slot.item.id == seed).map(|slot| slot.quantity).sum();
-    assert!(quantity >= 10.0);
+    assert!(quantity >= 10);
     let day = session.state().clock.day;
     session.debug(&DebugAction::SkipDay);
-    assert_eq!(session.state().clock.day, day + 1.0);
+    assert_eq!(session.state().clock.day, day + 1);
     let scene = session.state().world.scenes.last().unwrap().clone();
     session.debug(&DebugAction::Teleport { scene_id: scene.id.clone() });
     assert_eq!(session.state().player.scene_id, scene.id);
-    assert_eq!(session.state().player.x, (scene.width / 2.0).floor() + 0.5);
+    assert_eq!(session.state().player.x, farm_sim::units::tile_center(scene.width / 2));
     let parsed: DebugAction = serde_json::from_str(r#"{"type":"giveFirst","itemType":"material"}"#).unwrap();
     assert_eq!(parsed, DebugAction::GiveFirst { item_type: "material".into() });
 }
@@ -247,10 +247,10 @@ fn replacing_the_state_releases_a_held_walk() {
     session.key_down("d");
     frames(&mut session, 5);
     let walking = session.state().clone();
-    assert_eq!(walking.player.move_intent.dx, 1.0);
+    assert_eq!(walking.player.move_intent.dx, 1);
     let mut fresh = session_for(&starter());
     fresh.replace_state(walking);
-    assert_eq!(fresh.state().player.move_intent.dx, 0.0);
+    assert_eq!(fresh.state().player.move_intent.dx, 0);
 }
 
 #[test]

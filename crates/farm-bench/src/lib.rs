@@ -132,8 +132,8 @@ fn grow_scene(scene: &mut Scene, content: &GameContent, spec: FarmSpec) {
         let mut row = Vec::with_capacity(spec.size);
         for x in 0..spec.size {
             let mut tile = Tile {
-                x: x as f64,
-                y: y as f64,
+                x: x as i32,
+                y: y as i32,
                 r#type: tile_types::GRASS.to_owned(),
                 background: tile_types::GRASS.to_owned(),
                 ..Tile::default()
@@ -144,25 +144,25 @@ fn grow_scene(scene: &mut Scene, content: &GameContent, spec: FarmSpec) {
                 tile.machine = Some(TileMachine {
                     type_id: type_id.to_owned(),
                     // Finished before the night: settled by the overnight pass.
-                    processing: Some(MachineProcessing { recipe_id: recipe_id.to_owned(), completes_at_minute: 0.0 }),
+                    processing: Some(MachineProcessing { recipe_id: recipe_id.to_owned(), completes_at_minute: 0 }),
                     ..TileMachine::default()
                 });
             } else if x < spec.crop_field && y < spec.crop_field {
                 let watered = (x + 2 * y) % 4 != 0;
-                let mut crop = crops::create_planted_crop(CROPS[(x + y) % CROPS.len()], 1.0, false);
+                let mut crop = crops::create_planted_crop(CROPS[(x + y) % CROPS.len()], 1, false);
                 crop.watered = watered;
                 tile.r#type = tile_types::SOIL.to_owned();
                 tile.background = tile_types::SOIL.to_owned();
                 tile.soil_state = Some(if watered { soil_states::WATERED } else { soil_states::DRY }.to_owned());
-                tile.soil_moisture = if watered { 100.0 } else { 0.0 };
+                tile.soil_moisture = if watered { 100 } else { 0 };
                 tile.crop = Some(crop);
             }
             row.push(tile);
         }
         tiles.push(row);
     }
-    scene.width = spec.size as f64;
-    scene.height = spec.size as f64;
+    scene.width = spec.size as i32;
+    scene.height = spec.size as i32;
     scene.tiles = tiles;
 }
 
@@ -478,13 +478,13 @@ mod tests {
     fn the_scenarios_do_what_they_say() {
         let mut farm = farm(FarmSpec { size: 24, crop_field: 24, machines: 5 });
         let scene = &farm.state.world.scenes[0];
-        assert_eq!((scene.width, scene.tiles.len(), scene.tiles[0].len()), (24.0, 24, 24));
+        assert_eq!((scene.width, scene.tiles.len(), scene.tiles[0].len()), (24, 24, 24));
         assert_eq!(scene.tiles.iter().flatten().filter(|tile| tile.crop.is_some()).count(), 24 * 24 - 5);
         let day = farm.state.clock.day;
         sleep(&farm.ctx, &mut farm.state);
-        assert_eq!(farm.state.clock.day, day + 1.0);
+        assert_eq!(farm.state.clock.day, day + 1);
         let tiles = || farm.state.world.scenes[0].tiles.iter().flatten();
-        assert!(tiles().filter_map(|tile| tile.crop.as_ref()).any(|crop| crop.days_grown == Some(1.0)));
+        assert!(tiles().filter_map(|tile| tile.crop.as_ref()).any(|crop| crop.days_grown == Some(1)));
         assert_eq!(
             tiles().filter_map(|tile| tile.machine.as_ref()).filter(|machine| machine.output.is_some()).count(),
             5

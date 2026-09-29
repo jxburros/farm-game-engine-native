@@ -35,7 +35,7 @@
 //! };
 //! let mut host = WasmPluginHost::new(vec![spec], PluginHostOptions::default());
 //! let results = host.dispatch("onDayStart", r#"{"day":2,"season":"spring","year":1}"#);
-//! assert_eq!(results[0].mutations, [PluginMutation::GiveMoney { amount: 20.0 }]);
+//! assert_eq!(results[0].mutations, [PluginMutation::GiveMoney { amount: 20 }]);
 //! ```
 //!
 //! # Determinism

@@ -20,7 +20,7 @@ fn new_game(stores: &Stores) -> Player {
     player
 }
 
-fn tick(player: &Player) -> f64 {
+fn tick(player: &Player) -> u64 {
     player.state().unwrap().clock.tick
 }
 
@@ -47,17 +47,17 @@ fn new_game_walk_sleep_autosave_quit_and_continue() {
     hold(&mut player, "d", 30);
     idle(&mut player, 3);
     assert!(player.state().unwrap().player.x > start, "walked right");
-    assert_eq!(player.state().unwrap().player.move_intent.dx, 0.0);
+    assert_eq!(player.state().unwrap().player.move_intent.dx, 0);
 
     press(&mut player, "z");
-    assert_eq!(player.state().unwrap().clock.day, 2.0);
+    assert_eq!(player.state().unwrap().clock.day, 2);
     assert_eq!(stores.saves.filled(), [1], "autosaved on the new day");
     assert!(player
         .toast_history()
         .iter()
         .any(|(text, kind)| text == "Autosaved (slot 1)" && *kind == ToastKind::Success));
     let saved = saved_state(&stores, &player, 1);
-    assert_eq!(saved.clock.day, 2.0);
+    assert_eq!(saved.clock.day, 2);
     let preview = player.slot_previews()[0].clone().unwrap();
     assert_eq!(preview.farm_name, "My Farming Game");
     assert_eq!(preview.day, 2.0);
@@ -224,7 +224,7 @@ fn panels_open_from_the_toolbar_and_close_with_their_key() {
     assert_eq!(player.screen(), ScreenKind::Playing);
     // The toolbar's Sleep runs the engine command.
     click(&mut player, WidgetId::new("hud").with("sleep"));
-    assert_eq!(player.state().unwrap().clock.day, 2.0);
+    assert_eq!(player.state().unwrap().clock.day, 2);
 }
 
 #[test]
@@ -238,9 +238,9 @@ fn embedded_mode_starts_in_game_and_serves_the_editor() {
     let money = player.state().unwrap().player.money;
     assert_eq!(player.synced_project().unwrap().player.money, money, "keep changes writes the state back");
     let mut state = player.state().unwrap().clone();
-    state.clock.day = 9.0;
+    state.clock.day = 9;
     player.replace_state(state).unwrap();
-    assert_eq!(player.state().unwrap().clock.day, 9.0);
+    assert_eq!(player.state().unwrap().clock.day, 9);
     // Sleeping never autosaves in the editor.
     player.run_command(&Command::Sleep).unwrap();
     assert!(stores.saves.filled().is_empty());

@@ -8,7 +8,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
 use crate::quests;
-use crate::schema::{GameState, ShopDefinition, ShopSession};
+use crate::schema::{GameState, Item, ShopDefinition, ShopSession};
 use crate::units;
 
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
@@ -49,6 +49,18 @@ pub fn remaining_daily_stock(state: &GameState, shop_id: &str, item_id: &str, da
 /// TS `state.shopPurchasesToday[shopId]?.[itemId]`.
 fn purchased_today(state: &GameState, shop_id: &str, item_id: &str) -> Option<u32> {
     state.shop_purchases_today.get(shop_id).and_then(|per_item| per_item.get(item_id)).copied()
+}
+
+/// What `shop` pays for one `item`: `floor(value × sellPriceMultiplier)` (the multiplier in
+/// thousandths).
+pub fn sell_unit_price(item: &Item, shop: &ShopDefinition) -> i64 {
+    item.value.saturating_mul(i64::from(shop.sell_price_multiplier)).div_euclid(i64::from(units::MILLI_ONE))
+}
+
+/// What `shop` charges to restore `missing` durability points: `ceil(missing ×
+/// repairCostPerPoint)` (the cost per point in thousandths of a gold).
+pub fn repair_cost(missing: i64, shop: &ShopDefinition) -> i64 {
+    units::div_ceil(missing.saturating_mul(i64::from(shop.repair_cost_per_point)), i64::from(units::MILLI_ONE))
 }
 
 pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
@@ -137,9 +149,7 @@ pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &st
         return vec![Effect::message(message_levels::ERROR, "You don't have that many.")];
     };
 
-    // floor(value × multiplier), the multiplier in thousandths.
-    let unit_price =
-        (slot.item.value.saturating_mul(i64::from(shop.sell_price_multiplier))).div_euclid(i64::from(units::MILLI_ONE));
+    let unit_price = sell_unit_price(&slot.item, shop);
     let total = unit_price.saturating_mul(i64::from(quantity));
     let item_name = slot.item.name.clone();
 
@@ -170,9 +180,7 @@ pub fn handle_repair_tool(ctx: &EngineContext, state: &mut GameState, item_id: &
         return vec![Effect::message(message_levels::INFO, format!("{} is in perfect shape.", slot.item.name))];
     }
 
-    // ceil(missing × cost per point), the cost per point in thousandths of a gold.
-    let cost =
-        units::div_ceil(missing.saturating_mul(i64::from(shop.repair_cost_per_point)), i64::from(units::MILLI_ONE));
+    let cost = repair_cost(missing, shop);
     if state.player.money < cost {
         return vec![Effect::message(message_levels::ERROR, format!("Repair costs ${cost} — not enough money!"))];
     }

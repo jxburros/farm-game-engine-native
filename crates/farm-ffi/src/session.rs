@@ -318,7 +318,7 @@ mod tests {
         assert_ne!(hash().1, hash_before);
         let (result, report) = call(|out| unsafe { fe_session_load_save(session, save.as_ptr(), save.len(), out) });
         assert_eq!(result, FeResult::Ok);
-        assert_eq!(report, r#"{"fromVersion":4,"migrated":false,"quarantined":[],"restored":[],"warnings":[]}"#);
+        assert_eq!(report, r#"{"fromVersion":5,"migrated":false,"quarantined":[],"restored":[],"warnings":[]}"#);
         assert_eq!(hash().1, hash_before);
 
         // A refused save keeps the state and reports why.

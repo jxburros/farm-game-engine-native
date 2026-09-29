@@ -19,7 +19,7 @@ use farm_runtime::timestep::FixedTimestep;
 use farm_sim::effects::message_levels;
 use farm_sim::hooks::{EffectHookPayload, HookBus, HookEvent};
 use farm_sim::schema::{GameContent, GameState, InventorySlot, Scene};
-use farm_sim::{engine, game_time, quests, state, Command, Effect, EngineContext, StartState};
+use farm_sim::{engine, game_time, quests, state, units, Command, Effect, EngineContext, StartState};
 use serde_json::Value;
 
 /// Play-mode tile size in world pixels (web `TILE_SIZE_PLAY`).
@@ -52,7 +52,7 @@ pub enum SessionEvent {
     /// The player changed scene (the camera snaps; no interpolation across scenes).
     SceneChanged { scene_id: String },
     /// The overnight pass ran (hosts autosave here, as farming games do).
-    DayStarted { day: f64, season: String, year: f64 },
+    DayStarted { day: u32, season: String, year: u32 },
     /// A quest was completed.
     QuestCompleted { quest_id: String },
 }
@@ -168,11 +168,16 @@ impl std::fmt::Debug for PlaySession {
     }
 }
 
+/// A simulation position (1/8192 tile) in tiles, for drawing.
+fn tiles(position: i32) -> f64 {
+    units::position_to_tiles(position)
+}
+
 impl PlaySession {
     /// A session over `content` starting at `state` (a new game or a loaded save). A save written
     /// mid-walk carries a held intent; the first frame releases it (no key is held yet).
     pub fn new(content: GameContent, state: GameState) -> Self {
-        let held = MoveVector::new(state.player.move_intent.dx, state.player.move_intent.dy);
+        let held = MoveVector::new(f64::from(state.player.move_intent.dx), f64::from(state.player.move_intent.dy));
         Self {
             ctx: EngineContext::with_hooks(content, HookBus::new()),
             state,
@@ -310,7 +315,7 @@ impl PlaySession {
             self.recent.pop_front();
         }
         let json = serde_json::to_string(command).unwrap_or_default();
-        self.recent.push_back(format!("tick {}: {json}", farm_sim::js::num(self.state.clock.tick)));
+        self.recent.push_back(format!("tick {}: {json}", self.state.clock.tick));
         let effects = engine::apply_command(&self.ctx, &mut self.state, command);
         self.after_step(effects);
     }
@@ -339,11 +344,13 @@ impl PlaySession {
         self.alpha = self.timestep.alpha();
         if intent != self.last_intent {
             self.last_intent = intent;
-            self.run_command(&Command::SetMoveIntent { dx: intent.dx, dy: intent.dy });
+            // The intent is −1, 0 or 1 on each axis.
+            self.run_command(&Command::SetMoveIntent { dx: intent.dx as i32, dy: intent.dy as i32 });
         }
         if ticks > 0 {
-            self.prev_player = Some((self.state.player.x, self.state.player.y, self.state.player.scene_id.clone()));
-            let effects = engine::advance_tick(&self.ctx, &mut self.state, f64::from(ticks));
+            let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
+            self.prev_player = Some((x, y, self.state.player.scene_id.clone()));
+            let effects = engine::advance_tick(&self.ctx, &mut self.state, u64::from(ticks));
             self.after_step(effects);
         }
 
@@ -366,24 +373,23 @@ impl PlaySession {
         self.input.clear();
         if self.last_intent != MoveVector::default() {
             self.last_intent = MoveVector::default();
-            self.run_command(&Command::SetMoveIntent { dx: 0.0, dy: 0.0 });
+            self.run_command(&Command::SetMoveIntent { dx: 0, dy: 0 });
         }
     }
 
     /// The player's position between the last two tick states (tile units), for rendering.
     pub fn interpolated_player(&self) -> (f64, f64) {
         let player = &self.state.player;
+        let (px, py) = (tiles(player.x), tiles(player.y));
         match &self.prev_player {
-            Some((x, y, scene)) if *scene == player.scene_id => {
-                (x + (player.x - x) * self.alpha, y + (player.y - y) * self.alpha)
-            }
-            _ => (player.x, player.y),
+            Some((x, y, scene)) if *scene == player.scene_id => (x + (px - x) * self.alpha, y + (py - y) * self.alpha),
+            _ => (px, py),
         }
     }
 
     /// World size of the current scene in pixels (contiguous tiles, padding on every side).
     pub fn world_size(&self) -> (f64, f64) {
-        let (w, h) = self.current_scene().map_or((1.0, 1.0), |scene| (scene.width, scene.height));
+        let (w, h) = self.current_scene().map_or((1.0, 1.0), |scene| (f64::from(scene.width), f64::from(scene.height)));
         (w * TILE_SIZE + PADDING * 2.0, h * TILE_SIZE + PADDING * 2.0)
     }
 
@@ -415,9 +421,16 @@ impl PlaySession {
     /// Creator debug tooling: bypasses the command pipeline on purpose. Never used by gameplay.
     pub fn debug(&mut self, action: &DebugAction) {
         match action {
-            DebugAction::AddMoney { amount } if amount.is_finite() => self.state.player.money += amount,
+            DebugAction::AddMoney { amount } if amount.is_finite() => {
+                // Money is whole gold.
+                self.state.player.money = self.state.player.money.saturating_add(amount.round() as i64);
+            }
             DebugAction::FullEnergy => self.state.player.energy = self.state.player.max_energy,
-            DebugAction::AddMinutes { minutes } if minutes.is_finite() => self.state.clock.time_minutes += minutes,
+            DebugAction::AddMinutes { minutes } if minutes.is_finite() => {
+                let micro =
+                    i64::from(self.state.clock.time_minutes) + (minutes * f64::from(units::MINUTE)).round() as i64;
+                self.state.clock.time_minutes = micro.clamp(0, i64::from(u32::MAX)) as u32;
+            }
             DebugAction::SetSeason { season } => self.state.clock.season.clone_from(season),
             DebugAction::GiveFirst { item_type } => {
                 let Some(item) = self.ctx.content.items.iter().find(|item| &item.r#type == item_type) else {
@@ -425,8 +438,8 @@ impl PlaySession {
                 };
                 let inventory = &mut self.state.player.inventory;
                 match inventory.iter_mut().find(|slot| slot.item.id == item.id) {
-                    Some(slot) => slot.quantity += 5.0,
-                    None => inventory.push(InventorySlot { item: item.clone(), quantity: 5.0 }),
+                    Some(slot) => slot.quantity = slot.quantity.saturating_add(5),
+                    None => inventory.push(InventorySlot { item: item.clone(), quantity: 5 }),
                 }
             }
             DebugAction::Teleport { scene_id } => {
@@ -434,7 +447,8 @@ impl PlaySession {
                     return;
                 };
                 // Free movement: land on the center tile's center.
-                let (x, y) = ((scene.width / 2.0).floor() + 0.5, (scene.height / 2.0).floor() + 0.5);
+                let (x, y) =
+                    (units::tile_center(scene.width.div_euclid(2)), units::tile_center(scene.height.div_euclid(2)));
                 self.state.player.scene_id.clone_from(scene_id);
                 self.state.player.x = x;
                 self.state.player.y = y;
@@ -463,9 +477,10 @@ impl PlaySession {
         self.minigame = None;
         self.timestep.reset();
         self.input.clear();
-        if self.state.player.move_intent.dx != 0.0 || self.state.player.move_intent.dy != 0.0 {
+        let intent = &self.state.player.move_intent;
+        if intent.dx != 0 || intent.dy != 0 {
             // A save written mid-walk carries a held intent; the keys aren't held any more.
-            self.last_intent = MoveVector::new(self.state.player.move_intent.dx, self.state.player.move_intent.dy);
+            self.last_intent = MoveVector::new(f64::from(intent.dx), f64::from(intent.dy));
             self.release_input();
         } else {
             self.last_intent = MoveVector::default();
@@ -480,7 +495,7 @@ impl PlaySession {
             }
             match effect {
                 Effect::CropHarvested { quantity, .. } => {
-                    self.add_pop(format!("+{}", farm_sim::js::num(*quantity)), "#8fd06c");
+                    self.add_pop(format!("+{quantity}"), "#8fd06c");
                 }
                 Effect::QuestCompleted { quest_id } => {
                     self.add_pop("Quest ✓".to_owned(), "#ffd94a");
@@ -525,7 +540,8 @@ impl PlaySession {
         if self.reduced_motion {
             return;
         }
-        let pop = Pop { x: self.state.player.x, y: self.state.player.y, text, color: color.to_owned(), age: 0.0 };
+        let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
+        let pop = Pop { x, y, text, color: color.to_owned(), age: 0.0 };
         self.pops.push((pop, self.elapsed_ms));
     }
 
@@ -572,7 +588,8 @@ impl PlaySession {
             },
             _ => return,
         };
-        self.run_command(&Command::ResolveMinigame { score });
+        // The host scores 0–1 as a double; the command carries it on the probability grid.
+        self.run_command(&Command::ResolveMinigame { score: units::chance(score) });
     }
 
     /// Uniform [0, 1) from a xorshift64* stream (cosmetic only).
