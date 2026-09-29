@@ -1,0 +1,29 @@
+[package]
+name = "farm-wasm"
+description = "wasm-bindgen API over the game player, headless sessions and previews for the web version (mirrors farm-ffi)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "farm_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+farm-host = { path = "../farm-host" }
+farm-sim = { path = "../farm-sim" }
+farm-runtime = { path = "../farm-runtime" }
+# The platform-independent player library: no window, cpal, gamepads or user folders.
+farm-player = { path = "../farm-player", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+# tools/wasm/build.sh installs the wasm-bindgen CLI of the exact version in Cargo.lock.
+wasm-bindgen = "0.2.100"
+js-sys = "0.3.77"
+
+[lints]
+workspace = true

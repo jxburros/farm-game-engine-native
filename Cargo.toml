@@ -1,8 +1,8 @@
 # Rust workspace: the part of Farming RPG Maker that runs while a game is
 # being played (see docs/LANGUAGES.md). `farm-sim` is the deterministic core,
 # `farm-cart` the cartridge and save formats, `farm-runtime` the timestep, input
-# and minigame logic, `farm-host` the JSON protocol hosts speak, and `farm-ffi` the C ABI
-# that .NET loads through `FarmEngine.Interop`.
+# and minigame logic, `farm-host` the JSON protocol hosts speak, `farm-ffi` the C ABI
+# that .NET loads through `FarmEngine.Interop`, and `farm-wasm` the same API for the web.
 [workspace]
 resolver = "2"
 members = [
@@ -14,6 +14,7 @@ members = [
     "crates/farm-ui",
     "crates/farm-host",
     "crates/farm-ffi",
+    "crates/farm-wasm",
     "crates/farm-player",
     "crates/farm-plugins",
 ]

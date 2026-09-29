@@ -1233,6 +1233,12 @@ impl Player {
         self.slots.iter().map(|info| info.preview.clone()).collect()
     }
 
+    /// Reads the save slots again after the host changed its store behind the player's back
+    /// (the web version restoring saves from browser storage).
+    pub fn reload_saves(&mut self) {
+        self.refresh_slots();
+    }
+
     /// The slot the running game saves to.
     pub fn current_slot(&self) -> Option<u32> {
         self.game.as_ref().map(|game| game.slot).filter(|slot| *slot > 0)
