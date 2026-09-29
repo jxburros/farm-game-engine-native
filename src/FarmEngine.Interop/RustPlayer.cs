@@ -165,7 +165,11 @@ public sealed record PlayerToast(string Text, string Kind);
 /// <param name="ReducedMotion">No floating pops, fades or flashes.</param>
 /// <param name="UiScale">Interface size (1 = 100 %; null keeps the default).</param>
 /// <param name="Audio">Play the game's sounds on the default output device (silent without one).</param>
-public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null, bool Audio = false);
+/// <param name="Locale">
+/// The language the game's interface follows while the player's own setting is automatic (the
+/// editor's, like <c>es</c>); null uses the game's locale, else English.
+/// </param>
+public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion = false, double? UiScale = null, bool Audio = false, string? Locale = null);
 
 /// <summary>
 /// The Rust game player embedded in the editor (<c>farm_player::Player</c> through
@@ -225,6 +229,11 @@ public sealed class RustPlayer : IDisposable
         if (options.UiScale is { } scale)
         {
             settings["uiScale"] = scale;
+        }
+
+        if (!string.IsNullOrEmpty(options.Locale))
+        {
+            settings["locale"] = options.Locale;
         }
 
         var optionsJson = Encoding.UTF8.GetBytes(settings.ToJsonString());

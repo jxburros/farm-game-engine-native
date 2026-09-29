@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// Largest frame a host may request, in pixels.
 pub const MAX_PIXELS: u64 = 64 * 1024 * 1024;
 
-/// Options for a new player: `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?}`.
+/// Options for a new player: `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?, "locale"?}`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PlayerCreate {
@@ -30,6 +30,9 @@ pub struct PlayerCreate {
     /// Play the frames' sounds on the host's output device (farm-ffi's speaker thread; the web
     /// plays the returned cues itself).
     pub audio: bool,
+    /// The host's language (`es`): the game interface follows it until the player picks one
+    /// in Settings.
+    pub locale: Option<String>,
 }
 
 impl PlayerCreate {
@@ -173,6 +176,7 @@ impl HostPlayer {
     /// mode and stores; `create` the seed and the settings the host overrides.
     pub fn new(game: &[u8], create: &PlayerCreate, mut options: PlayerOptions) -> Result<Self, String> {
         options.seed = create.seed.clone().filter(|seed| !seed.is_empty());
+        options.system_locale = create.locale.clone().filter(|locale| !locale.is_empty());
         let mut player = if farm_cart::is_cartridge(game) {
             Player::from_cartridge_bytes(game, options)
         } else {

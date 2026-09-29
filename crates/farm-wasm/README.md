@@ -48,7 +48,7 @@ The graphical player: the game, its HUD, dialogue, shops, panels, minigames, toa
 screens, drawn in Rust.
 
 ```ts
-const player = new Player(game, { seed?, mode?, reducedMotion?, uiScale?, storage? });
+const player = new Player(game, { seed?, mode?, reducedMotion?, uiScale?, locale?, storage? });
 const ctx = canvas.getContext("2d")!;
 let pixels: Uint8ClampedArray | undefined;
 

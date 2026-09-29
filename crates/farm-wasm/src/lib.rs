@@ -102,6 +102,8 @@ export interface PlayerOptions {
   reducedMotion?: boolean;
   /** Overrides the stored interface size (1 = 100 %). */
   uiScale?: number;
+  /** The page's language (`"es"`): the game interface follows it until the player picks one in Settings. */
+  locale?: string;
   /** Saves and settings to start with (`exportStorage()` of an earlier run). */
   storage?: string | StorageDocument;
 }

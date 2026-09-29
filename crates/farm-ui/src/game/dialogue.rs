@@ -100,7 +100,11 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     let x = card.x + 20.0;
     if options.is_empty() {
         let rect = Rect::new(x, y, option_width, option_heights[0]);
-        let button = Button::new("Goodbye").kind(ButtonKind::Option).keycap("Esc").size(OPTION_SIZE).default_focus();
+        let button = Button::new(ui.tr("dialogue.goodbye"))
+            .kind(ButtonKind::Option)
+            .keycap("Esc")
+            .size(OPTION_SIZE)
+            .default_focus();
         if ui.button(WidgetId::new("dialogue-goodbye"), rect, button) {
             actions.push(GameAction::Command(Command::CloseDialogue));
         }

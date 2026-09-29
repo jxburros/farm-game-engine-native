@@ -330,3 +330,65 @@ fn narrow_screens_wrap_the_hud_and_hints_without_overlap() {
     }
     assert!(tools.iter().all(|rect| rect.right() <= 800.0), "{tools:?}");
 }
+
+#[test]
+fn spanish_translates_the_hud_toolbar_and_panels() {
+    let mut fixture = Fixture::starter();
+    fixture.ui.set_lang(crate::i18n::Lang::Es);
+    // Wide enough for the full labels (longer in Spanish) on one row.
+    fixture.size = (1920.0, 1080.0);
+    fixture.idle();
+    fixture.idle();
+    let texts = fixture.texts();
+    // Season and weather names come from the game's content, not the tables.
+    for expected in
+        ["Dinero:", "Estaci\u{f3}n:", "D\u{ed}a:", "A\u{f1}o:", "Hora:", "Misiones (J)", "Regar", "Guada\u{f1}a"]
+    {
+        assert!(texts.iter().any(|text| text == expected), "{expected} missing from {texts:?}");
+    }
+    assert!(!texts.iter().any(|text| text == "Money:" || text == "Quests (J)"), "{texts:?}");
+    // Widget ids don't depend on the language: the same buttons run the same actions.
+    assert_eq!(command(&fixture.click(WidgetId::new("hud").with("sleep"))), Some(&Command::Sleep));
+    fixture.game_ui.panel = Some(Panel::Inventory);
+    fixture.idle();
+    fixture.idle();
+    let texts = fixture.texts();
+    assert!(texts.iter().any(|text| text == "Inventario"), "{texts:?}");
+    assert!(texts.iter().any(|text| text.starts_with("Valor total: $")), "{texts:?}");
+    assert_eq!(fixture.click(WidgetId::new("inventory-close")), [GameAction::ClosePanel]);
+}
+
+#[test]
+fn readable_font_draws_the_interface_in_atkinson_hyperlegible() {
+    use farm_render::{DrawCmd, FontId};
+    let fonts = |fixture: &Fixture| -> Vec<FontId> {
+        fixture
+            .last
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCmd::Text { font, .. } => Some(*font),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut fixture = Fixture::starter();
+    fixture.idle();
+    fixture.idle();
+    let inter = fonts(&fixture);
+    assert!(inter.iter().all(|font| matches!(font, FontId::Regular | FontId::Bold)), "{inter:?}");
+    let default_width = fixture.ui.last_rect(WidgetId::new("hud").with("quests")).unwrap().width;
+
+    fixture.ui.set_readable_font(true);
+    fixture.idle();
+    fixture.idle();
+    let readable = fonts(&fixture);
+    assert!(readable.contains(&FontId::ReadableRegular) && readable.contains(&FontId::ReadableBold), "{readable:?}");
+    // Text the readable face can't draw stays in Inter.
+    assert_eq!(fixture.ui.face(FontId::Bold, "Harvest"), FontId::ReadableBold);
+    assert_eq!(fixture.ui.face(FontId::Regular, "\u{7530}"), FontId::Regular);
+    // Layout measures the face it draws: the toolbar button follows its label's new width.
+    let width = fixture.ui.last_rect(WidgetId::new("hud").with("quests")).unwrap().width;
+    assert_ne!(width, default_width);
+    assert_eq!(command(&fixture.click(WidgetId::new("hud").with("sleep"))), Some(&Command::Sleep));
+}

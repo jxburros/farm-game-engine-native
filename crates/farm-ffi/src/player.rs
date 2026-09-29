@@ -31,7 +31,7 @@ impl std::fmt::Debug for FePlayer {
 }
 
 /// Creates an embedded player for a (migrated) project's JSON or a compiled cartridge.
-/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?}` (may be empty); with
+/// `options` is `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?, "locale"?}` (may be empty); with
 /// `audio` the frames' sounds play on the default output device. On failure `error`
 /// holds the message.
 ///

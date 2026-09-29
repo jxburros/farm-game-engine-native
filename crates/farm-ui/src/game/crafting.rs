@@ -33,19 +33,20 @@ fn ingredient_line(view: &GameView<'_>, recipe: &RecipeDefinition) -> String {
 
 pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameAction>) {
     let colors = ui.theme().colors;
+    let lang = ui.lang();
     let content = view.content;
     let state = view.state;
     let facing_machine = view.overlay.facing_tile(state).and_then(|tile| tile.machine.as_ref());
     let facing_type =
         facing_machine.and_then(|machine| content.machine_types.iter().find(|kind| kind.id == machine.type_id));
     let subtitle = match facing_type {
-        Some(kind) => format!("Facing: {}", kind.name),
-        None => "Hand crafting & machine placement".to_owned(),
+        Some(kind) => lang.format("crafting.facing", &[&kind.name]),
+        None => lang.tr("crafting.subtitle").to_owned(),
     };
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("crafting"),
         icon: Icon::Hammer,
-        title: "Crafting",
+        title: lang.tr("crafting.title"),
         subtitle: Some(&subtitle),
         width: 560.0,
         max_height: 620.0,
@@ -62,8 +63,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
 
     // ── Load into the faced machine ──
     if let Some(machine) = facing_machine {
-        let name = facing_type.map_or("machine", |kind| kind.name.as_str());
-        y += ui.section(area, y, &format!("Load into {name}"), None);
+        let name = facing_type.map_or(lang.tr("crafting.machine"), |kind| kind.name.as_str());
+        y += ui.section(area, y, &lang.format("crafting.loadInto", &[&name]), None);
         let recipes: Vec<_> = content
             .recipes
             .iter()
@@ -71,18 +72,21 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             .collect();
         if machine.processing.is_some() {
             let rect = Rect::new(area.x, y, area.width, line(ui, 12.5));
-            ui.label(rect, "Working\u{2026} come back later.", 12.5, FontId::Regular, colors.muted, Align::Start);
+            ui.label(rect, lang.tr("crafting.working"), 12.5, FontId::Regular, colors.muted, Align::Start);
             y += rect.height + ROW_GAP;
         } else if recipes.is_empty() {
             let rect = Rect::new(area.x, y, area.width, line(ui, 12.5));
-            ui.label(rect, "No recipes for this machine.", 12.5, FontId::Regular, colors.muted, Align::Start);
+            ui.label(rect, lang.tr("crafting.noMachineRecipes"), 12.5, FontId::Regular, colors.muted, Align::Start);
             y += rect.height + ROW_GAP;
         } else {
             for recipe in recipes {
-                let button = Button::new("Load").primary().size(12.5).enabled(view.overlay.ingredients(&recipe.id));
+                let button = Button::new(lang.tr("crafting.load"))
+                    .primary()
+                    .size(12.5)
+                    .enabled(view.overlay.ingredients(&recipe.id));
                 let width = ui.button_width(&button);
                 let detail =
-                    format!("{} \u{00b7} {} min", ingredient_line(view, recipe), num(recipe.processing_minutes));
+                    lang.format("crafting.minutes", &[&ingredient_line(view, recipe), &num(recipe.processing_minutes)]);
                 let text_width = area.width - 20.0 - width - 10.0;
                 let detail_height = ui.paragraph_height(&detail, 12.5, FontId::Regular, text_width);
                 let height = (line(ui, 14.0) + detail_height + 16.0).max(small + 16.0);
@@ -116,12 +120,12 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
     }
 
     // ── Hand crafting by category ──
-    y += ui.section(area, y, "Hand crafting", None);
+    y += ui.section(area, y, lang.tr("crafting.hand"), None);
     let hand: Vec<_> =
         content.recipes.iter().filter(|recipe| recipe.machine_type_id.as_deref().is_none_or(str::is_empty)).collect();
     if hand.is_empty() {
         let rect = Rect::new(area.x, y, area.width, line(ui, 12.5));
-        ui.label(rect, "No hand recipes known.", 12.5, FontId::Regular, colors.muted, Align::Start);
+        ui.label(rect, lang.tr("crafting.noHandRecipes"), 12.5, FontId::Regular, colors.muted, Align::Start);
         y += rect.height + ROW_GAP;
     }
     let mut categories: Vec<&str> = hand.iter().map(|recipe| recipe.category.as_str()).collect();
@@ -131,7 +135,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         y += ui.section(area, y + 2.0, category, Some(colors.primary)) + 2.0;
         for recipe in hand.iter().filter(|recipe| recipe.category == category) {
             let status = view.overlay.status(&recipe.id);
-            let button = Button::new("Craft").primary().size(12.5).enabled(status.craftable);
+            let button = Button::new(lang.tr("crafting.craft")).primary().size(12.5).enabled(status.craftable);
             let width = ui.button_width(&button);
             let text_width = area.width - 20.0 - width - 10.0;
             let ingredients = ingredient_line(view, recipe);
@@ -197,9 +201,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         })
         .collect();
     if !placeable.is_empty() {
-        y += 6.0 + ui.section(area, y + 6.0, "Place machine (on the tile you face)", None);
+        y += 6.0 + ui.section(area, y + 6.0, lang.tr("crafting.placeMachine"), None);
         for kind in placeable {
-            let button = Button::new("Place").primary().size(12.5);
+            let button = Button::new(lang.tr("crafting.place")).primary().size(12.5);
             let width = ui.button_width(&button);
             let height = (line(ui, 14.0) + line(ui, 12.5) + 16.0).max(small + 16.0);
             let (mut content_rect, buttons) = row(ui, area, y, height, width);

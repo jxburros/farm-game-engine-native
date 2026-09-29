@@ -14,6 +14,12 @@ public sealed record WorkspaceSettings
 
     /// <summary>Whether Export Game last wrote zip / tar.gz archives (default on).</summary>
     public bool? ExportArchives { get; init; }
+
+    /// <summary>The editor's language (Help → Language); null follows the system.</summary>
+    public string? EditorLanguage { get; init; }
+
+    /// <summary>The first-run welcome tour was dismissed (Help → Welcome Tour reopens it).</summary>
+    public bool? WelcomeSeen { get; init; }
 }
 
 /// <summary>

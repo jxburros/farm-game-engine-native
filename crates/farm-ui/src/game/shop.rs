@@ -14,11 +14,12 @@ use farm_sim::{tools, Command};
 
 const ROW_GAP: f32 = 8.0;
 
-fn tab_label(tab: ShopTab) -> &'static str {
+/// The tab's stable name (widget ids) and its label key.
+fn tab_names(tab: ShopTab) -> (&'static str, &'static str) {
     match tab {
-        ShopTab::Buy => "Buy",
-        ShopTab::Sell => "Sell",
-        ShopTab::Repair => "Repair",
+        ShopTab::Buy => ("Buy", "shop.buy"),
+        ShopTab::Sell => ("Sell", "shop.sell"),
+        ShopTab::Repair => ("Repair", "shop.repair"),
     }
 }
 
@@ -53,6 +54,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
     let state = view.state;
     let player = &state.player;
     let colors = ui.theme().colors;
+    let lang = ui.lang();
 
     let mut tabs = vec![ShopTab::Buy];
     if shop.buys_items {
@@ -70,7 +72,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
         *tab = tabs[next];
     }
 
-    let subtitle = format!("Your money: {}", money(player.money));
+    let subtitle = lang.format("shop.yourMoney", &[&money(player.money)]);
     let modal = ui.begin_modal(ModalSpec {
         id: WidgetId::new("shop"),
         icon: Icon::Store,
@@ -91,10 +93,10 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
     let tab_height = ui.button_height(13.0);
     let mut x = area.x;
     for candidate in &tabs {
-        let label = tab_label(*candidate);
-        let button = Button::new(label).kind(ButtonKind::Tab { selected: candidate == tab });
+        let (name, label) = tab_names(*candidate);
+        let button = Button::new(lang.tr(label)).kind(ButtonKind::Tab { selected: candidate == tab });
         let width = ui.button_width(&button).max(72.0);
-        let id = WidgetId::new("shop-tab").with(label);
+        let id = WidgetId::new("shop-tab").with(name);
         if ui.button(id, Rect::new(x, y, width, tab_height), button) {
             *tab = *candidate;
         }
@@ -113,14 +115,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                     area,
                     y,
                     Icon::Package,
-                    "Nothing to sell.",
-                    "Harvest crops or gather resources first.",
+                    lang.tr("shop.nothingToSell"),
+                    lang.tr("shop.nothingToSellDetail"),
                 );
             }
             for slot in sellable {
                 let unit = (slot.item.value * shop.sell_price_multiplier).floor();
-                let sell_one = Button::new("Sell 1").primary().size(12.5);
-                let sell_all = Button::new("Sell all").size(12.5);
+                let sell_one = Button::new(lang.tr("shop.sellOne")).primary().size(12.5);
+                let sell_all = Button::new(lang.tr("shop.sellAll")).size(12.5);
                 let mut widths = vec![ui.button_width(&sell_one)];
                 if slot.quantity > 1.0 {
                     widths.push(ui.button_width(&sell_all));
@@ -128,7 +130,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 let actions_width = widths.iter().sum::<f32>() + 6.0 * (widths.len() - 1) as f32;
                 let (content, buttons) = row(ui, area, y, row_height, actions_width);
                 let quantity = slot.item.stackable.then(|| format!("\u{00d7}{}", num(slot.quantity)));
-                two_lines(ui, content, &slot.item.name, quantity.as_deref(), &format!("{} each", money(unit)), false);
+                let each = lang.format("shop.each", &[&money(unit)]);
+                two_lines(ui, content, &slot.item.name, quantity.as_deref(), &each, false);
                 let rects = right_aligned(buttons, &widths, small, 6.0);
                 let id = WidgetId::new("shop-sell").with(&slot.item.id);
                 if ui.button(id, rects[0], sell_one) {
@@ -152,28 +155,21 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 .filter(|slot| matches!((slot.item.durability, slot.item.max_durability), (Some(d), Some(m)) if d < m))
                 .collect();
             if damaged.is_empty() {
-                y += ui.empty_state(
-                    area,
-                    y,
-                    Icon::Hammer,
-                    "All your tools are in good shape.",
-                    "Come back when something breaks.",
-                );
+                y += ui.empty_state(area, y, Icon::Hammer, lang.tr("shop.toolsFine"), lang.tr("shop.toolsFineDetail"));
             }
             for slot in damaged {
                 let (durability, max) = (slot.item.durability.unwrap_or(0.0), slot.item.max_durability.unwrap_or(0.0));
                 let cost = ((max - durability) * shop.repair_cost_per_point).ceil();
                 let broken = tools::is_tool_broken(&slot.item);
-                let label = format!("Repair {}", money(cost));
+                let label = lang.format("shop.repairFor", &[&money(cost)]);
                 let button = Button::new(&label).primary().size(12.5).enabled(player.money >= cost);
                 let width = ui.button_width(&button);
                 let (content, buttons) = row(ui, area, y, row_height, width);
-                let detail = format!(
-                    "{}/{} durability{}",
-                    num(durability),
-                    num(max),
-                    if broken { " \u{2014} BROKEN" } else { "" }
-                );
+                let mut detail = lang.format("shop.durability", &[&num(durability), &num(max)]);
+                if broken {
+                    detail.push_str(" \u{2014} ");
+                    detail.push_str(lang.tr("shop.broken"));
+                }
                 two_lines(ui, content, &slot.item.name, None, &detail, broken);
                 let rect = right_aligned(buttons, &[width], small, 6.0)[0];
                 if ui.button(WidgetId::new("shop-repair").with(&slot.item.id), rect, button) {
@@ -194,13 +190,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                 })
                 .collect();
             if stock.is_empty() {
-                y += ui.empty_state(
-                    area,
-                    y,
-                    Icon::Store,
-                    "Nothing in stock this season.",
-                    "Check back when the season turns.",
-                );
+                y += ui.empty_state(area, y, Icon::Store, lang.tr("shop.noStock"), lang.tr("shop.noStockDetail"));
             }
             for (entry, item) in stock {
                 let price = entry.price.unwrap_or(item.value);
@@ -210,11 +200,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                     if !detail.is_empty() {
                         detail.push_str(" \u{00b7} ");
                     }
-                    detail.push_str(&format!("{}/{} left today", num(remaining.max(0.0)), num(limit)));
+                    detail.push_str(&lang.format("shop.leftToday", &[&num(remaining.max(0.0)), &num(limit)]));
                 }
                 let price_text = money(price);
                 let price_width = ui.measure(&price_text, 14.0, farm_render::FontId::Bold).ceil();
-                let buy = Button::new("Buy").primary().size(12.5).enabled(player.money >= price && remaining >= 1.0);
+                let buy = Button::new(lang.tr("shop.buy"))
+                    .primary()
+                    .size(12.5)
+                    .enabled(player.money >= price && remaining >= 1.0);
                 let five = Button::new("\u{00d7}5").size(12.5).enabled(player.money >= price * 5.0 && remaining >= 5.0);
                 let mut widths = vec![price_width, ui.button_width(&buy).max(52.0)];
                 if item.stackable {

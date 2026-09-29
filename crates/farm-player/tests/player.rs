@@ -347,3 +347,102 @@ fn a_player_runs_on_another_thread() {
     assert_eq!(width, 320);
     assert!(player.crash_report().contains("Recent commands"));
 }
+
+/// The text of every text command of the last UI frame, with its font.
+fn ui_texts(player: &Player) -> Vec<(String, farm_render::FontId)> {
+    player
+        .ui_draw_list()
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            farm_render::DrawCmd::Text { text, font, .. } => Some((text.clone(), *font)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn shows(player: &Player, text: &str) -> bool {
+    ui_texts(player).iter().any(|(shown, _)| shown == text)
+}
+
+#[test]
+fn the_language_follows_the_setting_then_the_system_then_the_game() {
+    // No system locale and an English game: English.
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 2);
+    assert_eq!(player.lang(), farm_ui::Lang::En);
+    assert!(shows(&player, "New Game"), "{:?}", ui_texts(&player));
+
+    // The system's language while the setting is automatic.
+    let mut options = stores.options(PlayerMode::Standalone);
+    options.system_locale = Some("es_ES.UTF-8".into());
+    let mut spanish = Player::from_project(common::starter(), options).unwrap();
+    idle(&mut spanish, 2);
+    assert_eq!(spanish.lang(), farm_ui::Lang::Es);
+    assert!(shows(&spanish, "Nueva partida") && shows(&spanish, "Ajustes"), "{:?}", ui_texts(&spanish));
+    // Widget ids stay English: the same click opens the settings.
+    click(&mut spanish, WidgetId::new("title").with("Settings"));
+    assert_eq!(spanish.screen(), ScreenKind::Settings);
+    click(&mut spanish, WidgetId::new("settings-tab").with("Accessibility"));
+    assert!(shows(&spanish, "Idioma") && shows(&spanish, "Autom\u{e1}tico"), "{:?}", ui_texts(&spanish));
+
+    // The player's choice wins, and is stored.
+    let mut settings = spanish.settings().clone();
+    settings.language = "en".into();
+    spanish.set_settings(settings);
+    idle(&mut spanish, 2);
+    assert!(shows(&spanish, "Language") && shows(&spanish, "English"), "{:?}", ui_texts(&spanish));
+    assert!(stores.settings.text().unwrap().contains("language = \"en\""));
+
+    // A game whose locale has a table picks it when the system gives none.
+    let mut project = common::starter();
+    project.settings.locale = "es".into();
+    let mut game = Player::from_project(project, Stores::new().options(PlayerMode::Standalone)).unwrap();
+    idle(&mut game, 2);
+    assert_eq!(game.lang(), farm_ui::Lang::Es);
+}
+
+#[test]
+fn spanish_confirmations_and_toasts() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    let mut settings = player.settings().clone();
+    settings.language = "es".into();
+    player.set_settings(settings);
+    press(&mut player, "z");
+    idle(&mut player, 30);
+    let toasts: Vec<&String> = player.toast_history().iter().map(|(text, _)| text).collect();
+    assert!(toasts.iter().any(|text| text.starts_with("Guardado autom\u{e1}tico (ranura 1)")), "{toasts:?}");
+    press(&mut player, "escape");
+    assert!(shows(&player, "Pausa") && shows(&player, "Reanudar"), "{:?}", ui_texts(&player));
+    click(&mut player, WidgetId::new("pause").with("Quit to title"));
+    assert_eq!(player.screen(), ScreenKind::Confirm);
+    assert!(shows(&player, "\u{bf}Volver al t\u{ed}tulo?") && shows(&player, "Cancelar"), "{:?}", ui_texts(&player));
+}
+
+#[test]
+fn the_readable_font_setting_switches_the_interface_font() {
+    use farm_render::FontId;
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    click(&mut player, WidgetId::new("title").with("Settings"));
+    click(&mut player, WidgetId::new("settings-tab").with("Accessibility"));
+    assert!(ui_texts(&player).iter().all(|(_, font)| matches!(font, FontId::Regular | FontId::Bold)));
+    click(&mut player, WidgetId::new("setting").with("readable-font"));
+    assert!(player.settings().accessibility.readable_font);
+    idle(&mut player, 1);
+    let fonts: Vec<FontId> = ui_texts(&player).into_iter().map(|(_, font)| font).collect();
+    assert!(fonts.contains(&FontId::ReadableRegular) && fonts.contains(&FontId::ReadableBold), "{fonts:?}");
+    assert!(stores.settings.text().unwrap().contains("readable-font = true"));
+    // It persists, and the rendered frame changes.
+    let mut again = stores.standalone(&common::starter());
+    idle(&mut again, 1);
+    let readable = again.frame(FRAME, &[], 640, 400).unwrap().pixels.clone();
+    let mut settings = again.settings().clone();
+    settings.accessibility.readable_font = false;
+    again.set_settings(settings);
+    let inter = again.frame(FRAME, &[], 640, 400).unwrap().pixels.clone();
+    assert_ne!(readable.data(), inter.data());
+}

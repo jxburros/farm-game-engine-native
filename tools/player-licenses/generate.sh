@@ -38,6 +38,11 @@ cargo about generate \
   printf '%s\n' "Used by:"
   printf '%s\n\n' "- Inter 3.19 (Regular, Bold), embedded by farm-render"
   cat "$root/assets/fonts/OFL.txt"
+  printf '\n%s\n' "--------------------------------------------------------------------------------"
+  printf '%s\n\n' "SIL Open Font License 1.1 (OFL-1.1)"
+  printf '%s\n' "Used by:"
+  printf '%s\n\n' "- Atkinson Hyperlegible (Regular, Bold), embedded by farm-render (the Readable font setting)"
+  cat "$root/assets/fonts/OFL-AtkinsonHyperlegible.txt"
 } >> "$generated"
 
 # Stable line endings and no trailing spaces, whatever the crates packaged.

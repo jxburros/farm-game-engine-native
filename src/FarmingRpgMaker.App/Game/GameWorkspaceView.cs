@@ -185,8 +185,12 @@ public sealed class GameWorkspaceView : UserControl
         System.Diagnostics.Trace.TraceError($"Playtest faulted: {exception}");
     }
 
-    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project) =>
-        RustPlayer.Create(project, (_options.Player ?? new RustPlayerOptions()) with { Audio = _options.Audio });
+    private RustPlayer CreatePlayer(FarmEngine.Schemas.GameProject project)
+    {
+        // The game's interface follows the editor's language until the player picks one.
+        var options = _options.Player ?? new RustPlayerOptions();
+        return RustPlayer.Create(project, options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+    }
 
     private void OnRestartRequested(object? sender, EventArgs e)
     {
