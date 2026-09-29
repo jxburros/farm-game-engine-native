@@ -197,3 +197,43 @@ let ``weather weights, mine and panels`` () =
     let paneled = project |> apply (SetGamePanels [ panel ])
     Assert.Equal(1, paneled.GamePanels.Value.Length)
     Assert.Same(paneled, paneled |> apply (SetGamePanels [ panel ]))
+
+[<Fact>]
+let ``add to inventory says which toast applies`` () =
+    let project = starter ()
+    let wood = project.Items |> List.find (fun i -> i.Id = "material-wood")
+    Assert.Equal(sprintf "Added %s to inventory" wood.Name, ContentActions.AddToInventoryMessage(project, "material-wood"))
+    Assert.Equal("Save nope before adding it to the inventory.", ContentActions.AddToInventoryMessage(project, "nope"))
+    let wheatSeeds = project.Items |> List.find (fun i -> i.Id = "seed-wheat")
+    let full = project.Player.Inventory |> List.map (fun s -> if s.Item.Id = "seed-wheat" then { s with Quantity = wheatSeeds.MaxStack } else s)
+    let stackFull = { project with Player = { project.Player with Inventory = full } }
+    Assert.Equal(sprintf "%s stack is full" wheatSeeds.Name, ContentActions.AddToInventoryMessage(stackFull, "seed-wheat"))
+    Assert.Same(stackFull, stackFull |> apply (AddToInventory "seed-wheat"))
+    let noRoom = { project with Player = { project.Player with MaxInventorySize = float project.Player.Inventory.Length } }
+    Assert.Equal("Inventory is full!", ContentActions.AddToInventoryMessage(noRoom, "material-wood"))
+
+[<Fact>]
+let ``duplicated actions, minigames and crops get fresh ids and stay valid`` () =
+    let project = starter ()
+    let action = { (Defaults.newAction project) with Name = "Water Can" }
+    let project = project |> apply (UpsertAction action)
+    let copy = Defaults.duplicateAction project action
+    Assert.Equal("water-can-copy", copy.Id)
+    Assert.Equal("Water Can (copy)", copy.Name)
+    Assert.Equal<EventOutcome list>(action.Outcomes, copy.Outcomes)
+    let project = project |> apply (UpsertAction copy)
+    Assert.Equal("water-can-copy-2", (Defaults.duplicateAction project action).Id)
+    let minigame = Defaults.newMinigame project
+    let project = project |> apply (UpsertMinigame minigame)
+    let gameCopy = Defaults.duplicateMinigame project minigame
+    Assert.NotEqual<string>(minigame.Id, gameCopy.Id)
+    Assert.Equal(sprintf "%s (copy)" minigame.Name, gameCopy.Name)
+    Assert.Equal(minigame.Kind, gameCopy.Kind)
+    let project = project |> apply (UpsertMinigame gameCopy)
+    let crop = Defaults.newCrop project
+    let project = project |> apply (UpsertCrop crop)
+    let cropCopy = Defaults.duplicateCrop project crop
+    Assert.NotEqual<string>(crop.Id, cropCopy.Id)
+    let project = project |> apply (UpsertCrop cropCopy)
+    Assert.True(project.Items |> List.exists (fun i -> i.Id = sprintf "seed-%s" cropCopy.Id))
+    Assert.True((errors project).IsEmpty, describe (errors project))

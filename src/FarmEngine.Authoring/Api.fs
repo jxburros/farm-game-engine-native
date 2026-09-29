@@ -376,6 +376,18 @@ type ExportSettingsForm =
         ChecksExport.run (Document.run project (SetExportSettings(Some settings))) sink
         sink.ToList() |> Array.ofList :> IReadOnlyList<Problem>
 
+/// Content list actions beyond add/save/delete (ItemEditor, CropEditor, ActionsEditor).
+[<AbstractClass; Sealed>]
+type ContentActions =
+    /// What `Edits.AddToInventory(itemId)` does to `project`, as ItemEditor's toast.
+    static member AddToInventoryMessage(project: GameProject, itemId: string) : string =
+        let name () = project.Items |> List.tryFind (fun i -> i.Id = itemId) |> Option.map (fun i -> i.Name) |> Option.defaultValue itemId
+        match fst (EditContent.inventoryAdd itemId project) with
+        | InventoryAddResult.Added -> sprintf "Added %s to inventory" (name ())
+        | InventoryAddResult.StackFull -> sprintf "%s stack is full" (name ())
+        | InventoryAddResult.InventoryFull -> "Inventory is full!"
+        | InventoryAddResult.UnknownItem -> sprintf "Save %s before adding it to the inventory." itemId
+
 /// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
 [<AbstractClass; Sealed>]
 type SettingsForm =
