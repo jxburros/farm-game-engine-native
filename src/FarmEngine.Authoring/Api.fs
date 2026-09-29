@@ -388,6 +388,16 @@ type ContentActions =
         | InventoryAddResult.InventoryFull -> "Inventory is full!"
         | InventoryAddResult.UnknownItem -> sprintf "Save %s before adding it to the inventory." itemId
 
+/// The art studio's list actions (`ArtLibrary`).
+[<AbstractClass; Sealed>]
+type ArtLibrary =
+    /// Several imported images as one undo step; colliding ids become the next free `art-N`.
+    static member Import(project: GameProject, assets: seq<CustomAsset>) : Edit = ArtLibrary.importAssets project (List.ofSeq assets)
+    /// What "Remove unused art" would delete, for the confirmation.
+    static member Unused(project: GameProject) : IReadOnlyList<CustomAsset> = ArtLibrary.unused project |> Array.ofList :> IReadOnlyList<CustomAsset>
+    /// Every unused asset removed as one undo step.
+    static member RemoveUnused(project: GameProject) : Edit = ArtLibrary.removeUnused project
+
 /// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
 [<AbstractClass; Sealed>]
 type SettingsForm =

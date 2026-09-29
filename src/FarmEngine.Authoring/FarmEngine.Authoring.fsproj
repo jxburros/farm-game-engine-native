@@ -41,6 +41,7 @@
     <Compile Include="Problems.fs" />
     <Compile Include="ProjectLoad.fs" />
     <Compile Include="AssetUsage.fs" />
+    <Compile Include="ArtLibrary.fs" />
     <Compile Include="Bytes.fs" />
     <Compile Include="FlatBuffers.fs" />
     <Compile Include="CartridgeCompiler.fs" />

@@ -182,3 +182,44 @@ let ``the mine card fills defaults on enable and clamps its fields`` () =
     Assert.Equal(Some project.StartSceneId, (SettingsForms.mine enabled true "scene-ghost" 1.0 1.0 3.0 0.5).EntranceSceneId)
     Assert.Equal<MineBand list>(on.Bands, form.Bands)
     Assert.False (SettingsForms.mine enabled false "scene-farm" 1.0 1.0 3.0 0.5).Enabled
+
+let private artAsset (id: string) (name: string) =
+    { CustomAsset.Default with Id = id; Name = name; Type = "art"; DataUrl = sprintf "data:image/png;base64,%s" name; Width = Some 16.0; Height = Some 16.0 }
+
+[<Fact>]
+let ``several imported images are one undo step with distinct ids`` () =
+    let project = starter () |> apply (UpsertAsset(artAsset "art-1" "old.png"))
+    // The C# importer names every file of a pick against the same project, so the ids collide.
+    let edit = ArtLibrary.importAssets project [ artAsset "art-1" "a.png"; artAsset "art-1" "b.png"; artAsset "art-custom" "c.png"; artAsset "" "d.png" ]
+    let doc = Document.create project |> Document.apply edit
+    let ids = doc.Project.CustomAssets |> List.map (fun a -> a.Id, a.Name)
+    Assert.Equal<(string * string) list>([ "art-1", "old.png"; "art-2", "a.png"; "art-3", "b.png"; "art-custom", "c.png"; "art-4", "d.png" ], ids)
+    Assert.Same(project, (Document.undo doc).Project)
+    Assert.Same(project, project |> apply (ArtLibrary.importAssets project []))
+
+[<Fact>]
+let ``remove unused art deletes only what nothing uses, as one undo step`` () =
+    let project = starter ()
+    let visual id = Some { VisualRef.Default with AssetId = id }
+    let project =
+        project
+        |> apply (
+            Batch(
+                "art",
+                [ UpsertAsset(artAsset "art-used" "used.png")
+                  UpsertAsset(artAsset "art-frame" "frame.png")
+                  UpsertAsset(artAsset "art-spare" "spare.png")
+                  UpsertAsset(artAsset "art-extra" "extra.png")
+                  BindVisual(PlayerVisual, visual "art-used") ]
+            ))
+    // An animation frame of used art keeps its source image.
+    let used = project.CustomAssets |> List.find (fun a -> a.Id = "art-used")
+    let clip = { AnimationClip.Default with Name = "idle"; Loop = true; Frames = [ { ArtFrame.Default with AssetId = Some "art-frame"; Width = 16.0; Height = 16.0; Ticks = 6.0 } ] }
+    let project = project |> apply (UpsertAsset { used with Animations = Some [ clip ] })
+    Assert.Equal<string list>([ "art-spare"; "art-extra" ], ArtLibrary.unused project |> List.map (fun a -> a.Id))
+    let doc = Document.create project |> Document.apply (ArtLibrary.removeUnused project)
+    Assert.Equal<string list>([ "art-used"; "art-frame" ], doc.Project.CustomAssets |> List.map (fun a -> a.Id))
+    Assert.Equal(project.PlayerVisual, doc.Project.PlayerVisual)
+    Assert.Same(project, (Document.undo doc).Project)
+    Assert.Empty(ArtLibrary.unused doc.Project)
+    Assert.Same(doc, doc |> Document.apply (ArtLibrary.removeUnused doc.Project))
