@@ -16,8 +16,9 @@ use farm_sim::{engine, game_time, hash, quests, stable_json, state};
 pub struct HostSession {
     ctx: EngineContext,
     state: GameState,
-    /// The editor project the session started from; `None` for a cartridge.
-    project: Option<GameProject>,
+    /// The editor project JSON the session started from, as given (`None` for a cartridge):
+    /// the state is written into it, so content keeps the values the creator typed.
+    project: Option<serde_json::Value>,
     /// Which game this session's saves belong to (header of [`HostSession::save`]).
     target: SaveTarget,
 }
@@ -40,11 +41,13 @@ impl HostSession {
             let game_state = state::create_game_state_from_start(&cart.start, seed);
             (None, cart.content, game_state, target)
         } else {
-            let project: GameProject = serde_json::from_slice(game).map_err(|e| format!("project JSON: {e}"))?;
+            let json: serde_json::Value = serde_json::from_slice(game).map_err(|e| format!("project JSON: {e}"))?;
+            let project: GameProject =
+                serde_json::from_value(json.clone()).map_err(|e| format!("project JSON: {e}"))?;
             let content = state::create_content_from_project(&project);
             let game_state = state::create_game_state(&project, seed);
             let target = SaveTarget::for_project(&project, &content);
-            (Some(project), content, game_state, target)
+            (Some(json), content, game_state, target)
         };
         let ctx = EngineContext::with_hooks(content, HookBus::new());
         if auto_start_quests {
@@ -87,7 +90,7 @@ impl HostSession {
     /// The project with the live state written back (`applyStateToProject`), as stable JSON.
     pub fn project_json(&self) -> Result<String, String> {
         let project = self.project.as_ref().ok_or("A cartridge session has no editor project to write back to.")?;
-        Ok(stable_json::stringify(&state::apply_state_to_project(project, &self.state)))
+        Ok(stable_json::stringify(&state::apply_state_to_project_json(project, &self.state)?))
     }
 
     /// Creator debug action: the overnight pass of a sleep command without requiring the player

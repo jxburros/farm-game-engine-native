@@ -169,6 +169,9 @@ pub fn is_engine_failure(message: &str) -> bool {
 #[derive(Debug)]
 pub struct HostPlayer {
     player: Player,
+    /// The project JSON as the host gave it (None for a cartridge): "keep changes" writes the
+    /// state into it, so content values stay as the creator typed them.
+    project_json: Option<serde_json::Value>,
 }
 
 impl HostPlayer {
@@ -177,10 +180,14 @@ impl HostPlayer {
     pub fn new(game: &[u8], create: &PlayerCreate, mut options: PlayerOptions) -> Result<Self, String> {
         options.seed = create.seed.clone().filter(|seed| !seed.is_empty());
         options.system_locale = create.locale.clone().filter(|locale| !locale.is_empty());
+        let mut project_json = None;
         let mut player = if farm_cart::is_cartridge(game) {
             Player::from_cartridge_bytes(game, options)
         } else {
-            let project: GameProject = serde_json::from_slice(game).map_err(|e| format!("project JSON: {e}"))?;
+            let json: serde_json::Value = serde_json::from_slice(game).map_err(|e| format!("project JSON: {e}"))?;
+            let project: GameProject =
+                serde_json::from_value(json.clone()).map_err(|e| format!("project JSON: {e}"))?;
+            project_json = Some(json);
             Player::from_project(project, options)
         }
         .map_err(|e| error_text(&e))?;
@@ -195,7 +202,7 @@ impl HostPlayer {
             }
             player.set_settings(settings);
         }
-        Ok(Self { player })
+        Ok(Self { player, project_json })
     }
 
     pub fn player(&self) -> &Player {
@@ -279,8 +286,9 @@ impl HostPlayer {
     /// The editor project with the live state written back ("keep changes"), as stable JSON.
     /// Fails for a player started from a cartridge.
     pub fn synced_project(&self) -> Result<String, String> {
-        let project = self.player.synced_project().ok_or("This game was not started from an editor project.")?;
-        Ok(stable_json::stringify(&project))
+        let project = self.project_json.as_ref().ok_or("This game was not started from an editor project.")?;
+        let state = self.player.state().ok_or("No game is running.")?;
+        Ok(stable_json::stringify(&farm_sim::state::apply_state_to_project_json(project, state)?))
     }
 
     /// Read-only queries (`{"type":"summary"}`, `{"type":"widgetRect","path":[…]}`,

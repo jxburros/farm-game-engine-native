@@ -221,6 +221,100 @@ pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameP
     next
 }
 
+/// Top-level project keys [`apply_state_to_project`] writes.
+const SYNCED_PROJECT_KEYS: [&str; 12] = [
+    "scenes",
+    "animals",
+    "eventFlags",
+    "socialState",
+    "quarantinedItems",
+    "currentWeatherId",
+    "mineDeepestFloor",
+    "currentDay",
+    "currentSeason",
+    "currentTimeMinutes",
+    "currentYear",
+    "rngState",
+];
+
+/// Player keys [`apply_state_to_project`] writes.
+const SYNCED_PLAYER_KEYS: [&str; 13] = [
+    "x",
+    "y",
+    "direction",
+    "sceneId",
+    "inventory",
+    "maxInventorySize",
+    "money",
+    "energy",
+    "maxEnergy",
+    "skills",
+    "activeQuests",
+    "completedQuests",
+    "equippedTool",
+];
+
+/// [`apply_state_to_project`] on the project's JSON: the keys the state writes back come from
+/// the state, every other value stays exactly as the project JSON has it. Reading a project into
+/// [`GameProject`] quantizes its content (a chance of 0.01 becomes the nearest 2⁻³² step), and
+/// "keep changes" must not rewrite what the creator typed (docs/NUMERICS.md "Project
+/// migration").
+pub fn apply_state_to_project_json(project: &Value, state: &GameState) -> Result<Value, String> {
+    let typed: GameProject = serde_json::from_value(project.clone()).map_err(|e| format!("project JSON: {e}"))?;
+    let synced = serde_json::to_value(apply_state_to_project(&typed, state)).map_err(|e| e.to_string())?;
+    let mut next = project.clone();
+    let (Some(out), Some(synced)) = (next.as_object_mut(), synced.as_object()) else {
+        return Err("project JSON: expected an object".to_owned());
+    };
+    copy_keys(out, synced, &SYNCED_PROJECT_KEYS);
+    if let (Some(Value::Object(player)), Some(Value::Object(synced_player))) =
+        (out.get_mut("player"), synced.get("player"))
+    {
+        copy_keys(player, synced_player, &SYNCED_PLAYER_KEYS);
+    }
+    // NPCs and quests keep their order (the typed write-back edits them in place).
+    for_each_pair(out.get_mut("npcs"), synced.get("npcs"), |npc, synced_npc| {
+        copy_keys(npc, synced_npc, &["x", "y", "sceneId"]);
+    });
+    for_each_pair(out.get_mut("quests"), synced.get("quests"), |quest, synced_quest| {
+        copy_keys(quest, synced_quest, &["status"]);
+        for_each_pair(quest.get_mut("objectives"), synced_quest.get("objectives"), |objective, synced_objective| {
+            copy_keys(objective, synced_objective, &["progress", "completed"]);
+        });
+    });
+    Ok(next)
+}
+
+/// Sets `keys` of `out` to their values in `from` (removing those `from` leaves out).
+fn copy_keys(out: &mut serde_json::Map<String, Value>, from: &serde_json::Map<String, Value>, keys: &[&str]) {
+    for key in keys {
+        match from.get(*key) {
+            Some(value) => {
+                out.insert((*key).to_owned(), value.clone());
+            }
+            None => {
+                out.remove(*key);
+            }
+        }
+    }
+}
+
+/// Calls `f` on the objects at the same index of two JSON arrays.
+fn for_each_pair(
+    out: Option<&mut Value>,
+    from: Option<&Value>,
+    mut f: impl FnMut(&mut serde_json::Map<String, Value>, &serde_json::Map<String, Value>),
+) {
+    let (Some(Value::Array(out)), Some(Value::Array(from))) = (out, from) else {
+        return;
+    };
+    for (item, from_item) in out.iter_mut().zip(from) {
+        if let (Value::Object(item), Value::Object(from_item)) = (item, from_item) {
+            f(item, from_item);
+        }
+    }
+}
+
 /// TS `ProjectSettingsSchema.safeParse(project.settings ?? {})`: the typed settings when they
 /// satisfy the schema's refinements, otherwise `DEFAULT_PROJECT_SETTINGS`.
 pub fn resolve_settings(settings: &ProjectSettings) -> ProjectSettings {

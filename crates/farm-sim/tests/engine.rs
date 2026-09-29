@@ -267,6 +267,31 @@ fn apply_state_to_project_round_trips_player_world_quests_and_flags() {
 }
 
 #[test]
+fn apply_state_to_project_json_keeps_the_values_the_creator_typed() {
+    let mut project_json = serde_json::to_value(make_project()).expect("project serializes");
+    // Off the 2⁻³² grid: reading it into a GameProject quantizes it.
+    project_json["customCrops"] = serde_json::json!([{
+        "id": "wheat", "name": "Wheat", "seedCost": 5, "baseHarvestValue": 12.5, "growthDays": 2,
+        "stages": 3, "seasons": ["spring"], "mutationChance": 0.01, "customField": [1, 2.25]
+    }]);
+    let project: farm_sim::schema::GameProject = serde_json::from_value(project_json.clone()).expect("project");
+    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    let mut game_state = state::create_game_state(&project, Some("bridge"));
+    engine::apply_command(&ctx, &mut game_state, &r#move("left"));
+    game_state.player.money = 1234;
+
+    let synced = state::apply_state_to_project_json(&project_json, &game_state).expect("write-back");
+    assert_eq!(synced["customCrops"], project_json["customCrops"], "content stays as typed");
+    assert_eq!(synced["player"]["money"], 1234);
+    let typed = serde_json::to_value(state::apply_state_to_project(&project, &game_state)).expect("typed");
+    for key in ["scenes", "npcs", "quests", "animals", "rngState", "currentTimeMinutes"] {
+        assert_eq!(synced[key], typed[key], "{key} comes from the state");
+    }
+    assert_eq!(synced["player"]["x"], typed["player"]["x"]);
+    assert_ne!(typed["customCrops"], project_json["customCrops"], "the typed write-back quantizes");
+}
+
+#[test]
 fn advance_tick_advances_the_game_clock_and_nothing_else_before_day_end() {
     let (ctx, mut game_state) = engine_state("clock");
     let before = game_state.clone();

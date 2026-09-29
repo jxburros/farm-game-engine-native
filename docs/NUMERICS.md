@@ -135,7 +135,10 @@ day, animal positions and mood), so the editor shows what the game will run.
 Content definitions (prices, chances) keep what the creator typed; the Rust
 loader quantizes them, and Problems reports a warning (`numbers.offGrid`)
 where that changes a value in a way a player could notice (a fractional
-price or count).
+price or count). "Keep changes" (the hosts' synced project) writes the running
+state into the project JSON as the editor sent it
+(`state::apply_state_to_project_json`), so it never replaces content values
+with their quantized form.
 
 ## Goldens
 
