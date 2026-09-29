@@ -132,6 +132,10 @@ type Edit =
     | SetExportSettings of settings: ExportSettings option
     /// ProjectSettingsEditor `removeSeason`: also drops festivals and weather rows of that season; refused for the last season.
     | RemoveSeason of seasonId: string
+    /// ProjectSettingsEditor `moveSeason`: swap a season with the one `delta` places away (±1 for
+    /// the arrows). Festivals, weather rows, crops and the current season refer to seasons by id,
+    /// so they follow; only the order of the year changes. Out of range → no-op.
+    | MoveSeason of seasonId: string * delta: int
     | SetGraphics of graphics: GraphicsSettings
     | SetPlayerVisual of visual: VisualRef option
     /// ArtBindings: attach artwork to the player or a content definition (items also update placed copies).

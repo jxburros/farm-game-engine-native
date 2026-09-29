@@ -95,3 +95,90 @@ let ``packs install once, toggle, reorder, remove and import`` () =
     let imported = removed |> apply (ImportPack "content-default")
     Assert.Empty imported.ContentPacks
     Assert.True(imported.Npcs |> Seq.exists (fun n -> n.Id = "npc-farmer"))
+
+[<Fact>]
+let ``moving a season reorders the year and keeps festivals and weather on their season`` () =
+    let project = starter ()
+    let calendar = project.Settings.Calendar
+    let festival = { (Defaults.newFestival project calendar).Value with SeasonId = "summer"; Day = 5.0 }
+    let project = project |> apply (SetSettings { project.Settings with Calendar = { calendar with Festivals = [ festival ] } })
+    let ids (p: GameProject) = p.Settings.Calendar.Seasons |> List.map (fun s -> s.Id)
+    let moved = project |> apply (MoveSeason("summer", -1))
+    Assert.Equal<string list>([ "summer"; "spring"; "fall"; "winter" ], ids moved)
+    Assert.Equal<CalendarFestival list>(project.Settings.Calendar.Festivals, moved.Settings.Calendar.Festivals)
+    Assert.Equal(project.Weather, moved.Weather)
+    Assert.Equal(project.CurrentSeason, moved.CurrentSeason)
+    Assert.True((errors moved).IsEmpty, describe (errors moved))
+    Assert.Equal<string list>([ "spring"; "summer"; "fall"; "winter" ], ids (moved |> apply (MoveSeason("summer", 1))))
+    // The ends and unknown ids are refused.
+    Assert.Same(project, project |> apply (MoveSeason("spring", -1)))
+    Assert.Same(project, project |> apply (MoveSeason("winter", 1)))
+    Assert.Same(project, project |> apply (MoveSeason("monsoon", 1)))
+    Assert.Same(project, project |> apply (MoveSeason("fall", 0)))
+    Assert.False(SettingsForms.canMoveSeason project "spring" -1)
+    Assert.True(SettingsForms.canMoveSeason project "spring" 1)
+    Assert.False(SettingsForms.canMoveSeason project "winter" 1)
+    // One undo step.
+    let doc = Document.create project |> Document.apply (MoveSeason("fall", 1))
+    Assert.Equal<string list>([ "spring"; "summer"; "winter"; "fall" ], ids doc.Project)
+    Assert.Same(project, (Document.undo doc).Project)
+
+[<Fact>]
+let ``weather odds save the changed cells as one undo step`` () =
+    let project = starter ()
+    let weatherIds = project.Weather.Types |> List.map (fun t -> t.Id)
+    Assert.Contains("storm", weatherIds)
+    let before = SettingsForms.weatherWeight project "spring" "storm"
+    let sunny = SettingsForms.weatherWeight project "spring" "sun"
+    let edit =
+        SettingsForms.weatherOdds project
+            [ "spring", "storm", before + 4.0
+              "spring", "sun", sunny // unchanged: no edit
+              "summer", "rain", -3.0 // negative → removed
+              "monsoon", "storm", 5.0 // unknown season: ignored
+              "spring", "hail", 2.0 ] // unknown type: ignored
+    match edit with
+    | Batch(_, edits) -> Assert.Equal(2, edits.Length)
+    | other -> failwithf "expected a batch, got %A" other
+    let doc = Document.create project |> Document.apply edit
+    Assert.Equal(before + 4.0, SettingsForms.weatherWeight doc.Project "spring" "storm")
+    Assert.Equal(0.0, SettingsForms.weatherWeight doc.Project "summer" "rain")
+    Assert.Equal(sunny, SettingsForms.weatherWeight doc.Project "spring" "sun")
+    Assert.Same(project, (Document.undo doc).Project)
+    // Saving the same values again changes nothing.
+    let again = SettingsForms.weatherOdds doc.Project [ "spring", "storm", before + 4.0; "spring", "sun", sunny; "spring", "snow", nan; "spring", "fog", infinity ]
+    Assert.Same(doc, doc |> Document.apply again)
+    Assert.Equal(0.0, SettingsForms.cleanWeight nan)
+    Assert.Equal(0.0, SettingsForms.cleanWeight -1.0)
+    Assert.Equal(2.5, SettingsForms.cleanWeight 2.5)
+
+[<Fact>]
+let ``the mine card fills defaults on enable and clamps its fields`` () =
+    let project = starter ()
+    Assert.False project.Mine.Enabled
+    let on = Defaults.mineEnabled project true
+    Assert.True on.Enabled
+    Assert.Equal(Some project.StartSceneId, on.EntranceSceneId)
+    Assert.Equal(Some 1.0, on.EntranceX)
+    Assert.Equal(Some 1.0, on.EntranceY)
+    Assert.NotEmpty on.Bands
+    let enabled = project |> apply (SetMine on)
+    Assert.True((errors enabled).IsEmpty, describe (errors enabled))
+    // Off keeps the settings, so switching on again restores them.
+    let moved = { on with EntranceX = Some 7.0 }
+    let off = Defaults.mineEnabled (enabled |> apply (SetMine moved)) false
+    Assert.False off.Enabled
+    Assert.Equal(Some 7.0, off.EntranceX)
+    let form = SettingsForms.mine enabled true "scene-farm" 3.7 -2.0 0.0 5.0
+    Assert.Equal(Some "scene-farm", form.EntranceSceneId)
+    Assert.Equal(Some 3.0, form.EntranceX)
+    Assert.Equal(Some 0.0, form.EntranceY)
+    Assert.Equal(1.0, form.Floors)
+    Assert.Equal(1.0, form.LadderChance)
+    Assert.Equal(0.02, (SettingsForms.mine enabled true "scene-farm" 1.0 1.0 12.0 0.001).LadderChance)
+    Assert.Equal(0.18, (SettingsForms.mine enabled true "scene-farm" 1.0 1.0 12.0 nan).LadderChance)
+    Assert.Equal(12.0, (SettingsForms.mine enabled true "scene-farm" 1.0 1.0 12.0 0.5).Floors)
+    // An unknown scene keeps the current entrance.
+    Assert.Equal(Some project.StartSceneId, (SettingsForms.mine enabled true "scene-ghost" 1.0 1.0 3.0 0.5).EntranceSceneId)
+    Assert.Equal<MineBand list>(on.Bands, form.Bands)
+    Assert.False (SettingsForms.mine enabled false "scene-farm" 1.0 1.0 3.0 0.5).Enabled

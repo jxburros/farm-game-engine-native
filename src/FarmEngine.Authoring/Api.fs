@@ -102,6 +102,8 @@ type Edits =
     static member SetSettings(settings: ProjectSettings) : Edit = SetSettings settings
     static member SetExportSettings(settings: ExportSettings | null) : Edit = SetExportSettings(Option.ofObj settings)
     static member RemoveSeason(seasonId: string) : Edit = RemoveSeason seasonId
+    /// Season arrows: swap with the season `delta` places away (festivals and weather follow by id).
+    static member MoveSeason(seasonId: string, delta: int) : Edit = MoveSeason(seasonId, delta)
     static member SetGraphics(graphics: GraphicsSettings) : Edit = SetGraphics graphics
     static member SetPlayerVisual(visual: VisualRef | null) : Edit = SetPlayerVisual(Edits.Visual visual)
     static member BindPlayerVisual(visual: VisualRef | null) : Edit = BindVisual(PlayerVisual, Edits.Visual visual)
@@ -373,6 +375,25 @@ type ExportSettingsForm =
         let sink = Sink()
         ChecksExport.run (Document.run project (SetExportSettings(Some settings))) sink
         sink.ToList() |> Array.ofList :> IReadOnlyList<Problem>
+
+/// The Project Settings view's weather odds, mine card and season arrows (`SettingsForms`).
+[<AbstractClass; Sealed>]
+type SettingsForm =
+    /// The weight shown for one season and weather type (0 without an entry).
+    static member WeatherWeight(project: GameProject, seasonId: string, weatherId: string) : float =
+        SettingsForms.weatherWeight project seasonId weatherId
+
+    /// The weather table as one undo step: (season id, weather id, weight) per cell; only the
+    /// changed cells become edits, negative and non-finite weights read as 0 (no entry).
+    static member WeatherOdds(project: GameProject, weights: seq<struct (string * string * float)>) : Edit =
+        SettingsForms.weatherOdds project (weights |> Seq.map (fun (struct (s, w, v)) -> (s, w, v)) |> List.ofSeq)
+
+    /// The mine config from the card's fields, clamped like the web inputs.
+    static member Mine(project: GameProject, enabled: bool, entranceSceneId: string, x: float, y: float, floors: float, ladderChance: float) : MineConfig =
+        SettingsForms.mine project enabled entranceSceneId x y floors ladderChance
+
+    static member CanMoveSeason(project: GameProject, seasonId: string, delta: int) : bool =
+        SettingsForms.canMoveSeason project seasonId delta
 
 /// What `Patterns.Build` hands to C#: the edit to apply, or the message to show.
 [<Sealed>]

@@ -29,6 +29,7 @@
     <Compile Include="EditProject.fs" />
     <Compile Include="Document.fs" />
     <Compile Include="Defaults.fs" />
+    <Compile Include="SettingsForms.fs" />
     <Compile Include="References.fs" />
     <Compile Include="Vocabulary.fs" />
     <Compile Include="Problem.fs" />

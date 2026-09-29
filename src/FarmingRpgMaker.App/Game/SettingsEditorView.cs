@@ -50,6 +50,18 @@ public sealed class SettingsEditorView : UserControl
     private readonly TextBox _exportCredits = new() { Name = "Export_Credits", AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MinHeight = 60 };
     private readonly StackPanel _exportProblems = new() { Name = "ExportSettingsProblems", Spacing = 4 };
     private readonly TextBlock _exportMessage = Ui.Wrapped("", "muted", "small");
+    private readonly StackPanel _weather = new() { Name = "WeatherOdds", Spacing = 6 };
+    private readonly Dictionary<(string Season, string Weather), TextBox> _weatherCells = [];
+    private readonly TextBlock _weatherMessage = Ui.Wrapped("", "muted", "small");
+    private readonly CheckBox _mineEnabled = new() { Name = "Mine_Enabled", Content = "Mine enabled" };
+    private readonly ComboBox _mineScene = new() { Name = "Mine_EntranceScene", MinWidth = 220 };
+    private readonly TextBox _mineX = new() { Name = "Mine_EntranceX", Width = 70 };
+    private readonly TextBox _mineY = new() { Name = "Mine_EntranceY", Width = 70 };
+    private readonly TextBox _mineFloors = new() { Name = "Mine_Floors", Width = 70 };
+    private readonly TextBox _mineLadder = new() { Name = "Mine_LadderChance", Width = 70 };
+    private readonly TextBlock _mineNote = Ui.Wrapped("", "muted", "small");
+    private readonly TextBlock _mineMessage = Ui.Wrapped("", "muted", "small");
+    private readonly StackPanel _mineFields = new() { Name = "MineFields", Spacing = 6 };
 
     public SettingsEditorView(ProjectWorkspace workspace)
     {
@@ -87,6 +99,29 @@ public sealed class SettingsEditorView : UserControl
         save.Name = "SaveSettingsButton";
         var revert = Ui.Button("Revert fields", Refresh, "tool");
         form.Children.Add(Ui.HStack(8, save, revert));
+        form.Children.Add(Ui.Text("WEATHER ODDS PER SEASON", "section"));
+        form.Children.Add(Ui.Wrapped("Weights, rolled at each day start. Rain waters the soil, storms can damage crops. 0 means never.", "muted", "small"));
+        form.Children.Add(_weather);
+        _weatherMessage.Name = "WeatherMessage";
+        form.Children.Add(_weatherMessage);
+        var saveWeather = Ui.Button("Save weather odds", SaveWeather, "accent");
+        saveWeather.Name = "SaveWeatherButton";
+        form.Children.Add(saveWeather);
+        form.Children.Add(Ui.Text("MINE", "section"));
+        form.Children.Add(Ui.Wrapped("Procedural floors below an entrance tile; broken rocks reveal the ladder down.", "muted", "small"));
+        _mineEnabled.Click += (_, _) => ToggleMine();
+        form.Children.Add(_mineEnabled);
+        _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance scene", "muted", "small"), _mineScene));
+        _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance X", "muted", "small"), _mineX, Ui.Text("Y", "muted", "small"), _mineY));
+        _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Floors", "muted", "small"), _mineFloors, Ui.Text("Ladder chance (0.02–1)", "muted", "small"), _mineLadder));
+        _mineNote.Name = "MineNote";
+        _mineFields.Children.Add(_mineNote);
+        var saveMine = Ui.Button("Save mine", SaveMine, "accent");
+        saveMine.Name = "SaveMineButton";
+        _mineFields.Children.Add(saveMine);
+        form.Children.Add(_mineFields);
+        _mineMessage.Name = "MineMessage";
+        form.Children.Add(_mineMessage);
         form.Children.Add(Ui.Text("EXPORT", "section"));
         form.Children.Add(Ui.Wrapped("How File → Export Game names and packages the standalone game. Empty title and version use the project's.", "muted", "small"));
         Field(form, "Game title", _exportTitle);
@@ -150,6 +185,20 @@ public sealed class SettingsEditorView : UserControl
             }
         }, "tool", "small");
         var control = Ui.HStack(8, id, name, days, remove);
+        if (saved && _workspace.Current is { } project)
+        {
+            var up = Ui.Button("↑", () => _workspace.Apply(Edits.MoveSeason(season.Id, -1)), "tool", "small");
+            up.Name = $"Season_Up_{season.Id}";
+            up.IsEnabled = SettingsForm.CanMoveSeason(project, season.Id, -1);
+            ToolTip.SetTip(up, "Earlier in the year");
+            var down = Ui.Button("↓", () => _workspace.Apply(Edits.MoveSeason(season.Id, 1)), "tool", "small");
+            down.Name = $"Season_Down_{season.Id}";
+            down.IsEnabled = SettingsForm.CanMoveSeason(project, season.Id, 1);
+            ToolTip.SetTip(down, "Later in the year");
+            control.Children.Insert(0, down);
+            control.Children.Insert(0, up);
+        }
+
         _seasonRows.Add(new SeasonRow(id, name, days, control));
         _seasons.Children.Add(control);
     }
@@ -220,7 +269,86 @@ public sealed class SettingsEditorView : UserControl
         _festivals.Children.Clear();
         foreach (var festival in settings.Calendar.Festivals) AddFestivalRow(festival);
         _message.Text = "";
+        RefreshWeather(project);
+        RefreshMine(project);
         RefreshExport(project);
+    }
+
+    private void RefreshWeather(GameProject project)
+    {
+        _weather.Children.Clear();
+        _weatherCells.Clear();
+        _weatherMessage.Text = project.Weather.Types.Length == 0 ? "This project has no weather types." : "";
+        foreach (var season in project.Settings.Calendar.Seasons)
+        {
+            var row = Ui.HStack(6, new TextBlock { Text = season.Name, Width = 110, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            foreach (var type in project.Weather.Types)
+            {
+                var cell = Box($"Weather_{season.Id}_{type.Id}", Number(SettingsForm.WeatherWeight(project, season.Id, type.Id)), 55);
+                ToolTip.SetTip(cell, $"{type.Name} in {season.Name}");
+                _weatherCells[(season.Id, type.Id)] = cell;
+                row.Children.Add(Ui.Text(type.Name, "muted", "small"));
+                row.Children.Add(cell);
+            }
+
+            _weather.Children.Add(row);
+        }
+    }
+
+    private void SaveWeather()
+    {
+        if (_workspace.Current is not { } project) return;
+        try
+        {
+            var weights = _weatherCells.Select(cell => (cell.Key.Season, cell.Key.Weather, string.IsNullOrWhiteSpace(cell.Value.Text) ? 0 : Parse(cell.Value))).ToList();
+            _weatherMessage.Text = _workspace.Apply(SettingsForm.WeatherOdds(project, weights)) ? "Weather odds saved." : "No changes were made.";
+        }
+        catch (FormatException error)
+        {
+            _weatherMessage.Text = $"Could not save: {error.Message}";
+        }
+    }
+
+    private void RefreshMine(GameProject project)
+    {
+        var mine = project.Mine;
+        _mineEnabled.IsChecked = mine.Enabled;
+        _mineFields.IsVisible = mine.Enabled;
+        var sceneId = mine.EntranceSceneId.OrNull() ?? project.StartSceneId;
+        _mineScene.Items.Clear();
+        foreach (var scene in project.Scenes) _mineScene.Items.Add(new ComboBoxItem { Content = scene.Name, Tag = scene.Id });
+        _mineScene.SelectedItem = _mineScene.Items.OfType<ComboBoxItem>().FirstOrDefault(item => Equals(item.Tag, sceneId));
+        _mineX.Text = Number(mine.EntranceX.Or(1));
+        _mineY.Text = Number(mine.EntranceY.Or(1));
+        _mineFloors.Text = Number(mine.Floors);
+        _mineLadder.Text = Number(mine.LadderChance);
+        _mineNote.Text = $"Players use the entrance tile to go down; an elevator checkpoint every {Number(mine.ElevatorEvery)} floors.";
+        _mineMessage.Text = "";
+    }
+
+    private void ToggleMine()
+    {
+        if (_workspace.Current is not { } project) return;
+        var enabled = _mineEnabled.IsChecked == true;
+        _workspace.Apply(Edits.SetMine(Defaults.MineEnabled(project, enabled)));
+        _mineMessage.Text = enabled ? "Mine enabled." : "Mine disabled; its settings are kept.";
+    }
+
+    private void SaveMine()
+    {
+        if (_workspace.Current is not { } project) return;
+        try
+        {
+            var sceneId = (_mineScene.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+            var mine = SettingsForm.Mine(project, true, sceneId, Parse(_mineX), Parse(_mineY), Parse(_mineFloors), Parse(_mineLadder));
+            _workspace.Apply(Edits.SetMine(mine));
+            RefreshMine(_workspace.Current!);
+            _mineMessage.Text = "Mine saved.";
+        }
+        catch (FormatException error)
+        {
+            _mineMessage.Text = $"Could not save: {error.Message}";
+        }
     }
 
     private static void Fill(ComboBox box, IEnumerable<PickerOption> options, string? current)
