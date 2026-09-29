@@ -17,7 +17,8 @@ The script builds `cargo build -p farm-wasm --target wasm32-unknown-unknown --re
 `wasm-bindgen --target web` (it installs `wasm-bindgen-cli` of the exact version in
 `Cargo.lock` when needed) and, when `wasm-opt` is on the `PATH`, `wasm-opt -O3`. The output is an
 ES module (`farm_wasm.js`), the module (`farm_wasm_bg.wasm`) and TypeScript declarations
-(`farm_wasm.d.ts`), which a Vite app imports directly.
+(`farm_wasm.d.ts`, which use TypeScript 5.7's typed-array generics such as
+`Uint8ClampedArray<ArrayBuffer>`), which a Vite app imports directly.
 
 Sizes (0.2.0): 9.9 MB after wasm-bindgen, 8.5 MB after `wasm-opt -O3`, 3.0 MB gzipped. About
 6.7 MB is code; the data holds the UI fonts, the plugin guest (QuickJS) and the built-in art.
@@ -172,7 +173,7 @@ Edit Mode's map and the art studio's previews; mirror `fe_preview_*` and `fe_ren
 ## Functions
 
 `hashText(text)` (the FNV-1a state hash), `sfxCues()`, `sfxSamples(cue, sampleRate)`,
-`version()`, `lastPanic()`.
+`version()`, `lastPanic()`. `start()` installs the panic hook; `init` calls it.
 
 ## Errors and panics
 

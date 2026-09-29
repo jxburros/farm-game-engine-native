@@ -86,7 +86,7 @@ export interface FrameResult {
   width: number;
   height: number;
   /** `width × height` RGBA pixels for `new ImageData(pixels, width, height)`; null when not rendered. */
-  pixels: Uint8ClampedArray | null;
+  pixels: Uint8ClampedArray<ArrayBuffer> | null;
   info: FrameInfo;
   /** A save slot or the settings changed: persist `exportStorage()`. */
   storageChanged: boolean;
@@ -117,7 +117,7 @@ export interface StorageDocument {
 export interface RgbaImage {
   width: number;
   height: number;
-  pixels: Uint8ClampedArray;
+  pixels: Uint8ClampedArray<ArrayBuffer>;
 }
 "#;
 
@@ -166,7 +166,7 @@ pub fn hash_text(text: &str) -> Result<String, JsValue> {
 /// `{"type":"editorSnapshot","project":{…},"sceneId":"…","tileSize":28,"padding":12}` answers
 /// the decorated Edit Mode snapshot as a JSON string; `{"type":"rasterize","snapshot":{…},
 /// "scale":1}` answers PNG bytes.
-#[wasm_bindgen(js_name = renderJson, unchecked_return_type = "string | Uint8Array")]
+#[wasm_bindgen(js_name = renderJson, unchecked_return_type = "string | Uint8Array<ArrayBuffer>")]
 pub fn render_json(
     #[wasm_bindgen(unchecked_param_type = "string | object")] request: JsValue,
 ) -> Result<JsValue, JsValue> {
@@ -187,7 +187,7 @@ pub fn sfx_cues() -> Array {
 /// The mono samples (-1..1) of a sound cue at `sampleRate` Hz, before the frame's gain: play
 /// them with WebAudio (`AudioBuffer.copyToChannel`, then a `GainNode` at the cue's gain).
 /// `undefined` for an unknown cue. Cache them per cue: they never change.
-#[wasm_bindgen(js_name = sfxSamples)]
+#[wasm_bindgen(js_name = sfxSamples, unchecked_return_type = "Float32Array<ArrayBuffer> | undefined")]
 pub fn sfx_samples(cue: &str, #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32) -> Option<Float32Array> {
     let preset = farm_runtime::audio::sfx_preset(cue)?;
     Some(Float32Array::from(&preset.render(sample_rate.clamp(3000, 384_000))[..]))

@@ -57,7 +57,7 @@ impl WasmPlayer {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Uint8Array | ArrayBuffer | string | object")] game: JsValue,
-        #[wasm_bindgen(unchecked_param_type = "PlayerOptions | string")] options: Option<JsValue>,
+        #[wasm_bindgen(unchecked_param_type = "PlayerOptions | string | void")] options: Option<JsValue>,
     ) -> Result<WasmPlayer, JsValue> {
         alive()?;
         let game = bytes_arg(&game)?;
