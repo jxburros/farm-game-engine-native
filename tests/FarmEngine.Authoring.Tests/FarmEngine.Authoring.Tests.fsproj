@@ -24,7 +24,7 @@
     <Compile Include="PatternsTests.fs" />
     <Compile Include="PropertyTests.fs" />
     <Compile Include="BrokenProjects.fs" />
-    <Compile Include="ValidationParityTests.fs" />
+    <Compile Include="ValidationCaseTests.fs" />
     <Compile Include="ValidationTests.fs" />
     <Compile Include="CartridgeTests.fs" />
     <Compile Include="SnapshotTests.fs" />
@@ -49,6 +49,5 @@
   <ItemGroup>
     <ProjectReference Include="../../src/FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../../src/FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
-    <ProjectReference Include="../../src/FarmEngine.Schemas/FarmEngine.Schemas.csproj" />
   </ItemGroup>
 </Project>

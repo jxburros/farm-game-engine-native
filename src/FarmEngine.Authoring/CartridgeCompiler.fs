@@ -1,230 +1,202 @@
 namespace FarmEngine.Authoring
 
 open System
-open System.Security.Cryptography
-open System.Text
-open System.Text.Json
-open System.Text.Json.Nodes
-open FarmEngine.Cart
-open FarmEngine.Json
+open System.Collections.Generic
 open FarmEngine.Schemas
-open Google.FlatBuffers
 
 /// The deterministic F# cartridge compiler (format 2, `schemas/cart.fbs`). A project is split
 /// into the compiled content, the inputs of a new game (`start`, Rust `StartState`) and what
 /// presentation reads (`presentation`, Rust `Presentation`); the player never reads project
 /// JSON. The sections stay compatibility JSON until the native-numerics cutover. Every base64
 /// `data:` URL inside them moves to the asset table and is replaced by `asset:<id>`, where the
-/// id is a content hash, so equal files are stored once and ids never depend on order.
+/// id is a content hash, so equal files are stored once and ids never depend on order. Plain F#
+/// throughout (`FlatBufferBuilder`, `Bytes`), so the web version compiles cartridges with the
+/// same code.
 [<AbstractClass; Sealed>]
 type CartridgeCompiler =
     /// The cartridge format this compiler writes (Rust `farm_cart::CART_FORMAT`).
     static member Format = 2u
 
     /// The inputs of `create_game_state` (Rust `StartState::from_project`).
-    static member StartSection(project: GameProject) : JsonObject =
-        let node (value: obj) = JsonSerializer.SerializeToNode(value, value.GetType(), JsonDefaults.Options)
-        let start = JsonObject()
-        let add (name: string) (value: JsonNode | null) = start[name] <- value
-        let addOptional (name: string) (value: obj | null) =
-            match value with
-            | null -> ()
-            | value -> add name (node value)
-        add "id" (JsonValue.Create project.Id)
-        add "gameStartTime" (JsonValue.Create project.GameStartTime)
-        add "settings" (node project.Settings)
-        add "player" (node project.Player)
-        let quests = JsonArray()
-        for quest in project.Quests do
-            let objectives = JsonArray()
-            for objective in quest.Objectives do
-                let entry = JsonObject()
-                entry["id"] <- JsonValue.Create objective.Id
-                entry["progress"] <- JsonValue.Create objective.Progress
-                entry["completed"] <- JsonValue.Create objective.Completed
-                objectives.Add entry
-            let entry = JsonObject()
-            entry["id"] <- JsonValue.Create quest.Id
-            entry["status"] <- JsonValue.Create quest.Status
-            entry["objectives"] <- objectives
-            quests.Add entry
-        add "quests" quests
-        let npcs = JsonArray()
-        for npc in project.Npcs do
-            let entry = JsonObject()
-            entry["id"] <- JsonValue.Create npc.Id
-            entry["x"] <- JsonValue.Create npc.X
-            entry["y"] <- JsonValue.Create npc.Y
-            entry["sceneId"] <- JsonValue.Create npc.SceneId
-            npcs.Add entry
-        add "npcs" npcs
-        add "eventFlags" (node project.EventFlags)
-        add "currentTimeMinutes" (JsonValue.Create project.CurrentTimeMinutes)
-        add "currentDay" (JsonValue.Create project.CurrentDay)
-        add "currentSeason" (JsonValue.Create project.CurrentSeason)
-        add "currentYear" (JsonValue.Create project.CurrentYear)
-        addOptional "currentWeatherId" project.CurrentWeatherId
-        add "scenes" (node project.Scenes)
+    static member StartSection(project: GameProject) : Json =
+        let optional (name: string) (value: 'T option) (encode: 'T -> Json) = value |> Option.map (fun v -> name, encode v) |> Option.toList
+        let quests =
+            project.Quests
+            |> List.map (fun quest ->
+                JObject
+                    [ "id", JString quest.Id
+                      "status", JString quest.Status
+                      "objectives",
+                      JArray(
+                          quest.Objectives
+                          |> List.map (fun objective ->
+                              JObject [ "id", JString objective.Id; "progress", JNumber objective.Progress; "completed", JBool objective.Completed ])
+                      ) ])
+        let npcs =
+            project.Npcs
+            |> List.map (fun npc ->
+                JObject [ "id", JString npc.Id; "x", JNumber npc.X; "y", JNumber npc.Y; "sceneId", JString npc.SceneId ])
         // meta.packs of a new game: the enabled packs in load order (Rust `stamp_packs`).
-        let packs = JsonArray()
-        for install in project.ContentPacks do
-            if install.Enabled then
-                let entry = JsonObject()
-                entry["id"] <- JsonValue.Create install.Pack.Manifest.Id
-                entry["version"] <- JsonValue.Create install.Pack.Manifest.Version
-                packs.Add entry
-        add "packs" packs
-        addOptional "socialState" project.SocialState
-        add "animals" (node project.Animals)
-        addOptional "mineDeepestFloor" (Option.toObj (Option.ofNullable project.MineDeepestFloor |> Option.map box))
-        addOptional "quarantinedItems" project.QuarantinedItems
-        addOptional "rngState" project.RngState
-        start
+        let packs =
+            project.ContentPacks
+            |> List.filter (fun install -> install.Enabled)
+            |> List.map (fun install -> JObject [ "id", JString install.Pack.Manifest.Id; "version", JString install.Pack.Manifest.Version ])
+        JObject
+            [ yield "id", JString project.Id
+              yield "gameStartTime", JNumber project.GameStartTime
+              yield "settings", SchemaJson.encodeProjectSettings project.Settings
+              yield "player", SchemaJson.encodePlayer project.Player
+              yield "quests", JArray quests
+              yield "npcs", JArray npcs
+              yield "eventFlags", Encode.dict JBool project.EventFlags
+              yield "currentTimeMinutes", JNumber project.CurrentTimeMinutes
+              yield "currentDay", JNumber project.CurrentDay
+              yield "currentSeason", JString project.CurrentSeason
+              yield "currentYear", JNumber project.CurrentYear
+              yield! optional "currentWeatherId" project.CurrentWeatherId JString
+              yield "scenes", Encode.list SchemaJson.encodeScene project.Scenes
+              yield "packs", JArray packs
+              yield! optional "socialState" project.SocialState (Encode.dict SchemaJson.encodeNpcSocialState)
+              yield "animals", Encode.list SchemaJson.encodeAnimalState project.Animals
+              yield! optional "mineDeepestFloor" project.MineDeepestFloor JNumber
+              yield! optional "quarantinedItems" project.QuarantinedItems (Encode.list SchemaJson.encodeInventorySlot)
+              yield! optional "rngState" project.RngState SchemaJson.encodeRngState ]
 
     /// What the renderer and the game panels read (Rust `Presentation::from_project`).
-    static member PresentationSection(project: GameProject) : JsonObject =
-        let node (value: obj) = JsonSerializer.SerializeToNode(value, value.GetType(), JsonDefaults.Options)
-        let presentation = JsonObject()
-        let addOptional (name: string) (value: obj | null) =
-            match value with
-            | null -> ()
-            | value -> presentation[name] <- node value
-        presentation["name"] <- JsonValue.Create project.Name
-        // Only the art the game uses ships (docs/EXPORT.md); the editor keeps the rest.
-        presentation["customAssets"] <- node (Collections.Generic.List<CustomAsset>(AssetUsage.used project))
-        addOptional "customCrops" project.CustomCrops
-        addOptional "playerCustomImage" project.PlayerCustomImage
-        addOptional "playerVisual" project.PlayerVisual
-        addOptional "graphics" project.Graphics
-        presentation["gamePanels"] <-
-            match project.GamePanels with
-            | null -> JsonArray() :> JsonNode | null
-            | panels -> node panels
-        presentation["showMadeWithCredit"] <- JsonValue.Create project.Settings.ShowMadeWithCredit
-        presentation
+    static member PresentationSection(project: GameProject) : Json =
+        let optional (name: string) (value: 'T option) (encode: 'T -> Json) = value |> Option.map (fun v -> name, encode v) |> Option.toList
+        JObject
+            [ yield "name", JString project.Name
+              // Only the art the game uses ships (docs/EXPORT.md); the editor keeps the rest.
+              yield "customAssets", Encode.list SchemaJson.encodeCustomAsset (AssetUsage.used project)
+              yield! optional "customCrops" project.CustomCrops (Encode.list SchemaJson.encodeCustomCropDefinition)
+              yield! optional "playerCustomImage" project.PlayerCustomImage JString
+              yield! optional "playerVisual" project.PlayerVisual SchemaJson.encodeVisualRef
+              yield! optional "graphics" project.Graphics SchemaJson.encodeGraphicsSettings
+              yield "gamePanels", Encode.list SchemaJson.encodeGamePanel (defaultArg project.GamePanels [])
+              yield "showMadeWithCredit", JBool project.Settings.ShowMadeWithCredit ]
 
-    /// Moves every base64 `data:` URL string inside `node` into `assets` (id → mime, bytes) and
+    /// Moves every base64 `data:` URL string inside `json` into `assets` (id → mime, bytes) and
     /// replaces it with `asset:<id>`. Other strings (and malformed data URLs) stay as they are.
-    static member ExtractAssets(root: JsonNode, assets: Collections.Generic.SortedDictionary<string, string * byte[]>) : unit =
+    static member ExtractAssets(json: Json, assets: SortedDictionary<string, string * byte[]>) : Json =
         let rewrite (text: string) : string option =
-            if not (text.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) then None
+            if not (text.Length >= 5 && text.Substring(0, 5).ToLowerInvariant() = "data:") then None
             else
                 let comma = text.IndexOf ','
                 if comma < 0 then None
                 else
                     let header = text.Substring(5, comma - 5)
-                    if not (header.EndsWith(";base64", StringComparison.OrdinalIgnoreCase)) then None
+                    if not (header.ToLowerInvariant().EndsWith(";base64", StringComparison.Ordinal)) then None
                     else
                         let mime = header.Substring(0, header.Length - 7)
                         let mime = if String.IsNullOrEmpty mime then "application/octet-stream" else mime
-                        match (try Some(Convert.FromBase64String(text.Substring(comma + 1).Trim())) with :? FormatException -> None) with
+                        match Bytes.fromBase64 (JsNumber.trim (text.Substring(comma + 1))) with
                         | None -> None
                         | Some bytes ->
-                            let hash = SHA256.HashData(Array.append (Encoding.UTF8.GetBytes(mime + "\n")) bytes)
-                            let id = Convert.ToHexString(hash, 0, 16).ToLowerInvariant()
-                            assets[id] <- (mime, bytes)
+                            let hash = Bytes.sha256 (Array.append (Bytes.utf8 (mime + "\n")) bytes)
+                            let id = Bytes.toHex (Array.sub hash 0 16)
+                            assets.[id] <- (mime, bytes)
                             Some("asset:" + id)
-        let rec walk (node: JsonNode | null) : JsonNode | null =
-            match node with
-            | :? JsonObject as obj ->
-                for key in obj |> Seq.map (fun pair -> pair.Key) |> Array.ofSeq do
-                    let child = obj[key]
-                    let replaced = walk child
-                    if not (Object.ReferenceEquals(child, replaced)) then obj[key] <- replaced
-                obj
-            | :? JsonArray as array ->
-                for i in 0 .. array.Count - 1 do
-                    let child = array[i]
-                    let replaced = walk child
-                    if not (Object.ReferenceEquals(child, replaced)) then array[i] <- replaced
-                array
-            | :? JsonValue as value ->
-                match value.GetValueKind() with
-                | JsonValueKind.String ->
-                    match rewrite (value.GetValue<string>()) with
-                    | Some reference -> JsonValue.Create reference
-                    | None -> value
-                | _ -> value
+        let rec walk (json: Json) : Json =
+            match json with
+            | JObject members -> JObject(members |> List.map (fun (key, value) -> key, walk value))
+            | JArray items -> JArray(List.map walk items)
+            | JString text ->
+                match rewrite text with
+                | Some reference -> JString reference
+                | None -> json
             | other -> other
-        walk root |> ignore
+        walk json
 
     static member Compile(project: GameProject) : byte[] =
         let problems = Problems.collect project |> Problems.errors
         if not problems.IsEmpty then
-            raise (InvalidOperationException(problems |> List.map (fun p -> p.Path + ": " + p.Message) |> String.concat "\n"))
+            invalidOp (problems |> List.map (fun p -> p.Path + ": " + p.Message) |> String.concat "\n")
 
-        let settings =
-            match project.Export with
-            | null -> Defaults.newExportSettings project
-            | export -> export
-        let title = match settings.Title with null -> project.Name | value -> value
-        let version = match settings.Version with null -> project.Version | value -> value
-        let executable = match settings.ExecutableName with null -> Defaults.slugId title Seq.empty "game" | value -> value
+        let settings = defaultArg project.Export (Defaults.newExportSettings project)
+        let title = defaultArg settings.Title project.Name
+        let version = defaultArg settings.Version project.Version
+        let executable = defaultArg settings.ExecutableName (Defaults.slugId title Seq.empty "game")
 
         // JSON sections, with their embedded files moved to the asset table.
-        let assets = Collections.Generic.SortedDictionary<string, string * byte[]>(StringComparer.Ordinal)
-        let section (node: JsonNode) =
-            CartridgeCompiler.ExtractAssets(node, assets)
-            Encoding.UTF8.GetBytes(node.ToJsonString(JsonDefaults.Options))
-        let content = ContentCompiler.compile project
-        let contentNode =
-            match JsonSerializer.SerializeToNode<GameContent>(content, JsonDefaults.Options) with
-            | null -> invalidOp "Compiled content serialized to null."
-            | node -> node
-        let contentBytes = section contentNode
+        let assets = SortedDictionary<string, string * byte[]>(StringComparer.Ordinal)
+        let section (json: Json) = Bytes.utf8 (Json.stringify (CartridgeCompiler.ExtractAssets(json, assets)))
+        let contentBytes = section (SchemaJson.encodeGameContent (ContentCompiler.compile project))
         let startBytes = section (CartridgeCompiler.StartSection project)
         let presentationBytes = section (CartridgeCompiler.PresentationSection project)
 
         let builder = FlatBufferBuilder(4096)
-        let stringOffset (value: string) = builder.CreateString value
-        let optionalStringOffset (value: string | null) =
+        let optionalString (value: string option) =
             match value with
-            | null -> StringOffset(0)
-            | text -> stringOffset text
+            | None -> 0
+            | Some text -> builder.CreateString text
 
-        // FlatBuffers writes back-to-front. Create all referenced values before each table.
+        // FlatBuffers writes back-to-front. Create all referenced values before each table; the
+        // fields go in the order flatc's `Create…` helpers add them.
         let assetOffsets =
             [| for KeyValue(id, (mime, bytes)) in assets ->
-                   let idOffset = stringOffset id
-                   let mimeOffset = stringOffset mime
-                   let dataOffset = Asset.CreateDataVector(builder, bytes)
-                   Asset.CreateAsset(builder, idOffset, mimeOffset, dataOffset) |]
-        let assetsOffset = Cartridge.CreateAssetsVector(builder, assetOffsets)
+                   let idOffset = builder.CreateString id
+                   let mimeOffset = builder.CreateString mime
+                   let dataOffset = builder.CreateByteVector bytes
+                   builder.StartTable 3
+                   builder.AddOffsetField(2, dataOffset)
+                   builder.AddOffsetField(1, mimeOffset)
+                   builder.AddOffsetField(0, idOffset)
+                   builder.EndTable() |]
+        let assetsOffset = builder.CreateOffsetVector assetOffsets
         // Plugins of the enabled packs in load order, each with the hooks its manifest grants
-        // (the C# `Plugins.PluginSpecsFromProject`, Rust `farm_plugins::plugin_specs_from_project`).
+        // (Rust `farm_plugins::plugin_specs_from_project`).
         let pluginOffsets =
             [| for install in project.ContentPacks do
                    if install.Enabled then
                        let pack = install.Pack
-                       // JSON nulls can reach these lists despite their annotations (as `?? []` in C#).
-                       let orEmpty (items: seq<'T>) = if isNull (box items) then Seq.empty else items
-                       let granted = Collections.Generic.HashSet<string>(orEmpty pack.Manifest.Permissions.Hooks, StringComparer.Ordinal)
-                       for plugin in orEmpty pack.Plugins do
-                               let hooks = orEmpty plugin.Hooks |> Seq.filter granted.Contains |> Seq.map stringOffset |> Array.ofSeq
-                               let hooksOffset = Plugin.CreateGrantedHooksVector(builder, hooks)
-                               let idOffset = stringOffset (pack.Manifest.Id + ":" + plugin.Id)
-                               let packOffset = stringOffset pack.Manifest.Id
-                               let sourceOffset = stringOffset plugin.Source
-                               yield Plugin.CreatePlugin(builder, idOffset, packOffset, sourceOffset, hooksOffset) |]
-        let pluginsOffset = Cartridge.CreatePluginsVector(builder, pluginOffsets)
-        let titleOffset = stringOffset title
-        let versionOffset = stringOffset version
-        let gameIdOffset = stringOffset settings.GameId
-        let authorOffset = optionalStringOffset settings.Author
-        let companyOffset = optionalStringOffset settings.Company
-        let executableOffset = stringOffset executable
-        let scaleOffset = stringOffset settings.PixelScale
-        let creditsOffset = optionalStringOffset settings.Credits
-        let info =
-            GameInfo.CreateGameInfo(builder, titleOffset, versionOffset, gameIdOffset,
-                                    authorOffset, companyOffset, executableOffset,
-                                    uint32 settings.Window.Width, uint32 settings.Window.Height,
-                                    settings.Window.Fullscreen, scaleOffset, creditsOffset)
-        let contentOffset = Cartridge.CreateContentJsonVector(builder, contentBytes)
-        let startOffset = Cartridge.CreateStartJsonVector(builder, startBytes)
-        let presentationOffset = Cartridge.CreatePresentationJsonVector(builder, presentationBytes)
-        let cart =
-            Cartridge.CreateCartridge(builder, CartridgeCompiler.Format, uint32 project.SchemaVersion, info,
-                                      contentOffset, startOffset, presentationOffset, assetsOffset, pluginsOffset)
-        Cartridge.FinishCartridgeBuffer(builder, cart)
-        builder.SizedByteArray()
+                       let granted = HashSet<string>(pack.Manifest.Permissions.Hooks)
+                       for plugin in pack.Plugins do
+                           let hooks = plugin.Hooks |> List.filter granted.Contains |> List.map builder.CreateString |> Array.ofList
+                           let hooksOffset = builder.CreateOffsetVector hooks
+                           let idOffset = builder.CreateString(pack.Manifest.Id + ":" + plugin.Id)
+                           let packOffset = builder.CreateString pack.Manifest.Id
+                           let sourceOffset = builder.CreateString plugin.Source
+                           builder.StartTable 4
+                           builder.AddOffsetField(3, hooksOffset)
+                           builder.AddOffsetField(2, sourceOffset)
+                           builder.AddOffsetField(1, packOffset)
+                           builder.AddOffsetField(0, idOffset)
+                           yield builder.EndTable() |]
+        let pluginsOffset = builder.CreateOffsetVector pluginOffsets
+        let titleOffset = builder.CreateString title
+        let versionOffset = builder.CreateString version
+        let gameIdOffset = builder.CreateString settings.GameId
+        let authorOffset = optionalString settings.Author
+        let companyOffset = optionalString settings.Company
+        let executableOffset = builder.CreateString executable
+        let scaleOffset = builder.CreateString settings.PixelScale
+        let creditsOffset = optionalString settings.Credits
+        builder.StartTable 11
+        builder.AddOffsetField(10, creditsOffset)
+        builder.AddOffsetField(9, scaleOffset)
+        builder.AddUInt32Field(7, uint32 settings.Window.Height, 800u)
+        builder.AddUInt32Field(6, uint32 settings.Window.Width, 1280u)
+        builder.AddOffsetField(5, executableOffset)
+        builder.AddOffsetField(4, companyOffset)
+        builder.AddOffsetField(3, authorOffset)
+        builder.AddOffsetField(2, gameIdOffset)
+        builder.AddOffsetField(1, versionOffset)
+        builder.AddOffsetField(0, titleOffset)
+        builder.AddBoolField(8, settings.Window.Fullscreen, false)
+        let info = builder.EndTable()
+        let contentOffset = builder.CreateByteVector contentBytes
+        let startOffset = builder.CreateByteVector startBytes
+        let presentationOffset = builder.CreateByteVector presentationBytes
+        builder.StartTable 9
+        builder.AddOffsetField(8, pluginsOffset)
+        builder.AddOffsetField(7, assetsOffset)
+        builder.AddOffsetField(6, presentationOffset)
+        builder.AddOffsetField(5, startOffset)
+        builder.AddOffsetField(4, contentOffset)
+        builder.AddOffsetField(2, info)
+        builder.AddUInt32Field(1, uint32 project.SchemaVersion, 0u)
+        builder.AddUInt32Field(0, CartridgeCompiler.Format, 0u)
+        let cart = builder.EndTable()
+        builder.Finish(cart, "FGCT")
+        builder.ToArray()

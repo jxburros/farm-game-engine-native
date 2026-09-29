@@ -1,6 +1,5 @@
 namespace FarmEngine.Authoring
 
-open System.Collections.Generic
 open FarmEngine.Schemas
 
 /// What removing a thing takes with it. The web editors mostly only filter the list they own
@@ -10,92 +9,83 @@ open FarmEngine.Schemas
 /// project never gains dangling ids from an edit. Each function returns the same instance when
 /// there was nothing to scrub.
 module Cleanup =
-    let private nullable (value: string option) : objnull =
-        match value with
-        | Some v -> box v
-        | None -> null
-
-    let private setField (record: 'T) (name: string) (value: objnull) : 'T = Records.withValue record name value
-
     /// `Some list'` when `f` removed (None) or changed at least one element.
-    let private chooseChanged (f: 'T -> 'T option) (items: List<'T>) : List<'T> option =
-        let mutable changed = false
-        let next = List<'T>(items.Count)
-        for item in items do
-            match f item with
-            | Some mapped ->
-                if not (obj.Equals(mapped, item)) then changed <- true
-                next.Add mapped
-            | None -> changed <- true
-        if changed then Some next else None
+    let private chooseChanged (f: 'T -> 'T option) (items: 'T list) : 'T list option =
+        let mutable any = false
+        let next =
+            items
+            |> List.choose (fun item ->
+                match f item with
+                | Some mapped ->
+                    if Lists.changed mapped item then any <- true
+                    Some mapped
+                | None ->
+                    any <- true
+                    None)
+        if any then Some next else None
 
-    let private mapField (record: 'T) (name: string) (next: List<'U> option) : 'T =
+    /// `record` with a list field replaced when the helper changed it, else the same instance.
+    let private withList (record: 'T) (next: 'U list option) (set: 'T -> 'U list -> 'T) : 'T =
         match next with
-        | Some list -> setField record name (box list)
+        | Some list -> set record list
         | None -> record
 
     // ---- traversals over the places a reference can hide ----
 
-    let private mapNpcs (f: Npc -> Npc) (project: GameProject) = Proj.update "Npcs" (Lists.mapChanged f project.Npcs) project
-    let private mapItems (f: Item -> Item) (project: GameProject) = Proj.update "Items" (Lists.mapChanged f project.Items) project
-    let private mapQuests (f: Quest -> Quest) (project: GameProject) = Proj.update "Quests" (Lists.mapChanged f project.Quests) project
-    let private mapShops (f: ShopDefinition -> ShopDefinition) (project: GameProject) = Proj.update "Shops" (Lists.mapChanged f project.Shops) project
-    let private mapRecipes (f: RecipeDefinition -> RecipeDefinition) (project: GameProject) = Proj.update "Recipes" (Lists.mapChanged f project.Recipes) project
-    let private mapNodeTypes (f: NodeTypeDefinition -> NodeTypeDefinition) (project: GameProject) = Proj.update "NodeTypes" (Lists.mapChanged f project.NodeTypes) project
-    let private mapMachineTypes (f: MachineTypeDefinition -> MachineTypeDefinition) (project: GameProject) = Proj.update "MachineTypes" (Lists.mapChanged f project.MachineTypes) project
-    let private mapSpecies (f: AnimalSpeciesDefinition -> AnimalSpeciesDefinition) (project: GameProject) = Proj.update "AnimalSpecies" (Lists.mapChanged f project.AnimalSpecies) project
-    let private mapFishTables (f: FishTable -> FishTable) (project: GameProject) = Proj.update "FishTables" (Lists.mapChanged f project.FishTables) project
-    let private mapAssets (f: CustomAsset -> CustomAsset) (project: GameProject) = Proj.update "CustomAssets" (Lists.mapChanged f project.CustomAssets) project
+    let private mapNpcs f (project: GameProject) = withList project (Lists.mapChanged f project.Npcs) (fun p l -> { p with Npcs = l })
+    let private mapItems f (project: GameProject) = withList project (Lists.mapChanged f project.Items) (fun p l -> { p with Items = l })
+    let private mapQuests f (project: GameProject) = withList project (Lists.mapChanged f project.Quests) (fun p l -> { p with Quests = l })
+    let private mapShops f (project: GameProject) = withList project (Lists.mapChanged f project.Shops) (fun p l -> { p with Shops = l })
+    let private mapRecipes f (project: GameProject) = withList project (Lists.mapChanged f project.Recipes) (fun p l -> { p with Recipes = l })
+    let private mapNodeTypes f (project: GameProject) = withList project (Lists.mapChanged f project.NodeTypes) (fun p l -> { p with NodeTypes = l })
+    let private mapMachineTypes f (project: GameProject) = withList project (Lists.mapChanged f project.MachineTypes) (fun p l -> { p with MachineTypes = l })
+    let private mapSpecies f (project: GameProject) = withList project (Lists.mapChanged f project.AnimalSpecies) (fun p l -> { p with AnimalSpecies = l })
+    let private mapFishTables f (project: GameProject) = withList project (Lists.mapChanged f project.FishTables) (fun p l -> { p with FishTables = l })
+    let private mapAssets f (project: GameProject) = withList project (Lists.mapChanged f project.CustomAssets) (fun p l -> { p with CustomAssets = l })
 
     let private mapCustomCrops (f: CustomCropDefinition -> CustomCropDefinition) (project: GameProject) =
         match project.CustomCrops with
-        | null -> project
-        | crops -> Proj.update "CustomCrops" (Lists.mapChanged f crops) project
+        | None -> project
+        | Some crops -> withList project (Lists.mapChanged f crops) (fun p l -> { p with CustomCrops = Some l })
 
     let private mapPanels (f: GamePanel -> GamePanel option) (project: GameProject) =
         match project.GamePanels with
-        | null -> project
-        | panels -> Proj.update "GamePanels" (chooseChanged f panels) project
+        | None -> project
+        | Some panels -> withList project (chooseChanged f panels) (fun p l -> { p with GamePanels = Some l })
 
     let private mapTiles (f: Tile -> Tile) (project: GameProject) = Proj.mapScenes (Proj.mapTiles f) project
 
     /// Dialogue options wherever dialogues live (`project.Dialogues` and every `npc.Dialogue`).
     let private mapDialogueOptions (f: DialogueOption -> DialogueOption option) (project: GameProject) =
-        let mapDialogue (d: Dialogue) = mapField d "Options" (chooseChanged f d.Options)
-        let mapNpc (n: Npc) = mapField n "Dialogue" (Lists.mapChanged mapDialogue n.Dialogue)
-        project
-        |> fun p -> Proj.update "Dialogues" (Lists.mapChanged mapDialogue p.Dialogues) p
-        |> mapNpcs mapNpc
+        let mapDialogue (d: Dialogue) = withList d (chooseChanged f d.Options) (fun d l -> { d with Options = l })
+        let mapNpc (n: Npc) = withList n (Lists.mapChanged mapDialogue n.Dialogue) (fun n l -> { n with Dialogue = l })
+        let project = withList project (Lists.mapChanged mapDialogue project.Dialogues) (fun p l -> { p with Dialogues = l })
+        mapNpcs mapNpc project
 
     /// Outcomes wherever they run: events, actions and minigame result tiers. `None` drops the outcome.
     let private mapOutcomes (f: EventOutcome -> EventOutcome option) (project: GameProject) =
-        let mapEvent (e: GameEvent) = mapField e "Outcomes" (chooseChanged f e.Outcomes)
-        let mapAction (a: ActionDef) = mapField a "Outcomes" (chooseChanged f a.Outcomes)
-        let mapTier (t: MinigameResultTier) = mapField t "Outcomes" (chooseChanged f t.Outcomes)
-        let mapMinigame (m: MinigameDef) = mapField m "ResultTiers" (Lists.mapChanged mapTier m.ResultTiers)
-        project
-        |> fun p -> Proj.update "Events" (Lists.mapChanged mapEvent p.Events) p
-        |> fun p -> Proj.update "Actions" (Lists.mapChanged mapAction p.Actions) p
-        |> fun p -> Proj.update "Minigames" (Lists.mapChanged mapMinigame p.Minigames) p
+        let mapEvent (e: GameEvent) = withList e (chooseChanged f e.Outcomes) (fun e l -> { e with Outcomes = l })
+        let mapAction (a: ActionDef) = withList a (chooseChanged f a.Outcomes) (fun a l -> { a with Outcomes = l })
+        let mapTier (t: MinigameResultTier) = withList t (chooseChanged f t.Outcomes) (fun t l -> { t with Outcomes = l })
+        let mapMinigame (m: MinigameDef) = withList m (Lists.mapChanged mapTier m.ResultTiers) (fun m l -> { m with ResultTiers = l })
+        let project = withList project (Lists.mapChanged mapEvent project.Events) (fun p l -> { p with Events = l })
+        let project = withList project (Lists.mapChanged mapAction project.Actions) (fun p l -> { p with Actions = l })
+        withList project (Lists.mapChanged mapMinigame project.Minigames) (fun p l -> { p with Minigames = l })
 
     /// Conditions wherever they gate: events and actions. `None` drops the condition.
     let private mapConditions (f: EventCondition -> EventCondition option) (project: GameProject) =
-        let mapEvent (e: GameEvent) = mapField e "Conditions" (chooseChanged f e.Conditions)
-        let mapAction (a: ActionDef) = mapField a "Conditions" (chooseChanged f a.Conditions)
-        project
-        |> fun p -> Proj.update "Events" (Lists.mapChanged mapEvent p.Events) p
-        |> fun p -> Proj.update "Actions" (Lists.mapChanged mapAction p.Actions) p
+        let mapEvent (e: GameEvent) = withList e (chooseChanged f e.Conditions) (fun e l -> { e with Conditions = l })
+        let mapAction (a: ActionDef) = withList a (chooseChanged f a.Conditions) (fun a l -> { a with Conditions = l })
+        let project = withList project (Lists.mapChanged mapEvent project.Events) (fun p l -> { p with Events = l })
+        withList project (Lists.mapChanged mapAction project.Actions) (fun p l -> { p with Actions = l })
 
     let private dropWhen (matches: bool) (value: 'T) : 'T option = if matches then None else Some value
 
-    /// `current` names `id` (a null reference never does).
-    let private refers (current: string | null) (id: string) : bool =
-        match current with
-        | null -> false
-        | value -> value = id
+    /// `current` names `id`.
+    let private refers (current: string option) (id: string) : bool = current = Some id
 
-    let private clearIf (record: 'T) (name: string) (current: string | null) (id: string) : 'T =
-        if refers current id then setField record name null else record
+    /// `None` in place of a reference to `id`, else the reference unchanged.
+    let private unless (id: string) (current: string option) : string option = if refers current id then None else current
 
     // ---- one function per removed kind ----
 
@@ -103,158 +93,172 @@ module Cleanup =
     /// fish entries, quest targets and rewards, dialogue gifts, item conditions and outcomes,
     /// dropped copies on tiles, and interface entries that showed it.
     let dropItem (itemId: string) (project: GameProject) : GameProject =
-        let refersTo (id: string | null) = refers id itemId
+        let refersTo (id: string option) = refers id itemId
         project
         |> fun p ->
             match Lists.filterChanged (fun (slot: InventorySlot) -> slot.Item.Id <> itemId) p.Player.Inventory with
-            | Some inventory -> Proj.set "Player" (box (setField p.Player "Inventory" (box inventory))) p
+            | Some inventory -> { p with Player = { p.Player with Inventory = inventory } }
             | None -> p
-        |> mapShops (fun s -> mapField s "Stock" (Lists.filterChanged (fun (e: ShopStockEntry) -> e.ItemId <> itemId) s.Stock))
+        |> mapShops (fun s -> withList s (Lists.filterChanged (fun (e: ShopStockEntry) -> e.ItemId <> itemId) s.Stock) (fun s l -> { s with Stock = l }))
         |> mapRecipes (fun r ->
-            let r = mapField r "Inputs" (Lists.filterChanged (fun (i: RecipeIngredient) -> i.ItemId <> itemId) r.Inputs)
-            mapField r "Outputs" (Lists.filterChanged (fun (i: RecipeIngredient) -> i.ItemId <> itemId) r.Outputs))
-        |> mapNodeTypes (fun n -> mapField n "Drops" (Lists.filterChanged (fun (d: NodeDrop) -> d.ItemId <> itemId) n.Drops))
-        |> mapMachineTypes (fun m -> clearIf m "ItemId" m.ItemId itemId)
+            let r = withList r (Lists.filterChanged (fun (i: RecipeIngredient) -> i.ItemId <> itemId) r.Inputs) (fun r l -> { r with Inputs = l })
+            withList r (Lists.filterChanged (fun (i: RecipeIngredient) -> i.ItemId <> itemId) r.Outputs) (fun r l -> { r with Outputs = l }))
+        |> mapNodeTypes (fun n -> withList n (Lists.filterChanged (fun (d: NodeDrop) -> d.ItemId <> itemId) n.Drops) (fun n l -> { n with Drops = l }))
+        |> mapMachineTypes (fun m -> if refersTo m.ItemId then { m with ItemId = None } else m)
         |> mapSpecies (fun s ->
-            let s = clearIf s "FeedItemId" s.FeedItemId itemId
-            if s.ProductItemId = itemId then setField s "ProductItemId" (box "") else s)
+            let s = if refersTo s.FeedItemId then { s with FeedItemId = None } else s
+            if s.ProductItemId = itemId then { s with ProductItemId = "" } else s)
         |> mapFishTables (fun t ->
-            let t = mapField t "Entries" (Lists.filterChanged (fun (e: FishTableEntry) -> e.ItemId <> itemId) t.Entries)
-            clearIf t "JunkItemId" t.JunkItemId itemId)
+            let t = withList t (Lists.filterChanged (fun (e: FishTableEntry) -> e.ItemId <> itemId) t.Entries) (fun t l -> { t with Entries = l })
+            if refersTo t.JunkItemId then { t with JunkItemId = None } else t)
         |> mapQuests (fun q ->
-            let q = mapField q "Objectives" (Lists.mapChanged (fun (o: QuestObjective) -> clearIf o "TargetItemId" o.TargetItemId itemId) q.Objectives)
+            let q =
+                withList q
+                    (Lists.mapChanged (fun (o: QuestObjective) -> if refersTo o.TargetItemId then { o with TargetItemId = None } else o) q.Objectives)
+                    (fun q l -> { q with Objectives = l })
             match q.Rewards.Items with
-            | null -> q
-            | items ->
+            | None -> q
+            | Some items ->
                 match Lists.filterChanged (fun (r: QuestRewardItem) -> r.ItemId <> itemId) items with
-                | Some kept -> setField q "Rewards" (box (setField q.Rewards "Items" (box kept)))
+                | Some kept -> { q with Rewards = { q.Rewards with Items = Some kept } }
                 | None -> q)
         |> mapDialogueOptions (fun o ->
-            let o = if refersTo o.GiveItem then Records.withValues o [ ("GiveItem", null); ("GiveItemQuantity", null) ] else o
-            Some(clearIf o "RequiresItem" o.RequiresItem itemId))
+            let o = if refersTo o.GiveItem then { o with GiveItem = None; GiveItemQuantity = None } else o
+            Some(if refersTo o.RequiresItem then { o with RequiresItem = None } else o))
         |> mapConditions (fun c ->
             match c with
-            | :? HasItemCondition as h -> dropWhen (h.ItemId = itemId) c
-            | :? InventorySpaceCondition as s -> dropWhen (s.ItemId = itemId) c
+            | EventCondition.HasItem h -> dropWhen (h.ItemId = itemId) c
+            | EventCondition.InventorySpace s -> dropWhen (s.ItemId = itemId) c
             | _ -> Some c)
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.GiveItem || o.Type = EventOutcomeTypes.TakeItem) && refersTo o.ItemId) o)
         |> mapTiles (fun t ->
             match t.Item with
-            | null -> t
-            | item -> if item.Id = itemId then setField t "Item" null else t)
+            | Some item when item.Id = itemId -> { t with Item = None }
+            | _ -> t)
         |> mapPanels (fun panel ->
-            Some(mapField panel "Entries" (Lists.filterChanged (fun (e: GamePanelEntry) -> not (e.Kind = GamePanelEntryKinds.Item && e.Value = itemId)) panel.Entries)))
+            Some(
+                withList panel
+                    (Lists.filterChanged (fun (e: GamePanelEntry) -> not (e.Kind = GamePanelEntryKinds.Item && e.Value = itemId)) panel.Entries)
+                    (fun p l -> { p with Entries = l })
+            ))
 
     /// An NPC is gone: its dialogues, the editor selection, quest givers and talk targets,
     /// friendship conditions, NPC outcomes and scene NPC lists.
     let dropNpc (npcId: string) (project: GameProject) : GameProject =
         project
-        |> fun p -> Proj.update "Dialogues" (Lists.filterChanged (fun (d: Dialogue) -> d.NpcId <> npcId) p.Dialogues) p
-        |> fun p -> if refers p.SelectedNpcId npcId then Proj.set "SelectedNpcId" null p else p
+        |> fun p -> withList p (Lists.filterChanged (fun (d: Dialogue) -> d.NpcId <> npcId) p.Dialogues) (fun p l -> { p with Dialogues = l })
+        |> fun p -> if refers p.SelectedNpcId npcId then { p with SelectedNpcId = None } else p
         |> mapQuests (fun q ->
-            let q = clearIf q "Giver" q.Giver npcId
-            mapField q "Objectives" (Lists.mapChanged (fun (o: QuestObjective) -> clearIf o "TargetNpcId" o.TargetNpcId npcId) q.Objectives))
+            let q = if refers q.Giver npcId then { q with Giver = None } else q
+            withList q
+                (Lists.mapChanged (fun (o: QuestObjective) -> if refers o.TargetNpcId npcId then { o with TargetNpcId = None } else o) q.Objectives)
+                (fun q l -> { q with Objectives = l }))
         |> mapConditions (fun c ->
             match c with
-            | :? FriendshipCondition as f -> dropWhen (f.NpcId = npcId) c
+            | EventCondition.Friendship f -> dropWhen (f.NpcId = npcId) c
             | _ -> Some c)
         |> mapOutcomes (fun o ->
             let npcOutcome =
                 o.Type = EventOutcomeTypes.SpawnNpc || o.Type = EventOutcomeTypes.RemoveNpc
                 || o.Type = EventOutcomeTypes.StartDialogue || o.Type = EventOutcomeTypes.ModifyFriendship
             dropWhen (npcOutcome && refers o.NpcId npcId) o)
-        |> Proj.mapScenes (fun s -> mapField s "Npcs" (Lists.filterChanged (fun (id: string) -> id <> npcId) s.Npcs))
+        |> Proj.mapScenes (fun s -> withList s (Lists.filterChanged (fun (id: string) -> id <> npcId) s.Npcs) (fun s l -> { s with Npcs = l }))
 
     /// A dialogue is gone: chains into it end the conversation; `startDialogue` falls back to the NPC's first.
     let dropDialogue (dialogueId: string) (project: GameProject) : GameProject =
         project
-        |> mapDialogueOptions (fun o -> Some(clearIf o "NextDialogueId" o.NextDialogueId dialogueId))
-        |> mapOutcomes (fun o -> Some(if o.Type = EventOutcomeTypes.StartDialogue then clearIf o "DialogueId" o.DialogueId dialogueId else o))
+        |> mapDialogueOptions (fun o -> Some(if refers o.NextDialogueId dialogueId then { o with NextDialogueId = None } else o))
+        |> mapOutcomes (fun o ->
+            Some(if o.Type = EventOutcomeTypes.StartDialogue && refers o.DialogueId dialogueId then { o with DialogueId = None } else o))
 
     /// A quest is gone: prerequisites, offers, quest conditions and outcomes, recipe unlocks and the player's lists.
     let dropQuest (questId: string) (project: GameProject) : GameProject =
         project
         |> mapQuests (fun q ->
             match q.Prerequisites with
-            | null -> q
-            | prerequisites -> mapField q "Prerequisites" (Lists.filterChanged (fun (id: string) -> id <> questId) prerequisites))
-        |> mapDialogueOptions (fun o -> Some(clearIf o "OfferQuestId" o.OfferQuestId questId))
+            | None -> q
+            | Some prerequisites ->
+                withList q (Lists.filterChanged (fun (id: string) -> id <> questId) prerequisites) (fun q l -> { q with Prerequisites = Some l }))
+        |> mapDialogueOptions (fun o -> Some(if refers o.OfferQuestId questId then { o with OfferQuestId = None } else o))
         |> mapConditions (fun c ->
             match c with
-            | :? QuestStatusCondition as q -> dropWhen (q.QuestId = questId) c
+            | EventCondition.QuestStatus q -> dropWhen (q.QuestId = questId) c
             | _ -> Some c)
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.StartQuest || o.Type = EventOutcomeTypes.CompleteQuest) && refers o.QuestId questId) o)
         |> mapRecipes (fun r ->
             match r.Unlock with
-            | null -> r
-            | unlock -> if refers unlock.QuestId questId then setField r "Unlock" (box (setField unlock "QuestId" null)) else r)
+            | Some unlock when refers unlock.QuestId questId -> { r with Unlock = Some { unlock with QuestId = None } }
+            | _ -> r)
         |> fun p ->
             let player = p.Player
-            let player = mapField player "ActiveQuests" (Lists.filterChanged (fun (id: string) -> id <> questId) player.ActiveQuests)
-            let player = mapField player "CompletedQuests" (Lists.filterChanged (fun (id: string) -> id <> questId) player.CompletedQuests)
-            if obj.ReferenceEquals(player, p.Player) then p else Proj.set "Player" (box player) p
+            let player = withList player (Lists.filterChanged (fun (id: string) -> id <> questId) player.ActiveQuests) (fun pl l -> { pl with ActiveQuests = l })
+            let player = withList player (Lists.filterChanged (fun (id: string) -> id <> questId) player.CompletedQuests) (fun pl l -> { pl with CompletedQuests = l })
+            if LanguagePrimitives.PhysicalEquality player p.Player then p else { p with Player = player }
 
     /// An event is gone: scene event lists and its auto-managed fired flag.
     let dropEvent (eventId: string) (project: GameProject) : GameProject =
         let flag = EventsSchema.EventFiredFlag eventId
         project
-        |> Proj.mapScenes (fun s -> mapField s "Events" (Lists.filterChanged (fun (id: string) -> id <> eventId) s.Events))
+        |> Proj.mapScenes (fun s -> withList s (Lists.filterChanged (fun (id: string) -> id <> eventId) s.Events) (fun s l -> { s with Events = l }))
         |> fun p ->
-            if p.EventFlags.ContainsKey flag then
-                let flags = OrderedDictionary<string, bool>(p.EventFlags)
-                flags.Remove flag |> ignore
-                Proj.set "EventFlags" (box flags) p
+            if p.EventFlags |> List.exists (fun (key, _) -> key = flag) then
+                { p with EventFlags = p.EventFlags |> List.filter (fun (key, _) -> key <> flag) }
             else p
 
     /// A shop is gone: dialogue options no longer open it.
     let dropShop (shopId: string) (project: GameProject) : GameProject =
-        project |> mapDialogueOptions (fun o -> Some(clearIf o "OpenShopId" o.OpenShopId shopId))
+        project |> mapDialogueOptions (fun o -> Some(if refers o.OpenShopId shopId then { o with OpenShopId = None } else o))
 
     /// A recipe is gone: machines mid-way through it stop.
     let dropRecipe (recipeId: string) (project: GameProject) : GameProject =
         project
         |> mapTiles (fun t ->
             match t.Machine with
-            | null -> t
-            | machine ->
+            | Some machine ->
                 match machine.Processing with
-                | null -> t
-                | processing -> if processing.RecipeId = recipeId then setField t "Machine" (box (setField machine "Processing" null)) else t)
+                | Some processing when processing.RecipeId = recipeId -> { t with Machine = Some { machine with Processing = None } }
+                | _ -> t
+            | None -> t)
 
     /// A node type is gone: placed nodes of it and mine band entries.
     let dropNodeType (nodeTypeId: string) (project: GameProject) : GameProject =
         project
         |> mapTiles (fun t ->
             match t.Node with
-            | null -> t
-            | node -> if node.TypeId = nodeTypeId then setField t "Node" null else t)
+            | Some node when node.TypeId = nodeTypeId -> { t with Node = None }
+            | _ -> t)
         |> fun p ->
-            let mapBand (b: MineBand) = mapField b "Rocks" (Lists.filterChanged (fun (r: MineRockWeight) -> r.NodeTypeId <> nodeTypeId) b.Rocks)
+            let mapBand (b: MineBand) =
+                withList b (Lists.filterChanged (fun (r: MineRockWeight) -> r.NodeTypeId <> nodeTypeId) b.Rocks) (fun b l -> { b with Rocks = l })
             match Lists.mapChanged mapBand p.Mine.Bands with
-            | Some bands -> Proj.set "Mine" (box (setField p.Mine "Bands" (box bands))) p
+            | Some bands -> { p with Mine = { p.Mine with Bands = bands } }
             | None -> p
 
     /// A machine type is gone: recipes become hand crafts and placed machines disappear.
     let dropMachineType (machineTypeId: string) (project: GameProject) : GameProject =
         project
-        |> mapRecipes (fun r -> clearIf r "MachineTypeId" r.MachineTypeId machineTypeId)
+        |> mapRecipes (fun r -> if refers r.MachineTypeId machineTypeId then { r with MachineTypeId = None } else r)
         |> mapTiles (fun t ->
             match t.Machine with
-            | null -> t
-            | machine -> if machine.TypeId = machineTypeId then setField t "Machine" null else t)
+            | Some machine when machine.TypeId = machineTypeId -> { t with Machine = None }
+            | _ -> t)
 
     /// A species is gone: so are its animals (WildlifeEditor).
     let dropAnimalSpecies (speciesId: string) (project: GameProject) : GameProject =
-        Proj.update "Animals" (Lists.filterChanged (fun (a: AnimalState) -> a.SpeciesId <> speciesId) project.Animals) project
+        withList project (Lists.filterChanged (fun (a: AnimalState) -> a.SpeciesId <> speciesId) project.Animals) (fun p l -> { p with Animals = l })
 
     /// An action is gone: item "use" bindings, dialogue bindings, `performAction` outcomes and interface buttons.
     let dropAction (actionId: string) (project: GameProject) : GameProject =
         project
-        |> mapItems (fun i -> clearIf i "UseActionId" i.UseActionId actionId)
-        |> mapDialogueOptions (fun o -> Some(clearIf o "ActionId" o.ActionId actionId))
+        |> mapItems (fun i -> if refers i.UseActionId actionId then { i with UseActionId = None } else i)
+        |> mapDialogueOptions (fun o -> Some(if refers o.ActionId actionId then { o with ActionId = None } else o))
         |> mapOutcomes (fun o -> dropWhen (o.Type = EventOutcomeTypes.PerformAction && refers o.ActionId actionId) o)
         |> mapPanels (fun panel ->
-            Some(mapField panel "Entries" (Lists.filterChanged (fun (e: GamePanelEntry) -> not (e.Kind = GamePanelEntryKinds.Action && e.Value = actionId)) panel.Entries)))
+            Some(
+                withList panel
+                    (Lists.filterChanged (fun (e: GamePanelEntry) -> not (e.Kind = GamePanelEntryKinds.Action && e.Value = actionId)) panel.Entries)
+                    (fun p l -> { p with Entries = l })
+            ))
 
     /// A minigame is gone: nothing starts it any more.
     let dropMinigame (minigameId: string) (project: GameProject) : GameProject =
@@ -265,88 +269,98 @@ module Cleanup =
         project
         |> mapTiles (fun t ->
             match t.Crop with
-            | null -> t
-            | crop -> if crop.Type = cropId then setField t "Crop" null else t)
-        |> mapQuests (fun q -> mapField q "Objectives" (Lists.mapChanged (fun (o: QuestObjective) -> clearIf o "TargetCropType" o.TargetCropType cropId) q.Objectives))
-        |> mapItems (fun i -> if i.Type = ItemTypes.Seed then clearIf i "CropType" i.CropType cropId else i)
+            | Some crop when crop.Type = cropId -> { t with Crop = None }
+            | _ -> t)
+        |> mapQuests (fun q ->
+            withList q
+                (Lists.mapChanged (fun (o: QuestObjective) -> if refers o.TargetCropType cropId then { o with TargetCropType = None } else o) q.Objectives)
+                (fun q l -> { q with Objectives = l }))
+        |> mapItems (fun i -> if i.Type = ItemTypes.Seed && refers i.CropType cropId then { i with CropType = None } else i)
 
-    let private visualUses (assetId: string) (visual: VisualRef | null) =
+    let private visualUses (assetId: string) (visual: VisualRef option) =
         match visual with
-        | null -> false
-        | v ->
+        | None -> false
+        | Some v ->
             v.AssetId = assetId
             || (match v.Frame with
-                | null -> false
-                | frame -> refers frame.AssetId assetId)
+                | None -> false
+                | Some frame -> refers frame.AssetId assetId)
 
     /// An asset is gone: every binding, custom image and animation frame that used it is cleared
     /// (the web refuses to remove art in use; here the objects just fall back to the default look).
     let dropAsset (assetId: string) (project: GameProject) : GameProject =
-        let clearVisual (record: 'T) (name: string) (visual: VisualRef | null) : 'T =
-            if visualUses assetId visual then setField record name null else record
-        let clearLayer (visuals: TileVisuals) (layer: TileLayer) =
-            match layer with
-            | Background -> clearVisual visuals "Background" visuals.Background
-            | Overlay -> clearVisual visuals "Overlay" visuals.Overlay
-            | Object -> clearVisual visuals "Object" visuals.Object
+        let clear (visual: VisualRef option) = if visualUses assetId visual then None else visual
+        let unchangedVisual (visual: VisualRef option) = not (visualUses assetId visual)
         project
-        |> fun p -> clearVisual p "PlayerVisual" p.PlayerVisual
-        |> fun p -> clearVisual p "SelectedTileVisual" p.SelectedTileVisual
-        |> fun p -> if refers p.PlayerCustomImage assetId then Proj.set "PlayerCustomImage" null p else p
-        |> mapNpcs (fun n -> clearIf (clearVisual n "Visual" n.Visual) "CustomImage" n.CustomImage assetId)
-        |> mapItems (fun i -> clearIf (clearVisual i "Visual" i.Visual) "CustomImage" i.CustomImage assetId)
-        |> mapCustomCrops (fun c -> clearIf (clearVisual c "Visual" c.Visual) "CustomAsset" c.CustomAsset assetId)
-        |> mapNodeTypes (fun n -> clearVisual n "Visual" n.Visual)
-        |> mapSpecies (fun s -> clearVisual s "Visual" s.Visual)
-        |> mapMachineTypes (fun m -> clearVisual m "Visual" m.Visual)
+        |> fun p -> if unchangedVisual p.PlayerVisual then p else { p with PlayerVisual = None }
+        |> fun p -> if unchangedVisual p.SelectedTileVisual then p else { p with SelectedTileVisual = None }
+        |> fun p -> if refers p.PlayerCustomImage assetId then { p with PlayerCustomImage = None } else p
+        |> mapNpcs (fun n ->
+            if unchangedVisual n.Visual && not (refers n.CustomImage assetId) then n
+            else { n with Visual = clear n.Visual; CustomImage = unless assetId n.CustomImage })
+        |> mapItems (fun i ->
+            if unchangedVisual i.Visual && not (refers i.CustomImage assetId) then i
+            else { i with Visual = clear i.Visual; CustomImage = unless assetId i.CustomImage })
+        |> mapCustomCrops (fun c ->
+            if unchangedVisual c.Visual && not (refers c.CustomAsset assetId) then c
+            else { c with Visual = clear c.Visual; CustomAsset = unless assetId c.CustomAsset })
+        |> mapNodeTypes (fun n -> if unchangedVisual n.Visual then n else { n with Visual = None })
+        |> mapSpecies (fun s -> if unchangedVisual s.Visual then s else { s with Visual = None })
+        |> mapMachineTypes (fun m -> if unchangedVisual m.Visual then m else { m with Visual = None })
         |> mapTiles (fun t ->
-            let t = clearIf t "CustomImage" t.CustomImage assetId
+            let t = if refers t.CustomImage assetId then { t with CustomImage = None } else t
             let t =
                 match t.Item with
-                | null -> t
-                | item -> if visualUses assetId item.Visual then setField t "Item" (box (setField item "Visual" null)) else t
+                | Some item when visualUses assetId item.Visual -> { t with Item = Some { item with Visual = None } }
+                | _ -> t
             match t.Visuals with
-            | null -> t
-            | visuals ->
-                let cleared = clearLayer (clearLayer (clearLayer visuals Background) Overlay) Object
-                if obj.ReferenceEquals(cleared, visuals) then t
-                elif isNull cleared.Background && isNull cleared.Overlay && isNull cleared.Object then setField t "Visuals" null
-                else setField t "Visuals" (box cleared))
+            | None -> t
+            | Some visuals ->
+                if unchangedVisual visuals.Background && unchangedVisual visuals.Overlay && unchangedVisual visuals.Object then t
+                else
+                    let cleared = { Background = clear visuals.Background; Overlay = clear visuals.Overlay; Object = clear visuals.Object }
+                    if cleared.Background.IsNone && cleared.Overlay.IsNone && cleared.Object.IsNone then { t with Visuals = None }
+                    else { t with Visuals = Some cleared })
         |> mapAssets (fun a ->
             match a.Animations with
-            | null -> a
-            | clips ->
+            | None -> a
+            | Some clips ->
                 let mapClip (clip: AnimationClip) =
-                    let frames = Lists.filterChanged (fun (f: ArtFrame) -> not (refers f.AssetId assetId)) clip.Frames
-                    match frames with
-                    | Some kept when kept.Count = 0 -> None
-                    | _ -> Some(mapField clip "Frames" frames)
-                mapField a "Animations" (chooseChanged mapClip clips))
+                    match Lists.filterChanged (fun (f: ArtFrame) -> not (refers f.AssetId assetId)) clip.Frames with
+                    | Some [] -> None
+                    | Some kept -> Some { clip with Frames = kept }
+                    | None -> Some clip
+                withList a (chooseChanged mapClip clips) (fun a l -> { a with Animations = Some l }))
 
     /// A scene is gone (the scene itself is removed by the edit): doors into it, its NPCs and
     /// their dialogues, its events and animals, schedule stops, quest visits, fishing spots,
     /// the mine entrance and warps. The player start moves to the start scene.
     let dropScene (sceneId: string) (project: GameProject) : GameProject =
-        let npcIds = project.Npcs |> Seq.filter (fun n -> n.SceneId = sceneId) |> Seq.map (fun n -> n.Id) |> List.ofSeq
-        let eventIds = project.Events |> Seq.filter (fun e -> e.SceneId = sceneId) |> Seq.map (fun e -> e.Id) |> List.ofSeq
+        let npcIds = project.Npcs |> List.filter (fun n -> n.SceneId = sceneId) |> List.map (fun n -> n.Id)
+        let eventIds = project.Events |> List.filter (fun e -> e.SceneId = sceneId) |> List.map (fun e -> e.Id)
         project
-        |> Proj.mapScenes (fun s -> mapField s "Transitions" (Lists.filterChanged (fun (t: SceneTransition) -> t.ToSceneId <> sceneId) s.Transitions))
-        |> fun p -> Proj.update "Npcs" (Lists.filterChanged (fun (n: Npc) -> n.SceneId <> sceneId) p.Npcs) p
+        |> Proj.mapScenes (fun s ->
+            withList s (Lists.filterChanged (fun (t: SceneTransition) -> t.ToSceneId <> sceneId) s.Transitions) (fun s l -> { s with Transitions = l }))
+        |> fun p -> withList p (Lists.filterChanged (fun (n: Npc) -> n.SceneId <> sceneId) p.Npcs) (fun p l -> { p with Npcs = l })
         |> fun p -> npcIds |> List.fold (fun acc id -> dropNpc id acc) p
-        |> fun p -> Proj.update "Events" (Lists.filterChanged (fun (e: GameEvent) -> e.SceneId <> sceneId) p.Events) p
+        |> fun p -> withList p (Lists.filterChanged (fun (e: GameEvent) -> e.SceneId <> sceneId) p.Events) (fun p l -> { p with Events = l })
         |> fun p -> eventIds |> List.fold (fun acc id -> dropEvent id acc) p
-        |> fun p -> Proj.update "Animals" (Lists.filterChanged (fun (a: AnimalState) -> a.SceneId <> sceneId) p.Animals) p
+        |> fun p -> withList p (Lists.filterChanged (fun (a: AnimalState) -> a.SceneId <> sceneId) p.Animals) (fun p l -> { p with Animals = l })
         |> mapNpcs (fun n ->
             match n.Schedule with
-            | null -> n
-            | schedule -> mapField n "Schedule" (Lists.filterChanged (fun (e: NpcScheduleEntry) -> e.SceneId <> sceneId) schedule))
-        |> mapQuests (fun q -> mapField q "Objectives" (Lists.mapChanged (fun (o: QuestObjective) -> clearIf o "TargetSceneId" o.TargetSceneId sceneId) q.Objectives))
+            | None -> n
+            | Some schedule ->
+                withList n (Lists.filterChanged (fun (e: NpcScheduleEntry) -> e.SceneId <> sceneId) schedule) (fun n l -> { n with Schedule = Some l }))
+        |> mapQuests (fun q ->
+            withList q
+                (Lists.mapChanged (fun (o: QuestObjective) -> if refers o.TargetSceneId sceneId then { o with TargetSceneId = None } else o) q.Objectives)
+                (fun q l -> { q with Objectives = l }))
         |> mapFishTables (fun t ->
             match t.SceneIds with
-            | null -> t
-            | ids -> mapField t "SceneIds" (Lists.filterChanged (fun (id: string) -> id <> sceneId) ids))
+            | None -> t
+            | Some ids -> withList t (Lists.filterChanged (fun (id: string) -> id <> sceneId) ids) (fun t l -> { t with SceneIds = Some l }))
         |> mapOutcomes (fun o -> dropWhen (refers o.SceneId sceneId) o)
-        |> fun p -> if refers p.Mine.EntranceSceneId sceneId then Proj.set "Mine" (box (setField p.Mine "EntranceSceneId" null)) p else p
+        |> fun p -> if refers p.Mine.EntranceSceneId sceneId then { p with Mine = { p.Mine with EntranceSceneId = None } } else p
         |> fun p ->
             if p.Player.SceneId <> sceneId then p
             else
@@ -355,51 +369,55 @@ module Cleanup =
                 | Some start ->
                     let x = max 0 (min (int start.Width - 1) (int p.Player.X))
                     let y = max 0 (min (int start.Height - 1) (int p.Player.Y))
-                    Proj.set "Player" (box (Records.withValues p.Player [ ("SceneId", box start.Id); ("X", box (float x)); ("Y", box (float y)) ])) p
+                    { p with Player = { p.Player with SceneId = start.Id; X = float x; Y = float y } }
 
     /// A calendar season is gone: festivals on it, weather rows, and season lists that named it.
     let dropSeason (seasonId: string) (project: GameProject) : GameProject =
-        let without (seasons: List<string>) = Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons
-        let optionalList (record: 'T) (name: string) (seasons: List<string> | null) : 'T =
+        let without (seasons: string list) = Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons
+        /// An optional season list without the season; absent once empty.
+        let optionalList (seasons: string list option) : string list option option =
             match seasons with
-            | null -> record
-            | list ->
+            | None -> None
+            | Some list ->
                 match without list with
-                | Some kept when kept.Count = 0 -> setField record name null
-                | next -> mapField record name next
+                | Some [] -> Some None
+                | Some kept -> Some(Some kept)
+                | None -> None
         project
         |> fun p ->
             let calendar = p.Settings.Calendar
-            let calendar = mapField calendar "Festivals" (Lists.filterChanged (fun (f: CalendarFestival) -> f.SeasonId <> seasonId) calendar.Festivals)
-            if obj.ReferenceEquals(calendar, p.Settings.Calendar) then p
-            else Proj.set "Settings" (box (setField p.Settings "Calendar" (box calendar))) p
+            match Lists.filterChanged (fun (f: CalendarFestival) -> f.SeasonId <> seasonId) calendar.Festivals with
+            | Some festivals -> { p with Settings = { p.Settings with Calendar = { calendar with Festivals = festivals } } }
+            | None -> p
         |> fun p ->
-            if p.Weather.Table.ContainsKey seasonId then
-                let table = OrderedDictionary<string, List<WeatherTableEntry>>(p.Weather.Table)
-                table.Remove seasonId |> ignore
-                Proj.set "Weather" (box (setField p.Weather "Table" (box table))) p
+            if p.Weather.Table |> List.exists (fun (key, _) -> key = seasonId) then
+                { p with Weather = { p.Weather with Table = p.Weather.Table |> List.filter (fun (key, _) -> key <> seasonId) } }
             else p
-        |> mapCustomCrops (fun c -> mapField c "Seasons" (without c.Seasons))
-        |> mapShops (fun s -> mapField s "Stock" (Lists.mapChanged (fun (e: ShopStockEntry) -> optionalList e "Seasons" e.Seasons) s.Stock))
-        |> mapQuests (fun q -> optionalList q "AvailableSeasons" q.AvailableSeasons)
-        |> mapFishTables (fun t -> optionalList t "Seasons" t.Seasons)
+        |> mapCustomCrops (fun c -> withList c (without c.Seasons) (fun c l -> { c with Seasons = l }))
+        |> mapShops (fun s ->
+            withList s
+                (Lists.mapChanged (fun (e: ShopStockEntry) -> match optionalList e.Seasons with Some next -> { e with Seasons = next } | None -> e) s.Stock)
+                (fun s l -> { s with Stock = l }))
+        |> mapQuests (fun q -> match optionalList q.AvailableSeasons with Some next -> { q with AvailableSeasons = next } | None -> q)
+        |> mapFishTables (fun t -> match optionalList t.Seasons with Some next -> { t with Seasons = next } | None -> t)
         |> mapRecipes (fun r ->
             match r.Unlock with
-            | null -> r
-            | unlock ->
-                let next = optionalList unlock "Seasons" unlock.Seasons
-                if obj.ReferenceEquals(next, unlock) then r else setField r "Unlock" (box next))
+            | Some unlock ->
+                match optionalList unlock.Seasons with
+                | Some next -> { r with Unlock = Some { unlock with Seasons = next } }
+                | None -> r
+            | None -> r)
         |> mapConditions (fun c ->
             match c with
-            | :? SeasonCondition as s ->
+            | EventCondition.Season s ->
                 match without s.Seasons with
-                | Some kept when kept.Count = 0 -> None
-                | Some kept -> Some(setField s "Seasons" (box kept) :> EventCondition)
+                | Some [] -> None
+                | Some kept -> Some(EventCondition.Season { s with Seasons = kept })
                 | None -> Some c
             | _ -> Some c)
         |> fun p ->
             if p.CurrentSeason <> seasonId then p
             else
-                match Seq.tryHead p.Settings.Calendar.Seasons with
-                | Some first -> Proj.set "CurrentSeason" (box first.Id) p
+                match List.tryHead p.Settings.Calendar.Seasons with
+                | Some first -> { p with CurrentSeason = first.Id }
                 | None -> p

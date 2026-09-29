@@ -33,7 +33,7 @@ let ``the patterns create what the web creates`` () =
     let project = starter ()
     let story = project |> apply (build Story options project)
     let willow = npc story "willow"
-    Assert.Equal(3, willow.Dialogue.Count)
+    Assert.Equal(3, willow.Dialogue.Length)
     Assert.Equal("willow-promised", orEmpty willow.Dialogue.[0].Options.[0].EventFlag)
     let romance = project |> apply (build Romance options project)
     Assert.True(romance.Actions |> Seq.exists (fun a -> a.Id = "willow-action"))
@@ -43,17 +43,17 @@ let ``the patterns create what the web creates`` () =
     let building = project |> apply (build Building options project)
     Assert.True(building.Scenes |> Seq.exists (fun s -> s.Id = "willow-inside"))
     Assert.Equal("door", orEmpty (tile building "scene-farm" 5 5).Object)
-    Assert.True((farm building).Transitions |> Seq.exists (fun t -> t.ToSceneId = "willow-inside" && t.Locked.GetValueOrDefault()))
+    Assert.True((farm building).Transitions |> Seq.exists (fun t -> t.ToSceneId = "willow-inside" && t.Locked = Some true))
     let magic = project |> apply (build Magic options project)
-    Assert.Equal("willow-item", (nonNull (tile magic "scene-farm" 5 5).Item).Id)
+    Assert.Equal("willow-item", (tile magic "scene-farm" 5 5).Item.Value.Id)
     let fishing = project |> apply (build Fishing options project)
     let minigame = fishing.Minigames |> Seq.find (fun m -> m.Id = "fishing")
     Assert.Equal("hold-to-catch", minigame.Kind)
-    Assert.Equal(1200.0, minigame.Config.["holdMs"].GetDouble())
+    Assert.Equal(JNumber 1200.0, field "holdMs" minigame.Config)
     let combat = project |> apply (build Combat options project)
     Assert.Equal("simple-battle", (combat.Minigames |> Seq.find (fun m -> m.Id = "willow")).Kind)
     let tree = project |> apply (build Tree options project)
-    let node = nonNull (tile tree "scene-farm" 5 5).Node
+    let node = (tile tree "scene-farm" 5 5).Node.Value
     Assert.Equal("willow", node.TypeId)
     Assert.Equal(3.0, node.RemainingHealth)
     let craft = project |> apply (build Craft options project)
@@ -77,5 +77,5 @@ let ``patterns refuse bad tiles with the web messages`` () =
     expectError "That tile already has an item. Choose an empty tile." (Patterns.build Magic options magic)
     let building = project |> apply (build Building options project)
     expectError "That tile already has a doorway." (Patterns.build Building options building)
-    let noScenes = Records.withValue project "Scenes" (box (listOf ([] : Scene list)))
+    let noScenes = { project with Scenes = [] }
     expectError "Select a scene first." (Patterns.build Story options noScenes)

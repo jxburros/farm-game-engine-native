@@ -127,8 +127,8 @@ type Edits =
         match Array.tryFindIndex (fun id -> id = packId) ids with
         | Some index when index + delta >= 0 && index + delta < ids.Length ->
             let swapped = Array.copy ids
-            swapped[index] <- ids[index + delta]
-            swapped[index + delta] <- ids[index]
+            swapped.[index] <- ids.[index + delta]
+            swapped.[index + delta] <- ids.[index]
             ReorderPacks(List.ofArray swapped)
         | _ -> ReorderPacks(List.ofArray ids)
     static member RemovePack(packId: string) : Edit = RemovePack packId
@@ -319,7 +319,7 @@ type ContentForms =
     /// A picker's entries for `field` holding `current`: the empty entry when allowed, a
     /// "(missing: id)" entry for an unknown id, then `available` (from `Options`, or the choices).
     static member Entries(field: FormField, available: seq<PickerOption>, current: string | null) : IReadOnlyList<PickerOption> =
-        References.pickerEntries (List.ofSeq available) (Option.ofObj field.EmptyLabel) current |> ContentForms.List
+        References.pickerEntries (List.ofSeq available) (Option.ofObj field.EmptyLabel) (Option.ofObj current) |> ContentForms.List
 
     /// Chips of a reference list: each id with its label, or "(missing: id)" when unknown.
     static member ListEntries(available: seq<PickerOption>, ids: seq<string>) : IReadOnlyList<PickerOption> =
@@ -355,15 +355,13 @@ type ContentForms =
 type ExportSettingsForm =
     /// The project's export settings, or the ones export would start from.
     static member Current(project: GameProject) : ExportSettings =
-        match project.Export with
-        | null -> Defaults.newExportSettings project
-        | settings -> settings
+        defaultArg project.Export (Defaults.newExportSettings project)
 
     /// Assets that can be the icon (PNG, at least 256×256), with "(none)" first and a
     /// "(missing: id)" entry when `current` is not one of them.
     static member IconOptions(project: GameProject, current: string | null) : IReadOnlyList<PickerOption> =
         let icons = project.CustomAssets |> Seq.filter ChecksExport.suitableIcon |> Seq.map (fun a -> { Id = a.Id; Label = (if a.Name = a.Id then a.Id else sprintf "%s (%s)" a.Name a.Id); Missing = false })
-        References.pickerEntries (List.ofSeq icons) (Some "(none)") current |> Array.ofList :> IReadOnlyList<PickerOption>
+        References.pickerEntries (List.ofSeq icons) (Some "(none)") (Option.ofObj current) |> Array.ofList :> IReadOnlyList<PickerOption>
 
     static member PixelScales: IReadOnlyList<PickerOption> =
         match References.roleOf "ExportSettings" "PixelScale" with

@@ -14,8 +14,6 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open Xunit
 open FarmEngine.Authoring
-open FarmEngine.Authoring.Net
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 let private baseDir = AppContext.BaseDirectory
@@ -62,11 +60,11 @@ let private sources () : (string * string) list =
           if name <> "content-lints.json" && name <> "content-builtin.json" then
               yield "fixtures/" + name, File.ReadAllText path
       for case in BrokenProjects.cases -> "broken/" + case.Name, (BrokenProjects.json case).ToJsonString()
-      yield "code/starter", JsonDefaults.Serialize(TestProjects.starter ())
-      yield "code/blank", JsonDefaults.Serialize(TestProjects.blank ())
-      yield "code/cozy", JsonDefaults.Serialize(ProjectCatalog.CreateCozyFarmProject(0.0))
-      yield "code/quest", JsonDefaults.Serialize(ProjectCatalog.CreateQuestRpgProject(0.0))
-      for id, project in TestProjects.templates () -> "code/template-" + id, JsonDefaults.Serialize project ]
+      yield "code/starter", ProjectLoad.toText (TestProjects.starter ())
+      yield "code/blank", ProjectLoad.toText (TestProjects.blank ())
+      yield "code/cozy", ProjectLoad.toText (ProjectCatalog.CreateCozyFarmProject(0.0))
+      yield "code/quest", ProjectLoad.toText (ProjectCatalog.CreateQuestRpgProject(0.0))
+      for id, project in TestProjects.templates () -> "code/template-" + id, ProjectLoad.toText project ]
 
 let private strings (items: string seq) = JsonArray([| for s in items -> JsonValue.Create s :> JsonNode |])
 
@@ -75,31 +73,31 @@ let private problemLine (p: Problem) = sprintf "%s|%s|%s|%s|%s" p.SeverityName p
 /// Everything the authoring core makes of one project text.
 let private snapshot (text: string) : JsonObject =
     let o = JsonObject()
-    let project = ProjectMigrations.migrateProjectText text
+    let project = ProjectLoad.migrateProjectText text
     o["ok"] <- JsonValue.Create project.Ok
     o["fromVersion"] <- JsonValue.Create project.FromVersion
     o["migrated"] <- JsonValue.Create project.Migrated
     o["errors"] <- strings project.Errors
     match project.Data with
-    | null -> ()
-    | data ->
-        o["json"] <- JsonValue.Create(shaText (JsonDefaults.Serialize data))
-        o["stable"] <- JsonValue.Create(shaText (StableJson.Stringify data))
+    | None -> ()
+    | Some data ->
+        o["json"] <- JsonValue.Create(shaText (Json.stringify (ProjectLoad.toJson data)))
+        o["stable"] <- JsonValue.Create(shaText (Json.stableStringify (ProjectLoad.toJson data)))
         match attempt (fun () -> Problems.collect data) with
         | Ok problems -> o["problems"] <- strings (problems |> List.map problemLine)
         | Error message -> o["problems"] <- JsonValue.Create("throws " + message)
         match attempt (fun () -> ContentCompiler.compile data) with
-        | Ok content -> o["content"] <- JsonValue.Create(shaText (StableJson.Stringify content))
+        | Ok content -> o["content"] <- JsonValue.Create(shaText (Json.stableStringify (SchemaJson.encodeGameContent content)))
         | Error message -> o["content"] <- JsonValue.Create("throws " + message)
         match attempt (fun () -> CartridgeCompiler.Compile data) with
         | Ok bytes -> o["cartridge"] <- JsonValue.Create(sha bytes)
         | Error message -> o["cartridge"] <- JsonValue.Create("throws " + message)
-    let game = ProjectMigrations.migrateExportedGameText text
+    let game = ProjectLoad.migrateExportedGameText text
     o["gameOk"] <- JsonValue.Create game.Ok
     o["gameErrors"] <- strings game.Errors
     match game.Data with
-    | null -> ()
-    | data -> o["game"] <- JsonValue.Create(shaText (StableJson.Stringify data))
+    | None -> ()
+    | Some data -> o["game"] <- JsonValue.Create(shaText (Json.stableStringify (SchemaJson.encodeExportedGame data)))
     o
 
 let private options = JsonSerializerOptions(WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping)

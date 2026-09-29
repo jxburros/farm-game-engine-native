@@ -7,8 +7,7 @@ namespace FarmEngine.Authoring
 // Versioned, pure project migrations. Every migration is a pure `(vN) => vN+1` function over
 // raw JSON (`Json`). They never touch wall-clock time, RNG or I/O, so the same input always
 // yields the same output. This file stops at the migrated raw JSON: parsing it into the typed
-// schema and validating it happens in FarmEngine.Authoring.Net (`ProjectMigrations`), which
-// keeps this project Fable-safe.
+// schema and validating it happens in `ProjectLoad`.
 
 /// The raw half of the TS `MigrationResult<T>`: `Data` is the migrated JSON, before the typed
 /// parse and validation. `Ok` is false when the data could not be migrated at all.

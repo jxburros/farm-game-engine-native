@@ -1,14 +1,13 @@
-/// Deliberately broken projects for the validation parity tests: one case per check in
-/// `SchemaValidation.cs` (`ValidateProject`, `LintProject`) and `Validation.cs`
-/// (`ValidateProjectContent`), each built from the starter farm by editing its JSON, with the
-/// finding it must produce. Plus malformed shapes (nulls where the schema has none) that make
-/// the C# throw.
+/// Deliberately broken projects for the validation tests: one case per check in `SchemaChecks`
+/// (`validateProject`, `lintProject`) and `ContentLints` (`validateProjectContent`), each built
+/// from the starter farm by editing its JSON, with the finding it must produce. Plus malformed
+/// shapes (nulls where the schema has none) that the typed parse refuses.
 module FarmEngine.Authoring.Tests.BrokenProjects
 
 open System
-open System.Text.Json
 open System.Text.Json.Nodes
-open FarmEngine.Json
+open FarmEngine.Authoring
+open FarmEngine.Authoring.Net
 open FarmEngine.Schemas
 
 /// What a case must produce (and so proves the check is reached).
@@ -21,21 +20,16 @@ type Expect =
     | Content of string
     /// No `validateProjectContent` message contains this.
     | NoContent of string
-    /// The validators throw (a malformed shape the C# does not guard).
-    | Throws
+    /// The typed parse refuses the project with this issue (`path: message`).
+    | Decode of string
 
 type Case =
     { Name: string
       /// Edits to the starter farm's JSON.
       Edit: JsonObject -> unit
       /// Edits to the typed project after parsing (values JSON cannot carry, such as NaN).
-      Typed: GameProject -> unit
-      Expect: Expect list
-      /// Whether the pure `SchemaChecks.validateExportedGame` matches the C# on the exported-game
-      /// forms too. The C# JSON round trip turns a null in a required field into its default and
-      /// throws on NaN, so cases with those are compared on the migrations path only
-      /// (`ProjectMigrations.validateExportedGame`, which uses the same round trip).
-      Exported: bool }
+      Typed: GameProject -> GameProject
+      Expect: Expect list }
 
 // ── JSON editing ─────────────────────────────────────────────────────────────
 
@@ -74,13 +68,12 @@ let private all (edits: (JsonObject -> unit) list) (root: JsonObject) =
         edit root
 
 let private case name expect edits =
-    { Name = name; Edit = all edits; Typed = ignore; Expect = expect; Exported = true }
+    { Name = name; Edit = all edits; Typed = id; Expect = expect }
 
-/// A case with a null in a required field (see `Exported`).
-let private nullCase name expect edits = { case name expect edits with Exported = false }
+/// A case with a null in a required field: the typed parse refuses it.
+let private nullCase name (decode: string) edits = case name [ Decode decode ] edits
 
-let private malformed name edits =
-    { Name = name; Edit = all edits; Typed = ignore; Expect = [ Throws ]; Exported = false }
+let private malformed name (decode: string) edits = case name [ Decode decode ] edits
 
 /// An event with the given conditions and outcomes (JSON array bodies).
 let private event (id: string) (conditions: string) (outcomes: string) =
@@ -105,7 +98,7 @@ let private pack (id: string) (dependencies: string) =
 /// `SchemaValidation.ValidateProject`: every parse-level check.
 let private parseCases =
     [ case "schemaVersion not an integer" [ Parse "schemaVersion: Expected integer, received 8.5" ] [ set "schemaVersion" "8.5" ]
-      case "mode missing" [ Parse "mode: Required" ] [ set "mode" "null" ]
+      nullCase "mode missing" "mode: Expected string, received null" [ set "mode" "null" ]
       case "mode unknown" [ Parse "mode: Invalid enum value. Expected 'tiles' | 'npcs' | 'items' | 'events' | 'play' | 'quests', received 'bogus'" ] [ set "mode" "\"bogus\"" ]
       case "selectedTileType unknown" [ Parse "selectedTileType: Invalid enum value." ] [ set "selectedTileType" "\"lava\"" ]
       case "currentYear not an integer" [ Parse "currentYear: Expected integer, received 1.5" ] [ set "currentYear" "1.5" ]
@@ -113,19 +106,19 @@ let private parseCases =
       case "scene width zero" [ Parse "scenes.0.width: Number must be greater than 0" ] [ set "scenes.0.width" "0" ]
       case "scene height negative" [ Parse "scenes.0.height: Number must be greater than 0" ] [ set "scenes.0.height" "-1" ]
       case "scene height fractional" [ Parse "scenes.0.height: Expected integer, received 1.5" ] [ set "scenes.0.height" "1.5" ]
-      case "null tile row" [ Parse "scenes.0.tiles.3: Expected array, received null" ] [ set "scenes.0.tiles.3" "null" ]
-      case "null tile" [ Parse "scenes.0.tiles.2.5: Expected object, received null" ] [ set "scenes.0.tiles.2.5" "null" ]
+      nullCase "null tile row" "scenes.0.tiles.3: Expected array, received null" [ set "scenes.0.tiles.3" "null" ]
+      nullCase "null tile" "scenes.0.tiles.2.5: Expected object, received null" [ set "scenes.0.tiles.2.5" "null" ]
       case "tile type unknown" [ Parse "scenes.0.tiles.1.1.type: Invalid enum value." ] [ set "scenes.0.tiles.1.1.type" "\"lava\"" ]
-      nullCase "tile type missing" [ Parse "scenes.0.tiles.1.1.type: Required" ] [ set "scenes.0.tiles.1.1.type" "null" ]
+      nullCase "tile type missing" "scenes.0.tiles.1.1.type: Expected string, received null" [ set "scenes.0.tiles.1.1.type" "null" ]
       case "tile background unknown" [ Parse "scenes.0.tiles.1.2.background: Invalid enum value." ] [ set "scenes.0.tiles.1.2.background" "\"lava\"" ]
-      nullCase "tile background missing" [ Parse "scenes.0.tiles.1.2.background: Required" ] [ set "scenes.0.tiles.1.2.background" "null" ]
+      nullCase "tile background missing" "scenes.0.tiles.1.2.background: Expected string, received null" [ set "scenes.0.tiles.1.2.background" "null" ]
       case "tile overlay unknown" [ Parse "scenes.0.tiles.1.3.overlay: Invalid enum value." ] [ set "scenes.0.tiles.1.3.overlay" "\"lava\"" ]
       case "tile object unknown" [ Parse "scenes.0.tiles.1.4.object: Invalid enum value." ] [ set "scenes.0.tiles.1.4.object" "\"lava\"" ]
       case "tile soilState unknown" [ Parse "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'" ] [ set "scenes.0.tiles.1.5.soilState" "\"mud\"" ]
       case "crop quality and mutation unknown"
           [ Parse "scenes.0.tiles.2.2.crop.quality: Invalid enum value."; Parse "scenes.0.tiles.2.2.crop.mutation: Invalid enum value." ]
           [ set "scenes.0.tiles.2.2.crop" (crop "wheat" "legendary" "weird") ]
-      nullCase "crop quality missing" [ Parse "scenes.0.tiles.2.2.crop.quality: Required" ] [ set "scenes.0.tiles.2.2.crop" (crop "wheat" "normal" ""); set "scenes.0.tiles.2.2.crop.quality" "null" ]
+      nullCase "crop quality missing" "scenes.0.tiles.2.2.crop.quality: Expected string, received null" [ set "scenes.0.tiles.2.2.crop" (crop "wheat" "normal" ""); set "scenes.0.tiles.2.2.crop.quality" "null" ]
       case "player direction unknown" [ Parse "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'" ] [ set "player.direction" "\"north\"" ]
       case "item type unknown" [ Parse "items.0.type: Invalid enum value." ] [ set "items.0.type" "\"weapon\"" ]
       case "item toolType unknown" [ Parse "items.0.toolType: Invalid enum value." ] [ set "items.0.toolType" "\"laser\"" ]
@@ -140,20 +133,20 @@ let private parseCases =
           [ Parse "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
             Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
           [ set "npcs.1.birthday" """{"season":"monsoon","day":3.5}""" ]
-      nullCase "npc birthday season missing" [ Parse "npcs.0.birthday.season: Required" ] [ set "npcs.0.birthday" """{"season":null,"day":3}""" ]
+      nullCase "npc birthday season missing" "npcs.0.birthday.season: Expected string, received null" [ set "npcs.0.birthday" """{"season":null,"day":3}""" ]
       case "quest status unknown" [ Parse "quests.0.status: Invalid enum value." ] [ set "quests.0.status" "\"maybe\"" ]
       case "quest objective type unknown" [ Parse "quests.0.objectives.0.type: Invalid enum value." ] [ set "quests.0.objectives.0.type" "\"dance\"" ]
       case "event trigger unknown" [ Parse "events.0.trigger: Invalid enum value. Expected 'enter' | 'interact' | 'tick', received 'sometimes'" ]
           [ addEvent "" ""; set "events.0.trigger" "\"sometimes\"" ]
-      case "event condition null" [ Parse "events.0.conditions.0: Expected object, received null" ] [ addEvent "null" "" ]
+      nullCase "event condition null" "events.0.conditions.0: Expected object, received null" [ addEvent "null" "" ]
       case "inventorySpace quantity"
           [ Parse "events.0.conditions.0.quantity: Expected integer, received 0.5"; Parse "events.0.conditions.1.quantity: Number must be greater than 0" ]
           [ addEvent """{"type":"inventorySpace","itemId":"crop-wheat","quantity":0.5},{"type":"inventorySpace","itemId":"crop-wheat","quantity":0}""" "" ]
       case "questStatus status unknown" [ Parse "events.0.conditions.0.status: Invalid enum value." ]
           [ addEvent """{"type":"questStatus","questId":"quest-first-harvest","status":"zzz"}""" "" ]
-      case "event outcome null" [ Parse "events.0.outcomes.0: Expected object, received null" ] [ addEvent "" "null" ]
+      nullCase "event outcome null" "events.0.outcomes.0: Expected object, received null" [ addEvent "" "null" ]
       case "event outcome type unknown" [ Parse "events.0.outcomes.0.type: Invalid enum value." ] [ addEvent "" """{"type":"explode"}""" ]
-      nullCase "event outcome type missing" [ Parse "events.0.outcomes.0.type: Required" ] [ addEvent "" """{"type":null}""" ]
+      nullCase "event outcome type missing" "events.0.outcomes.0.type: Expected string, received null" [ addEvent "" """{"type":null}""" ]
       case "waterArea radius"
           [ Parse "events.0.outcomes.0.radius: Number must be between 0 and 10"
             Parse "events.0.outcomes.1.radius: Expected integer, received 2.5"
@@ -167,14 +160,16 @@ let private parseCases =
           with
           Typed =
               fun project ->
-                  project.Events.[0].Outcomes.Add(EventOutcome(Type = EventOutcomeTypes.GiveMoney, Amount = Nullable Double.NaN))
-                  project.Events.[0].Outcomes.Add(EventOutcome(Type = EventOutcomeTypes.TakeMoney, Amount = Nullable Double.PositiveInfinity))
-          Exported = false }
+                  let event = project.Events.Head
+                  let outcomes =
+                      event.Outcomes
+                      @ [ { EventOutcome.Default with Type = EventOutcomeTypes.GiveMoney; Amount = Some Double.NaN }
+                          { EventOutcome.Default with Type = EventOutcomeTypes.TakeMoney; Amount = Some Double.PositiveInfinity } ]
+                  { project with Events = { event with Outcomes = outcomes } :: project.Events.Tail } }
       case "action energyCost negative" [ Parse "actions.0.energyCost: Number must be greater than or equal to 0" ] [ set "actions.0.energyCost" "-1" ]
       case "action hotkey too long" [ Parse "actions.0.hotkey: String must contain at most 1 character(s)" ] [ set "actions.0.hotkey" "\"ab\"" ]
-      case "action conditions and outcomes"
-          [ Parse "actions.1.conditions.0: Expected object, received null"; Parse "actions.1.outcomes.0.type: Invalid enum value." ]
-          [ set "actions.1.conditions" "[null]"; set "actions.1.outcomes" """[{"type":"explode"}]""" ]
+      nullCase "action condition null" "actions.1.conditions.0: Expected object, received null" [ set "actions.1.conditions" "[null]" ]
+      case "action outcome type unknown" [ Parse "actions.1.outcomes.0.type: Invalid enum value." ] [ set "actions.1.outcomes" """[{"type":"explode"}]""" ]
       case "minigame result tier"
           [ Parse "minigames.0.resultTiers.0.minScore: Number must be between 0 and 1"; Parse "minigames.0.resultTiers.0.outcomes.0.type: Invalid enum value." ]
           [ set "minigames.0.resultTiers" """[{"minScore":1.5,"outcomes":[{"type":"bogus"}]}]""" ]
@@ -184,8 +179,8 @@ let private parseCases =
             Parse "nodeTypes.0.respawnDays: Number must be greater than 0" ]
           [ set "nodeTypes.0.health" "0"; set "nodeTypes.0.requiredToolTier" "1.5"; set "nodeTypes.0.respawnDays" "0" ]
       case "node type health fractional" [ Parse "nodeTypes.1.health: Expected integer, received 2.5" ] [ set "nodeTypes.1.health" "2.5" ]
-      nullCase "node type requiredTool" [ Parse "nodeTypes.0.requiredTool: Invalid enum value."; Parse "nodeTypes.1.requiredTool: Required" ]
-          [ set "nodeTypes.0.requiredTool" "\"spoon\""; set "nodeTypes.1.requiredTool" "null" ]
+      case "node type requiredTool" [ Parse "nodeTypes.0.requiredTool: Invalid enum value." ] [ set "nodeTypes.0.requiredTool" "\"spoon\"" ]
+      nullCase "node type requiredTool missing" "nodeTypes.1.requiredTool: Expected string, received null" [ set "nodeTypes.1.requiredTool" "null" ]
       case "recipe numbers"
           [ Parse "recipes.0.processingMinutes: Number must be greater than or equal to 0"
             Parse "recipes.0.inputs.0.quantity: Number must be greater than 0"
@@ -235,7 +230,7 @@ let private parseCases =
       case "rngState"
           [ Parse "rngState.algorithm: Invalid literal value, expected \"xoshiro128ss\""; Parse "rngState.s: Expected a tuple of 4 integers" ]
           [ set "rngState" """{"algorithm":"mt19937","s":[1,2,3]}""" ]
-      case "rngState words missing" [ Parse "rngState.s: Expected a tuple of 4 integers" ] [ set "rngState" """{"algorithm":"xoshiro128ss","s":null}""" ]
+      nullCase "rngState words missing" "rngState.s: Expected array, received null" [ set "rngState" """{"algorithm":"xoshiro128ss","s":null}""" ]
       case "rngState algorithm missing" [ Parse "rngState.algorithm: Invalid literal value" ] [ set "rngState" """{"algorithm":null,"s":[1,2,3,4]}""" ] ]
 
 /// `SchemaValidation.LintProject`: every lint-level check.
@@ -358,32 +353,36 @@ let private contentCases =
           [ add "items" """{"id":"seed-ghost","name":"Ghost Seeds","description":"","type":"seed","stackable":true,"maxStack":99,"value":1,"cropType":"crop-ghost"}""" ]
       case "pack problems" [ Content "'pack-ghost'" ] [ add "contentPacks" (pack "lonely" """{"packId":"pack-ghost"}""") ] ]
 
-/// Nulls where the schema has none: the C# throws, and so must the port (same exception).
+/// Nulls where the schema has none: the typed parse refuses them at the first one.
 let private malformedCases =
-    [ malformed "scenes null" [ set "scenes" "null" ]
-      malformed "scene transitions null" [ set "scenes.0.transitions" "null" ]
-      malformed "scene tiles null" [ set "scenes.0.tiles" "null" ]
-      malformed "player null" [ set "player" "null" ]
-      malformed "items null" [ set "items" "null" ]
-      malformed "item null" [ set "items.3" "null" ]
-      malformed "npc dialogue null" [ set "npcs.0.dialogue" "null" ]
-      malformed "shops null" [ set "shops" "null" ]
-      malformed "animals null" [ set "animals" "null" ]
-      malformed "machine type null" [ set "machineTypes.1" "null" ]
-      malformed "weather table null" [ set "weather.table" "null" ]
-      malformed "settings movement null" [ set "settings.movement" "null" ]
-      malformed "mine bands null" [ set "mine.bands" "null" ]
-      malformed "pack manifest id null" [ add "contentPacks" (pack "p" ""); set "contentPacks.0.pack.manifest.id" "null" ]
-      { malformed "crop type null" [ set "scenes.0.tiles.2.2.crop" (crop "wheat" "normal" ""); set "scenes.0.tiles.2.2.crop.type" "null" ] with
-          Expect = [] }
-      { malformed "quest rewards null" [ set "quests.0.rewards" "null" ] with Expect = [] }
-      { malformed "null tile row, content" [ set "scenes.0.tiles.0" "null" ] with Expect = [] } ]
+    [ malformed "scenes null" "scenes: Expected array, received null" [ set "scenes" "null" ]
+      malformed "scene transitions null" "scenes.0.transitions: Expected array, received null" [ set "scenes.0.transitions" "null" ]
+      malformed "scene tiles null" "scenes.0.tiles: Expected array, received null" [ set "scenes.0.tiles" "null" ]
+      malformed "player null" "player: Expected object, received null" [ set "player" "null" ]
+      malformed "items null" "items: Expected array, received null" [ set "items" "null" ]
+      malformed "item null" "items.3: Expected object, received null" [ set "items.3" "null" ]
+      malformed "npc dialogue null" "npcs.0.dialogue: Expected array, received null" [ set "npcs.0.dialogue" "null" ]
+      malformed "shops null" "shops: Expected array, received null" [ set "shops" "null" ]
+      malformed "animals null" "animals: Expected array, received null" [ set "animals" "null" ]
+      malformed "machine type null" "machineTypes.1: Expected object, received null" [ set "machineTypes.1" "null" ]
+      malformed "weather table null" "weather.table: Expected object, received null" [ set "weather.table" "null" ]
+      malformed "settings movement null" "settings.movement: Expected object, received null" [ set "settings.movement" "null" ]
+      malformed "mine bands null" "mine.bands: Expected array, received null" [ set "mine.bands" "null" ]
+      malformed "pack manifest id null" "contentPacks.0.pack.manifest.id: Expected string, received null"
+          [ add "contentPacks" (pack "p" ""); set "contentPacks.0.pack.manifest.id" "null" ]
+      malformed "crop type null" "scenes.0.tiles.2.2.crop.type: Expected string, received null"
+          [ set "scenes.0.tiles.2.2.crop" (crop "wheat" "normal" ""); set "scenes.0.tiles.2.2.crop.type" "null" ]
+      malformed "quest rewards null" "quests.0.rewards: Expected object, received null" [ set "quests.0.rewards" "null" ]
+      malformed "null tile row, content" "scenes.0.tiles.0: Expected array, received null" [ set "scenes.0.tiles.0" "null" ] ]
 
 /// Every case, and one with all of the checkable ones at once (past the 20-error cap).
 let cases : Case list =
     let single = parseCases @ lintCases @ contentCases
-    // Without the fractional schemaVersion, which the migrations refuse before any check runs.
-    let combinable = single |> List.filter (fun c -> c.Name <> "schemaVersion not an integer")
+    // Without the fractional schemaVersion, which the migrations refuse before any check runs,
+    // and the nulls, which the typed parse refuses before any check runs.
+    let isDecode = function Decode _ -> true | _ -> false
+    let combinable =
+        single |> List.filter (fun c -> c.Name <> "schemaVersion not an integer" && not (List.exists isDecode c.Expect))
     let combined =
         { Name = "everything at once"
           // Later edits may reach into something an earlier one nulled out; those are skipped.
@@ -394,14 +393,12 @@ let cases : Case list =
                           c.Edit root
                       with _ ->
                           ()
-          Typed = fun project -> for c in combinable do c.Typed project
-          Expect = []
-          Exported = false }
+          Typed = fun project -> combinable |> List.fold (fun p c -> c.Typed p) project
+          Expect = [] }
     single @ malformedCases @ [ combined ]
 
 /// The starter farm as JSON, fresh on each call.
-let starterJson () : JsonObject =
-    JsonSerializer.SerializeToNode(TestProjects.starter (), JsonDefaults.Options).AsObject()
+let starterJson () : JsonObject = (ProjectMigrations.toNode (TestProjects.starter ())).AsObject()
 
 /// A case's JSON (the starter with its edits).
 let json (case: Case) : JsonObject =
@@ -409,8 +406,12 @@ let json (case: Case) : JsonObject =
     case.Edit root
     root
 
-/// A case's project: its JSON parsed with the typed deserializer, then its typed edits.
+/// A case's project: its JSON through the typed parse, then its typed edits; or the parse issue.
+let tryProject (case: Case) : Result<GameProject, string> =
+    Decode.run SchemaJson.decodeGameProject (JsonInterop.ofNode (json case)) |> Result.map case.Typed
+
+/// A case's project (the case must parse).
 let project (case: Case) : GameProject =
-    let project = (json case).Deserialize<GameProject>(JsonDefaults.Options)
-    case.Typed project
-    project
+    match tryProject case with
+    | Ok project -> project
+    | Error issue -> failwithf "%s does not parse: %s" case.Name issue

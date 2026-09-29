@@ -1,25 +1,21 @@
 namespace FarmEngine.Authoring
 
-open System
 open System.Collections.Generic
-open System.Text.Json
-open System.Text.Json.Nodes
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 /// Which custom assets the game uses (docs/EXPORT.md "Only used assets ship"). The cartridge
 /// compiler leaves the others out, and Export Game lists them as warnings.
 module AssetUsage =
     /// Every string value in a JSON tree.
-    let rec private strings (found: HashSet<string>) (node: JsonNode | null) =
-        match node with
-        | :? JsonObject as o ->
-            for KeyValue(_, value) in o do
+    let rec private strings (found: HashSet<string>) (json: Json) =
+        match json with
+        | JObject members ->
+            for _, value in members do
                 strings found value
-        | :? JsonArray as a ->
-            for value in a do
+        | JArray items ->
+            for value in items do
                 strings found value
-        | :? JsonValue as v when v.GetValueKind() = JsonValueKind.String -> found.Add(v.GetValue<string>()) |> ignore
+        | JString s -> found.Add s |> ignore
         | _ -> ()
 
     /// Assets nothing in the game refers to. An asset counts as used when any value in the
@@ -29,43 +25,38 @@ module AssetUsage =
     /// The editor's brush selection does not count. A coincidental match only keeps an asset
     /// (and hides its warning); a used asset is never left out.
     let unused (project: GameProject) : CustomAsset list =
-        let node =
-            match JsonSerializer.SerializeToNode(project, JsonDefaults.Options) with
-            | :? JsonObject as o -> o
-            | _ -> JsonObject()
-        node.Remove "customAssets" |> ignore
-        node.Remove "selectedTileVisual" |> ignore
-        let values = HashSet<string>(StringComparer.Ordinal)
-        strings values node
+        let json =
+            SchemaJson.encodeGameProject project
+            |> Json.remove "customAssets"
+            |> Json.remove "selectedTileVisual"
+        let values = HashSet<string>()
+        strings values json
         let refersTo (asset: CustomAsset) =
             values.Contains asset.Id
             || (asset.DataUrl.Length > 0 && values.Contains asset.DataUrl)
             || (asset.Type = CustomAssetTypes.Tile
                 && (match asset.TileType with
-                    | null -> false
-                    | tileType -> values.Contains tileType))
-        let used = HashSet<string>(StringComparer.Ordinal)
-        let pending = Queue<CustomAsset>(project.CustomAssets |> Seq.filter refersTo)
-        let byId = Dictionary<string, CustomAsset>(StringComparer.Ordinal)
+                    | None -> false
+                    | Some tileType -> values.Contains tileType))
+        let used = HashSet<string>()
+        let pending = Queue<CustomAsset>(project.CustomAssets |> List.filter refersTo)
+        let byId = Dictionary<string, CustomAsset>()
         for asset in project.CustomAssets do
-            byId.TryAdd(asset.Id, asset) |> ignore
+            if not (byId.ContainsKey asset.Id) then byId.[asset.Id] <- asset
         while pending.Count > 0 do
             let asset = pending.Dequeue()
             if used.Add asset.Id then
-                match asset.Animations with
-                | null -> ()
-                | clips ->
-                    for clip in clips do
-                        for frame in clip.Frames do
-                            match frame.AssetId with
-                            | null -> ()
-                            | id ->
-                                match byId.TryGetValue id with
-                                | true, other when not (used.Contains other.Id) -> pending.Enqueue other
-                                | _ -> ()
-        project.CustomAssets |> Seq.filter (fun asset -> not (used.Contains asset.Id)) |> List.ofSeq
+                for clip in defaultArg asset.Animations [] do
+                    for frame in clip.Frames do
+                        match frame.AssetId with
+                        | None -> ()
+                        | Some id ->
+                            match byId.TryGetValue id with
+                            | true, other when not (used.Contains other.Id) -> pending.Enqueue other
+                            | _ -> ()
+        project.CustomAssets |> List.filter (fun asset -> not (used.Contains asset.Id))
 
     /// The assets the game uses, in project order.
     let used (project: GameProject) : CustomAsset list =
-        let unusedIds = HashSet<string>(unused project |> Seq.map (fun asset -> asset.Id), StringComparer.Ordinal)
-        project.CustomAssets |> Seq.filter (fun asset -> not (unusedIds.Contains asset.Id)) |> List.ofSeq
+        let unusedIds = HashSet<string>(unused project |> List.map (fun asset -> asset.Id))
+        project.CustomAssets |> List.filter (fun asset -> not (unusedIds.Contains asset.Id))

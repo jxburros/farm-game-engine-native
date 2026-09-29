@@ -6,143 +6,141 @@ open FarmEngine.Schemas
 /// The project-level edits (ProjectSettingsEditor.tsx, AssetManager.tsx, ArtBindings.tsx,
 /// ModsEditor.tsx, imports). Each function returns the same instance when nothing changed.
 module internal EditProject =
-    let private setField (record: 'T) (name: string) (value: objnull) : 'T = Records.withValue record name value
-
-    let private visualValue (visual: VisualRef option) : objnull =
-        match visual with
-        | Some v -> box v
-        | None -> null
-
     /// Project name and version (the header fields of the web project manager).
     let setProjectInfo (name: string) (version: string) (project: GameProject) =
         let name = if System.String.IsNullOrWhiteSpace name then project.Name else name.Trim()
         if project.Name = name && project.Version = version then project
-        else Proj.setMany [ ("Name", box name); ("Version", box version) ] project
+        else { project with Name = name; Version = version }
 
     /// ProjectSettingsEditor `update` / `updateTime` / `updateCalendar`: the whole settings record.
     let setSettings (settings: ProjectSettings) (project: GameProject) =
-        if obj.Equals(project.Settings, settings) then project else Proj.set "Settings" (box settings) project
+        if project.Settings = settings then project else { project with Settings = settings }
 
     let setExportSettings (settings: ExportSettings option) (project: GameProject) =
-        let value = Option.toObj settings
-        if obj.Equals(project.Export, value) then project else Proj.set "Export" (box value) project
+        if project.Export = settings then project else { project with Export = settings }
 
     /// ProjectSettingsEditor `removeSeason`: refused for the last season; festivals on it go too.
     let removeSeason (seasonId: string) (project: GameProject) =
         let calendar = project.Settings.Calendar
-        if calendar.Seasons.Count <= 1 then project
+        if calendar.Seasons.Length <= 1 then project
         else
             match Lists.removeBy (fun (s: CalendarSeason) -> s.Id) seasonId calendar.Seasons with
             | None -> project
             | Some seasons ->
-                let settings = setField project.Settings "Calendar" (box (setField calendar "Seasons" (box seasons)))
-                Proj.set "Settings" (box settings) project |> Cleanup.dropSeason seasonId
+                { project with Settings = { project.Settings with Calendar = { calendar with Seasons = seasons } } }
+                |> Cleanup.dropSeason seasonId
 
     let setGraphics (graphics: GraphicsSettings) (project: GameProject) =
-        if obj.Equals(project.Graphics, graphics) then project else Proj.set "Graphics" (box graphics) project
+        if project.Graphics = Some graphics then project else { project with Graphics = Some graphics }
 
     let setPlayerVisual (visual: VisualRef option) (project: GameProject) =
-        let value = visualValue visual
-        if obj.Equals(project.PlayerVisual, value) then project else Proj.set "PlayerVisual" value project
+        if project.PlayerVisual = visual then project else { project with PlayerVisual = visual }
 
     /// ArtBindings `apply`: artwork on the player or a definition. Items also refresh their dropped copies.
     let bindVisual (target: VisualTarget) (visual: VisualRef option) (project: GameProject) =
-        let value = visualValue visual
-        let bind (record: 'T) (current: VisualRef | null) : 'T =
-            if obj.Equals(current, value) then record else setField record "Visual" value
-        let inList (name: string) (idOf: 'T -> string) (currentOf: 'T -> VisualRef | null) (id: string) (list: List<'T>) =
-            Proj.update name (Lists.mapChanged (fun item -> if idOf item = id then bind item (currentOf item) else item) list) project
+        let bindIn (items: 'T list) (idOf: 'T -> string) (currentOf: 'T -> VisualRef option) (set: 'T -> 'T) (id: string) : 'T list option =
+            Lists.mapChanged (fun item -> if idOf item = id && currentOf item <> visual then set item else item) items
+        let apply (next: 'T list option) (write: 'T list -> GameProject) = match next with Some l -> write l | None -> project
         match target with
         | PlayerVisual -> setPlayerVisual visual project
-        | NpcVisual id -> inList "Npcs" (fun (n: Npc) -> n.Id) (fun n -> n.Visual) id project.Npcs
+        | NpcVisual id ->
+            apply (bindIn project.Npcs (fun n -> n.Id) (fun n -> n.Visual) (fun n -> { n with Visual = visual }) id) (fun l -> { project with Npcs = l })
         | ItemVisual id ->
-            inList "Items" (fun (i: Item) -> i.Id) (fun i -> i.Visual) id project.Items
+            apply (bindIn project.Items (fun i -> i.Id) (fun i -> i.Visual) (fun i -> { i with Visual = visual }) id) (fun l -> { project with Items = l })
             |> Proj.mapScenes (Proj.mapTiles (fun tile ->
                 match tile.Item with
-                | null -> tile
-                | item -> if item.Id = id && not (obj.Equals(item.Visual, value)) then setField tile "Item" (box (setField item "Visual" value)) else tile))
+                | Some item when item.Id = id && item.Visual <> visual -> { tile with Item = Some { item with Visual = visual } }
+                | _ -> tile))
         | CropVisual id ->
             match project.CustomCrops with
-            | null -> project
-            | crops -> inList "CustomCrops" (fun (c: CustomCropDefinition) -> c.Id) (fun c -> c.Visual) id crops
-        | NodeTypeVisual id -> inList "NodeTypes" (fun (n: NodeTypeDefinition) -> n.Id) (fun n -> n.Visual) id project.NodeTypes
-        | AnimalSpeciesVisual id -> inList "AnimalSpecies" (fun (s: AnimalSpeciesDefinition) -> s.Id) (fun s -> s.Visual) id project.AnimalSpecies
-        | MachineTypeVisual id -> inList "MachineTypes" (fun (m: MachineTypeDefinition) -> m.Id) (fun m -> m.Visual) id project.MachineTypes
+            | None -> project
+            | Some crops ->
+                apply (bindIn crops (fun c -> c.Id) (fun c -> c.Visual) (fun c -> { c with Visual = visual }) id) (fun l -> { project with CustomCrops = Some l })
+        | NodeTypeVisual id ->
+            apply (bindIn project.NodeTypes (fun n -> n.Id) (fun n -> n.Visual) (fun n -> { n with Visual = visual }) id) (fun l -> { project with NodeTypes = l })
+        | AnimalSpeciesVisual id ->
+            apply (bindIn project.AnimalSpecies (fun s -> s.Id) (fun s -> s.Visual) (fun s -> { s with Visual = visual }) id) (fun l -> { project with AnimalSpecies = l })
+        | MachineTypeVisual id ->
+            apply (bindIn project.MachineTypes (fun m -> m.Id) (fun m -> m.Visual) (fun m -> { m with Visual = visual }) id) (fun l -> { project with MachineTypes = l })
 
     /// AssetManager `upload` / `update`: add or replace an asset by id.
     let upsertAsset (asset: CustomAsset) (project: GameProject) =
-        Proj.update "CustomAssets" (Lists.upsertBy (fun (a: CustomAsset) -> a.Id) asset project.CustomAssets) project
+        match Lists.upsertBy (fun (a: CustomAsset) -> a.Id) asset project.CustomAssets with
+        | Some assets -> { project with CustomAssets = assets }
+        | None -> project
 
     /// Replace the frames of one clip of one asset; the same project when nothing changed.
-    let private mapClipFrames (assetId: string) (clipName: string) (f: List<ArtFrame> -> List<ArtFrame> option) (project: GameProject) =
+    let private mapClipFrames (assetId: string) (clipName: string) (f: ArtFrame list -> ArtFrame list option) (project: GameProject) =
         let mapClip (clip: AnimationClip) =
             if clip.Name <> clipName then clip
             else
                 match f clip.Frames with
-                | Some frames -> setField clip "Frames" (box frames)
+                | Some frames -> { clip with Frames = frames }
                 | None -> clip
         let mapAsset (asset: CustomAsset) =
             match asset.Animations with
-            | null -> asset
-            | clips when asset.Id = assetId ->
+            | Some clips when asset.Id = assetId ->
                 match Lists.mapChanged mapClip clips with
-                | Some next -> setField asset "Animations" (box next)
+                | Some next -> { asset with Animations = Some next }
                 | None -> asset
             | _ -> asset
-        Proj.update "CustomAssets" (Lists.mapChanged mapAsset project.CustomAssets) project
+        match Lists.mapChanged mapAsset project.CustomAssets with
+        | Some assets -> { project with CustomAssets = assets }
+        | None -> project
 
     /// AssetManager frame duration input (`Math.max(1, …)`): one frame, or all frames of the clip.
     let setFrameTicks (assetId: string) (clipName: string) (frame: int option) (ticks: int) (project: GameProject) =
         let ticks = float (max 1 ticks)
         mapClipFrames assetId clipName (fun frames ->
             let retime index (f: ArtFrame) =
-                if (match frame with Some i -> i = index | None -> true) && f.Ticks <> ticks then setField f "Ticks" (box ticks) else f
-            let next = List<ArtFrame>(frames |> Seq.mapi retime)
-            if Seq.forall2 (fun (a: ArtFrame) b -> obj.ReferenceEquals(a, b)) next frames then None else Some next) project
+                if (match frame with Some i -> i = index | None -> true) && f.Ticks <> ticks then { f with Ticks = ticks } else f
+            let next = List.mapi retime frames
+            if next = frames then None else Some next) project
 
     /// Duplicate a frame in place: the copy follows the original. Refused at the 1024-frame limit.
     let duplicateFrame (assetId: string) (clipName: string) (frame: int) (project: GameProject) =
         mapClipFrames assetId clipName (fun frames ->
-            if frame < 0 || frame >= frames.Count || frames.Count >= 1024 then None
-            else
-                let next = List<ArtFrame>(frames)
-                next.Insert(frame + 1, frames[frame])
-                Some next) project
+            if frame < 0 || frame >= frames.Length || frames.Length >= 1024 then None
+            else Some(List.insertAt (frame + 1) frames.[frame] frames)) project
 
     /// AssetManager "Remove unused art", made safe for art in use: bindings fall back to the default look.
     let removeAsset (assetId: string) (project: GameProject) =
         match Lists.removeBy (fun (a: CustomAsset) -> a.Id) assetId project.CustomAssets with
         | None -> project
-        | Some kept -> Proj.set "CustomAssets" (box kept) project |> Cleanup.dropAsset assetId
+        | Some kept -> { project with CustomAssets = kept } |> Cleanup.dropAsset assetId
 
     let private packId (install: PackInstallation) = install.Pack.Manifest.Id
 
     /// ModsEditor `confirmPackInstall`: appended enabled; a pack id already installed is refused.
     let installPack (pack: ContentPack) (project: GameProject) =
-        if project.ContentPacks |> Seq.exists (fun i -> packId i = pack.Manifest.Id) then project
-        else Proj.set "ContentPacks" (box (Lists.append (PackInstallation(Pack = pack, Enabled = true)) project.ContentPacks)) project
+        if project.ContentPacks |> List.exists (fun i -> packId i = pack.Manifest.Id) then project
+        else { project with ContentPacks = Lists.append { Pack = pack; Enabled = true } project.ContentPacks }
 
     let setPackEnabled (id: string) (enabled: bool) (project: GameProject) =
         let toggle (install: PackInstallation) =
-            if packId install <> id || install.Enabled = enabled then install else setField install "Enabled" (box enabled)
-        Proj.update "ContentPacks" (Lists.mapChanged toggle project.ContentPacks) project
+            if packId install <> id || install.Enabled = enabled then install else { install with Enabled = enabled }
+        match Lists.mapChanged toggle project.ContentPacks with
+        | Some packs -> { project with ContentPacks = packs }
+        | None -> project
 
     /// ModsEditor `move`: load order. Listed ids come first in that order; the rest keep theirs.
     let reorderPacks (ids: string list) (project: GameProject) =
-        let installs = List.ofSeq project.ContentPacks
+        let installs = project.ContentPacks
         let listed = ids |> List.choose (fun id -> installs |> List.tryFind (fun i -> packId i = id))
         let listedIds = HashSet<string>(listed |> List.map packId)
         let rest = installs |> List.filter (fun i -> not (listedIds.Contains(packId i)))
         let next = listed @ rest
-        if List.forall2 (fun (a: PackInstallation) (b: PackInstallation) -> obj.ReferenceEquals(a, b)) next installs then project
-        else Proj.set "ContentPacks" (box (Lists.ofSeq next)) project
+        if List.forall2 (fun (a: PackInstallation) (b: PackInstallation) -> LanguagePrimitives.PhysicalEquality a b) next installs then project
+        else { project with ContentPacks = next }
 
     let removePack (id: string) (project: GameProject) =
-        Proj.update "ContentPacks" (Lists.removeBy packId id project.ContentPacks) project
+        match Lists.removeBy packId id project.ContentPacks with
+        | Some packs -> { project with ContentPacks = packs }
+        | None -> project
 
     /// ModsEditor "Import into project": `applyPackToProject`, then the layer is removed.
     let importPack (id: string) (project: GameProject) =
-        match project.ContentPacks |> Seq.tryFind (fun i -> packId i = id) with
+        match project.ContentPacks |> List.tryFind (fun i -> packId i = id) with
         | None -> project
         | Some install ->
             let imported, _ = PackMerge.applyToProject project install.Pack
@@ -150,4 +148,4 @@ module internal EditProject =
 
     /// Imports and kept playtests: the whole project.
     let replaceProject (next: GameProject) (project: GameProject) =
-        if obj.ReferenceEquals(next, project) then project else next
+        if LanguagePrimitives.PhysicalEquality next project then project else next

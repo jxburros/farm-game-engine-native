@@ -1,34 +1,27 @@
 module FarmEngine.Authoring.Tests.PackMergeTests
 
-open System.IO
-open System.Text.Json
 open Xunit
 open FarmEngine.Authoring
 open FarmEngine.Authoring.Tests.TestProjects
-open FarmEngine.Json
 open FarmEngine.Schemas
 
 // ── TypeScript reference: fixtures/projects/packs-project.json ───────────────
 // `packs-project.ts-reference.json` holds the TS engine's output for that project (recorded,
 // never hand-edited); the Rust `packs_and_state` tests check the same file.
 
-let private reference (key: string) : JsonElement =
-    (readElement [ "Fixtures"; "packs-project.ts-reference.json" ]).GetProperty key
+let private reference (key: string) : Json = Json.get key (readJson [ "Fixtures"; "packs-project.ts-reference.json" ])
 
-let private packsProject () =
-    JsonSerializer.Deserialize<GameProject>(File.ReadAllText(testFile [ "Fixtures"; "packs-project.json" ]), JsonDefaults.Options)
+let private packsProject () = projectOf (readJson [ "Fixtures"; "packs-project.json" ])
 
 /// The TS base content, so the merge is checked on exactly the TS input.
-let private tsBaseContent () = (reference "base").Deserialize<GameContent>(JsonDefaults.Options)
+let private tsBaseContent () = decodeJson SchemaJson.decodeGameContent (reference "base")
 
-let private stableOf (element: JsonElement) = StableJson.Stringify(element: JsonElement)
+let private matches (label: string) (expected: Json) (actual: Json) =
+    assertSameStable label (Json.stableStringify expected) (Json.stableStringify actual)
 
-let private matches (label: string) (expected: JsonElement) (actual: 'T) =
-    assertSameStable label (stableOf expected) (StableJson.Stringify<'T> actual)
-
-let private referenceProblems (element: JsonElement) =
-    [ for p in element.EnumerateArray() ->
-          p.GetProperty("packId").GetString(), p.GetProperty("severity").GetString(), p.GetProperty("message").GetString() ]
+let private referenceProblems (json: Json) =
+    [ for p in Json.elements "problems" json ->
+          Json.toJsString (Json.get "packId" p), Json.toJsString (Json.get "severity" p), Json.toJsString (Json.get "message" p) ]
 
 let private problemTuples (problems: PackProblem list) =
     problems |> List.map (fun p -> p.PackId, p.Severity, p.Message)
@@ -36,34 +29,34 @@ let private problemTuples (problems: PackProblem list) =
 [<Fact>]
 let ``base and compiled content match TypeScript`` () =
     let project = packsProject ()
-    matches "base" (reference "base") (ContentCompiler.baseContent project)
-    matches "content" (reference "content") (ContentCompiler.compile project)
+    matches "base" (reference "base") (SchemaJson.encodeGameContent (ContentCompiler.baseContent project))
+    matches "content" (reference "content") (SchemaJson.encodeGameContent (ContentCompiler.compile project))
 
 [<Fact>]
 let ``pack order matches TypeScript`` () =
     let packs, problems = PackMerge.resolveOrder (packsProject ()).ContentPacks
     let expected = reference "order"
-    matches "order" (expected.GetProperty "packs") packs
-    Assert.Equal<(string * string * string) list>(referenceProblems (expected.GetProperty "problems"), problemTuples problems)
+    matches "order" (Json.get "packs" expected) (Encode.list SchemaJson.encodeContentPack packs)
+    Assert.Equal<(string * string * string) list>(referenceProblems (Json.get "problems" expected), problemTuples problems)
 
 [<Fact>]
 let ``namespacing matches TypeScript`` () =
     let project = packsProject ()
-    matches "namespacedA" (reference "namespacedA") (PackRules.namespacePack project.ContentPacks.[1].Pack)
-    matches "namespacedB" (reference "namespacedB") (PackRules.namespacePack project.ContentPacks.[0].Pack)
+    matches "namespacedA" (reference "namespacedA") (SchemaJson.encodeContentPack (PackRules.namespacePack project.ContentPacks.[1].Pack))
+    matches "namespacedB" (reference "namespacedB") (SchemaJson.encodeContentPack (PackRules.namespacePack project.ContentPacks.[0].Pack))
 
 [<Fact>]
 let ``pack merge matches TypeScript`` () =
     let merged, problems = PackMerge.mergeIntoContent (tsBaseContent ()) (packsProject ()).ContentPacks
     let expected = reference "merged"
-    matches "merged" (expected.GetProperty "content") merged
-    Assert.Equal<(string * string * string) list>(referenceProblems (expected.GetProperty "problems"), problemTuples problems)
+    matches "merged" (Json.get "content" expected) (SchemaJson.encodeGameContent merged)
+    Assert.Equal<(string * string * string) list>(referenceProblems (Json.get "problems" expected), problemTuples problems)
 
 [<Fact>]
 let ``localization matches TypeScript and unknown locales change nothing`` () =
     let installs = (packsProject ()).ContentPacks
     let merged, _ = PackMerge.mergeIntoContent (tsBaseContent ()) installs
-    matches "localized" (reference "localized") (PackMerge.applyLocaleStrings merged installs "fr")
+    matches "localized" (reference "localized") (SchemaJson.encodeGameContent (PackMerge.applyLocaleStrings merged installs "fr"))
     Assert.Same(merged, PackMerge.applyLocaleStrings merged installs "xx")
     Assert.Same(merged, PackMerge.applyLocaleStrings merged installs "")
 
@@ -72,8 +65,8 @@ let ``pack import matches TypeScript`` () =
     let project = packsProject ()
     let imported, problems = PackMerge.applyToProject project project.ContentPacks.[1].Pack
     let expected = reference "applyA"
-    matches "applyA" (expected.GetProperty "project") imported
-    Assert.Equal<(string * string * string) list>(referenceProblems (expected.GetProperty "problems"), problemTuples problems)
+    matches "applyA" (Json.get "project" expected) (SchemaJson.encodeGameProject imported)
+    Assert.Equal<(string * string * string) list>(referenceProblems (Json.get "problems" expected), problemTuples problems)
 
 // ── Order, overrides and conflicts ───────────────────────────────────────────
 
@@ -81,34 +74,21 @@ let ``pack import matches TypeScript`` () =
 let ``pack order and merge handle overrides missing dependencies and cycles`` () =
     let baseContent = ContentCompiler.baseContent (blank ())
     let alpha =
-        ContentPack(
-            Manifest = PackManifest(Id = "alpha", Name = "Alpha", Version = "1.0.0"),
-            Content = PackContent(Items = listOf [ item "ore" "Alpha Ore" ]))
+        { ContentPack.Default with Manifest = { PackManifest.Default with Id = "alpha"; Name = "Alpha"; Version = "1.0.0" }; Content = { PackContent.Default with Items = [ item "ore" "Alpha Ore" ] } }
     let beta =
-        ContentPack(
-            Manifest = PackManifest(Id = "beta", Name = "Beta", Version = "1.0.0",
-                Dependencies = listOf [ PackDependency(PackId = "alpha") ],
-                Overrides = listOf [ "alpha:ore" ]),
-            Content = PackContent(Items = listOf [ item "alpha:ore" "Better Ore" ]))
+        { ContentPack.Default with Manifest = { PackManifest.Default with Id = "beta"; Name = "Beta"; Version = "1.0.0"; Dependencies = [ { PackDependency.Default with PackId = "alpha" } ]; Overrides = [ "alpha:ore" ] }; Content = { PackContent.Default with Items = [ item "alpha:ore" "Better Ore" ] } }
     let gamma =
-        ContentPack(
-            Manifest = PackManifest(Id = "gamma", Name = "Gamma", Version = "1.0.0",
-                Dependencies = listOf [ PackDependency(PackId = "missing") ]),
-            Content = PackContent(Items = listOf [ item "alpha:ore" "Undeclared Ore" ]))
+        { ContentPack.Default with Manifest = { PackManifest.Default with Id = "gamma"; Name = "Gamma"; Version = "1.0.0"; Dependencies = [ { PackDependency.Default with PackId = "missing" } ] }; Content = { PackContent.Default with Items = [ item "alpha:ore" "Undeclared Ore" ] } }
     let delta =
-        ContentPack(
-            Manifest = PackManifest(Id = "delta", Name = "Delta", Version = "1.0.0",
-                Dependencies = listOf [ PackDependency(PackId = "epsilon") ]))
+        { ContentPack.Default with Manifest = { PackManifest.Default with Id = "delta"; Name = "Delta"; Version = "1.0.0"; Dependencies = [ { PackDependency.Default with PackId = "epsilon" } ] } }
     let epsilon =
-        ContentPack(
-            Manifest = PackManifest(Id = "epsilon", Name = "Epsilon", Version = "1.0.0",
-                Dependencies = listOf [ PackDependency(PackId = "delta") ]))
+        { ContentPack.Default with Manifest = { PackManifest.Default with Id = "epsilon"; Name = "Epsilon"; Version = "1.0.0"; Dependencies = [ { PackDependency.Default with PackId = "delta" } ] } }
     let installs =
-        listOf [ PackInstallation(Pack = gamma)
-                 PackInstallation(Pack = beta)
-                 PackInstallation(Pack = alpha)
-                 PackInstallation(Pack = delta)
-                 PackInstallation(Pack = epsilon) ]
+        [ { PackInstallation.Default with Pack = gamma }
+          { PackInstallation.Default with Pack = beta }
+          { PackInstallation.Default with Pack = alpha }
+          { PackInstallation.Default with Pack = delta }
+          { PackInstallation.Default with Pack = epsilon } ]
     let ordered, _ = PackMerge.resolveOrder installs
     // Dependencies load before their dependents; the cycle is broken where it was found.
     Assert.Equal<string list>([ "gamma"; "alpha"; "beta"; "epsilon"; "delta" ], ordered |> List.map (fun p -> p.Manifest.Id))
@@ -122,10 +102,7 @@ let ``pack order and merge handle overrides missing dependencies and cycles`` ()
 let ``disabled packs leave content intact and report no problems`` () =
     let baseContent = ContentCompiler.baseContent (blank ())
     let disabled =
-        listOf [ PackInstallation(
-                    Enabled = false,
-                    Pack = ContentPack(Manifest = PackManifest(Id = "disabled", Name = "Disabled", Version = "1.0.0"),
-                        Content = PackContent(Items = listOf [ item "ore" "Ore" ]))) ]
+        [ { PackInstallation.Default with Enabled = false; Pack = { ContentPack.Default with Manifest = { PackManifest.Default with Id = "disabled"; Name = "Disabled"; Version = "1.0.0" }; Content = { PackContent.Default with Items = [ item "ore" "Ore" ] } } } ]
     let merged, problems = PackMerge.mergeIntoContent baseContent disabled
     Assert.Same(baseContent, merged)
     Assert.Empty problems
@@ -144,7 +121,7 @@ let ``importing the starter pack into a blank project materializes its content``
     Assert.Equal<string list>([ "npc-farmer"; "npc-merchant" ], ids project.Npcs (fun n -> n.Id))
     Assert.Equal<string list>([ "quest-first-harvest"; "quest-go-shopping" ], ids project.Quests (fun q -> q.Id))
     Assert.Contains(project.Shops, fun s -> s.Id = "shop-general")
-    Assert.Equal(pack.Content.PlayerStart.Inventory.Count, project.Player.Inventory.Count)
+    Assert.Equal(pack.Content.PlayerStart.Value.Inventory.Length, project.Player.Inventory.Length)
     Assert.Empty(errors project)
 
 // ── Mods and locale strings through the content compiler ─────────────────────
@@ -153,23 +130,21 @@ let ``importing the starter pack into a blank project materializes its content``
 /// validates and merges its crop, machine and recipe under namespaced ids.
 [<Fact>]
 let ``the demo mod validates merges its crop machine and recipe and namespaces ids`` () =
-    let raw = readElement [ "Fixtures"; "demo-mod.json" ]
-    let validated = PacksSchema.ValidateContentPack raw
-    Assert.Empty validated.Errors
-    let project = Records.withValue (starter ()) "ContentPacks" (box (listOf [ PackInstallation(Pack = validated.Pack, Enabled = true) ]))
+    let pack = validPack (readJson [ "Fixtures"; "demo-mod.json" ])
+    let project = { (starter ()) with ContentPacks = [ { Pack = pack; Enabled = true } ] }
     let content = ContentCompiler.compile project
-    Assert.True(content.Crops.ContainsKey "demo-glow-farm:glowshroom")
+    Assert.True(content.Crops |> List.exists (fun (id, _) -> id = "demo-glow-farm:glowshroom"))
     Assert.Contains(content.MachineTypes, fun m -> m.Id = "demo-glow-farm:machine-glow-vat")
     let recipe = content.Recipes |> Seq.find (fun r -> r.Id = "demo-glow-farm:recipe-glow-jelly")
-    Assert.Equal("demo-glow-farm:machine-glow-vat", recipe.MachineTypeId)
+    Assert.Equal(Some "demo-glow-farm:machine-glow-vat", recipe.MachineTypeId)
     Assert.Equal("demo-glow-farm:crop-glowshroom", recipe.Inputs.[0].ItemId)
     // A reload (serialize, parse) compiles to the same content.
-    let reloaded = JsonDefaults.Deserialize<GameProject>(JsonDefaults.Serialize project)
-    Assert.Equal(StableJson.Stringify content, StableJson.Stringify(ContentCompiler.compile reloaded))
+    let reloaded = roundTrip project
+    Assert.Equal(stableOf SchemaJson.encodeGameContent content, stableOf SchemaJson.encodeGameContent (ContentCompiler.compile reloaded))
 
 let private localizedPack () =
-    PacksSchema.ValidateContentPack(
-        JsonDocument.Parse(
+    validPack (
+        Json.parse
             """{
               "manifest": { "id": "translations", "name": "Translations", "version": "1.0.0" },
               "content": {
@@ -185,15 +160,15 @@ let private localizedPack () =
               },
               "plugins": []
             }"""
-        ).RootElement
-    ).Pack
+        |> Result.defaultWith failwith
+    )
 
 let private localizedContent (locale: string) =
     let project = starter ()
     let project =
-        Records.withValues project
-            [ "ContentPacks", box (listOf [ PackInstallation(Pack = localizedPack (), Enabled = true) ])
-              "Settings", box (Records.withValue project.Settings "Locale" (box locale)) ]
+        { project with
+            ContentPacks = [ { Pack = localizedPack (); Enabled = true } ]
+            Settings = { project.Settings with Locale = locale } }
     ContentCompiler.compile project
 
 /// Port of the C# PolishAndEcosystemTests locale cases (m7 i18n).

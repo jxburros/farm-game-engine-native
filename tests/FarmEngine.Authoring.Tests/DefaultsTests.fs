@@ -53,7 +53,7 @@ let ``defaults match the web forms`` () =
     Assert.Equal("#9a7b4f", (Defaults.newMachineType project).Color)
     let node = Defaults.newNodeType project
     Assert.Equal("axe", node.RequiredTool)
-    Assert.False node.RespawnDays.HasValue
+    Assert.Equal(Some None, node.RespawnDays)
     let species = Defaults.newAnimalSpecies project
     Assert.Equal("feed-hay", orEmpty species.FeedItemId)
     Assert.Equal(500.0, species.PurchaseCost)
@@ -62,14 +62,17 @@ let ``defaults match the web forms`` () =
     Assert.Equal("new-action", action.Id)
     let minigame = Defaults.newMinigame project
     Assert.Equal("timing-bar", minigame.Kind)
-    Assert.Equal(0.9, minigame.Config.["speed"].GetDouble())
-    let timeOfDay = Defaults.defaultCondition "timeOfDay" project :?> TimeOfDayCondition
-    Assert.Equal(360.0, timeOfDay.MinMinute)
-    Assert.Equal(720.0, timeOfDay.MaxMinute)
-    let season = Defaults.defaultCondition "season" project :?> SeasonCondition
-    Assert.Equal("spring", season.Seasons.[0])
+    Assert.Equal(JNumber 0.9, field "speed" minigame.Config)
+    match Defaults.defaultCondition "timeOfDay" project with
+    | EventCondition.TimeOfDay timeOfDay ->
+        Assert.Equal(360.0, timeOfDay.MinMinute)
+        Assert.Equal(720.0, timeOfDay.MaxMinute)
+    | other -> failwithf "unexpected %A" other
+    match Defaults.defaultCondition "season" project with
+    | EventCondition.Season season -> Assert.Equal("spring", season.Seasons.[0])
+    | other -> failwithf "unexpected %A" other
     let scene = Defaults.newSceneWith project "Cave" 8 6 "wall"
-    Assert.Equal(6, scene.Tiles.Count)
+    Assert.Equal(6, scene.Tiles.Length)
     Assert.True(scene.Tiles.[0].[0].Collision)
     Assert.Equal("wall", orEmpty scene.Tiles.[0].[0].Object)
 

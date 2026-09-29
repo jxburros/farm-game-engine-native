@@ -3,75 +3,59 @@ namespace FarmEngine.Authoring
 open System.Collections.Generic
 open FarmEngine.Schemas
 
-/// Change-tracking helpers over the C# `List<T>` collections of the schema records. Every function
-/// returns `None` when nothing changed, so edits can hand back the same project instance (the
-/// "no-op returns the same document" rule of `Document.apply`).
+/// Change-tracking helpers over the list fields of the schema records. Every function returns
+/// `None` when nothing changed, so edits can hand back the same project instance (the "no-op
+/// returns the same document" rule of `Document.apply`).
 module internal Lists =
-    let ofSeq (items: seq<'T>) = List<'T>(items)
+    /// A changed value: a different instance that is not structurally equal (functions that change
+    /// nothing hand back the same instance, so the structural check only runs on real changes).
+    let changed (next: 'T) (previous: 'T) : bool =
+        not (LanguagePrimitives.PhysicalEquality (box next) (box previous)) && not (next = previous)
 
-    /// `Some list'` when `f` changed at least one element (by record equality), else `None`.
-    let mapChanged (f: 'T -> 'T) (items: List<'T>) : List<'T> option =
-        let mutable changed = false
-        let next = List<'T>(items.Count)
-        for item in items do
-            let mapped = f item
-            if not (obj.Equals(mapped, item)) then changed <- true
-            next.Add mapped
-        if changed then Some next else None
+    /// `Some list'` when `f` changed at least one element, else `None`.
+    let mapChanged (f: 'T -> 'T) (items: 'T list) : 'T list option =
+        let mutable any = false
+        let next =
+            items
+            |> List.map (fun item ->
+                let mapped = f item
+                if changed mapped item then any <- true
+                mapped)
+        if any then Some next else None
 
     /// Elements kept by `keep`; `None` when all were kept.
-    let filterChanged (keep: 'T -> bool) (items: List<'T>) : List<'T> option =
-        let next = List<'T>(items |> Seq.filter keep)
-        if next.Count = items.Count then None else Some next
+    let filterChanged (keep: 'T -> bool) (items: 'T list) : 'T list option =
+        let next = List.filter keep items
+        if next.Length = items.Length then None else Some next
 
     /// Replace the element with the same id, or append. `None` when the existing element is equal.
-    let upsertBy (idOf: 'T -> string) (item: 'T) (items: List<'T>) : List<'T> option =
+    let upsertBy (idOf: 'T -> string) (item: 'T) (items: 'T list) : 'T list option =
         let id = idOf item
-        match Seq.tryFindIndex (fun existing -> idOf existing = id) items with
-        | Some index when obj.Equals(items[index], item) -> None
-        | Some index ->
-            let next = List<'T>(items)
-            next[index] <- item
-            Some next
-        | None ->
-            let next = List<'T>(items)
-            next.Add item
-            Some next
+        match List.tryFindIndex (fun existing -> idOf existing = id) items with
+        | Some index when items.[index] = item -> None
+        | Some index -> Some(List.updateAt index item items)
+        | None -> Some(items @ [ item ])
 
-    let removeBy (idOf: 'T -> string) (id: string) (items: List<'T>) : List<'T> option =
+    let removeBy (idOf: 'T -> string) (id: string) (items: 'T list) : 'T list option =
         filterChanged (fun item -> idOf item <> id) items
 
-    let append (item: 'T) (items: List<'T>) : List<'T> =
-        let next = List<'T>(items)
-        next.Add item
-        next
+    let append (item: 'T) (items: 'T list) : 'T list = items @ [ item ]
 
-/// Copy-with over `GameProject` and `Scene` (see `Records`): one place knows the property names.
+    /// `list'` from a helper, or the list itself.
+    let orSame (items: 'T list) (next: 'T list option) : 'T list = defaultArg next items
+
+/// Scene lookups and whole-scene, whole-tile updates on `GameProject`.
 module internal Proj =
-    let set (name: string) (value: objnull) (project: GameProject) : GameProject =
-        Records.withValue project name value
-
-    let setMany (changes: (string * objnull) list) (project: GameProject) : GameProject =
-        Records.withValues project changes
-
-    /// Apply `Some list'` from a `Lists` helper to a project field; `None` leaves the instance alone.
-    let update (name: string) (next: List<'T> option) (project: GameProject) : GameProject =
-        match next with
-        | Some list -> set name (box list) project
-        | None -> project
-
     let sceneIndex (sceneId: string) (project: GameProject) =
-        project.Scenes.FindIndex(fun s -> s.Id = sceneId)
+        project.Scenes |> List.tryFindIndex (fun s -> s.Id = sceneId) |> Option.defaultValue -1
 
     let tryScene (sceneId: string) (project: GameProject) : Scene option =
-        match sceneIndex sceneId project with
-        | -1 -> None
-        | index -> Some project.Scenes[index]
+        project.Scenes |> List.tryFind (fun s -> s.Id = sceneId)
 
     let startScene (project: GameProject) : Scene option =
         match tryScene project.StartSceneId project with
         | Some scene -> Some scene
-        | None -> if project.Scenes.Count = 0 then None else Some project.Scenes[0]
+        | None -> List.tryHead project.Scenes
 
     /// The scene the editor works in (web `project.player.sceneId`), falling back to the start scene.
     let currentScene (project: GameProject) : Scene option =
@@ -84,40 +68,38 @@ module internal Proj =
         match sceneIndex sceneId project with
         | -1 -> project
         | index ->
-            let scene = project.Scenes[index]
+            let scene = project.Scenes.[index]
             let next = f scene
-            if obj.Equals(next, scene) then
-                project
-            else
-                let scenes = List<Scene>(project.Scenes)
-                scenes[index] <- next
-                set "Scenes" (box scenes) project
+            if Lists.changed next scene then { project with Scenes = List.updateAt index next project.Scenes }
+            else project
 
     /// Every scene through `f`; the same project when none changed.
     let mapScenes (f: Scene -> Scene) (project: GameProject) : GameProject =
-        update "Scenes" (Lists.mapChanged f project.Scenes) project
+        match Lists.mapChanged f project.Scenes with
+        | Some scenes -> { project with Scenes = scenes }
+        | None -> project
 
-    let withSceneTiles (tiles: List<List<Tile>>) (scene: Scene) : Scene = Records.withValue scene "Tiles" (box tiles)
+    let withSceneTiles (tiles: Tile list list) (scene: Scene) : Scene = { scene with Tiles = tiles }
+
+    /// Tiles as a mutable row array for a bulk edit; `commitRows` turns it back into a scene when changed.
+    let rows (scene: Scene) : Tile[][] = scene.Tiles |> List.map Array.ofList |> Array.ofList
 
     let inBounds (scene: Scene) (x: int) (y: int) =
-        y >= 0 && y < scene.Tiles.Count && x >= 0 && x < scene.Tiles[y].Count
-
-    /// Tiles as a mutable row array for a bulk edit; `commit` turns it back into a scene when changed.
-    let rows (scene: Scene) : Tile[][] = scene.Tiles |> Seq.map Seq.toArray |> Seq.toArray
+        y >= 0 && y < scene.Tiles.Length && x >= 0 && x < scene.Tiles.[y].Length
 
     let commitRows (scene: Scene) (rows: Tile[][]) (changed: bool) : Scene =
         if not changed then scene
-        else withSceneTiles (List<List<Tile>>(rows |> Array.map (fun r -> List<Tile>(r)))) scene
+        else withSceneTiles (rows |> Array.map List.ofArray |> List.ofArray) scene
 
     /// Map every tile of a scene; the same scene when nothing changed.
     let mapTiles (f: Tile -> Tile) (scene: Scene) : Scene =
         let rows = rows scene
         let mutable changed = false
         for y in 0 .. rows.Length - 1 do
-            for x in 0 .. rows[y].Length - 1 do
-                let next = f (rows[y][x])
-                if not (obj.Equals(next, rows[y][x])) then
-                    rows[y][x] <- next
+            for x in 0 .. rows.[y].Length - 1 do
+                let next = f rows.[y].[x]
+                if Lists.changed next rows.[y].[x] then
+                    rows.[y].[x] <- next
                     changed <- true
         commitRows scene rows changed
 
@@ -126,10 +108,10 @@ module internal Proj =
         let rows = rows scene
         let mutable changed = false
         for (x, y) in cells do
-            if y >= 0 && y < rows.Length && x >= 0 && x < rows[y].Length then
-                let next = f (rows[y][x])
-                if not (obj.Equals(next, rows[y][x])) then
-                    rows[y][x] <- next
+            if y >= 0 && y < rows.Length && x >= 0 && x < rows.[y].Length then
+                let next = f rows.[y].[x]
+                if Lists.changed next rows.[y].[x] then
+                    rows.[y].[x] <- next
                     changed <- true
         commitRows scene rows changed
 
@@ -155,8 +137,8 @@ module internal Proj =
         add (project.Minigames |> Seq.map (fun m -> m.Id))
         add (project.CustomAssets |> Seq.map (fun a -> a.Id))
         match project.CustomCrops with
-        | null -> ()
-        | crops -> add (crops |> Seq.map (fun c -> c.Id))
+        | None -> ()
+        | Some crops -> add (crops |> Seq.map (fun c -> c.Id))
         ids
 
 /// Tile-layer rules shared by the paint edits (web `game-helpers.ts` `setTileLayer`, `classifyTileType`).
@@ -168,39 +150,26 @@ module TileRules =
         | "object" -> Object
         | _ -> Background
 
-    let private optionalString (value: string | null) : string option =
-        match value with
-        | null -> None
-        | s -> Some s
-
     /// The per-layer art override on a tile, if any.
     let visualOf (layer: TileLayer) (tile: Tile) : VisualRef option =
         match tile.Visuals with
-        | null -> None
-        | visuals ->
+        | None -> None
+        | Some visuals ->
             match layer with
-            | Background -> Option.ofObj visuals.Background
-            | Overlay -> Option.ofObj visuals.Overlay
-            | Object -> Option.ofObj visuals.Object
+            | Background -> visuals.Background
+            | Overlay -> visuals.Overlay
+            | Object -> visuals.Object
 
-    /// Set one layer's art override (`None` clears it); `Visuals` becomes null when all three are empty.
+    /// Set one layer's art override (`None` clears it); `Visuals` becomes absent when all three are empty.
     let withVisual (layer: TileLayer) (visual: VisualRef option) (tile: Tile) : Tile =
-        let current =
-            match tile.Visuals with
-            | null -> TileVisuals()
-            | visuals -> visuals
-        let value: objnull =
-            match visual with
-            | Some v -> box v
-            | None -> null
+        let current = defaultArg tile.Visuals TileVisuals.Default
         let next =
             match layer with
-            | Background -> Records.withValue current "Background" value
-            | Overlay -> Records.withValue current "Overlay" value
-            | Object -> Records.withValue current "Object" value
-        let empty = isNull next.Background && isNull next.Overlay && isNull next.Object
-        let visuals: objnull = if empty then null else box next
-        if obj.Equals(visuals, tile.Visuals) then tile else Records.withValue tile "Visuals" visuals
+            | Background -> { current with Background = visual }
+            | Overlay -> { current with Overlay = visual }
+            | Object -> { current with Object = visual }
+        let visuals = if next.Background.IsNone && next.Overlay.IsNone && next.Object.IsNone then None else Some next
+        if visuals = tile.Visuals then tile else { tile with Visuals = visuals }
 
     /// Paint `tileType` onto `layer`. On its natural layer this is exactly the web brush
     /// (`setTileLayer` + no crop, no node). On another layer the type is written there and still
@@ -208,40 +177,40 @@ module TileRules =
     let paint (layer: TileLayer) (tileType: string) (visual: VisualRef option) (tile: Tile) : Tile =
         let painted =
             if layerOf tileType = layer then
-                AuthoringTiles.SetTileLayer(tile, tileType, Option.toObj visual)
+                AuthoringTiles.SetTileLayer(tile, tileType, visual)
             else
                 let byLayer =
                     match layer with
-                    | Background -> Records.withValues tile [ ("Type", box tileType); ("Background", box tileType) ]
-                    | Overlay -> Records.withValues tile [ ("Type", box tileType); ("Overlay", box tileType) ]
-                    | Object -> Records.withValues tile [ ("Type", box tileType); ("Object", box tileType); ("Collision", box (tileType = TileTypes.Wall)) ]
+                    | Background -> { tile with Type = tileType; Background = tileType }
+                    | Overlay -> { tile with Type = tileType; Overlay = Some tileType }
+                    | Object -> { tile with Type = tileType; Object = Some tileType; Collision = (tileType = TileTypes.Wall) }
                 withVisual layer visual byLayer
-        Records.withValues painted [ ("Crop", null); ("Node", null) ]
+        { painted with Crop = None; Node = None }
 
     /// The effective type once a layer is cleared: topmost remaining layer.
     let private effectiveType (tile: Tile) =
         match tile.Object with
-        | null ->
+        | Some object -> object
+        | None ->
             match tile.Overlay with
-            | null -> tile.Background
-            | overlay -> overlay
-        | object -> object
+            | Some overlay -> overlay
+            | None -> tile.Background
 
     /// Clear a layer: background resets to grass, overlay and object to nothing (walls stop blocking).
     let erase (layer: TileLayer) (tile: Tile) : Tile =
         let cleared =
             match layer with
-            | Background -> Records.withValue tile "Background" (box TileTypes.Grass)
-            | Overlay -> Records.withValue tile "Overlay" null
-            | Object -> Records.withValues tile [ ("Object", null); ("Collision", box false) ]
+            | Background -> { tile with Background = TileTypes.Grass }
+            | Overlay -> { tile with Overlay = None }
+            | Object -> { tile with Object = None; Collision = false }
         let cleared = withVisual layer None cleared
         let effective = effectiveType cleared
-        if cleared.Type = effective then cleared else Records.withValue cleared "Type" (box effective)
+        if cleared.Type = effective then cleared else { cleared with Type = effective }
 
     /// Cells of the inclusive rectangle (x0,y0)-(x1,y1) clamped to the scene, row-major.
     let rectCells (scene: Scene) (x0: int) (y0: int) (x1: int) (y1: int) : (int * int) list =
-        let height = scene.Tiles.Count
-        let width = if height = 0 then 0 else scene.Tiles[0].Count
+        let height = scene.Tiles.Length
+        let width = if height = 0 then 0 else scene.Tiles.Head.Length
         let minX = max 0 (min x0 x1)
         let maxX = min (width - 1) (max x0 x1)
         let minY = max 0 (min y0 y1)
@@ -252,10 +221,12 @@ module TileRules =
 
     /// The 4-connected region of tiles sharing the start tile's `Type` (web `floodFill`).
     let regionCells (scene: Scene) (startX: int) (startY: int) : (int * int) list =
-        if not (Proj.inBounds scene startX startY) then
+        let tiles = Proj.rows scene
+        let inBounds x y = y >= 0 && y < tiles.Length && x >= 0 && x < tiles.[y].Length
+        if not (inBounds startX startY) then
             []
         else
-            let sourceType = scene.Tiles.[startY].[startX].Type
+            let sourceType = tiles.[startY].[startX].Type
             let seen = HashSet<int * int>()
             let queue = Queue<int * int>()
             seen.Add((startX, startY)) |> ignore
@@ -266,7 +237,7 @@ module TileRules =
                 result.Add((x, y))
                 for (dx, dy) in [ (0, -1); (0, 1); (-1, 0); (1, 0) ] do
                     let nx, ny = x + dx, y + dy
-                    if Proj.inBounds scene nx ny && not (seen.Contains((nx, ny))) && scene.Tiles.[ny].[nx].Type = sourceType then
+                    if inBounds nx ny && not (seen.Contains((nx, ny))) && tiles.[ny].[nx].Type = sourceType then
                         seen.Add((nx, ny)) |> ignore
                         queue.Enqueue((nx, ny))
             List.ofSeq result

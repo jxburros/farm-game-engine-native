@@ -1364,7 +1364,7 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "mode: Required"
+      "mode: Expected string, received null"
     ],
     "gameOk": true,
     "gameErrors": [],
@@ -1493,11 +1493,11 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "scenes.0.tiles.1.1.type: Required"
+      "scenes.0.tiles.1.1.type: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received ''"
+      "scenes.0.tiles.1.1.type: Expected string, received null"
     ]
   },
   "broken/tile background unknown": {
@@ -1517,11 +1517,11 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "scenes.0.tiles.1.2.background: Required"
+      "scenes.0.tiles.1.2.background: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received ''"
+      "scenes.0.tiles.1.2.background: Expected string, received null"
     ]
   },
   "broken/tile overlay unknown": {
@@ -1579,11 +1579,11 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "scenes.0.tiles.2.2.crop.quality: Required"
+      "scenes.0.tiles.2.2.crop.quality: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received ''"
+      "scenes.0.tiles.2.2.crop.quality: Expected string, received null"
     ]
   },
   "broken/player direction unknown": {
@@ -1703,11 +1703,11 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "npcs.0.birthday.season: Required"
+      "npcs.0.birthday.season: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "npcs.0.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received ''"
+      "npcs.0.birthday.season: Expected string, received null"
     ]
   },
   "broken/quest status unknown": {
@@ -1813,11 +1813,11 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "events.0.outcomes.0.type: Required"
+      "events.0.outcomes.0.type: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "events.0.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received ''"
+      "events.0.outcomes.0.type: Expected string, received null"
     ]
   },
   "broken/waterArea radius": {
@@ -1889,17 +1889,27 @@
       "actions.0.hotkey: String must contain at most 1 character(s)"
     ]
   },
-  "broken/action conditions and outcomes": {
+  "broken/action condition null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "actions.1.conditions.0: Expected object, received null",
+      "actions.1.conditions.0: Expected object, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "actions.1.conditions.0: Expected object, received null"
+    ]
+  },
+  "broken/action outcome type unknown": {
+    "ok": false,
+    "fromVersion": 8,
+    "migrated": false,
+    "errors": [
       "actions.1.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
     ],
     "gameOk": false,
     "gameErrors": [
-      "actions.1.conditions.0: Expected object, received null",
       "actions.1.outcomes.0.type: Invalid enum value. Expected 'message' | 'modifyFriendship' | 'modifyEnergy' | 'waterArea' | 'giveItem' | 'takeItem' | 'giveMoney' | 'takeMoney' | 'setFlag' | 'clearFlag' | 'startQuest' | 'completeQuest' | 'spawnNPC' | 'removeNPC' | 'changeTile' | 'warpPlayer' | 'startDialogue' | 'lockTransition' | 'unlockTransition' | 'playSound' | 'performAction' | 'startMinigame' | 'unlockScene', received 'explode'"
     ]
   },
@@ -1950,13 +1960,23 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'",
-      "nodeTypes.1.requiredTool: Required"
+      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'"
     ],
     "gameOk": false,
     "gameErrors": [
-      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'",
-      "nodeTypes.1.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received ''"
+      "nodeTypes.0.requiredTool: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'spoon'"
+    ]
+  },
+  "broken/node type requiredTool missing": {
+    "ok": false,
+    "fromVersion": 8,
+    "migrated": false,
+    "errors": [
+      "nodeTypes.1.requiredTool: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "nodeTypes.1.requiredTool: Expected string, received null"
     ]
   },
   "broken/recipe numbers": {
@@ -2098,7 +2118,7 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      "rngState.s: Expected a tuple of 4 integers"
+      "rngState.s: Expected array, received null"
     ],
     "gameOk": false,
     "gameErrors": [
@@ -2747,40 +2767,43 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "scenes: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "764ffff3239168e4"
+    "gameOk": false,
+    "gameErrors": [
+      "scenes: Expected array, received null"
+    ]
   },
   "broken/scene transitions null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "scenes.0.transitions: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "6c392a9521aa471c"
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.transitions: Expected array, received null"
+    ]
   },
   "broken/scene tiles null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "scenes.0.tiles: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "1a95f8546cdc7108"
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles: Expected array, received null"
+    ]
   },
   "broken/player null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "player: Expected object, received null"
     ],
     "gameOk": true,
     "gameErrors": [],
@@ -2791,22 +2814,23 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "items: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "ea6e590e31f7bb2e"
+    "gameOk": false,
+    "gameErrors": [
+      "items: Expected array, received null"
+    ]
   },
   "broken/item null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "items.3: Expected object, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      ": Object reference not set to an instance of an object."
+      "items.3: Expected object, received null"
     ]
   },
   "broken/npc dialogue null": {
@@ -2814,44 +2838,47 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "npcs.0.dialogue: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "1490b63a2198f94a"
+    "gameOk": false,
+    "gameErrors": [
+      "npcs.0.dialogue: Expected array, received null"
+    ]
   },
   "broken/shops null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Value cannot be null. (Parameter 'source')"
+      "shops: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "329f6edd03c39bb9"
+    "gameOk": false,
+    "gameErrors": [
+      "shops: Expected array, received null"
+    ]
   },
   "broken/animals null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Value cannot be null. (Parameter 'source')"
+      "animals: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "6b08577cee02d078"
+    "gameOk": false,
+    "gameErrors": [
+      "animals: Expected array, received null"
+    ]
   },
   "broken/machine type null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "machineTypes.1: Expected object, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      ": Object reference not set to an instance of an object."
+      "machineTypes.1: Expected object, received null"
     ]
   },
   "broken/weather table null": {
@@ -2859,75 +2886,72 @@
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "weather.table: Expected object, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "f7c7684ecf2249bf"
+    "gameOk": false,
+    "gameErrors": [
+      "weather.table: Expected object, received null"
+    ]
   },
   "broken/settings movement null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "settings.movement: Expected object, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "1398839bd62d9026"
+    "gameOk": false,
+    "gameErrors": [
+      "settings.movement: Expected object, received null"
+    ]
   },
   "broken/mine bands null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Object reference not set to an instance of an object."
+      "mine.bands: Expected array, received null"
     ],
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "6cd93152a6d495aa"
+    "gameOk": false,
+    "gameErrors": [
+      "mine.bands: Expected array, received null"
+    ]
   },
   "broken/pack manifest id null": {
     "ok": false,
     "fromVersion": 8,
     "migrated": false,
     "errors": [
-      ": Value cannot be null. (Parameter 'input')"
+      "contentPacks.0.pack.manifest.id: Expected string, received null"
     ],
     "gameOk": false,
     "gameErrors": [
-      "contentPacks.0.pack.manifest.id: pack ids must be lowercase letters, digits and dashes"
+      "contentPacks.0.pack.manifest.id: Expected string, received null"
     ]
   },
   "broken/crop type null": {
-    "ok": true,
+    "ok": false,
     "fromVersion": 8,
     "migrated": false,
-    "errors": [],
-    "json": "30ec02a0f2aa9cb4",
-    "stable": "5c3d0441ee93c272",
-    "problems": "throws ArgumentNullException: Value cannot be null. (Parameter 'key')",
-    "content": "e7b7f336eeaf2582",
-    "cartridge": "throws ArgumentNullException: Value cannot be null. (Parameter 'key')",
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "5c3d0441ee93c272"
+    "errors": [
+      "scenes.0.tiles.2.2.crop.type: Expected string, received null"
+    ],
+    "gameOk": false,
+    "gameErrors": [
+      "scenes.0.tiles.2.2.crop.type: Expected string, received null"
+    ]
   },
   "broken/quest rewards null": {
-    "ok": true,
+    "ok": false,
     "fromVersion": 8,
     "migrated": false,
-    "errors": [],
-    "json": "a2a8f73954b1719b",
-    "stable": "e1404d918c840376",
-    "problems": [
-      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    "errors": [
+      "quests.0.rewards: Expected object, received null"
     ],
-    "content": "53f11357b9acf92a",
-    "cartridge": "4b928367b3afeaef",
-    "gameOk": true,
-    "gameErrors": [],
-    "game": "e1404d918c840376"
+    "gameOk": false,
+    "gameErrors": [
+      "quests.0.rewards: Expected object, received null"
+    ]
   },
   "broken/null tile row, content": {
     "ok": false,
@@ -2951,35 +2975,34 @@
       "currentYear: Expected integer, received 1.5",
       "scenes.0.width: Number must be greater than 0",
       "scenes.0.height: Expected integer, received 1.5",
-      "scenes.0.tiles.1.1.type: Required",
-      "scenes.0.tiles.1.2.background: Required",
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'",
-      "scenes.0.tiles.2.2.crop.quality: Required",
-      "scenes.0.tiles.2.5: Expected object, received null",
-      "scenes.0.tiles.3: Expected array, received null",
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'",
       "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'",
       "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'",
       "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'",
       "items.0.toolTier: Number must be greater than 0",
       "items.1.toolTier: Expected integer, received 1.5",
       "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'",
-      "npcs.0.wanderRadius: Number must be greater than 0"
+      "npcs.0.wanderRadius: Number must be greater than 0",
+      "npcs.0.patrolPoints.1.x: Expected integer, received 1.5"
     ],
     "gameOk": false,
     "gameErrors": [
       "currentYear: Expected integer, received 1.5",
       "scenes.0.width: Number must be greater than 0",
       "scenes.0.height: Expected integer, received 1.5",
-      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received ''",
-      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received ''",
+      "scenes.0.tiles.1.1.type: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
+      "scenes.0.tiles.1.2.background: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.3.overlay: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.4.object: Invalid enum value. Expected 'grass' | 'soil' | 'water' | 'path' | 'wall' | 'door' | 'floor', received 'lava'",
       "scenes.0.tiles.1.5.soilState: Invalid enum value. Expected 'dry' | 'watered' | 'fertilized' | 'tilled', received 'mud'",
-      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received ''",
-      "scenes.0.tiles.2.5: Expected object, received null",
-      "scenes.0.tiles.3: Expected array, received null",
+      "scenes.0.tiles.2.2.crop.quality: Invalid enum value. Expected 'normal' | 'silver' | 'gold' | 'iridium', received 'legendary'",
+      "scenes.0.tiles.2.2.crop.mutation: Invalid enum value. Expected 'giant' | 'golden' | 'ancient', received 'weird'",
       "player.direction: Invalid enum value. Expected 'up' | 'down' | 'left' | 'right', received 'north'",
       "items.0.type: Invalid enum value. Expected 'seed' | 'tool' | 'crop' | 'gift' | 'quest' | 'fertilizer' | 'material' | 'fish', received 'weapon'",
       "items.0.toolType: Invalid enum value. Expected 'watering-can' | 'hoe' | 'axe' | 'pickaxe' | 'scythe' | 'fishing-rod', received 'laser'",
@@ -2988,7 +3011,8 @@
       "npcs.0.movePattern: Invalid enum value. Expected 'stationary' | 'wander' | 'patrol', received 'fly'",
       "npcs.0.wanderRadius: Number must be greater than 0",
       "npcs.0.patrolPoints.1.x: Expected integer, received 1.5",
-      "npcs.0.patrolPoints.1.y: Expected integer, received 2.25"
+      "npcs.0.patrolPoints.1.y: Expected integer, received 2.25",
+      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
     ]
   },
   "code/starter": {

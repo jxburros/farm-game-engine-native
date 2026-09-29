@@ -114,7 +114,7 @@ module Document =
     /// No-ops leave the document untouched (same instance). Ends any drag stroke.
     let apply (edit: Edit) (document: Document) : Document =
         let next = run document.Project edit
-        if obj.ReferenceEquals(next, document.Project) then
+        if LanguagePrimitives.PhysicalEquality next document.Project then
             (if document.Stroke.IsNone then document else { document with Stroke = None })
         else
             { Project = next; Past = push document.Project document.Past; Future = []; Stroke = None }
@@ -125,7 +125,7 @@ module Document =
     /// redo) starts a new entry, so the stroke needs no explicit end.
     let applyInStroke (strokeId: string) (edit: Edit) (document: Document) : Document =
         let next = run document.Project edit
-        if obj.ReferenceEquals(next, document.Project) then document
+        if LanguagePrimitives.PhysicalEquality next document.Project then document
         elif document.Stroke = Some strokeId then { document with Project = next }
         else { Project = next; Past = push document.Project document.Past; Future = []; Stroke = Some strokeId }
 

@@ -84,14 +84,14 @@ let ``resize keeps the overlap and fills the rest with grass`` () =
         let project = starter ()
         let before = farm project
         let after = farm (project |> apply (ResizeScene(farmId, w, h)))
-        int after.Width = w && int after.Height = h && after.Tiles.Count = h
-        && after.Tiles |> Seq.forall (fun row -> row.Count = w)
+        int after.Width = w && int after.Height = h && after.Tiles.Length = h
+        && after.Tiles |> Seq.forall (fun row -> row.Length = w)
         && (seq {
                 for y in 0 .. h - 1 do
                     for x in 0 .. w - 1 do
                         let t = after.Tiles.[y].[x]
-                        if y < before.Tiles.Count && x < before.Tiles.[y].Count then yield obj.ReferenceEquals(t, before.Tiles.[y].[x])
-                        else yield t.Type = "grass" && t.X = float x && t.Y = float y && t.SoilState = "dry"
+                        if y < before.Tiles.Length && x < before.Tiles.[y].Length then yield obj.ReferenceEquals(t, before.Tiles.[y].[x])
+                        else yield t.Type = "grass" && t.X = float x && t.Y = float y && t.SoilState = Some "dry"
             } |> Seq.forall id))
 
 [<Property(MaxTest = 80)>]
@@ -100,13 +100,13 @@ let ``flood fill changes only the connected region of the clicked type`` () =
         let project = starter ()
         let before = farm project
         let after = farm (project |> apply (FloodFill(farmId, TileRules.layerOf t, x, y, t)))
-        let inBounds = y >= 0 && y < before.Tiles.Count && x >= 0 && x < before.Tiles.[y].Count
+        let inBounds = y >= 0 && y < before.Tiles.Length && x >= 0 && x < before.Tiles.[y].Length
         if not inBounds then obj.ReferenceEquals(before, after)
         else
             let source = before.Tiles.[y].[x].Type
             seq {
-                for yy in 0 .. before.Tiles.Count - 1 do
-                    for xx in 0 .. before.Tiles.[yy].Count - 1 do
+                for yy in 0 .. before.Tiles.Length - 1 do
+                    for xx in 0 .. before.Tiles.[yy].Length - 1 do
                         let b = before.Tiles.[yy].[xx]
                         let a = after.Tiles.[yy].[xx]
                         // Tiles of another type are untouched; changed tiles were of the source type and now carry the brush.
@@ -119,14 +119,14 @@ let ``fill rect never touches tiles outside the rectangle or the scene`` () =
         let project = starter ()
         let before = farm project
         let after = farm (project |> apply (FillRect(farmId, TileRules.layerOf t, x0, y0, x1, y1, t)))
-        after.Tiles.Count = before.Tiles.Count
+        after.Tiles.Length = before.Tiles.Length
         && seq {
-            for yy in 0 .. before.Tiles.Count - 1 do
-                for xx in 0 .. before.Tiles.[yy].Count - 1 do
+            for yy in 0 .. before.Tiles.Length - 1 do
+                for xx in 0 .. before.Tiles.[yy].Length - 1 do
                     let b = before.Tiles.[yy].[xx]
                     let a = after.Tiles.[yy].[xx]
                     let insideRect = xx >= min x0 x1 && xx <= max x0 x1 && yy >= min y0 y1 && yy <= max y0 y1
-                    yield if insideRect then a.Type = t && isNull a.Crop && isNull a.Node else obj.ReferenceEquals(a, b)
+                    yield if insideRect then a.Type = t && a.Crop.IsNone && a.Node.IsNone else obj.ReferenceEquals(a, b)
         } |> Seq.forall id)
 
 /// Removing any entity of the starter project leaves no dangling references (no content

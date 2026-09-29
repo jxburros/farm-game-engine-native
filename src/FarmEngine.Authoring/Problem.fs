@@ -149,23 +149,21 @@ module internal Context =
     let private flagsIn (outcomes: seq<EventOutcome>) =
         outcomes
         |> Seq.filter (fun o -> o.Type = EventOutcomeTypes.SetFlag || o.Type = EventOutcomeTypes.ClearFlag)
-        |> Seq.choose (fun o -> Option.ofObj o.FlagName)
+        |> Seq.choose (fun o -> o.FlagName)
 
     let create (project: GameProject) : Context =
         let scenes = Dictionary<string, Scene>()
         for scene in project.Scenes do
-            if not (scenes.ContainsKey scene.Id) then scenes[scene.Id] <- scene
-        let crops =
-            let merged = ContentCompiler.mergeCrops project.CustomCrops
-            ids merged.Keys
+            if not (scenes.ContainsKey scene.Id) then scenes.[scene.Id] <- scene
+        let crops = ids (ContentCompiler.mergeCrops project.CustomCrops |> List.map fst)
         let flags = HashSet<string>()
         let add (xs: seq<string>) = for x in xs do flags.Add x |> ignore
-        add project.EventFlags.Keys
+        add (project.EventFlags |> List.map fst)
         add (project.Events |> Seq.map (fun e -> EventsSchema.EventFiredFlag e.Id))
         add (project.Events |> Seq.collect (fun e -> flagsIn e.Outcomes))
         add (project.Actions |> Seq.collect (fun a -> flagsIn a.Outcomes))
         add (project.Minigames |> Seq.collect (fun m -> m.ResultTiers |> Seq.collect (fun t -> flagsIn t.Outcomes)))
-        let dialogueFlags (d: Dialogue) = d.Options |> Seq.choose (fun o -> Option.ofObj o.EventFlag)
+        let dialogueFlags (d: Dialogue) = d.Options |> Seq.choose (fun o -> o.EventFlag)
         add (project.Dialogues |> Seq.collect dialogueFlags)
         add (project.Npcs |> Seq.collect (fun n -> n.Dialogue |> Seq.collect dialogueFlags))
         { Project = project
@@ -192,7 +190,7 @@ module internal Context =
         | true, scene -> x >= 0.0 && x < scene.Width && y >= 0.0 && y < scene.Height
         | _ -> false
 
-    let hasValue (value: string | null) =
+    let hasValue (value: string option) =
         match value with
-        | null -> false
-        | s -> s.Length > 0
+        | None -> false
+        | Some s -> s.Length > 0
