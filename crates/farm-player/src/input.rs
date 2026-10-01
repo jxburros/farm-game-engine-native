@@ -386,7 +386,7 @@ impl InputRouter {
             }
         }
         if !capture {
-            self.update_stick(bindings, &mut out);
+            self.update_stick(&mut out);
             self.repeat_navigation(&mut out);
             let scroll = self.axes.get(&GamepadAxis::RightY).copied().unwrap_or(0.0);
             if scroll.abs() > STICK_RELEASE {
@@ -502,7 +502,9 @@ impl InputRouter {
         }
     }
 
-    fn update_stick(&mut self, bindings: &Bindings, out: &mut FrameInput) {
+    /// The left stick moves (the canonical move keys) and navigates. Its directions are fixed:
+    /// gamepad bindings cover buttons only.
+    fn update_stick(&mut self, out: &mut FrameInput) {
         let x = self.axes.get(&GamepadAxis::LeftX).copied().unwrap_or(0.0);
         let y = self.axes.get(&GamepadAxis::LeftY).copied().unwrap_or(0.0);
         for (direction, value) in
@@ -523,7 +525,6 @@ impl InputRouter {
                 }
             }
         }
-        let _ = bindings;
     }
 
     fn repeat_navigation(&mut self, out: &mut FrameInput) {
