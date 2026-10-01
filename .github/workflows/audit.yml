@@ -1,0 +1,66 @@
+name: Dependency audit
+
+# Known vulnerabilities in the Rust crates (cargo-deny over Cargo.lock and the plugin guest's
+# and meter's lock files; deny.toml) and in the NuGet packages, plus unused Cargo dependencies.
+# CI calls this on every push; the weekly run catches advisories published in between.
+#
+# Every action is pinned to a commit (Dependabot bumps the pins, .github/dependabot.yml).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # rust-toolchain.toml pins the version, components and targets.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Install cargo-deny and cargo-machete
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-deny@0.20.2,cargo-machete@0.9.2
+
+      - name: Rust advisories and sources (cargo-deny)
+        run: |
+          cargo deny --locked check advisories sources
+          cargo deny --locked --manifest-path crates/farm-plugin-guest/Cargo.toml check advisories sources
+          cargo deny --locked --manifest-path tools/plugin-guest/meter/Cargo.toml check advisories sources
+
+      - name: Unused Cargo dependencies (cargo-machete)
+        run: cargo machete
+
+      # Exactly the SDK global.json names (no roll-forward on the runner).
+      - name: Pin the .NET SDK
+        shell: pwsh
+        run: |
+          $json = Get-Content global.json -Raw | ConvertFrom-Json
+          $json.sdk.rollForward = 'disable'
+          $json | ConvertTo-Json -Depth 5 | Set-Content global.json
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: NuGet advisories
+        run: |
+          dotnet restore
+          python3 tools/ci/dotnet-vulnerable.py

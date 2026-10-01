@@ -10,6 +10,10 @@ flatc --rust -o crates/farm-cart-schema/src schemas/cart.fbs
 flatc --rust -o crates/farm-cart-schema/src schemas/save.fbs
 ```
 
+CI regenerates them with the pinned `flatc` and fails when the committed files
+differ (`tools/codegen/check.sh`, which also checks `RecordJson.fs` and
+`RecordWith.fs` against their generators in `tools/codegen`).
+
 The F# side has no generated code: `src/FarmEngine.Authoring/FlatBuffers.fs`
 is a plain-F# builder (it also runs under Fable) that writes the same bytes as
 the official builders, and `CartridgeCompiler.fs` adds the fields in the order

@@ -21,14 +21,16 @@
     Builds the Rust workspace's farm-ffi crate and copies the native library next to the managed
     assembly, so `dotnet build`, `dotnet test` and `dotnet run` stay the only commands a
     contributor needs (docs/LANGUAGES.md "Repository layout"). Without cargo on PATH the managed
-    build still succeeds and the FFI reports itself unavailable.
+    build still succeeds and the FFI reports itself unavailable. Cargo runs locked: the shipped
+    library is built from Cargo.lock as committed, so after changing a Cargo.toml, update the
+    lock file first (`cargo check` does).
   -->
   <Target Name="CargoBuildFarmFfi" BeforeTargets="BeforeBuild" Condition="'$(FarmFfiSkipCargo)' != 'true'">
     <Exec Command="cargo --version" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="CargoProbeExitCode" />
     </Exec>
     <Message Importance="high" Text="FarmEngine.Interop: cargo not found; building without the Rust farm-ffi library (set FarmFfiSkipCargo=true to silence this)." Condition="'$(CargoProbeExitCode)' != '0'" />
-    <Exec Command="cargo build --profile $(CargoProfile) -p farm-ffi" WorkingDirectory="$(MSBuildThisFileDirectory)../.." Condition="'$(CargoProbeExitCode)' == '0'" />
+    <Exec Command="cargo build --locked --profile $(CargoProfile) -p farm-ffi" WorkingDirectory="$(MSBuildThisFileDirectory)../.." Condition="'$(CargoProbeExitCode)' == '0'" />
     <PropertyGroup>
       <FarmFfiStatus Condition="'$(CargoProbeExitCode)' == '0' And Exists('$(FarmFfiLibraryPath)')">built</FarmFfiStatus>
       <FarmFfiStatus Condition="'$(FarmFfiStatus)' == ''">skipped</FarmFfiStatus>

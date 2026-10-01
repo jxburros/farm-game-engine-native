@@ -1,34 +1,48 @@
-# Golden parity fixtures
+# TypeScript golden fixtures (v8)
 
 The TypeScript engine ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
-is the reference implementation. This folder generates JSON fixtures from it
-into `fixtures/golden/`, shared by the Rust tests (`crates/farm-sim/tests`), the
-F# tests (`tests/FarmEngine.Authoring.Tests`) and the C# schema tests
-(`tests/FarmEngine.Schemas.Tests`), which all check for byte-identical stable
-JSON and state hashes (see `docs/PORTING.md`).
+was the reference implementation until schema v9. This folder generated JSON
+fixtures from it, which now live, frozen, in `fixtures/golden/v8/`: every v8
+project, save and replay must still load (the Rust tests `golden_content`,
+`golden_saves` and `v8_outcomes`). Since v9 the Rust engine records the
+current goldens itself (`fixtures/golden/SOURCE.txt`, docs/NUMERICS.md
+"Goldens"); this tool never writes them.
 
-## Regenerate
+## Reproduce
 
 ```bash
-# clone/update the reference into tools/golden/.work/ts-ref (REF defaults to main)
-REF=main tools/golden/generate.sh
+# clone/update the reference into tools/golden/.work/ts-ref at the pinned commit (the one
+# fixtures/golden/SOURCE.txt records), regenerate, and compare with fixtures/golden/v8
+tools/golden/generate.sh
 
-# or use an existing checkout as-is (runs `npm ci` only if node_modules is missing)
+# or regenerate from an existing checkout as-is (runs `npm ci --ignore-scripts` only if
+# node_modules is missing)
 tools/golden/generate.sh /path/to/farm-game-engine
 ```
 
 The script copies `golden.gen.test.ts` into the checkout as
 `tests/unit/golden.gen.test.ts`, so the repo's vitest config resolves the
-`@farm-engine/*` and `@/` aliases. It then runs only that file with
-`GOLDEN_OUT=fixtures/golden`, deletes the copied file, and
-writes the source commit to `fixtures/golden/SOURCE.txt`. The script wipes and fully
-rewrites the output, and two runs produce byte-identical files. The fixtures
-are generated, so never edit them by hand.
+`@farm-engine/*` and `@/` aliases. It runs only that file with
+`GOLDEN_OUT=tools/golden/.work/out` and deletes the copied file. It then
+compares `replays/`, `content/`, `saves/`, `rng.json` and `hash.json` with
+`fixtures/golden/v8/` and exits 1 when they differ. Two runs produce
+byte-identical files.
+
+`--write` copies the regenerated subtrees over `fixtures/golden/v8/`. It is
+refused in CI, with uncommitted changes under `fixtures/`, and for any source
+other than the pinned commit: moving the v8 goldens to another TypeScript
+commit means changing `PINNED_REF` in the script and `SOURCE.txt` in the same
+reviewed change. `v8/outcomes` and the v9 goldens are never touched. The
+fixtures are generated, so never edit them by hand.
 
 Without `GOLDEN_OUT` the generator skips every test, so a stray copy writes
 nothing. To debug one scenario, set `GOLDEN_DEBUG=<scenario-name>`. The
 generator then writes a per-step trace (position, clock, money, energy,
 messages) to `debug-<name>.txt` next to the output directory.
+
+The generator also writes `migrations/`. The F# migration goldens
+(`fixtures/golden/migrations`, `fixtures/projects/migrated`) replaced those
+files, so they stay in `.work/out`.
 
 ## Layout
 
@@ -62,29 +76,26 @@ messages) to `debug-<name>.txt` next to the output directory.
 }
 ```
 
-Suggested C# check: deserialize `project`, build the content and compare
-`contentHash`, then create the state and compare `createdHash` and
-`initialHash`. Next, apply each step with `Engine.ApplyCommand` or
-`Engine.AdvanceTick`, and compare its hash and effects. The first mismatching
-step pinpoints the divergence. At the end, compare `finalProject` via
-`StableJson`.
+The Rust engine plays the same inputs (`crates/farm-sim/tests/golden_replays.rs`
+records the v9 goldens from them, and `v8_outcomes.rs` compares what a player
+sees after every step with the v8 engine).
 
 The runner in the generator only plans commands such as `move` paths and
-facing changes. Only the resulting commands enter `steps`, so the C# side
+facing changes. Only the resulting commands enter `steps`, so the native side
 replays them verbatim. Each scenario's `verify` asserts that the session
 actually exercised its systems (messages, money, harvests, quests, NPC
 positions), so a script that silently does nothing fails generation.
 
-`replay-three-days` is `replay.test.ts`' THREE_DAYS log. Its final hash must
-equal the TS repo's committed golden `6f884fd1bf6e2b5e`.
+`replay-three-days` is `replay.test.ts`' THREE_DAYS log. Its v8 final hash
+equals the TS repo's committed golden `6f884fd1bf6e2b5e`; the v9 recording
+(`fixtures/golden/replays`) ends at `9356330e045ae312`.
 
-### Known TS behaviours captured on purpose
+### Known TS behaviours captured in v8
 
 - Crops from content packs, such as `demo-glow-farm:glowshroom`, never
   harvest. `harvestCrop` looks up the item `crop-${crop.type}`, but the pack
   item is namespaced as `demo-glow-farm:crop-glowshroom`. See
-  `content-packs-and-plugins`. The port must reproduce this until the TS
-  engine fixes it.
+  `content-packs-and-plugins`. The port reproduced this for the v8 goldens.
 - Harvesting a multi-tile crop only clears the tile you face. The other
   cells keep their own crop objects.
 - Autostart quests only activate when the host calls `autoStartQuests` at

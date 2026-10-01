@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (unreleased)
 
 - **Calendar, clock and save fixes.**
   - **Games can start in any season.** The clock keeps its own day of season,
@@ -160,6 +160,22 @@
   until the stable-JSON serializer is rewritten. Property tests now cover
   replay determinism and save round trips (proptest), and project migration
   and compiling (FsCheck). The sample games also ship as test cartridges.
+- **Safer releases and builds.** A release must come from a commit on `main`
+  that passed CI and carries the release version, and a published version is
+  never overwritten. Only the final publish step can write to the repository,
+  after a reviewer approves it; it attaches `SHA256SUMS` and a build
+  provenance attestation. Before publishing, a sample game is exported and
+  replayed with the very Windows and Linux templates the release ships.
+  Actions, the Steam Runtime image, rustup, the Rust toolchain and the .NET
+  SDK are pinned; shipped binaries are built from `Cargo.lock` and contain no
+  build machine paths; the checked-in plugin sandbox builds byte-identically
+  anywhere and CI rebuilds it. CI also runs the .NET tests on Windows,
+  measures coverage, checks generated code and dependency advisories, and
+  Dependabot keeps dependencies current. Golden re-records can no longer pass
+  as test runs (docs/NUMERICS.md "Goldens").
+
+## 0.2.0
+
 - **Play Mode is the real game.** The editor's Play Mode now runs the same Rust
   player as exported games: the world, HUD, dialogue, shops, crafting,
   inventory, quests, minigames, toasts and pause menu look and behave exactly

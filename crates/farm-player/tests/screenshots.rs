@@ -5,10 +5,14 @@
 //! `fixtures/player/` within a small tolerance, so the checked-in images stay small.
 //!
 //! - Bless after an intended change: `FARM_PLAYER_BLESS=1 cargo test -p farm-player --test screenshots`,
-//!   then look at the images before committing.
+//!   then look at the images before committing. A blessing run always fails; rerun without the switch.
 //! - Full-size frames for a closer look: `FARM_PLAYER_SCREENSHOTS=<dir>`.
 
 mod common;
+#[path = "../../farm-sim/tests/recording/mod.rs"]
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_PLAYER_BLESS", "player screenshots");
 
 use common::{press, Stores, FRAME};
 use farm_player::{Player, PlayerMode};
@@ -104,10 +108,9 @@ fn check(name: &str, width: u32, height: u32) -> Result<(), String> {
     let (w, h, pixels) = half(&pixmap);
     let small = Pixmap::from_vec(pixels.clone(), farm_render::tiny_skia::IntSize::from_wh(w, h).unwrap()).unwrap();
     let path = golden_path(name, width, height);
-    if std::env::var_os("FARM_PLAYER_BLESS").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, farm_render::encode_png(&small)).unwrap();
-        return Ok(());
+    if RECORDER.enabled() {
+        RECORDER.write(&path, &farm_render::encode_png(&small))?;
+        return Err(format!("{name} {width}×{height}: blessed. {}", RECORDER.summary()));
     }
     let bytes = std::fs::read(&path)
         .map_err(|e| format!("{name}: {e}; run with FARM_PLAYER_BLESS=1 to create {}", path.display()))?;

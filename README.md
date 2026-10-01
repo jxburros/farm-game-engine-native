@@ -204,15 +204,20 @@ Linux games built on the native player.
 
 ## Releasing
 
-Push a version tag (`v0.2.0`, or `v0.3.0-beta.1` for a pre-release). The
+Commit the version bump on `main`, wait for CI, then push a version tag
+(`v0.3.0`, or `v0.4.0-beta.1` for a pre-release). The
 [release workflow](.github/workflows/release.yml) then:
 
-1. builds the Export Game player templates for Windows and Linux;
-2. builds, tests and packages the app with Velopack, with the templates in
+1. checks that the commit is on `main`, passed CI and has the tag's version,
+   and that the version is not released yet;
+2. builds the Export Game player templates for Windows, Linux and the web,
+   and exports and replays a sample game on the Windows and Linux templates;
+3. builds, tests and packages the app with Velopack, with the templates in
    its `players/` folder;
-3. publishes the installer, portable zip, delta-update packages and the
-   templates (`player-windows-x64.zip`, `player-linux-x64.tar.gz`) as a
-   GitHub Release.
+4. after a reviewer approves the `release` environment, publishes the
+   installer, portable zip, delta-update packages, the templates
+   (`player-windows-x64.zip`, `player-linux-x64.tar.gz`, `player-web.tar.gz`)
+   and `SHA256SUMS` as a GitHub Release, with a build provenance attestation.
 
 Installed apps find the release in their Update Center. See
 [docs/RELEASING.md](docs/RELEASING.md).

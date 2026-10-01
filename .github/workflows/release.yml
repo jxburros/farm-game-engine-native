@@ -9,6 +9,16 @@ name: Release
 # linux-x64 in the Steam Runtime 3 "sniper" SDK (old glibc, runs on Steam Deck).
 # Both ship inside the app under players/ and are attached to the release as
 # player-windows-x64.zip, player-linux-x64.tar.gz and player-web.tar.gz.
+#
+# Supply chain (docs/RELEASING.md "How a release is protected"):
+# - `version` refuses a commit that is not on main, has no green CI run, or whose
+#   version is already released, before anything is built.
+# - Every job that builds or tests runs with a read-only token; checkouts keep no
+#   credentials. Only `publish` can write, behind the protected `release`
+#   environment, and it runs no repository code: it uploads what `release` built,
+#   with SHA256SUMS and a build provenance attestation.
+# - Actions are pinned to commits, the Steam Runtime image to a digest, rustup-init
+#   to a checksum, the .NET SDK to global.json's version, Rust to rust-toolchain.toml.
 
 on:
   push:
@@ -16,12 +26,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version without the leading "v" (e.g. 0.2.0 or 0.3.0-beta.1). The tag v<version> is created on the selected commit.'
+        description: 'Version without the leading "v" (e.g. 0.3.0 or 0.4.0-beta.1). The tag v<version> is created on the selected commit, which must be on main.'
         required: true
         type: string
+      republish:
+        description: 'Repair a failed publish: upload into the existing release of this version (vpk upload --merge, replace attached files). Never for a release users already have.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -30,25 +45,35 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  # Keep in lock-step with the Velopack package version in Directory.Packages.props.
+  # Keep in lock-step with the Velopack package version in Directory.Packages.props
+  # (tools/release/versions.sh checks it).
   VPK_VERSION: 1.2.158
   PACK_ID: FarmingRpgMaker
 
 jobs:
   version:
-    name: Determine version
+    name: Check and determine the version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # CI runs of the commit
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      republish: ${{ steps.version.outputs.republish }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Determine version
         id: version
         shell: pwsh
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REPUBLISH: ${{ inputs.republish }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           $raw = if ($env:EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_VERSION } else { $env:REF_NAME }
@@ -57,25 +82,104 @@ jobs:
             throw "'$raw' is not a SemVer version (expected X.Y.Z or X.Y.Z-label.N)"
           }
           $prerelease = if ($version.Contains('-')) { 'true' } else { 'false' }
+          $republish = if ($env:EVENT_NAME -eq 'workflow_dispatch' -and $env:INPUT_REPUBLISH -eq 'true') { 'true' } else { 'false' }
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=v$version" >> $env:GITHUB_OUTPUT
           "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
-          Write-Host "Releasing $version (prerelease: $prerelease)"
+          "republish=$republish" >> $env:GITHUB_OUTPUT
+          Write-Host "Releasing $version (prerelease: $prerelease, republish: $republish)"
+
+      # Cargo.toml, Directory.Build.props and CHANGELOG.md name this version, so crash logs,
+      # fe_version and the wasm version() report what shipped.
+      - name: The repository is at this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: tools/release/versions.sh --release "$VERSION"
+
+      # "identical": the commit is main; "behind": main contains it.
+      - name: The commit is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          status="$(gh api "repos/$REPO/compare/main...$SHA" --jq .status)"
+          case "$status" in
+            identical | behind) echo "$SHA is on main ($status)" ;;
+            *) echo "::error::$SHA is not on main (compare: $status). Release from main only."; exit 1 ;;
+          esac
+
+      # Waits for a CI run of this commit that is still in progress (up to an hour).
+      - name: CI passed on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          for attempt in $(seq 1 60); do
+            runs="repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=100"
+            passed="$(gh api "$runs&status=success" --jq .total_count)"
+            if [[ "$passed" -ge 1 ]]; then
+              echo "CI passed on $SHA"
+              exit 0
+            fi
+            pending="$(gh api "$runs" --jq '[.workflow_runs[] | select(.status != "completed")] | length')"
+            if [[ "$pending" -eq 0 ]]; then
+              echo "::error::No successful CI run for $SHA. Push the commit to main, wait for CI, then release."
+              exit 1
+            fi
+            echo "CI is still running on $SHA ($attempt)"
+            sleep 60
+          done
+          echo "::error::CI did not finish on $SHA within an hour"
+          exit 1
+
+      # A release that users may already have installed is never changed: no merging into it,
+      # no replacing its files. `republish` repairs a publish that failed half-way.
+      - name: The version is not released yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPUBLISH: ${{ steps.version.outputs.republish }}
+        run: |
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            if [[ "$REPUBLISH" == true ]]; then
+              echo "::warning::Re-publishing into the existing release $TAG"
+              exit 0
+            fi
+            echo "::error::Release $TAG exists. Bump the version; use 'republish' only to repair a failed publish."
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == workflow_dispatch && "$REPUBLISH" != true ]] &&
+            gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG exists (pushing it starts its own release run)."
+            exit 1
+          fi
 
   player-windows:
     name: Player template (windows-x64)
     needs: version
     runs-on: windows-latest
     env:
-      # Small templates: no debug info in the executable.
+      # Small templates: no debug info in the executable (and no PDB path in it).
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_STRIP: symbols
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: "1.94"
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      # No runner paths in the shipped binary (panic locations of dependencies).
+      - name: Map build paths
+        shell: bash
+        run: echo "RUSTFLAGS=--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
 
       # build.rs compiles the placeholder icon and version resources with rc.exe.
       - name: Build farm-player
@@ -97,7 +201,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path players/windows-x64 -DestinationPath player-windows-x64.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: player-windows-x64
           path: player-windows-x64.zip
@@ -108,19 +212,22 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     # Steam Runtime 3 "sniper" (Debian 11, glibc 2.31): the binary runs on older
-    # distributions and on Steam Deck (docs/EXPORT.md).
-    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    # distributions and on Steam Deck (docs/EXPORT.md). Pinned by digest (the 3.0.20260805
+    # SDK), so a rebuild uses the same compilers; keep in step with ci.yml. To move it:
+    # docker buildx imagetools inspect registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk@sha256:1c33c507bc75d012e77df5727f93b0d5b8c3f7c8d4142ba5f7a16882cc92e014
     env:
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_STRIP: symbols
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # A pinned, checksummed rustup-init (no curl | sh), then rust-toolchain.toml's toolchain.
       - name: Install Rust
         shell: bash
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: tools/ci/install-rust.sh
 
       # The desktop player links ALSA (cpal) and libudev (gilrs); the SDK normally has both.
       - name: System packages
@@ -130,6 +237,10 @@ jobs:
             apt-get update
             apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
           fi
+
+      - name: Map build paths
+        shell: bash
+        run: echo "RUSTFLAGS=--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
 
       - name: Build farm-player
         shell: bash
@@ -147,7 +258,7 @@ jobs:
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='1980-01-01 00:00Z' \
             -czf player-linux-x64.tar.gz -C players linux-x64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: player-linux-x64
           path: player-linux-x64.tar.gz
@@ -158,12 +269,17 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: "1.94"
-          targets: wasm32-unknown-unknown
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Map build paths
+        run: echo "RUSTFLAGS=--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
 
       # The wasm-bindgen CLI must match the wasm-bindgen crate in Cargo.lock exactly.
       - name: wasm-bindgen version
@@ -171,13 +287,14 @@ jobs:
         run: echo "version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; exit }' Cargo.lock)" >> "$GITHUB_OUTPUT"
 
       - name: Install wasm-bindgen-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Build and check farm-wasm
         run: |
@@ -192,32 +309,101 @@ jobs:
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='1980-01-01 00:00Z' \
             -czf player-web.tar.gz -C players web
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: player-web
           path: player-web.tar.gz
           retention-days: 7
 
-  release:
-    name: Build, pack & publish
-    needs: [version, player-windows, player-linux, player-web]
-    runs-on: windows-latest
+  # The release's own Linux template, exported and replayed (the template job can only run
+  # --help: its container has no .NET).
+  smoke-linux:
+    name: Export smoke test (release linux-x64 template)
+    needs: [version, player-linux]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pin the .NET SDK
+        shell: pwsh
+        run: |
+          $json = Get-Content global.json -Raw | ConvertFrom-Json
+          $json.sdk.rollForward = 'disable'
+          $json | ConvertTo-Json -Depth 5 | Set-Content global.json
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # The template's run-time libraries (ALSA for cpal, libudev for gilrs).
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: player-linux-x64
+          path: player-templates
+
+      # farmc at the release version (the editor accepts only templates of its own version).
+      - name: Build farmc
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir players
+          tar -xzf player-templates/player-linux-x64.tar.gz -C players
+          dotnet build src/FarmEngine.Cli -c Release "-p:Version=$VERSION" -p:FarmPlayerSkipCargo=true
+
+      - name: Export a sample game and run it
+        run: tools/release/smoke-export.sh linux-x64 players smoke-linux-x64.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-linux-x64
+          path: smoke-linux-x64.json
+          retention-days: 7
+
+  # Builds, tests and packs everything with a read-only token; `publish` uploads the result.
+  release:
+    name: Build, test & pack
+    needs: [version, player-windows, player-linux, player-web, smoke-linux]
+    runs-on: windows-latest
+    env:
+      # farm_ffi.dll ships in the installer: no debug info, no PDB path in it.
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history + tags: release notes from tag annotations / git log
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - name: Pin the .NET SDK
+        shell: pwsh
+        run: |
+          $json = Get-Content global.json -Raw | ConvertFrom-Json
+          $json.sdk.rollForward = 'disable'
+          $json | ConvertTo-Json -Depth 5 | Set-Content global.json
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       # FarmEngine.Interop builds crates/farm-ffi (farm_ffi.dll ships in the installer).
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.94"
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Map build paths
+        shell: bash
+        run: echo "RUSTFLAGS=--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/build" >> "$GITHUB_ENV"
 
       - name: Download player templates
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: player-*
           path: player-templates
@@ -241,7 +427,7 @@ jobs:
           Get-ChildItem -Recurse players | Format-Table FullName, Length
 
       - name: Test
-        run: dotnet test -c Release
+        run: dotnet test -c Release --logger trx --results-directory TestResults
 
       # FarmPlayerTemplatesDir ships the release templates in players/ (the installer includes them).
       - name: Publish app
@@ -255,6 +441,27 @@ jobs:
           foreach ($file in 'players/windows-x64/farm-player.exe', 'players/windows-x64/template.json', 'players/linux-x64/farm-player', 'players/linux-x64/THIRD-PARTY.txt') {
             if (-not (Test-Path "publish/$file")) { throw "publish/$file is missing" }
           }
+
+      # The shipped Windows template, patched with a game's icon and version info, then
+      # replayed; its report must equal the template's own run and the Linux template's.
+      - name: farmc at the release version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: dotnet build src/FarmEngine.Cli -c Release "-p:Version=$env:VERSION" -p:FarmPlayerSkipCargo=true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: smoke-linux-x64
+          path: smoke
+
+      - name: Export smoke test (release windows-x64 template)
+        shell: bash
+        run: |
+          tools/release/smoke-export.sh windows-x64 players smoke/smoke-windows-x64.json
+          if ! diff smoke/smoke-windows-x64.json smoke/smoke-linux-x64.json; then
+            echo "The Windows and Linux release templates play the sample game differently." >&2
+            exit 1
+          fi
 
       - name: Write release notes
         shell: pwsh
@@ -308,7 +515,7 @@ jobs:
       - name: Download previous release (for delta updates)
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           $vpkArgs = @('download', 'github', '--repoUrl', "https://github.com/${{ github.repository }}", '--token', $env:GITHUB_TOKEN, '--outputDir', 'Releases')
@@ -348,13 +555,88 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem Releases | Format-Table Name, Length
 
-      - name: Upload to GitHub Releases
+      # SHA256SUMS covers this version's installer, packages, feeds and player templates (not
+      # the previous release's packages that the delta step downloaded). build-info.txt records
+      # the toolchains: the zip and nupkg bytes depend on the .NET runtime's zlib.
+      - name: Checksums and build info
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $files = @(Get-ChildItem Releases -File | Where-Object { $_.Extension -ne '.nupkg' -or $_.Name -like "*-$env:VERSION-*" })
+          $files += @(Get-ChildItem player-templates -File)
+          $lines = $files | Sort-Object Name | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" }
+          # LF line ends, as sha256sum --check expects.
+          [IO.File]::WriteAllText("$PWD/SHA256SUMS", ($lines -join "`n") + "`n")
+          Get-Content SHA256SUMS
+          $info = @(
+            "version:    $env:VERSION",
+            "commit:     ${{ github.sha }}",
+            "dotnet sdk: $(dotnet --version)",
+            "rustc:      $(rustc --version)",
+            "vpk:        $env:VPK_VERSION",
+            "runner:     $env:ImageOS $env:ImageVersion"
+          )
+          Set-Content -Path build-info.txt -Value $info -Encoding utf8
+          Get-Content build-info.txt
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-release
+          path: TestResults
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Keep build output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle-${{ needs.version.outputs.version }}
+          path: |
+            Releases
+            player-templates
+            release-notes.md
+            SHA256SUMS
+            build-info.txt
+          retention-days: 30
+
+  # The only job with a write token. It runs no code from the repository (no checkout): it
+  # attests and uploads what `release` built. The `release` environment holds it for a
+  # reviewer's approval (docs/RELEASING.md).
+  publish:
+    name: Publish
+    needs: [version, release]
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: write # create the release and upload its files
+      id-token: write # sign the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundle-${{ needs.version.outputs.version }}
+          path: bundle
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: bundle/SHA256SUMS
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version $env:VPK_VERSION
+
+      # Without --merge, vpk refuses a release that already exists (the version job checked).
+      - name: Upload to GitHub Releases
+        shell: pwsh
+        working-directory: bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
           TAG: ${{ needs.version.outputs.tag }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          REPUBLISH: ${{ needs.version.outputs.republish }}
         run: |
           $vpkArgs = @(
             'upload', 'github',
@@ -362,30 +644,25 @@ jobs:
             '--token', $env:GITHUB_TOKEN,
             '--outputDir', 'Releases',
             '--publish',
-            '--merge',
             '--releaseName', "Farming RPG Maker $env:VERSION",
             '--tag', $env:TAG,
             '--targetCommitish', '${{ github.sha }}'
           )
+          if ($env:REPUBLISH -eq 'true') { $vpkArgs += '--merge' }
           if ($env:PRERELEASE -eq 'true') { $vpkArgs += '--pre' }
           vpk @vpkArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Attach player templates
+      - name: Attach player templates and checksums
         shell: pwsh
+        working-directory: bundle
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
+          REPUBLISH: ${{ needs.version.outputs.republish }}
         run: |
-          gh release upload $env:TAG player-templates/player-windows-x64.zip player-templates/player-linux-x64.tar.gz player-templates/player-web.tar.gz --clobber --repo "${{ github.repository }}"
+          $files = @('player-templates/player-windows-x64.zip', 'player-templates/player-linux-x64.tar.gz', 'player-templates/player-web.tar.gz', 'SHA256SUMS', 'build-info.txt')
+          $ghArgs = @('release', 'upload', $env:TAG) + $files + @('--repo', '${{ github.repository }}')
+          if ($env:REPUBLISH -eq 'true') { $ghArgs += '--clobber' }
+          gh @ghArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Keep build output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: velopack-releases-${{ needs.version.outputs.version }}
-          path: |
-            Releases
-            release-notes.md
-          retention-days: 30

@@ -11,7 +11,6 @@ publish.workspace = true
 farm-sim = { path = "../farm-sim" }
 serde.workspace = true
 serde_json.workspace = true
-indexmap.workspace = true
 serde_path_to_error.workspace = true
 farm-cart-schema = { path = "../farm-cart-schema" }
 # Pure-Rust zstd (saves compress their state; also builds for wasm32).

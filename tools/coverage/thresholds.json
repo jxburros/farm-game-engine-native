@@ -1,0 +1,11 @@
+{
+  "_note": "Minimum line coverage in percent, checked by tools/coverage/check.py in CI. Set a little below what was measured on 2026-10-01 (FarmEngine.Authoring 87.8% and FarmEngine.Export 91.0% from their own test projects; farm-sim 94.4% and farm-cart 87.7% from their own tests); the full CI runs cover more. Units without a minimum are reported only: add one after reading the coverage summary of a CI run.",
+  "dotnet": {
+    "FarmEngine.Authoring": 85,
+    "FarmEngine.Export": 85
+  },
+  "rust": {
+    "farm-sim": 92,
+    "farm-cart": 85
+  }
+}

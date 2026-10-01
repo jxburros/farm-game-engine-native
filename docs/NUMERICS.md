@@ -155,6 +155,14 @@ The TypeScript goldens (`fixtures/golden/replays`, `saves`, `hash.json`,
   `golden_saves` in `farm-cart`; see `fixtures/golden/SOURCE.txt`) and
   reviewed as a diff; the v8 replays' inputs (project, seed, input log) are
   the recorded replays' inputs;
+- recording has guardrails, because a self-recorded golden pins whatever the
+  engine does, bugs included: the switches (`FARM_RECORD_GOLDENS`,
+  `FARM_PLAYER_BLESS`, `FARM_RENDER_BLESS`) are on only when set to `1`; a
+  recording run rewrites only the files that change and then **fails** with a
+  summary, so it never passes as a test run; `FARM_RECORD_GOLDENS` stamps the
+  engine commit it recorded on into `fixtures/golden/SOURCE.txt`; and CI
+  refuses to run with any record or bless switch set and fails when the tests
+  leave `fixtures/` different from the commit;
 - the comparison is a test, `farm-sim/tests/v8_outcomes.rs`: the v8 engine
   recorded the outcomes a player can see after every step of every v8 replay
   (money, energy, inventory, skills, quests, calendar, player tile, NPCs,
