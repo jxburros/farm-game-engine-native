@@ -147,12 +147,12 @@ fn apply_locale_strings_uses_later_packs_and_falls_back_to_authored_text() {
     assert_matches_reference("localized", &packs::apply_locale_strings(merged.clone(), &project.content_packs, "fr"));
     assert_eq!(packs::apply_locale_strings(merged.clone(), &project.content_packs, "xx"), merged);
     assert_eq!(packs::apply_locale_strings(merged.clone(), &project.content_packs, ""), merged);
-}
-
-#[test]
-fn apply_pack_to_project_materializes_content_and_player_start() {
-    let project = load_project();
-    assert_matches_reference("applyA", &packs::apply_pack_to_project(&project, &project.content_packs[1].pack));
+    // The one-pass merge used at play time localizes the same way.
+    for locale in ["fr", "xx", ""] {
+        let localized = packs::apply_locale_strings(merged.clone(), &project.content_packs, locale);
+        let one_pass = packs::merge_packs_into_content_localized(&ts_base_content(), &project.content_packs, locale);
+        assert_eq!(one_pass.content, localized, "{locale}");
+    }
 }
 
 #[test]

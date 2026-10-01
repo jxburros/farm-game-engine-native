@@ -2,7 +2,9 @@
 //! Port of `Tools.cs` / tools.ts.
 
 use crate::content_builtin::{self, ToolDefinition};
-use crate::schema::{Item, Tile};
+use crate::schema::Item;
+#[cfg(test)]
+use crate::schema::Tile;
 
 /// TS `TOOL_DEFINITIONS[toolType]`. The TS reads `undefined` for an unknown type; this signature
 /// cannot say so, so an unknown type yields `ToolDefinition::default()`. Every engine caller
@@ -22,6 +24,9 @@ fn tool_type_of(item: &Item) -> Option<&str> {
     item.tool_type.as_deref().filter(|tool_type| !tool_type.is_empty())
 }
 
+/// Whether `tool` can be used on `target_tile` (only the tile type is checked).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn can_use_tool(tool: &Item, target_tile: &Tile) -> bool {
     let Some(tool_type) = tool_type_of(tool) else {
         return false;
@@ -59,6 +64,9 @@ pub fn is_tool_broken(tool: &Item) -> bool {
     }
 }
 
+/// `tool` repaired by `amount` (a full repair when `None` or 0), up to its maximum.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn repair_tool(tool: &Item, amount: Option<i32>) -> Item {
     let (Some(durability), Some(max_durability)) = (truthy_number(tool.durability), truthy_number(tool.max_durability))
     else {

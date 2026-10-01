@@ -63,11 +63,11 @@ pub fn create_base_content_from_project(project: &GameProject) -> GameContent {
 /// Derive the immutable content view from an editor project: base content, then enabled content
 /// packs layered on top (M5) with explicit override semantics.
 pub fn create_content_from_project(project: &GameProject) -> GameContent {
-    let merged =
-        packs::merge_packs_into_content(&create_base_content_from_project(project), &project.content_packs).content;
-    // Localized game text from pack string tables (M7); authored text is the fallback.
-    let locale = merged.settings.locale.clone();
-    packs::apply_locale_strings(merged, &project.content_packs, &locale)
+    let base = create_base_content_from_project(project);
+    // Localized game text from pack string tables (M7); authored text is the fallback. Packs
+    // merge no settings, so the base content's locale is the merged content's.
+    let locale = base.settings.locale.clone();
+    packs::merge_packs_into_content_localized(&base, &project.content_packs, &locale).content
 }
 
 /// Create a running GameState from a project. The world starts as a deep copy of the project's

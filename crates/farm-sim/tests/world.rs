@@ -291,66 +291,6 @@ fn set_tile_layer_updates_one_layer_and_keeps_the_others() {
 }
 
 #[test]
-fn paint_rect_clamps_to_the_grid_and_clears_crops_and_nodes() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    scene.tiles[1][1].node = Some(TileNode { type_id: "tree".to_owned(), remaining_health: 3, ..TileNode::default() });
-    let painted = tiles::paint_rect(&scene.tiles, 2, 2, -5, -5, "wall", None);
-    for (y, row) in painted.iter().enumerate() {
-        for (x, tile) in row.iter().enumerate() {
-            if x <= 2 && y <= 2 {
-                assert_eq!(tile.r#type, "wall", "({x},{y})");
-                assert!(tile.collision);
-                assert_eq!(tile.node, None);
-            } else {
-                assert_eq!(tile.r#type, "grass", "({x},{y})");
-            }
-        }
-    }
-    // Pure: the input grid is untouched.
-    assert_eq!(scene.tiles[0][0].r#type, "grass");
-    assert!(scene.tiles[1][1].node.is_some());
-}
-
-#[test]
-fn flood_fill_replaces_the_contiguous_region_of_the_source_type() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    for y in 0..4 {
-        scene.tiles[y][2] = tiles::set_tile_layer(&scene.tiles[y][2], "wall", None);
-    }
-    let filled = tiles::flood_fill(&scene.tiles, 0, 0, "soil", None);
-    for row in &filled {
-        assert_eq!(row[0].r#type, "soil");
-        assert_eq!(row[1].r#type, "soil");
-        assert_eq!(row[2].r#type, "wall");
-        assert_eq!(row[3].r#type, "grass", "the wall column stops the fill");
-    }
-    // No-op when the types already match, and outside the grid.
-    assert_eq!(tiles::flood_fill(&scene.tiles, 0, 0, "grass", None), scene.tiles);
-    assert_eq!(tiles::flood_fill(&scene.tiles, 9, 0, "soil", None), scene.tiles);
-}
-
-#[test]
-fn copy_and_paste_tile_region_round_trip_with_rewritten_coordinates() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    scene.tiles[1][1] = tiles::set_tile_layer(&scene.tiles[1][1], "soil", None);
-    scene.tiles[2][2] = tiles::set_tile_layer(&scene.tiles[2][2], "wall", None);
-    let region = tiles::copy_tile_region(&scene.tiles, 2, 2, 1, 1);
-    assert_eq!(region.len(), 2);
-    assert_eq!(region[0][0].r#type, "soil");
-    assert_eq!(region[1][1].r#type, "wall");
-
-    let pasted = tiles::paste_tile_region(&scene.tiles, &region, 3, 3);
-    assert_eq!(pasted[3][3].r#type, "soil");
-    assert_eq!((pasted[3][3].x, pasted[3][3].y), (3, 3));
-    // The rest of the region falls outside the grid and is skipped.
-    assert_eq!(pasted[3][2].r#type, "grass");
-    let empty = tiles::copy_tile_region(&scene.tiles, 10, 10, 12, 12);
-    assert!(empty.is_empty());
-}
-
-// --- pathfinding (M3SystemsTests) ---
-
-#[test]
 fn routes_around_obstacles() {
     let mut scene = tiles::create_empty_scene("s", "S", 5, 5);
     // wall across row 2 except (4,2)

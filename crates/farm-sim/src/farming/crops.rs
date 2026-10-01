@@ -97,12 +97,10 @@ use crate::rng::RandomSource;
 use crate::schema::{crop_mutations, crop_qualities, tile_types, Crop, GameContent, Tile};
 use crate::units;
 
-pub fn get_crop_definition_from_content<'a>(content: &'a GameContent, crop_type: &str) -> Option<&'a CropDefinition> {
-    content.crops.get(crop_type)
-}
-
 /// Legacy wall-clock stage (pre-v4 data): `min(floor(elapsed × waterFactor / (growthTime /
 /// stages)), stages − 1)`, where an unwatered crop grows at half speed. Times in milliseconds.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_crop_stage(planted_at: i64, current_time: i64, growth_time: i64, stages: i64, watered: bool) -> i64 {
     let elapsed = i128::from(current_time) - i128::from(planted_at);
     // adjusted / stageTime = elapsed × stages / growthTime (÷ 2 when unwatered).
@@ -117,6 +115,8 @@ pub fn get_crop_stage(planted_at: i64, current_time: i64, growth_time: i64, stag
     i64::try_from(stage).map_or(last, |stage| stage.min(last))
 }
 
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn is_crop_mature(stage: i64, stages: i64) -> bool {
     stage >= stages - 1
 }
@@ -238,12 +238,17 @@ pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> 
 
 /// TS `SEASON_ORDER[Math.floor(gameDay / DAYS_PER_SEASON) % SEASON_ORDER.length]`, which reads
 /// `undefined` for a negative day. This signature cannot say `undefined`, so a negative day
-/// yields `""`; [`try_get_current_season`] keeps the JS shape.
+/// yields `""`; [`try_get_current_season`] keeps the JS shape. The running game reads the
+/// configurable calendar (`game_time`), not this fixed 4 × 28-day one.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_current_season(game_day: i64) -> String {
     try_get_current_season(game_day).unwrap_or_default()
 }
 
 /// JS-faithful `getCurrentSeason`: `None` where JS reads `undefined` (negative index).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn try_get_current_season(game_day: i64) -> Option<String> {
     let season_count = content_builtin::SEASON_ORDER.len() as i64;
     // JS `%` keeps the dividend's sign; a negative index reads undefined.
@@ -252,6 +257,8 @@ pub fn try_get_current_season(game_day: i64) -> Option<String> {
 }
 
 /// JS `(gameDay % DAYS_PER_SEASON) + 1` (the remainder keeps the dividend's sign).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_day_in_season(game_day: i64) -> i64 {
     (game_day % i64::from(content_builtin::DAYS_PER_SEASON)) + 1
 }
@@ -363,6 +370,9 @@ pub fn create_planted_crop(crop_type: &str, planted_on_day: u32, fertilized: boo
     }
 }
 
+/// A crop planted watered (the reference's `initializeCrop`; planting uses [`create_planted_crop`]).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Crop {
     Crop {
         r#type: crop_type.to_owned(),

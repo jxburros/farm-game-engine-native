@@ -27,14 +27,6 @@ use crate::weather;
 use indexmap::IndexMap;
 use std::sync::LazyLock;
 
-/// Day phases (TS `DayPhase` union).
-pub mod day_phases {
-    pub const MORNING: &str = "morning";
-    pub const DAY: &str = "day";
-    pub const EVENING: &str = "evening";
-    pub const NIGHT: &str = "night";
-}
-
 /// TS `SleepOptions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SleepOptions {
@@ -148,12 +140,6 @@ pub fn season_for_day(calendar: &CalendarConfig, absolute_day: u32) -> String {
     position_for_day(calendar, absolute_day).season.id.clone()
 }
 
-pub fn year_for_day(calendar: &CalendarConfig, absolute_day: u32) -> u32 {
-    let year_length = calendar_year_length(&effective_seasons(calendar));
-    // Day 0 is in year 0.
-    u32::try_from((i64::from(absolute_day) - 1).div_euclid(year_length) + 1).unwrap_or(0)
-}
-
 /// The festival configured for the given absolute day, if any, in the calendar of a game that
 /// started on day 1 of the first season (the running game uses [`festival_today`]).
 pub fn festival_on_day(calendar: &CalendarConfig, absolute_day: u32) -> Option<&CalendarFestival> {
@@ -220,22 +206,6 @@ pub fn format_time_of_day(time_minutes: u32) -> String {
     let suffix = if hours24 < 12 { "AM" } else { "PM" };
     let hours12 = if hours24.is_multiple_of(12) { 12 } else { hours24 % 12 };
     format!("{hours12}:{minutes:0>2} {suffix}")
-}
-
-/// Returns one of [`day_phases`] for a time of day (micro-minutes).
-pub fn day_phase(time_minutes: u32) -> &'static str {
-    let t = u64::from(time_minutes) % (u64::from(units::MINUTES_PER_DAY) * u64::from(units::MINUTE));
-    let hour = |h: u64| h * 60 * u64::from(units::MINUTE);
-    if (hour(5)..hour(10)).contains(&t) {
-        return day_phases::MORNING;
-    }
-    if (hour(10)..hour(17)).contains(&t) {
-        return day_phases::DAY;
-    }
-    if (hour(17)..hour(21)).contains(&t) {
-        return day_phases::EVENING;
-    }
-    day_phases::NIGHT
 }
 
 /// The overnight pass: advances the clock, weather, crops, animals, machines, NPC schedules.
