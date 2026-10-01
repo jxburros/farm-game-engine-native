@@ -61,6 +61,8 @@ public sealed partial class EditModeView : UserControl
     private readonly Button _undo;
     private readonly Button _redo;
     private GameProject? _projectForCanvas;
+    /// <summary>What the project info panel shows, to rebuild it only when that changed (not per painted tile).</summary>
+    private string? _infoKey;
     private string? _sceneId;
     private string? _brush;
     private string? _strokeId;
@@ -666,6 +668,28 @@ public sealed partial class EditModeView : UserControl
 
     private void RefreshInfo(GameProject project)
     {
+        var scene = CurrentScene();
+        var key = string.Join(
+            '\u001f',
+            project.Name,
+            project.Version,
+            project.SchemaVersion,
+            project.Scenes.Count(s => !s.Extra.ContainsKey("generated")),
+            project.Npcs.Length,
+            project.Items.Length,
+            project.Quests.Length,
+            project.Shops.Length,
+            project.Recipes.Length,
+            project.Dialogues.Length,
+            project.CustomAssets.Length,
+            scene is null ? "" : $"{scene.Id}\u001f{scene.Name}\u001f{scene.Width}\u001f{scene.Height}\u001f{scene.Transitions.Length}",
+            scene is null ? "" : string.Join(",", project.Npcs.Where(n => n.SceneId == scene.Id).Select(n => n.Name)));
+        if (key == _infoKey)
+        {
+            return;
+        }
+
+        _infoKey = key;
         _info.Children.Clear();
         var name = Ui.Wrapped(string.IsNullOrWhiteSpace(project.Name) ? "Untitled Game" : project.Name, "h2");
         name.Name = "ProjectInfoName";
@@ -691,7 +715,6 @@ public sealed partial class EditModeView : UserControl
         Stat("Assets", project.CustomAssets.Length);
         _info.Children.Add(stats);
 
-        var scene = CurrentScene();
         if (scene is not null)
         {
             var npcs = project.Npcs.Where(n => n.SceneId == scene.Id).Select(n => n.Name).ToList();

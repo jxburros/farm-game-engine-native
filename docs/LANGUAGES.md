@@ -158,12 +158,18 @@ what an exported game contains.
                           fe_player** out, fe_bytes* error);         // project JSON or cartridge
   fe_result fe_player_frame(fe_player*, const uint8_t* request, size_t len, fe_bytes* out);
                           // {dt, events, width, height} → size, info JSON, RGBA pixels
+  fe_result fe_player_frame_info(fe_player*, const uint8_t* request, size_t len, fe_bytes* out);
+                          // the same without the pixels, which stay in the player until …
+  fe_result fe_player_copy_pixels(fe_player*, uint8_t* dst, size_t len, size_t stride, fe_bytes* out);
+                          // … the host copies them once, straight into its bitmap
   fe_result fe_player_debug(fe_player*, const uint8_t* action, size_t len, fe_bytes* out);
   fe_result fe_player_synced_project(fe_player*, fe_bytes* out);    // "keep changes"
   fe_result fe_player_query_json(fe_player*, const uint8_t* query, size_t len, fe_bytes* out);
 
   // Edit Mode's map and art previews (render.rs).
   fe_result fe_preview_new(const uint8_t* project, size_t len, fe_preview** out, fe_bytes* error);
+  fe_result fe_preview_set_scenes(fe_preview*, const uint8_t* scenes, size_t len, fe_bytes* out);
+                          // a paint stroke: the changed scenes only, not the project and its art
   fe_result fe_preview_render(fe_preview*, const uint8_t* request, size_t len, fe_bytes* out);
 
   // A headless game for tools and tests (session.rs).
@@ -174,9 +180,22 @@ what an exported game contains.
   fe_result fe_session_save(fe_session*, fe_bytes* out);
 
   void      fe_bytes_free(fe_bytes);
+  uint32_t  fe_abi_version(void);
   ```
   Requests and answers are JSON (stable JSON for state); frames are raw
-  premultiplied RGBA. Each handle has its `_free`.
+  premultiplied RGBA. Each handle has its `_free` and its `_last_error`.
+- **Errors:** every call on a handle answers a result code, and on failure
+  `out` holds the UTF-8 message (for `Poisoned`, the error that poisoned the
+  handle); `fe_<handle>_last_error` returns it again.
+- **Loading:** `FarmEngine.Interop` loads the library from the application's
+  folder only (a `DllImportResolver`, and `DefaultDllImportSearchPaths` set to
+  the assembly directory), then compares `fe_abi_version()` with the
+  `FE_ABI_VERSION` it was written for and refuses another; bump both with any
+  signature, layout or convention change. `FarmFfi.LoadError` says why the
+  library didn't load. On Linux the default `audio-out` feature links ALSA
+  (`libasound.so.2`) when the library loads, because cpal has no backend that
+  opens it at run time; `-p:FarmFfiAudio=false` builds a library without
+  sound that loads without it.
 - **Play Mode.** The editor forwards raw input events (keys by the engine's
   names, pointer positions in frame pixels) and draws the returned pixels; the
   player owns the game, its UI and its sounds (`audio` option). Details in
@@ -187,12 +206,18 @@ what an exported game contains.
   visual binding, for the art studio) per call.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
-  next call on that handle.
-- **Threading:** a handle is used by one thread at a time. The editor runs
-  Play Mode frames on a worker thread under one lock and shows the pixels on
-  the UI thread.
+  next call on that handle. The C# handles are `SafeHandle`s: a call keeps its
+  handle alive, a disposed one throws `ObjectDisposedException` before reaching
+  Rust, and a forgotten one is freed by its finalizer.
+- **Threading:** a handle is used by one thread at a time; the C# wrappers
+  serialize their calls with a lock. The editor runs Play Mode frames on a
+  worker thread and copies the pixels into the bitmap on the UI thread.
 - **Panics** are caught at the boundary (`catch_unwind`) and returned as
   error results, never unwound into .NET. The handle is then poisoned.
+  Freeing a handle catches panics too, and leaks a poisoned one rather than
+  run its drop code. Every `unsafe` operation in `farm-ffi` is in its own
+  block with a `// SAFETY:` comment (`unsafe_op_in_unsafe_fn` and
+  `clippy::undocumented_unsafe_blocks` are denied).
 - **Synchronous hooks.** Plugin mutations are queued and come back as
   commands (the `PluginMutationQueue` design). The engine lets
   `onWeatherRoll` listeners return an override *during* the nightly step, but
@@ -286,7 +311,10 @@ tools/codegen/                   # generators for RecordWith.fs and RecordJson.f
 `FarmEngine.Interop` has an MSBuild target that runs `cargo build` and copies
 `farm_ffi.dll` / `.so` / `.dylib` into the output, so `dotnet build`,
 `dotnet test` and `dotnet run` keep working as the only commands a contributor
-needs (with a Rust toolchain installed).
+needs (with a Rust toolchain installed). `-p:CargoProfile=dev` builds the
+debug library instead of the release one. Tests that need the Rust library
+fail when it is missing; set `FARM_ALLOW_MISSING_NATIVE=1` to build and test
+without a Rust toolchain, which reports them as skipped.
 
 ### F# conventions
 

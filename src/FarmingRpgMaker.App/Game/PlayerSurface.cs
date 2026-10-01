@@ -65,35 +65,29 @@ public sealed class PlayerSurface : Control
         return new Point(point.X * size.Width / bounds.Width, point.Y * size.Height / bounds.Height);
     }
 
-    /// <summary>Copies a rendered frame into the bitmap and schedules a redraw (UI thread).</summary>
-    public void Present(PlayerFrame frame)
+    /// <summary>
+    /// Copies the player's last frame (<paramref name="step"/>'s size) straight from Rust into the
+    /// bitmap, the frame's only copy on its way to the screen, and schedules a redraw (UI
+    /// thread). A stepped frame (no pixels) leaves the bitmap as it was.
+    /// </summary>
+    public void Present(PlayerStep step, RustPlayer player)
     {
-        ArgumentNullException.ThrowIfNull(frame);
-        if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length < frame.Width * frame.Height * 4)
+        ArgumentNullException.ThrowIfNull(step);
+        ArgumentNullException.ThrowIfNull(player);
+        if (step.Width <= 0 || step.Height <= 0)
         {
             return;
         }
 
-        if (_bitmap is null || _bitmap.PixelSize.Width != frame.Width || _bitmap.PixelSize.Height != frame.Height)
+        if (_bitmap is null || _bitmap.PixelSize.Width != step.Width || _bitmap.PixelSize.Height != step.Height)
         {
             _bitmap?.Dispose();
-            _bitmap = new WriteableBitmap(new PixelSize(frame.Width, frame.Height), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Premul);
+            _bitmap = new WriteableBitmap(new PixelSize(step.Width, step.Height), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Premul);
         }
 
         using (var buffer = _bitmap.Lock())
         {
-            var rowBytes = frame.Width * 4;
-            if (buffer.RowBytes == rowBytes)
-            {
-                System.Runtime.InteropServices.Marshal.Copy(frame.Pixels, 0, buffer.Address, rowBytes * frame.Height);
-            }
-            else
-            {
-                for (var y = 0; y < frame.Height; y++)
-                {
-                    System.Runtime.InteropServices.Marshal.Copy(frame.Pixels, y * rowBytes, buffer.Address + (y * buffer.RowBytes), rowBytes);
-                }
-            }
+            player.CopyPixels(buffer.Address, buffer.RowBytes * step.Height, buffer.RowBytes);
         }
 
         FrameCount++;

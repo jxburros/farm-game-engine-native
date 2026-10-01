@@ -44,12 +44,16 @@
     <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">$(FarmFfiSkipCargo)</FarmPlayerSkipCargo>
     <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">false</FarmPlayerSkipCargo>
     <CargoProfile Condition="'$(CargoProfile)' == ''">release</CargoProfile>
+    <!-- Cargo puts the dev and test profiles in target/debug and bench in target/release. -->
+    <CargoProfileDir>$(CargoProfile)</CargoProfileDir>
+    <CargoProfileDir Condition="'$(CargoProfile)' == 'dev' Or '$(CargoProfile)' == 'test'">debug</CargoProfileDir>
+    <CargoProfileDir Condition="'$(CargoProfile)' == 'bench'">release</CargoProfileDir>
     <FarmPlayerCargoTargetDir>$(MSBuildThisFileDirectory)../../target/</FarmPlayerCargoTargetDir>
     <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">windows-x64</FarmPlayerHostTarget>
     <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</FarmPlayerHostTarget>
     <FarmPlayerExecutableName Condition="'$(FarmPlayerHostTarget)' == 'windows-x64'">farm-player.exe</FarmPlayerExecutableName>
     <FarmPlayerExecutableName Condition="'$(FarmPlayerExecutableName)' == ''">farm-player</FarmPlayerExecutableName>
-    <FarmPlayerExecutablePath>$(FarmPlayerCargoTargetDir)$(CargoProfile)/$(FarmPlayerExecutableName)</FarmPlayerExecutablePath>
+    <FarmPlayerExecutablePath>$(FarmPlayerCargoTargetDir)$(CargoProfileDir)/$(FarmPlayerExecutableName)</FarmPlayerExecutablePath>
     <FarmPlayerLicenses>$(MSBuildThisFileDirectory)../../tools/player-licenses/THIRD-PARTY.txt</FarmPlayerLicenses>
   </PropertyGroup>
 

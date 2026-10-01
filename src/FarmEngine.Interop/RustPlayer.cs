@@ -131,6 +131,12 @@ public sealed record PlayerFrameInfo(IReadOnlyList<PlayerSound> Sounds, IReadOnl
 /// </summary>
 public sealed record PlayerFrame(int Width, int Height, byte[] Pixels, PlayerFrameInfo Info);
 
+/// <summary>
+/// A frame that stayed in Rust (<see cref="RustPlayer.Advance"/>): its size (0 × 0 when it was
+/// only stepped) and info; <see cref="RustPlayer.CopyPixels"/> copies its pixels.
+/// </summary>
+public sealed record PlayerStep(int Width, int Height, PlayerFrameInfo Info);
+
 /// <summary>A scene or season id with its display name.</summary>
 public sealed record PlayerNamed(string Id, string Name);
 
@@ -176,27 +182,26 @@ public sealed record RustPlayerOptions(string? Seed = null, bool ReducedMotion =
 /// <c>fe_player_*</c>): the whole game — world, HUD, dialogue, shops, crafting, inventory,
 /// quests, minigames, toasts — driven one <see cref="Frame"/> at a time and drawn by the Rust
 /// renderer. The editor keeps only its own tools (restart, keep changes, the debug drawer).
-/// One thread at a time; dispose it to free the Rust side.
+/// Calls are serialized, and disposing while a frame runs on another thread frees the player
+/// once that frame returns; dispose it to free the Rust side (its finalizer does when nobody did).
 /// </summary>
-public sealed class RustPlayer : IDisposable
+public sealed unsafe class RustPlayer : IDisposable
 {
-    private unsafe NativeMethods.FePlayer* _handle;
-    private bool _poisoned;
-    private string? _fault;
+    private readonly NativeHandle<NativeMethods.PlayerHandle> _native;
 
-    private unsafe RustPlayer(NativeMethods.FePlayer* handle)
+    private RustPlayer(NativeMethods.PlayerHandle handle)
     {
-        _handle = handle;
+        _native = new NativeHandle<NativeMethods.PlayerHandle>(handle, this, prefixMessages: false);
     }
 
     /// <summary>
     /// True once the game stopped (an engine or plugin failure, or a Rust panic): its state is not
     /// trustworthy and every later call throws.
     /// </summary>
-    public bool IsPoisoned => _poisoned;
+    public bool IsPoisoned => _native.IsPoisoned;
 
     /// <summary>Why the game stopped (null while it runs).</summary>
-    public string? Fault => _fault;
+    public string? Fault => _native.Fault;
 
     /// <summary>Starts a player for a (migrated) editor project.</summary>
     public static RustPlayer Create(GameProject project, RustPlayerOptions? options = null)
@@ -214,11 +219,7 @@ public sealed class RustPlayer : IDisposable
 
     private static RustPlayer CreateFromBytes(byte[] game, RustPlayerOptions? options)
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
-        }
-
+        FarmFfi.EnsureAvailable();
         options ??= new RustPlayerOptions();
         var settings = new JsonObject { ["reducedMotion"] = options.ReducedMotion, ["audio"] = options.Audio };
         if (!string.IsNullOrEmpty(options.Seed))
@@ -237,22 +238,19 @@ public sealed class RustPlayer : IDisposable
         }
 
         var optionsJson = Encoding.UTF8.GetBytes(settings.ToJsonString());
-        unsafe
+        fixed (byte* gamePtr = game)
+        fixed (byte* optionsPtr = optionsJson)
         {
-            fixed (byte* gamePtr = game)
-            fixed (byte* optionsPtr = optionsJson)
+            NativeMethods.FeBytes error = default;
+            var result = NativeMethods.fe_player_new(gamePtr, (nuint)game.Length, optionsPtr, (nuint)optionsJson.Length, out var handle, &error);
+            var message = Encoding.UTF8.GetString(RustRender.TakeBytes(error));
+            if (result != NativeMethods.FeResult.Ok)
             {
-                NativeMethods.FePlayer* handle;
-                NativeMethods.FeBytes error;
-                var result = NativeMethods.fe_player_new(gamePtr, (nuint)game.Length, optionsPtr, (nuint)optionsJson.Length, &handle, &error);
-                var message = Encoding.UTF8.GetString(RustRender.TakeBytes(error));
-                if (result != NativeMethods.FeResult.Ok)
-                {
-                    throw new FarmFfiException(string.IsNullOrEmpty(message) ? $"fe_player_new failed: {result}." : message);
-                }
-
-                return new RustPlayer(handle);
+                handle.Dispose();
+                throw new FarmFfiException(string.IsNullOrEmpty(message) ? $"fe_player_new failed: {result}." : message);
             }
+
+            return new RustPlayer(handle);
         }
     }
 
@@ -261,9 +259,33 @@ public sealed class RustPlayer : IDisposable
     /// that arrived since the last one, at <paramref name="width"/> × <paramref name="height"/>
     /// pixels. With <paramref name="render"/> false the game only steps (no pixels). Pass the
     /// previous frame's pixel array as <paramref name="reuse"/> to avoid a new allocation when the
-    /// size is unchanged.
+    /// size is unchanged. The pixels are copied once, from the player into the array; a host
+    /// with its own bitmap uses <see cref="Advance"/> and <see cref="CopyPixels"/> instead.
     /// </summary>
     public PlayerFrame Frame(double deltaSeconds, IReadOnlyList<PlayerInput> events, int width, int height, bool render = true, byte[]? reuse = null)
+    {
+        return _native.Locked(() =>
+        {
+            var step = Advance(deltaSeconds, events, width, height, render);
+            var length = step.Width * step.Height * 4;
+            var pixels = reuse is not null && reuse.Length == length ? reuse : new byte[length];
+            if (length > 0)
+            {
+                fixed (byte* destination = pixels)
+                {
+                    CopyPixels((nint)destination, length, step.Width * 4);
+                }
+            }
+
+            return new PlayerFrame(step.Width, step.Height, pixels, step.Info);
+        });
+    }
+
+    /// <summary>
+    /// Runs one frame like <see cref="Frame"/>, but its pixels stay in the player until
+    /// <see cref="CopyPixels"/> copies them (Play Mode copies them straight into its bitmap).
+    /// </summary>
+    public PlayerStep Advance(double deltaSeconds, IReadOnlyList<PlayerInput> events, int width, int height, bool render = true)
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
@@ -286,36 +308,33 @@ public sealed class RustPlayer : IDisposable
             writer.WriteEndObject();
         }
 
-        unsafe
+        return _native.Read(nameof(Frame), request.WrittenSpan, NativeMethods.fe_player_frame_info, static bytes =>
         {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = request.WrittenSpan)
-            {
-                NativeMethods.FeBytes output;
-                var result = NativeMethods.fe_player_frame(_handle, ptr, (nuint)request.WrittenCount, &output);
-                try
-                {
-                    var bytes = output.Ptr == null ? ReadOnlySpan<byte>.Empty : new ReadOnlySpan<byte>(output.Ptr, (int)output.Len);
-                    if (result != NativeMethods.FeResult.Ok)
-                    {
-                        Fail(result, Encoding.UTF8.GetString(bytes), nameof(Frame));
-                    }
+            var frameWidth = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[..4]);
+            var frameHeight = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..8]);
+            var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..12]);
+            var info = JsonSerializer.Deserialize<PlayerFrameInfo>(bytes.Slice(12, jsonLength), InteropJson.Options) ?? PlayerFrameInfo.Empty;
+            return new PlayerStep(frameWidth, frameHeight, info);
+        });
+    }
 
-                    var frameWidth = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[..4]);
-                    var frameHeight = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..8]);
-                    var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..12]);
-                    var info = JsonSerializer.Deserialize<PlayerFrameInfo>(bytes.Slice(12, jsonLength), InteropJson.Options) ?? PlayerFrameInfo.Empty;
-                    var source = bytes[(12 + jsonLength)..];
-                    var pixels = reuse is not null && reuse.Length == source.Length ? reuse : new byte[source.Length];
-                    source.CopyTo(pixels);
-                    return new PlayerFrame(frameWidth, frameHeight, pixels, info);
-                }
-                finally
-                {
-                    NativeMethods.fe_bytes_free(output);
-                }
-            }
+    /// <summary>
+    /// Copies the last rendered frame (the size <see cref="Advance"/> reported, premultiplied
+    /// RGBA8) to <paramref name="destination"/>: one row of width × 4 bytes every
+    /// <paramref name="stride"/> bytes, within <paramref name="length"/> bytes (a locked bitmap).
+    /// Throws <see cref="FarmFfiException"/> when the frame does not fit, writing nothing.
+    /// </summary>
+    public void CopyPixels(nint destination, int length, int stride)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(length, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThan(stride, 0);
+        if (destination == 0)
+        {
+            throw new ArgumentNullException(nameof(destination));
         }
+
+        _native.Call(nameof(CopyPixels), (handle, output) =>
+            NativeMethods.fe_player_copy_pixels(handle, (byte*)destination, (nuint)length, (nuint)stride, output));
     }
 
     /// <summary>
@@ -327,32 +346,14 @@ public sealed class RustPlayer : IDisposable
     public void Debug(object action)
     {
         ArgumentNullException.ThrowIfNull(action);
-        var json = JsonSerializer.SerializeToUtf8Bytes(action, InteropJson.Options);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
-            {
-                NativeMethods.FeBytes output;
-                Check(NativeMethods.fe_player_debug(_handle, ptr, (nuint)json.Length, &output), output, nameof(Debug));
-            }
-        }
+        _native.Call(nameof(Debug), JsonSerializer.SerializeToUtf8Bytes(action, InteropJson.Options), NativeMethods.fe_player_debug);
     }
 
     /// <summary>Runs engine commands (a JSON array of <c>{"type":…}</c> objects) as if the player had done them.</summary>
     public void RunCommands(string commandsJson)
     {
         ArgumentNullException.ThrowIfNull(commandsJson);
-        var json = Encoding.UTF8.GetBytes(commandsJson);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
-            {
-                NativeMethods.FeBytes output;
-                Check(NativeMethods.fe_player_commands(_handle, ptr, (nuint)json.Length, &output), output, nameof(RunCommands));
-            }
-        }
+        _native.Call(nameof(RunCommands), Encoding.UTF8.GetBytes(commandsJson), NativeMethods.fe_player_commands);
     }
 
     /// <summary>Runs engine commands given as objects serialized with the schema's JSON options.</summary>
@@ -363,44 +364,20 @@ public sealed class RustPlayer : IDisposable
     }
 
     /// <summary>The live game state as stable JSON.</summary>
-    public string StateJson()
-    {
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            NativeMethods.FeBytes output;
-            return Encoding.UTF8.GetString(Check(NativeMethods.fe_player_state_json(_handle, &output), output, nameof(StateJson)));
-        }
-    }
+    public string StateJson() => _native.CallText(nameof(StateJson), NativeMethods.fe_player_state_json);
 
     /// <summary>The live game state as a JSON node (tests, tools).</summary>
     public JsonObject State() => JsonNode.Parse(StateJson())!.AsObject();
 
     /// <summary>The state hash (<c>hashState</c>).</summary>
-    public string StateHash()
-    {
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            NativeMethods.FeBytes output;
-            return Encoding.UTF8.GetString(Check(NativeMethods.fe_player_hash(_handle, &output), output, nameof(StateHash)));
-        }
-    }
+    public string StateHash() => _native.CallText(nameof(StateHash), NativeMethods.fe_player_hash);
 
     /// <summary>
     /// The editor project with the live state written back ("keep changes",
     /// <c>applyStateToProject</c>). Throws for a player started from a cartridge.
     /// </summary>
-    public GameProject SyncedProject()
-    {
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            NativeMethods.FeBytes output;
-            var json = Check(NativeMethods.fe_player_synced_project(_handle, &output), output, nameof(SyncedProject));
-            return RecordJson.ParseUtf8<GameProject>(json);
-        }
-    }
+    public GameProject SyncedProject() =>
+        RecordJson.ParseUtf8<GameProject>(_native.Call(nameof(SyncedProject), NativeMethods.fe_player_synced_project));
 
     /// <summary>Clock, place, seed, scenes and seasons of the live game.</summary>
     public PlayerSummary Summary() => Query<PlayerSummary>(new { type = "summary" })!;
@@ -417,53 +394,14 @@ public sealed class RustPlayer : IDisposable
     /// <summary>Recent plugin errors, oldest first.</summary>
     public IReadOnlyList<string> PluginErrors() => Query<List<string>>(new { type = "pluginErrors" }) ?? [];
 
+    /// <summary>Makes the Rust side panic inside a call (tests of the poisoning path): throws, and the player is poisoned.</summary>
+    internal void PanicForTests() => Query<object>(new { type = "panic" });
+
     private T? Query<T>(object query)
     {
-        var json = JsonSerializer.SerializeToUtf8Bytes(query, InteropJson.Options);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
-            {
-                NativeMethods.FeBytes output;
-                var answer = Check(NativeMethods.fe_player_query_json(_handle, ptr, (nuint)json.Length, &output), output, nameof(Query));
-                return JsonSerializer.Deserialize<T>(answer, InteropJson.Options);
-            }
-        }
+        var answer = _native.Call(nameof(Query), JsonSerializer.SerializeToUtf8Bytes(query, InteropJson.Options), NativeMethods.fe_player_query_json);
+        return JsonSerializer.Deserialize<T>(answer, InteropJson.Options);
     }
 
-    public void Dispose()
-    {
-        unsafe
-        {
-            if (_handle != null)
-            {
-                NativeMethods.fe_player_free(_handle);
-                _handle = null;
-            }
-        }
-    }
-
-    private byte[] Check(NativeMethods.FeResult result, NativeMethods.FeBytes output, string call)
-    {
-        var bytes = RustRender.TakeBytes(output);
-        if (result != NativeMethods.FeResult.Ok)
-        {
-            Fail(result, Encoding.UTF8.GetString(bytes), call);
-        }
-
-        return bytes;
-    }
-
-    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    private void Fail(NativeMethods.FeResult result, string message, string call)
-    {
-        if (result is NativeMethods.FeResult.Panic or NativeMethods.FeResult.Poisoned)
-        {
-            _poisoned = true;
-            _fault ??= string.IsNullOrEmpty(message) ? $"{call} failed ({result})." : message;
-        }
-
-        throw new FarmFfiException(string.IsNullOrEmpty(message) ? $"{call} failed: {result}." : message);
-    }
+    public void Dispose() => _native.Dispose();
 }

@@ -68,6 +68,26 @@
   - Smaller fixes: a NaN frame time can't stall the simulation, save folders
     avoid Windows device names (`Con`) and overlong names, and scripted input
     at the last frame index no longer overflows.
+  - Shared save files can't exhaust memory: a save's state may be at most
+    64 MiB (it was 256 MiB), slot files are read only that far, and loading
+    no longer copies the state several times. Save-slot thumbnails larger
+    than 512 pixels aren't decoded, and refreshing the slots no longer adds a
+    thumbnail to the image cache every time.
+- **The editor's engine library, from the 2026-09-30 audit:**
+  - The editor loads `farm_ffi` from its own folder only, refuses a library
+    built from other sources (it checks the library's ABI version), and says
+    why the engine isn't available (a missing system library, for example)
+    instead of "not available in this build". On Linux, `dotnet build
+    -p:FarmFfiAudio=false` builds an engine library that runs without ALSA
+    (Play Mode is then silent).
+  - Play Mode copies each frame once, straight into the screen bitmap (it was
+    copied three times). Painting the map sends only the changed scene to the
+    renderer, and only when the map is on screen; scrolling reuses the drawn
+    scene.
+  - Every engine handle reports errors the same way, freeing one can't crash
+    the editor, and using one after it was closed throws a clear error.
+  - Tests that need the Rust library fail when it's missing (also with
+    `-p:CargoProfile=dev`); `FARM_ALLOW_MISSING_NATIVE=1` skips them instead.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:

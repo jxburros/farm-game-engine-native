@@ -11,12 +11,18 @@ open FarmEngine.Export
 open FarmEngine.Export.Tests.Support
 
 /// FarmEngine.Export's build writes farm_player.status: "built" means a host template must be
-/// here (a broken cargo step must not turn these tests green); "skipped" means no Rust toolchain.
+/// here (a broken cargo step must not turn these tests green); "skipped" means no Rust toolchain,
+/// which fails these tests unless FARM_ALLOW_MISSING_NATIVE=1 allows it.
 let private hostTemplate () : (ExportTarget * string) option =
     let status = Path.Combine(AppContext.BaseDirectory, "farm_player.status")
     Assert.True(File.Exists status, "FarmEngine.Export did not write farm_player.status")
     match File.ReadAllText(status).Trim() with
-    | "skipped" -> None
+    | "skipped" ->
+        Assert.True(
+            (Environment.GetEnvironmentVariable "FARM_ALLOW_MISSING_NATIVE" = "1"),
+            "The player template was not built (farm_player.status is 'skipped'); set FARM_ALLOW_MISSING_NATIVE=1 to allow that."
+        )
+        None
     | "built"
     | "prebuilt" ->
         let target = if OperatingSystem.IsWindows() then ExportTarget.WindowsX64 else ExportTarget.LinuxX64
