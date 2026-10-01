@@ -53,6 +53,11 @@ use std::sync::Arc;
 /// A world snapshot, the world's size and the camera target (pixels).
 type WorldFrame = (WorldSnapshot, (f64, f64), (f64, f64));
 
+/// Size of the scene thumbnail a save carries (the slot screens show it).
+const THUMBNAIL_SIZE: (u32, u32) = (192, 120);
+/// Largest side of a thumbnail the slot screens decode; larger ones are not shown.
+const MAX_THUMBNAIL_SIDE: u32 = 512;
+
 /// Where the player runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerMode {
@@ -276,7 +281,6 @@ pub struct Player {
     poisoned: Option<String>,
     time: f64,
     started: bool,
-    thumb_serial: u64,
 }
 
 impl std::fmt::Debug for Player {
@@ -405,7 +409,6 @@ impl Player {
             poisoned: None,
             time: 0.0,
             started: false,
-            thumb_serial: 0,
         };
         match player.mode {
             PlayerMode::Standalone => {
@@ -1131,17 +1134,28 @@ impl Player {
             .map(|(_, slot)| slot)
     }
 
+    /// Decodes a slot's thumbnail into the UI image cache under the slot's own key, replacing the
+    /// one decoded before (#81). Thumbnails are written at most [`THUMBNAIL_SIZE`]; anything
+    /// larger than [`MAX_THUMBNAIL_SIDE`] (a crafted save) is refused before it is decoded.
     fn decode_thumbnail(&mut self, index: usize) {
-        let Some(preview) = self.slots[index].preview.as_ref() else { return };
-        if preview.thumbnail_png.is_empty() {
-            return;
-        }
-        self.thumb_serial += 1;
-        let key = format!("save-thumbnail:{}:{}", index + 1, self.thumb_serial);
-        self.slots[index].thumbnail = farm_render::images::decode_image(&preview.thumbnail_png).ok().map(|image| {
-            let (width, height) = (image.width() as f32, image.height() as f32);
-            (self.renderer.ui_images.insert(&key, image), width, height)
-        });
+        let key = format!("save-thumbnail:{}", index + 1);
+        let image = self.slots[index].preview.as_ref().filter(|preview| !preview.thumbnail_png.is_empty()).and_then(
+            |preview| {
+                let max = MAX_THUMBNAIL_SIDE;
+                farm_render::images::decode_image_within(&preview.thumbnail_png, max, u64::from(max) * u64::from(max))
+                    .ok()
+            },
+        );
+        self.slots[index].thumbnail = match image {
+            Some(image) => {
+                let (width, height) = (image.width() as f32, image.height() as f32);
+                Some((self.renderer.ui_images.insert(&key, image), width, height))
+            }
+            None => {
+                self.renderer.ui_images.remove_source(&key);
+                None
+            }
+        };
     }
 
     /// What the slot screens show for a save's bytes.
@@ -1234,7 +1248,7 @@ impl Player {
         if let Some((mut snapshot, world, target)) = Self::snapshot_of(&self.def.content, game, false, None) {
             let (width, height) = (world.0.min(384.0), world.1.min(240.0));
             snapshot.camera = Some(compute_camera(target.0, target.1, world.0, world.1, width, height));
-            preview.thumbnail_png = self.renderer.thumbnail(&snapshot, 192, 120, background);
+            preview.thumbnail_png = self.renderer.thumbnail(&snapshot, THUMBNAIL_SIZE.0, THUMBNAIL_SIZE.1, background);
         }
         let bytes = save_file::write_save_binary(game.session.state(), &self.def.target, &preview);
         match self.saves.write(slot, &bytes) {
@@ -1553,5 +1567,47 @@ mod tests {
     fn players_can_move_between_threads() {
         fn assert_send<T: Send>() {}
         assert_send::<Player>();
+    }
+
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        farm_render::encode_png(&Pixmap::new(width, height).unwrap())
+    }
+
+    #[test]
+    fn slot_thumbnails_keep_one_cache_entry_per_slot_and_refuse_huge_images() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../fixtures/golden/content/starter-farm.json")).unwrap();
+        let project: GameProject = serde_json::from_value(fixture["project"].clone()).unwrap();
+        let state = state::create_game_state(&project, Some("thumbnails"));
+        let mut saves = MemorySaveStore::new();
+        let options = PlayerOptions { saves: Box::new(saves.clone()), ..PlayerOptions::standalone() };
+        let mut player = Player::from_project(project, options).unwrap();
+        let write = |saves: &mut MemorySaveStore, slot: u32, thumbnail: Vec<u8>, target: &SaveTarget| {
+            let preview = SavePreview { thumbnail_png: thumbnail, ..SavePreview::of_state(&state) };
+            saves.write(slot, &save_file::write_save_binary(&state, target, &preview)).unwrap();
+        };
+        let target = player.def.target.clone();
+        write(&mut saves, 1, png(THUMBNAIL_SIZE.0, THUMBNAIL_SIZE.1), &target);
+        // A crafted save: a few KB of PNG that would decode to 64 MB of pixels.
+        write(&mut saves, 3, png(4096, 4096), &target);
+
+        player.refresh_slots();
+        let cached = player.renderer.ui_images.len();
+        for _ in 0..10 {
+            player.refresh_slots();
+        }
+        assert_eq!(player.renderer.ui_images.len(), cached, "every refresh replaces the slot's entry");
+        let (id, width, height) = player.slots[0].thumbnail.expect("slot 1 shows its thumbnail");
+        assert_eq!((width, height), (THUMBNAIL_SIZE.0 as f32, THUMBNAIL_SIZE.1 as f32));
+        assert!(player.renderer.ui_images.image(id).is_some());
+        assert!(player.slots[2].preview.is_some(), "the save itself is fine");
+        assert!(player.slots[2].thumbnail.is_none(), "an oversized thumbnail is not decoded");
+
+        // A slot that loses its thumbnail drops the cached one.
+        write(&mut saves, 1, Vec::new(), &target);
+        player.refresh_slots();
+        assert!(player.slots[0].thumbnail.is_none());
+        assert!(player.renderer.ui_images.image(id).is_none());
+        assert_eq!(player.renderer.ui_images.len(), cached - 1);
     }
 }
