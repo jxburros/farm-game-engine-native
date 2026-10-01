@@ -94,7 +94,10 @@ default, so a partial or older file loads; an unreadable file is ignored.
 - **Display:** fullscreen (borderless) or windowed, integer scaling (whole
   pixel steps, letterboxed) or fit, interface size (75–150 %).
 - **Audio:** master, music, sound effects, mute. Sound effects are the
-  synthesized farm-runtime presets; there is no music content yet.
+  synthesized farm-runtime presets, rendered once when the device opens;
+  there is no music content yet. Sound follows the default output device:
+  when it goes away (headphones unplugged) or another one becomes the default,
+  the game reopens the stream on the current default device.
 - **Controls:** keyboard bindings and the gamepad layout.
 - **Accessibility:** text size (90–140 %), reduced motion (no floating pops,
   fades or flashes), a readable font (Atkinson Hyperlegible, SIL OFL 1.1, for

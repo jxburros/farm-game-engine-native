@@ -307,7 +307,8 @@ Differences from this plan, as built:
   shown there and read from `settings.toml`, but not rebound in the menu.
 - Accessibility has text size and reduced motion (no pops, fades or
   flashes). There is no text speed, because dialogue shows at once.
-- A crash writes the log and prints its path. It shows no message box.
+- A crash writes the log and prints its path, and the game window shows an
+  error screen with that path instead of a native message box.
 
 ## What earlier phases must get right
 

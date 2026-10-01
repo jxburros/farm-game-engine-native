@@ -26,7 +26,7 @@ pub mod session;
 #[cfg(feature = "audio-out")]
 pub mod speaker;
 
-pub use audio::{Mixer, SoundRequest};
+pub use audio::{Mixer, SoundBank, SoundRequest, Voice};
 pub use farm_ui::{GamepadButton, Settings};
 pub use input::{FrameInput, GamepadAxis, InputEvent, InputRouter, PointerButton};
 pub use player::{FrameOutput, Player, PlayerError, PlayerMode, PlayerOptions, PlayerRequest, ScreenKind, StepOutput};

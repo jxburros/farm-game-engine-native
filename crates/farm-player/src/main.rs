@@ -132,15 +132,21 @@ fn screenshot(options: Options, out: PathBuf) -> Result<(), String> {
 
 #[cfg(feature = "desktop")]
 fn windowed(options: Options) -> Result<(), String> {
-    let path = cart_path(&options)?;
-    let cart = read(&path)?;
-    farm_player::desktop::run(
-        &cart,
-        farm_player::desktop::DesktopOptions {
-            exit_after_frames: options.exit_after_frames,
-            fullscreen: options.fullscreen,
-        },
-    )
+    let desktop = farm_player::desktop::DesktopOptions {
+        exit_after_frames: options.exit_after_frames,
+        fullscreen: options.fullscreen,
+    };
+    // An exported game has no console: a missing cartridge is shown in a window too.
+    let cart = match cart_path(&options).and_then(|path| read(&path)) {
+        Ok(cart) => cart,
+        Err(error) => {
+            if desktop.exit_after_frames.is_none() {
+                farm_player::desktop::show_error(&format!("The game could not be loaded: {error}"), desktop);
+            }
+            return Err(error);
+        }
+    };
+    farm_player::desktop::run(&cart, desktop)
 }
 
 #[cfg(not(feature = "desktop"))]
