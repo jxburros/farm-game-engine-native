@@ -180,6 +180,8 @@ for (const name of replays) {
   await test(`session replays golden ${name}`, () => {
     const replay = json("golden", "replays", name);
     const session = new farm.Session(replay.project, replay.seed ?? undefined, replay.autoStartQuests === true);
+    // The goldens script commands wherever the player stands.
+    session.setScripted(true);
     assert.equal(session.hash(), replay.initialHash, "initial state");
     replay.steps.forEach((step, index) => {
       const { input } = step;

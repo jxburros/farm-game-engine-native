@@ -43,6 +43,28 @@ fn a_save_round_trips_unchanged_on_the_same_cartridge() {
 }
 
 #[test]
+fn a_save_with_a_malformed_tile_grid_is_repaired_on_load() {
+    let project = starter_project();
+    let (content, target) = build(&project);
+    let mut state = state::create_game_state(&project, Some("save-file"));
+    // A hand-edited save: a short row and a missing one.
+    state.world.scenes[0].tiles[3].truncate(2);
+    state.world.scenes[0].tiles.pop();
+    let loaded = load_save(&write_save(&state, &target), &target, &content);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    assert_eq!(
+        loaded.warnings,
+        vec![format!(
+            "The map of '{}' in this save did not match its size and was repaired.",
+            state.world.scenes[0].id
+        )]
+    );
+    let scene = &loaded.state.expect("state").world.scenes[0];
+    assert_eq!(scene.tiles.len(), scene.height as usize);
+    assert!(scene.tiles.iter().all(|row| row.len() == scene.width as usize));
+}
+
+#[test]
 fn a_save_from_another_game_is_refused() {
     let project = starter_project();
     let (content, target) = build(&project);

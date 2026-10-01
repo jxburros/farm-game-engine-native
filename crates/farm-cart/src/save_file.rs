@@ -200,6 +200,16 @@ fn load_parts(header: Option<SaveHeader>, state_raw: &Value, target: &SaveTarget
         };
     };
 
+    // A tile grid that doesn't match its scene's size (a hand-edited save) is fixed before the
+    // simulation reads it.
+    let repaired = farm_sim::state::normalize_world(&mut state);
+    if !repaired.is_empty() {
+        warnings.push(format!(
+            "The map of {} in this save did not match its size and was repaired.",
+            repaired.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ")
+        ));
+    }
+
     let same_content = header.as_ref().is_some_and(|h| h.cart_hash == target.cart_hash);
     let (quarantined, restored) =
         if same_content { (Vec::new(), Vec::new()) } else { reconcile_items(&mut state, content) };

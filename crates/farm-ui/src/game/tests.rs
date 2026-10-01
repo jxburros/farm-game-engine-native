@@ -192,6 +192,10 @@ fn crafting_crafts_loads_machines_and_places_them() {
     fixture.scroll_to(load);
     assert_eq!(command(&fixture.click(load)), Some(&Command::MachineLoad { recipe_id: "recipe-smelt-copper".into() }));
     assert!(fixture.ui.last_rect(WidgetId::new("craft-load").with("recipe-smelt-iron")).is_none(), "no iron ore");
+    // An idle machine can be picked back up.
+    let pick_up = WidgetId::new("craft-pick-up");
+    fixture.scroll_to(pick_up);
+    assert_eq!(command(&fixture.click(pick_up)), Some(&Command::PickUpMachine));
     assert_eq!(fixture.click(WidgetId::new("crafting").with("close")), [GameAction::ClosePanel]);
 }
 

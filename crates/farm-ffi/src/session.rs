@@ -164,6 +164,24 @@ pub unsafe extern "C" fn fe_session_skip_day(session: *mut FeSession, out: *mut 
     })
 }
 
+/// Whether commands apply wherever the player stands (`scripted` true: scripts, test harnesses,
+/// the golden replays) or only where a player could give them (false, the default; see
+/// `farm_sim::CommandRules`).
+///
+/// # Safety
+/// `session` from [`fe_session_new`]; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_session_set_scripted(
+    session: *mut FeSession,
+    scripted: bool,
+    out: *mut FeBytes,
+) -> FeResult {
+    with_session(session, out, |s| {
+        s.set_scripted(scripted);
+        Ok(String::new())
+    })
+}
+
 /// Drains the hook events emitted since the last drain, as a JSON array of
 /// `{"hook":"onDayStart","payload":{…}}` objects (the plugin host feeds them to plugins).
 ///
@@ -363,6 +381,46 @@ mod tests {
         let (_, message) = call(|out| unsafe { fe_session_last_error(session, out) });
         assert!(message.starts_with("state JSON"), "{message}");
         assert_eq!(call(|out| unsafe { fe_session_state_json(session, out) }).1, after);
+        unsafe { fe_session_free(session) };
+    }
+
+    #[test]
+    fn commands_follow_the_players_rules_unless_scripted() {
+        let session = new_session("rules");
+        let state = |session| call(|out| unsafe { fe_session_state_json(session, out) }).1;
+        let exit = br#"[{"type":"exitMine"}]"#;
+        let before = state(session);
+        call(|out| unsafe { fe_session_apply(session, exit.as_ptr(), exit.len(), out) });
+        assert_eq!(state(session), before, "exitMine on the farm is refused");
+
+        let open = br#"[{"type":"openShop","shopId":"shop-general"}]"#;
+        call(|out| unsafe { fe_session_apply(session, open.as_ptr(), open.len(), out) });
+        assert_eq!(state(session), before, "no shop without its merchant");
+        assert_eq!(call(|out| unsafe { fe_session_set_scripted(session, true, out) }).0, FeResult::Ok);
+        call(|out| unsafe { fe_session_apply(session, open.as_ptr(), open.len(), out) });
+        assert_ne!(state(session), before, "scripts open it from anywhere");
+        unsafe { fe_session_free(session) };
+    }
+
+    #[test]
+    fn a_replaced_state_gets_its_tile_grids_repaired() {
+        let session = new_session("ragged");
+        let (_, state) = call(|out| unsafe { fe_session_state_json(session, out) });
+        let mut value: serde_json::Value = serde_json::from_str(&state).unwrap();
+        value["world"]["scenes"][0]["tiles"][2].as_array_mut().unwrap().truncate(1);
+        let edited = value.to_string();
+        assert_eq!(
+            call(|out| unsafe { fe_session_set_state(session, edited.as_ptr(), edited.len(), out) }).0,
+            FeResult::Ok
+        );
+        let (_, after) = call(|out| unsafe { fe_session_state_json(session, out) });
+        let after: serde_json::Value = serde_json::from_str(&after).unwrap();
+        let scene = &after["world"]["scenes"][0];
+        assert_eq!(scene["tiles"][2].as_array().unwrap().len() as u64, scene["width"].as_u64().unwrap());
+        // And play goes on.
+        let walk = br#"[{"type":"setMoveIntent","dx":0,"dy":-1}]"#;
+        call(|out| unsafe { fe_session_apply(session, walk.as_ptr(), walk.len(), out) });
+        assert_eq!(call(|out| unsafe { fe_session_tick(session, 40, out) }).0, FeResult::Ok);
         unsafe { fe_session_free(session) };
     }
 

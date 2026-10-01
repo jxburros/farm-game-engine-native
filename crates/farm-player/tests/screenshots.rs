@@ -222,7 +222,9 @@ fn review_screens() {
         press(&mut sleep, "z");
         write("toasts", sleep, width, height);
         let mut minigame = new_game(&Stores::new());
-        minigame.run_command(&farm_sim::Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+        // Opened as a plugin can (the `startMinigame` command is refused under the player's rules).
+        let open = farm_sim::schema::PluginMutation::StartMinigame { minigame_id: "fishing".into() };
+        minigame.run_command(&farm_sim::Command::PluginMutation { plugin_id: "shots".into(), mutation: open }).unwrap();
         write("minigame", minigame, width, height);
     }
     // Slots and credits with a save on disk.

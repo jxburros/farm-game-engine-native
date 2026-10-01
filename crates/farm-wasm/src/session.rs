@@ -87,7 +87,20 @@ impl WasmSession {
         self.run(|s| Ok(s.hook_events()))
     }
 
-    /// Replaces the live state with a `GameState` (object or JSON text), taken as it is.
+    /// Whether commands apply wherever the player stands (`true`: scripts, test harnesses and the
+    /// golden replays) or only where a player could give them (`false`, the default: no
+    /// `descendMine` away from the mine, no `openShop` without facing the merchant, nothing but
+    /// the open dialogue's, shop's or minigame's own commands while one is open, …).
+    #[wasm_bindgen(js_name = setScripted)]
+    pub fn set_scripted(&mut self, scripted: bool) -> Result<(), JsValue> {
+        self.run(|s| {
+            s.set_scripted(scripted);
+            Ok(())
+        })
+    }
+
+    /// Replaces the live state with a `GameState` (object or JSON text), taken as it is (only
+    /// tile grids that don't match their scene's size are fixed).
     #[wasm_bindgen(js_name = setState)]
     pub fn set_state(
         &mut self,

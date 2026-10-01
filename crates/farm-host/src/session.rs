@@ -7,7 +7,7 @@
 use crate::view_json;
 use farm_cart::save_file::{self, SaveTarget};
 use farm_sim::commands::Command;
-use farm_sim::engine_types::EngineContext;
+use farm_sim::engine_types::{CommandRules, EngineContext};
 use farm_sim::hooks::HookBus;
 use farm_sim::schema::{GameProject, GameState};
 use farm_sim::{engine, game_time, hash, quests, stable_json, state};
@@ -106,10 +106,20 @@ impl HostSession {
     }
 
     /// Replaces the live state with a `GameState` as JSON, taken as it is (nothing is migrated
-    /// or quarantined). Invalid JSON leaves the state untouched.
+    /// or quarantined; only tile grids that don't match their scene's size are fixed). Invalid
+    /// JSON leaves the state untouched.
     pub fn set_state(&mut self, state_json: &[u8]) -> Result<(), String> {
-        self.state = serde_json::from_slice(state_json).map_err(|e| format!("state JSON: {e}"))?;
+        let mut state: GameState = serde_json::from_slice(state_json).map_err(|e| format!("state JSON: {e}"))?;
+        state::normalize_world(&mut state);
+        self.state = state;
         Ok(())
+    }
+
+    /// Whether commands apply wherever the player stands (`true`: scripts, test harnesses and the
+    /// golden replays) or only where a player could give them (`false`, the default; see
+    /// [`CommandRules`]).
+    pub fn set_scripted(&mut self, scripted: bool) {
+        self.ctx.rules = if scripted { CommandRules::Scripted } else { CommandRules::Player };
     }
 
     /// A save file for the live state: `{"header": {…}, "state": {…}}` as stable JSON (see
