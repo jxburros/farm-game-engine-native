@@ -117,7 +117,11 @@ public sealed class ModsEditorView : UserControl
         _review.Children.Add(Ui.Text($"{manifest.Name} · {manifest.Version}", "h2"));
         _review.Children.Add(Ui.Wrapped($"{manifest.Description.OrNull() ?? "No description"} · by {manifest.Author.OrNull() ?? "unknown author"}", "muted", "small"));
         _review.Children.Add(Ui.Wrapped($"Engine: {manifest.EngineCompatibility} · ID: {manifest.Id}", "muted", "small"));
-        _review.Children.Add(Ui.Wrapped($"Permissions: content injection {(manifest.Permissions.ContentInject ? "requested" : "off")}; UI panels {(manifest.Permissions.UiPanels ? "requested" : "off")}; hooks {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "small"));
+        // contentInject off means the pack's content is not loaded; packs cannot add UI panels
+        // yet, so uiPanels grants nothing.
+        _review.Children.Add(Ui.Wrapped($"Permissions: content {(manifest.Permissions.ContentInject ? "added to your game" : "off (none of the pack's content loads)")}; hooks {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}{(manifest.Permissions.UiPanels ? "; UI panels requested (not supported, grants nothing)" : "")}", "small"));
+        if (pack.Plugins.Length > 0)
+            _review.Children.Add(Ui.Wrapped($"Plugins may: {PackRules.describeMutations(manifest.Permissions)}", "small"));
         if (manifest.Dependencies.Length > 0)
             _review.Children.Add(Ui.Wrapped($"Dependencies: {string.Join(", ", manifest.Dependencies.Select(dep => $"{dep.PackId} {dep.Version.OrNull() ?? "*"}"))}", "muted", "small"));
         if (manifest.Overrides.Length > 0)

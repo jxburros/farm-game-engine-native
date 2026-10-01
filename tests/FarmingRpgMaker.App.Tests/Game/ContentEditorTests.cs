@@ -149,6 +149,8 @@ public sealed class ContentEditorTests
         mods.ReviewPackJson(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "demo-mod.json")));
         Assert.True(FindByName<Button>(host.Window, "InstallPackButton").IsEnabled);
         Assert.Contains("Permissions", AllVisibleText(host.Window));
+        // The demo mod declares no mutations: the review says what its plugin may do by default.
+        Assert.Contains("Plugins may: default: messages, sounds, and the pack's own flags and items", AllVisibleText(host.Window));
         Press(host, "InstallPackButton");
         var installed = Assert.Single(host.Workspace.Current!.ContentPacks);
         var id = installed.Pack.Manifest.Id;

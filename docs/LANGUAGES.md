@@ -194,11 +194,14 @@ what an exported game contains.
 - **Panics** are caught at the boundary (`catch_unwind`) and returned as
   error results, never unwound into .NET. The handle is then poisoned.
 - **Synchronous hooks.** Plugin mutations are queued and come back as
-  commands (the `PluginMutationQueue` design). The engine lets
-  `onWeatherRoll` listeners return an override *during* the nightly step, but
-  plugins never do: the web bridge returns nothing from its listeners. So
-  `farm-plugins`' `PluginRuntime` dispatches `onWeatherRoll` after the step
-  like any other hook, and installs no `WeatherRollListener`.
+  commands (the `PluginMutationQueue` design), drained right before each tick
+  (`PlaySession` advances one tick at a time, so they do not depend on the
+  frame rate). The engine lets `onWeatherRoll` listeners return an override
+  *during* the nightly step, but plugins never do: the web bridge returns
+  nothing from its listeners. So `farm-plugins`' `PluginRuntime` dispatches
+  `onWeatherRoll` after the step like any other hook, and installs no
+  `WeatherRollListener`; the Problems panel warns about plugins that listen
+  to it ([PLUGINS.md](PLUGINS.md)).
 
 ### WebAssembly (`farm-wasm`)
 

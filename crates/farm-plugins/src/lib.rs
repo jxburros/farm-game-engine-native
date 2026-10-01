@@ -12,14 +12,17 @@
 //! # Pieces
 //!
 //! - [`PluginSpec`], [`plugin_specs_from_packs`], [`plugin_specs_from_project`]: what to load
-//!   (grants are the plugin's `hooks` that the pack's `permissions.hooks` also lists).
+//!   (grants are the plugin's `hooks` that the pack's `permissions.hooks` also lists, and the
+//!   pack's `permissions.mutations`).
+//! - [`MutationGrants`]: the mutation capabilities a plugin's answers are checked against, and
+//!   the namespacing of the ids they name (see the `capabilities` module docs).
 //! - [`WasmPluginHost`] implements [`PluginHost`]: QuickJS compiled to WebAssembly (the
 //!   checked-in guest, see `guest/README.md`), one instance per plugin, run by the wasmi
 //!   interpreter with deterministic fuel budgets ([`PluginHostOptions`]).
 //! - [`validate_mutations`] / [`parse_mutation`]: the zod mutation schema, with the C# host's
 //!   error texts.
 //! - [`PluginMutationQueue`] and [`PluginRuntime`]: feed a step's hook events to the host,
-//!   queue the results and hand them back as commands at one fixed point per frame.
+//!   queue the results and hand them back as commands before the next tick.
 //!
 //! # Example
 //!
@@ -32,6 +35,7 @@
 //!     pack_id: "demo".to_owned(),
 //!     source: "api.on('onDayStart', p => [{ type: 'giveMoney', amount: p.day * 10 }])".to_owned(),
 //!     granted_hooks: vec!["onDayStart".to_owned()],
+//!     granted_mutations: Some(vec!["giveMoney".to_owned()]),
 //! };
 //! let mut host = WasmPluginHost::new(vec![spec], PluginHostOptions::default());
 //! let results = host.dispatch("onDayStart", r#"{"day":2,"season":"spring","year":1}"#);
@@ -50,6 +54,7 @@
 #![deny(clippy::disallowed_types, clippy::disallowed_methods)]
 #![warn(missing_docs)]
 
+mod capabilities;
 mod host;
 mod mutations;
 mod payload;
@@ -58,17 +63,33 @@ mod runtime;
 mod sandbox;
 mod spec;
 
+pub use capabilities::{
+    MutationGrants, DEFAULT_MUTATION_CAPABILITIES, MAX_FLAG_KEYS_PER_PLUGIN, MAX_MUTATIONS_PER_CALL,
+    MAX_SKILL_KEYS_PER_PLUGIN, MUTATION_TYPES, RESERVED_FLAG_PREFIX, SCOPED_MUTATION_TYPES,
+};
 pub use host::{PluginHost, PluginHostOptions, WasmPluginHost};
-pub use mutations::{parse_mutation, validate_mutations};
+pub use mutations::{parse_mutation, validate_mutations, MAX_FLAG_VALUE_LENGTH, MAX_ID_LENGTH};
 pub use payload::{effect_events, hook_payload_json, to_engine_json};
 pub use queue::{PluginMutationQueue, QueuedPluginMutation};
-pub use runtime::{PluginRuntime, MAX_RECENT_ERRORS};
-pub use sandbox::GUEST_WASM;
+pub use runtime::{PluginRuntime, BUDGET_WINDOW_TICKS, MAX_RECENT_ERRORS};
+pub use sandbox::{GUEST_WASM, MAX_ERROR_MESSAGE_BYTES, MAX_RESULT_BYTES};
 pub use spec::{plugin_specs_from_packs, plugin_specs_from_project, PluginSpec};
 
 use farm_sim::schema::PluginMutation;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// `text` cut to at most `max_bytes` bytes at a character boundary, with `…` when cut.
+pub(crate) fn clip(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_owned();
+    }
+    let mut end = max_bytes;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
+}
 
 /// What went wrong in a [`PluginError`]. Serializes as the C# `PluginErrorKinds` strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

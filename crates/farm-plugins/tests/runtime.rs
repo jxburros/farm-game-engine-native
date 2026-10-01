@@ -23,6 +23,9 @@ struct Session {
     plugins: PluginRuntime,
     /// Every effect the host saw, in order.
     effects: Vec<Effect>,
+    /// Plugin errors are collected here instead of failing the test.
+    tolerate_errors: bool,
+    errors: Vec<farm_plugins::PluginError>,
 }
 
 impl Session {
@@ -31,22 +34,30 @@ impl Session {
         let state = state::create_game_state(project, Some(seed));
         let plugins =
             PluginRuntime::from_project(project, PluginHostOptions::default()).expect("the project has plugins");
-        Self { ctx, state, plugins, effects: Vec::new() }
+        Self { ctx, state, plugins, effects: Vec::new(), tolerate_errors: false, errors: Vec::new() }
     }
 
-    /// One command, then its hook events and effects go to the plugins.
-    fn run(&mut self, command: &Command) {
+    /// One command at step depth `depth`, then its hook events and effects go to the plugins.
+    fn run_at(&mut self, command: &Command, depth: u32) {
         let effects = apply_command(&self.ctx, &mut self.state, command);
         let events = self.ctx.drain_hook_events();
-        let errors = self.plugins.handle_step(&events, &effects);
-        assert!(errors.is_empty(), "plugin errors: {errors:?}");
+        let errors = self.plugins.handle_step_at(&events, &effects, depth);
+        assert!(self.tolerate_errors || errors.is_empty(), "plugin errors: {errors:?}");
+        self.errors.extend(errors);
         self.effects.extend(effects);
     }
 
-    /// A frame: queued plugin mutations first (the one fixed point), then the frame's commands.
+    /// One command from the player (a game step).
+    fn run(&mut self, command: &Command) {
+        self.run_at(command, 0);
+    }
+
+    /// A frame: queued plugin mutations first (the fixed point before the next tick), each a
+    /// step one level deeper than the mutation, then the frame's commands.
     fn frame(&mut self, commands: &[Command]) {
-        for command in self.plugins.drain_commands() {
-            self.run(&command);
+        for queued in self.plugins.drain() {
+            let depth = queued.depth + 1;
+            self.run_at(&queued.into_command(), depth);
         }
         for command in commands {
             self.run(command);
@@ -246,9 +257,11 @@ fn enabled_pack_plugins_run_in_the_sandbox_and_their_mutations_enter_as_commands
 }
 
 /// `PlayEngineTests`' echo plugin: every hook it may see answers with a mutation that records
-/// the payload, so hook order and payload JSON (key order included) end up in the state.
+/// the payload, so hook order and payload JSON (key order included) end up in the state. (The
+/// C# version skipped `pluginMutation` commands itself; steps caused by plugin mutations no
+/// longer dispatch `onCommand`.)
 const ECHO_PLUGIN: &str = r#"
-api.on('onCommand', function (p) { if (p.commandType === 'pluginMutation') return []; return [{ type: 'setFlag', flag: 'last-command', value: JSON.stringify(p) }]; });
+api.on('onCommand', function (p) { return [{ type: 'setFlag', flag: 'last-command', value: JSON.stringify(p) }]; });
 api.on('onEffect', function (p) { return p.effectType === 'message' ? [{ type: 'giveMoney', amount: 1 }] : []; });
 api.on('onDayStart', function (p) { return [{ type: 'message', text: 'echo ' + JSON.stringify(p) }]; });
 api.on('onNPCInteract', function (p) { return [{ type: 'setFlag', flag: 'talked', value: Object.keys(p).join(',') + '=' + p.npcId }]; });
@@ -260,6 +273,9 @@ fn the_echo_plugin_sees_engine_order_payloads_for_every_hook() {
     let hooks = ["onDayStart", "onCommand", "onEffect", "onNPCInteract", "onWeatherRoll"];
     let mut pack = demo_mod();
     pack.manifest.permissions.hooks = hooks.iter().map(|h| (*h).to_owned()).collect();
+    // Global flags, money for onEffect, messages and the demo plugin's own seed.
+    pack.manifest.permissions.mutations =
+        Some(["setFlag:any", "giveMoney", "message", "giveItem"].map(str::to_owned).to_vec());
     let mut echo = plugin("echo", ECHO_PLUGIN, &hooks);
     echo.name = Some("Echo".to_owned());
     pack.plugins.push(echo);
@@ -310,6 +326,142 @@ fn a_session_with_plugins_is_deterministic() {
     assert_eq!((hash.clone(), messages.clone()), run());
     // Day 7's handler also gives a glowshroom seed.
     assert!(messages.iter().any(|m| m.contains("Glowshroom")), "{messages:?}");
+}
+
+// --- feedback loops (#73) -------------------------------------------------------------------------
+
+/// A project with one pack whose plugin answers `hooks` with `source`, and `mutations` declared.
+fn project_with_plugin(hooks: &[&str], source: &str, mutations: &[&str]) -> GameProject {
+    let mut looping = pack("loop", hooks, vec![plugin("p", source, hooks)]);
+    looping.manifest.permissions.mutations = Some(mutations.iter().map(|m| (*m).to_owned()).collect());
+    with_packs(starter_farm_project(), vec![(looping, true)])
+}
+
+#[test]
+fn a_doubling_on_effect_plugin_stays_bounded() {
+    // Every effect answers with two message effects: unbounded, the queue would double every frame.
+    let project = project_with_plugin(
+        &["onEffect"],
+        "api.on('onEffect', () => [{ type: 'message', text: 'a' }, { type: 'message', text: 'b' }])",
+        &["message"],
+    );
+    let mut session = Session::new(&project, "loop");
+    session.frame(&[Command::Sleep]);
+    let after_sleep = session.plugins.queue().len();
+    assert!(after_sleep > 0);
+    for _ in 0..30 {
+        session.frame(&[]);
+    }
+    // The answers to the sleep's effects ran once; their own effects were not dispatched.
+    assert!(session.plugins.queue().is_empty());
+    let answers = session.messages().iter().filter(|m| **m == "a" || **m == "b").count();
+    assert_eq!(answers, after_sleep);
+}
+
+#[test]
+fn an_unguarded_on_command_echo_stays_bounded() {
+    let project = project_with_plugin(
+        &["onCommand"],
+        "api.on('onCommand', p => [{ type: 'setFlag', flag: 'seen', value: p.commandType }])",
+        &["setFlag"],
+    );
+    let mut session = Session::new(&project, "echo");
+    session.frame(&[Command::Sleep]);
+    session.frame(&[]);
+    assert_eq!(session.flag("loop:seen").and_then(Value::as_str), Some("sleep"));
+    for _ in 0..10 {
+        session.frame(&[]);
+    }
+    assert!(session.plugins.queue().is_empty());
+    // It never saw its own pluginMutation commands.
+    assert_eq!(session.flag("loop:seen").and_then(Value::as_str), Some("sleep"));
+}
+
+#[test]
+fn chains_of_plugin_reactions_end_after_a_few_steps() {
+    // Each friendship change answers with another one: a chain through a hook other than
+    // onCommand/onEffect, which the depth cap ends.
+    let project = project_with_plugin(
+        &["onRelationshipChange"],
+        "api.on('onRelationshipChange', p => [{ type: 'modifyFriendship', npcId: p.npcId, delta: 1 }])",
+        &["modifyFriendship:any"],
+    );
+    let mut session = Session::new(&project, "chain");
+    session.tolerate_errors = true;
+    session.run(&Command::PluginMutation {
+        plugin_id: "test".to_owned(),
+        mutation: PluginMutation::ModifyFriendship { npc_id: "npc-farmer".to_owned(), delta: 10 },
+    });
+    for _ in 0..10 {
+        session.frame(&[]);
+    }
+    assert!(session.plugins.queue().is_empty());
+    // The game step's answer plus two more links; the third is dropped.
+    assert_eq!(session.state.social.get("npc-farmer").map(|s| s.friendship), Some(10 + 3));
+    let messages: Vec<&str> = session.errors.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(messages, ["mutations dropped: plugin mutations may set off at most 3 more steps"]);
+}
+
+// --- capabilities (#78, #39) ------------------------------------------------------------------
+
+#[test]
+fn undeclared_packs_get_the_default_capabilities_and_own_namespaces() {
+    let mut glow = demo_mod();
+    glow.manifest.permissions.hooks = vec!["onDayStart".to_owned(), "onEffect".to_owned()];
+    glow.plugins = vec![plugin(
+        "greedy",
+        "api.on('onDayStart', () => [
+           { type: 'giveMoney', amount: 1000000 },
+           { type: 'setFlag', flag: 'visited', value: true },
+           { type: 'setFlag', flag: 'event:intro:fired', value: false },
+           { type: 'setFlag', flag: 'quest-done', value: true },
+           { type: 'giveItem', itemId: 'seed-glowshroom', quantity: 1 },
+           { type: 'giveItem', itemId: 'other-pack:seed', quantity: 1 },
+         ]);
+         api.on('onEffect', () => [{ type: 'message', text: 'watching' }]);",
+        &["onDayStart", "onEffect"],
+    )];
+    assert_eq!(glow.manifest.permissions.mutations, None);
+    let project = with_packs(starter_farm_project(), vec![(glow, true)]);
+    let mut session = Session::new(&project, "caps");
+    session.tolerate_errors = true;
+    let money = session.state.player.money;
+    session.frame(&[Command::Sleep]);
+    session.frame(&[]);
+
+    assert_eq!(session.state.player.money, money, "giveMoney is not a default capability");
+    assert_eq!(session.flag("demo-glow-farm:visited"), Some(&Value::Bool(true)));
+    assert_eq!(session.flag("visited"), None);
+    assert_eq!(session.flag("demo-glow-farm:quest-done"), Some(&Value::Bool(true)));
+    assert_eq!(session.flag("quest-done"), None);
+    assert!(!session.state.flags.contains_key("event:intro:fired"));
+    assert!(session.state.player.inventory.iter().any(|slot| slot.item.id == "demo-glow-farm:seed-glowshroom"));
+    assert!(!session.messages().contains(&"watching"));
+    let messages: Vec<&str> = session.errors.iter().map(|e| e.message.as_str()).collect();
+    assert!(
+        messages.contains(
+            &"mutation [0] dropped: giveMoney: not allowed unless the pack declares it in permissions.mutations"
+        ),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.starts_with("mutation [2] dropped: setFlag: flag 'event:intro:fired' is not this pack's")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.starts_with("mutation [5] dropped: giveItem: itemId 'other-pack:seed' is not this pack's")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.contains(&"answers to onEffect are dropped: the pack does not declare permissions.mutations"),
+        "{messages:?}"
+    );
+    // What entered the command log is the resolved mutation, so replays need no pack.
+    assert!(session.errors.iter().all(|e| e.kind == PluginErrorKind::InvalidMutation));
 }
 
 // --- the golden "content packs and plugins" scenario -------------------------------------------

@@ -7,6 +7,10 @@
 //! `type`; required fields type-checked; integers and ranges enforced; message text at most 500
 //! UTF-16 code units (JavaScript string length); flag values boolean, number or string; unknown
 //! keys stripped. Error texts are the C# host's, word for word.
+//!
+//! Native additions (the web schema has no such limits): ids, flag names and skills are at most
+//! [`MAX_ID_LENGTH`] characters and string flag values at most [`MAX_FLAG_VALUE_LENGTH`], so a
+//! plugin cannot push megabytes into the state, the save or an error message.
 
 use crate::{PluginError, PluginErrorKind};
 use farm_sim::schema::PluginMutation;
@@ -15,6 +19,15 @@ use serde_json::{Map, Value};
 
 /// The largest tile coordinate a warp may name: the last tile of the largest scene.
 const MAX_TILE: f64 = (farm_sim::schema::MAX_SCENE_SIZE - 1) as f64;
+
+/// Longest id, flag name or skill a mutation may carry, in UTF-16 code units.
+pub const MAX_ID_LENGTH: usize = 256;
+
+/// Longest string flag value, in UTF-16 code units.
+pub const MAX_FLAG_VALUE_LENGTH: usize = 4096;
+
+/// Longest unknown `type` quoted back in an error.
+const MAX_QUOTED_TYPE_LENGTH: usize = 64;
 
 /// Validate a handler's return value. A non-array yields nothing; each entry is parsed with
 /// [`parse_mutation`], and invalid ones are dropped with an error
@@ -51,17 +64,17 @@ pub fn parse_mutation(entry: &Value) -> Result<PluginMutation, String> {
     let mut fields = Fields { object, failures: Vec::new() };
     let parsed = match kind.as_str() {
         "giveItem" => {
-            let item_id = fields.string("itemId");
+            let item_id = fields.id("itemId");
             PluginMutation::GiveItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) as u32 }
         }
         "takeItem" => {
-            let item_id = fields.string("itemId");
+            let item_id = fields.id("itemId");
             PluginMutation::TakeItem { item_id, quantity: fields.int("quantity", 1.0, 999.0) as u32 }
         }
         "giveMoney" => PluginMutation::GiveMoney { amount: fields.int("amount", 1.0, 1_000_000.0) as i64 },
         "takeMoney" => PluginMutation::TakeMoney { amount: fields.int("amount", 1.0, 1_000_000.0) as i64 },
         "setFlag" => {
-            let flag = fields.string("flag");
+            let flag = fields.id("flag");
             PluginMutation::SetFlag { flag, value: fields.flag_value() }
         }
         "message" => {
@@ -69,35 +82,37 @@ pub fn parse_mutation(entry: &Value) -> Result<PluginMutation, String> {
             fields.max_length(&text, 500, "text");
             PluginMutation::Message { text }
         }
-        "setWeather" => PluginMutation::SetWeather { weather_id: fields.string("weatherId") },
+        "setWeather" => PluginMutation::SetWeather { weather_id: fields.id("weatherId") },
         "modifyFriendship" => {
-            let npc_id = fields.string("npcId");
+            let npc_id = fields.id("npcId");
             PluginMutation::ModifyFriendship { npc_id, delta: fields.int("delta", -1000.0, 1000.0) as i32 }
         }
         "grantXp" => {
-            let skill = fields.string("skill");
+            let skill = fields.id("skill");
             PluginMutation::GrantXp { skill, amount: fields.int("amount", 1.0, 10_000.0) as u32 }
         }
         "modifyEnergy" => {
             // Whole energy points, stored in thousandths.
             PluginMutation::ModifyEnergy { delta: units::points(fields.int("delta", -1000.0, 1000.0) as i32) }
         }
-        "startQuest" => PluginMutation::StartQuest { quest_id: fields.string("questId") },
+        "startQuest" => PluginMutation::StartQuest { quest_id: fields.id("questId") },
         "warpPlayer" => {
             // A tile of the largest scene there can be (the engine also lands a warp outside the
             // scene, or on a blocked tile, on the nearest walkable one).
-            let scene_id = fields.string("sceneId");
+            let scene_id = fields.id("sceneId");
             let x = fields.int("x", 0.0, MAX_TILE) as i32;
             PluginMutation::WarpPlayer { scene_id, x, y: fields.int("y", 0.0, MAX_TILE) as i32 }
         }
         "startDialogue" => {
-            let npc_id = fields.string("npcId");
-            PluginMutation::StartDialogue { npc_id, dialogue_id: fields.optional_string("dialogueId") }
+            let npc_id = fields.id("npcId");
+            PluginMutation::StartDialogue { npc_id, dialogue_id: fields.optional_id("dialogueId") }
         }
-        "playSound" => PluginMutation::PlaySound { sound_id: fields.string("soundId") },
-        "performAction" => PluginMutation::PerformAction { action_id: fields.string("actionId") },
-        "startMinigame" => PluginMutation::StartMinigame { minigame_id: fields.string("minigameId") },
-        other => return Err(format!("invalid discriminator value (type '{other}')")),
+        "playSound" => PluginMutation::PlaySound { sound_id: fields.id("soundId") },
+        "performAction" => PluginMutation::PerformAction { action_id: fields.id("actionId") },
+        "startMinigame" => PluginMutation::StartMinigame { minigame_id: fields.id("minigameId") },
+        other => {
+            return Err(format!("invalid discriminator value (type '{}')", crate::clip(other, MAX_QUOTED_TYPE_LENGTH)))
+        }
     };
     if fields.failures.is_empty() {
         Ok(parsed)
@@ -135,11 +150,21 @@ impl Fields<'_> {
         }
     }
 
-    /// zod `.optional()`: absent is fine, `null` is not.
-    fn optional_string(&mut self, key: &str) -> Option<String> {
+    /// An id, flag name or skill: a string of at most [`MAX_ID_LENGTH`] characters.
+    fn id(&mut self, key: &str) -> String {
+        let id = self.string(key);
+        self.max_length(&id, MAX_ID_LENGTH, key);
+        id
+    }
+
+    /// zod `.optional()`: absent is fine, `null` is not. At most [`MAX_ID_LENGTH`] characters.
+    fn optional_id(&mut self, key: &str) -> Option<String> {
         match self.object.get(key) {
             None => None,
-            Some(Value::String(text)) => Some(text.clone()),
+            Some(Value::String(text)) => {
+                self.max_length(text, MAX_ID_LENGTH, key);
+                Some(text.clone())
+            }
             Some(_) => {
                 self.failures.push(format!("{key}: expected string"));
                 None
@@ -164,10 +189,15 @@ impl Fields<'_> {
         n
     }
 
-    /// `z.union([z.boolean(), z.number(), z.string()])`.
+    /// `z.union([z.boolean(), z.number(), z.string()])`, strings at most
+    /// [`MAX_FLAG_VALUE_LENGTH`] characters.
     fn flag_value(&mut self) -> Value {
         match self.object.get("value") {
-            Some(value @ (Value::Bool(_) | Value::Number(_) | Value::String(_))) => value.clone(),
+            Some(Value::String(text)) => {
+                self.max_length(text, MAX_FLAG_VALUE_LENGTH, "value");
+                Value::String(text.clone())
+            }
+            Some(value @ (Value::Bool(_) | Value::Number(_))) => value.clone(),
             _ => {
                 self.failures.push("value: expected boolean | number | string".to_owned());
                 Value::Null
@@ -244,6 +274,32 @@ mod tests {
         assert_eq!(reason(json!([1, 2])), "expected object, received array");
         assert_eq!(reason(json!(3)), "expected object, received number");
         assert_eq!(reason(json!(true)), "expected object, received boolean");
+    }
+
+    #[test]
+    fn ids_and_flag_values_have_length_caps() {
+        let long_id = "x".repeat(MAX_ID_LENGTH + 1);
+        assert!(parse_mutation(&json!({"type":"giveItem","itemId":"x".repeat(MAX_ID_LENGTH),"quantity":1})).is_ok());
+        assert_eq!(
+            reason(json!({"type":"giveItem","itemId":long_id,"quantity":1})),
+            "giveItem: itemId: at most 256 characters"
+        );
+        assert_eq!(reason(json!({"type":"setFlag","flag":long_id,"value":1})), "setFlag: flag: at most 256 characters");
+        assert_eq!(
+            reason(json!({"type":"setFlag","flag":"f","value":"v".repeat(MAX_FLAG_VALUE_LENGTH + 1)})),
+            "setFlag: value: at most 4096 characters"
+        );
+        assert_eq!(
+            reason(json!({"type":"grantXp","skill":long_id,"amount":1})),
+            "grantXp: skill: at most 256 characters"
+        );
+        assert_eq!(
+            reason(json!({"type":"startDialogue","npcId":"n","dialogueId":long_id})),
+            "startDialogue: dialogueId: at most 256 characters"
+        );
+        // An unknown type is quoted back clipped.
+        let quoted = reason(json!({"type":"y".repeat(10_000)}));
+        assert!(quoted.len() < 120, "{quoted}");
     }
 
     #[test]

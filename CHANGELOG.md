@@ -68,6 +68,35 @@
   - Smaller fixes: a NaN frame time can't stall the simulation, save folders
     avoid Windows device names (`Con`) and overlong names, and scripted input
     at the last frame index no longer overflows.
+
+- **Safer pack plugins** ([docs/PLUGINS.md](docs/PLUGINS.md)):
+  - **Mutation capabilities.** A pack manifest declares what its plugins may
+    do (`permissions.mutations`: `message`, `giveItem`, `giveItem:any`, `*`,
+    …), and the install review shows it. Plugins name only their own pack's
+    items, quests, flags and so on unless a capability says `:any`; plain ids
+    resolve to the pack (`setFlag` `met` sets `pack:met`). No plugin may
+    write `event:` flags. Packs that declare nothing can show messages, play
+    sounds and use their own flags and items, and their answers to
+    `onEffect`/`onCommand` are ignored.
+  - **No feedback loops.** Steps caused by plugin mutations no longer fire
+    `onCommand` or `onEffect`, chains of plugin reactions stop after three
+    links, and an answer keeps at most 64 mutations. A plugin that echoed its
+    own effects could freeze the game and the editor.
+  - **Frame-rate independent.** Play advances one tick at a time and plugin
+    answers apply right before the next tick, so the same input gives the
+    same game at any frame rate.
+  - **Budgets.** Each plugin has a fuel budget per second of game time;
+    strikes no longer reset on a success (three within 100 calls disable a
+    plugin), restarts are capped and cheaper, and a game runs at most 32
+    plugins within a startup fuel and memory budget. Ids, flag values, new
+    flags and skills, answers and error messages have size limits.
+  - **Pack permissions that work.** `contentInject: false` now keeps a pack's
+    content out (with a Problems warning); `uiPanels` is marked as reserved.
+    The Problems panel warns about unknown capabilities and about plugins
+    listening to `onWeatherRoll`, which they cannot answer in time.
+- **NPC birthdays follow the calendar.** A birthday in a custom season no
+  longer stops the project from loading; the Problems panel warns when the
+  season is not in the calendar or the day is past its end.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:

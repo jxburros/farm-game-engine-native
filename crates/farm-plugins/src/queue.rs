@@ -12,6 +12,10 @@ pub struct QueuedPluginMutation {
     pub plugin_id: String,
     /// The validated mutation.
     pub mutation: PluginMutation,
+    /// How many plugin mutations led to it: 0 for an answer to a game step, `n + 1` for an
+    /// answer to the step that ran a depth-`n` mutation (see
+    /// [`PluginRuntime::MAX_MUTATION_DEPTH`](crate::PluginRuntime::MAX_MUTATION_DEPTH)).
+    pub depth: u32,
 }
 
 impl QueuedPluginMutation {
@@ -23,10 +27,11 @@ impl QueuedPluginMutation {
 
 /// Dispatch happens while the host handles a step's hook events. Applying the results the
 /// moment they arrive would put them at arbitrary positions in the command stream. Hosts
-/// enqueue results as they arrive and drain the queue at ONE fixed point in the frame (before
-/// the frame's commands and ticks), so mutations enter the command log at a well-defined
-/// position, in arrival order. Replaying that command log is then fully deterministic: the
-/// log, not live plugin behavior, is the replay artifact.
+/// enqueue results as they arrive and drain the queue at ONE fixed point per tick (right
+/// before it), so mutations enter the command log at a well-defined position, in arrival
+/// order, and a mutation answering tick `k` applies before tick `k + 1` whatever the frame
+/// size. Replaying that command log is then fully deterministic: the log, not live plugin
+/// behavior, is the replay artifact.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginMutationQueue {
     queue: Vec<QueuedPluginMutation>,
@@ -38,12 +43,20 @@ impl PluginMutationQueue {
         Self::default()
     }
 
-    /// Queue every mutation of `results`, in order.
+    /// Queue every mutation of `results`, in order, as answers to a game step (depth 0).
     pub fn enqueue<'a>(&mut self, results: impl IntoIterator<Item = &'a PluginDispatchResult>) {
+        self.enqueue_at(results, 0);
+    }
+
+    /// Queue every mutation of `results`, in order, at `depth`.
+    pub fn enqueue_at<'a>(&mut self, results: impl IntoIterator<Item = &'a PluginDispatchResult>, depth: u32) {
         for result in results {
             for mutation in &result.mutations {
-                self.queue
-                    .push(QueuedPluginMutation { plugin_id: result.plugin_id.clone(), mutation: mutation.clone() });
+                self.queue.push(QueuedPluginMutation {
+                    plugin_id: result.plugin_id.clone(),
+                    mutation: mutation.clone(),
+                    depth,
+                });
             }
         }
     }
@@ -104,6 +117,7 @@ mod tests {
         let queued = QueuedPluginMutation {
             plugin_id: "gifts:daily".to_owned(),
             mutation: PluginMutation::GiveMoney { amount: 20 },
+            depth: 0,
         };
         let command = queued.into_command();
         assert_eq!(

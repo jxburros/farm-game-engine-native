@@ -18,6 +18,11 @@ pub struct PluginSpec {
     /// `permissions.hooks` also lists (the ones the player approved at install), in the
     /// plugin's order.
     pub granted_hooks: Vec<String>,
+    /// The pack manifest's `permissions.mutations`: what the plugin's answers may do (see
+    /// [`MutationGrants`](crate::MutationGrants)). `None` when the manifest declares none: the
+    /// defaults apply and answers to `onEffect` / `onCommand` are dropped.
+    #[serde(default)]
+    pub granted_mutations: Option<Vec<String>>,
 }
 
 impl PluginSpec {
@@ -38,6 +43,7 @@ pub fn plugin_specs_from_packs<'a>(packs: impl IntoIterator<Item = &'a ContentPa
                 pack_id: pack.manifest.id.clone(),
                 source: plugin.source.clone(),
                 granted_hooks: plugin.hooks.iter().filter(|hook| permitted.contains(hook)).cloned().collect(),
+                granted_mutations: pack.manifest.permissions.mutations.clone(),
             });
         }
     }

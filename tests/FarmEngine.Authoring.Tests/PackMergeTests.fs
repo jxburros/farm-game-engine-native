@@ -108,6 +108,31 @@ let ``disabled packs leave content intact and report no problems`` () =
     Assert.Empty problems
 
 [<Fact>]
+let ``packs without the contentInject permission load no content`` () =
+    let baseContent = ContentCompiler.baseContent (blank ())
+    let manifest id = { PackManifest.Default with Id = id; Name = id; Version = "1.0.0" }
+    let blocked =
+        { ContentPack.Default with
+            Manifest = { manifest "blocked" with Permissions = { PackPermissions.Default with ContentInject = false } }
+            Content = { PackContent.Default with Items = [ item "ore" "Ore" ]; Strings = [ "fr", [ "item:ore:name", "Minerai" ] ] } }
+    let allowed = { ContentPack.Default with Manifest = manifest "allowed"; Content = { PackContent.Default with Items = [ item "ore" "Ore" ] } }
+    let installs = [ { PackInstallation.Default with Pack = blocked }; { PackInstallation.Default with Pack = allowed } ]
+    let merged, problems = PackMerge.mergeIntoContent baseContent installs
+    Assert.DoesNotContain(merged.Items, fun i -> i.Id = "blocked:ore")
+    Assert.Contains(merged.Items, fun i -> i.Id = "allowed:ore")
+    let warning = "Pack 'blocked' ships content but does not have the contentInject permission — its content is not loaded"
+    Assert.Equal<PackProblem list>([ { PackId = "blocked"; Severity = "warning"; Message = warning } ], problems)
+    Assert.Same(merged, PackMerge.applyLocaleStrings merged installs "fr")
+    let project = blank ()
+    let imported, importProblems = PackMerge.applyToProject project blocked
+    Assert.Same(project, imported)
+    Assert.Equal<string list>([ warning ], importProblems |> List.map (fun p -> p.Message))
+    // Plugins only: nothing to warn about.
+    let pluginsOnly = { blocked with Content = PackContent.Default }
+    let _, quiet = PackMerge.mergeIntoContent baseContent [ { PackInstallation.Default with Pack = pluginsOnly } ]
+    Assert.Empty quiet
+
+[<Fact>]
 let ``importing the starter pack into a blank project materializes its content`` () =
     let pack = ProjectCatalog.CreateContentDefaultPack()
     let project, problems = PackMerge.applyToProject (blank ()) pack

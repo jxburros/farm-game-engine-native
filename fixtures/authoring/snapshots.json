@@ -1731,12 +1731,10 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [
-      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'",
       "npcs.1.birthday.day: Expected integer, received 3.5"
     ],
     "gameOk": false,
     "gameErrors": [
-      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'",
       "npcs.1.birthday.day: Expected integer, received 3.5"
     ]
   },
@@ -2807,6 +2805,23 @@
     "gameErrors": [],
     "game": "9485b35b5c11e8e5"
   },
+  "broken/pack without contentInject": {
+    "ok": true,
+    "fromVersion": 9,
+    "migrated": false,
+    "errors": [],
+    "json": "48504a5082f3b38e",
+    "stable": "e37ed985706e603f",
+    "problems": [
+      "warning|content.packs|contentPacks[0]|Pack 'no-inject' ships content but does not have the contentInject permission — its content is not loaded|pack",
+      "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
+    ],
+    "content": "e1bb1c763c153444",
+    "cartridge": "226e59062b45c6c8",
+    "gameOk": true,
+    "gameErrors": [],
+    "game": "e37ed985706e603f"
+  },
   "broken/scenes null": {
     "ok": false,
     "fromVersion": 9,
@@ -3057,7 +3072,7 @@
       "npcs.0.wanderRadius: Number must be greater than 0",
       "npcs.0.patrolPoints.1.x: Expected integer, received 1.5",
       "npcs.0.patrolPoints.1.y: Expected integer, received 2.25",
-      "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
+      "npcs.1.birthday.day: Expected integer, received 3.5"
     ]
   },
   "code/starter": {

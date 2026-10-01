@@ -110,6 +110,24 @@ module internal ChecksContent =
                             target
                         ))
 
+    /// Birthdays follow the project's calendar: the season must exist and the day must fall
+    /// inside it, or the birthday never comes.
+    let private npcs (context: Context) (sink: Sink) =
+        let seasons = context.Project.Settings.Calendar.Seasons
+        context.Project.Npcs
+        |> Seq.iteri (fun i npc ->
+            match npc.Birthday with
+            | None -> ()
+            | Some birthday ->
+                let path = sprintf "npcs[%d].birthday" i
+                let target = Some(NavigationTarget.Npc npc.Id)
+                match seasons |> List.tryFind (fun season -> season.Id = birthday.Season) with
+                | None ->
+                    sink.Warning("npc.birthdayUnknownSeason", path + ".season", sprintf "NPC \"%s\" has a birthday in \"%s\", which is not in the calendar" npc.Name birthday.Season, target)
+                | Some season when birthday.Day < 1.0 || birthday.Day > season.Days ->
+                    sink.Warning("npc.birthdayDay", path + ".day", sprintf "NPC \"%s\" has a birthday on day %g of %s, which only has days 1 to %g" npc.Name birthday.Day season.Name season.Days, target)
+                | Some _ -> ())
+
     let private quests (context: Context) (sink: Sink) =
         context.Project.Quests
         |> Seq.iteri (fun i quest ->
@@ -672,7 +690,19 @@ module internal ChecksContent =
             if not (seen.Add manifest.Id) then
                 sink.Error("pack.duplicate", path + ".pack.manifest.id", sprintf "Pack \"%s\" is installed twice" manifest.Id, target)
             if not (PackRules.isEngineCompatible (Some manifest.EngineCompatibility) PackRules.EngineVersion) then
-                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
+                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target)
+            manifest.Permissions.Mutations
+            |> Option.defaultValue []
+            |> List.iteri (fun k entry ->
+                if not (PackRules.isMutationCapability entry) then
+                    sink.Warning("pack.unknownMutation", sprintf "%s.pack.manifest.permissions.mutations[%d]" path k, sprintf "Pack \"%s\" asks for plugin capability \"%s\", which this engine does not know (it is ignored)" manifest.Name entry, target))
+            // Plugins answer onWeatherRoll after the night: the day's watering and storm damage
+            // already used the rolled weather (docs/PLUGINS.md).
+            if install.Enabled && manifest.Permissions.Hooks |> List.contains "onWeatherRoll" then
+                install.Pack.Plugins
+                |> List.iteri (fun k plugin ->
+                    if plugin.Hooks |> List.contains "onWeatherRoll" then
+                        sink.Warning("pack.weatherRollAfterwards", sprintf "%s.pack.plugins[%d].hooks" path k, sprintf "Plugin \"%s\" of pack \"%s\" listens to onWeatherRoll, which plugins cannot answer in time: a setWeather answer changes the weather after the night's rain watering and storm damage" (defaultArg plugin.Name plugin.Id) manifest.Name, target)))
         packWarps context sink
 
     /// Whole-number fields (money, counts) with a fraction: the engine keeps them as integers and
@@ -742,6 +772,7 @@ module internal ChecksContent =
         duplicates context sink
         items context sink
         crops context sink
+        npcs context sink
         quests context sink
         events context sink
         actions context sink

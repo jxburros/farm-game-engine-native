@@ -11,6 +11,38 @@ module PackRules =
     let namespacedId (packId: string) (id: string) =
         if id.Contains ':' then id else packId + ":" + id
 
+    /// Every plugin mutation type (Rust `farm_plugins::MUTATION_TYPES`).
+    let MutationTypes =
+        [ "giveItem"; "takeItem"; "giveMoney"; "takeMoney"; "setFlag"; "message"; "setWeather"; "modifyFriendship"
+          "grantXp"; "modifyEnergy"; "startQuest"; "warpPlayer"; "startDialogue"; "playSound"; "performAction"; "startMinigame" ]
+
+    /// What a pack's plugins may answer when its manifest declares no `permissions.mutations`
+    /// (Rust `farm_plugins::DEFAULT_MUTATION_CAPABILITIES`).
+    let DefaultMutations = [ "message"; "playSound"; "setFlag"; "giveItem"; "takeItem" ]
+
+    /// Whether a `permissions.mutations` entry names a capability: `*`, a mutation type, or a
+    /// type with `:own` or `:any` (Rust `farm_plugins::MutationGrants`).
+    let isMutationCapability (entry: string) =
+        let entry = entry.Trim()
+        let name, scope =
+            match entry.IndexOf ':' with
+            | -1 -> entry, "own"
+            | at -> entry.Substring(0, at), entry.Substring(at + 1)
+        entry = "*" || (List.contains name MutationTypes && (scope = "own" || scope = "any"))
+
+    /// What a pack's plugins may do, in one line for the install review.
+    let describeMutations (permissions: PackPermissions) : string =
+        match permissions.Mutations with
+        | None ->
+            "default: messages, sounds, and the pack's own flags and items (answers to onEffect and onCommand are ignored)"
+        | Some [] -> "none: the plugins can only watch"
+        | Some entries when entries |> List.exists (fun entry -> entry.Trim() = "*") ->
+            "everything, including your game's and other packs' content"
+        | Some entries ->
+            let broad = entries |> List.exists (fun entry -> entry.Trim().EndsWith ":any")
+            String.Join(", ", entries)
+            + (if broad then " (\":any\" reaches your game's and other packs' content)" else " (the pack's own content only)")
+
     let private isDigit (c: char) = c >= '0' && c <= '9'
 
     /// `^([0-9]+)\.([0-9]+)\.([0-9]+)` on the trimmed text: the three numbers, or `None`.

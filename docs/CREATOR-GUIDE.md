@@ -126,11 +126,19 @@ change it in the game's **Settings → Accessibility → Language**.
 ### Mods
 
 Install **content packs** from their JSON file: the editor shows what a pack
-adds, overrides and needs before **Install reviewed pack**. Installed packs
-can be turned on and off, reordered, removed, or imported into the project as
-ordinary content. A pack's scenes join the game world the first time a door
-or a warp leads there; pack ids are namespaced (`my-pack:cave`) but scene
-references inside a pack are not, so a pack names its own scenes in full.
+adds, overrides and needs, which hooks its plugins hear and what they may do,
+before **Install reviewed pack**. Installed packs can be turned on and off,
+reordered, removed, or imported into the project as ordinary content. A pack's
+scenes join the game world the first time a door or a warp leads there; pack
+ids are namespaced (`my-pack:cave`) but scene references inside a pack are not,
+so a pack names its own scenes in full.
+
+A pack's plugins only change your game in the ways its manifest declares
+(`permissions.mutations`): by default they can show messages, play sounds
+and touch the pack's own flags and items, nothing else. Plugin answers apply
+right before the next game tick, and an `onWeatherRoll` answer comes too late
+to change the night's watering and storm damage. [PLUGINS.md](PLUGINS.md)
+has the permissions, timing and limits.
 
 ### Art
 

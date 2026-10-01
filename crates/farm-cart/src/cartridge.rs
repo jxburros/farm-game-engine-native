@@ -49,6 +49,9 @@ pub struct CartPlugin {
     pub source: String,
     /// The plugin's hooks that the pack manifest grants, in the plugin's order.
     pub granted_hooks: Vec<String>,
+    /// The pack manifest's `permissions.mutations`; `None` when it declares none (the player
+    /// then applies the default capabilities).
+    pub granted_mutations: Option<Vec<String>>,
 }
 
 /// A verified cartridge, borrowing its sections from the buffer.
@@ -119,6 +122,9 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
                         .granted_hooks()
                         .map(|hooks| hooks.iter().map(str::to_owned).collect())
                         .unwrap_or_default(),
+                    granted_mutations: plugin
+                        .granted_mutations()
+                        .map(|mutations| mutations.iter().map(str::to_owned).collect()),
                 })
                 .collect()
         })
