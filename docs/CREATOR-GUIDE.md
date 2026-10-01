@@ -61,8 +61,9 @@ announce the tile under the cursor. The side panel holds the tools:
 ### Content
 
 The Content tab edits everything the game is made of. Pick a category, select
-an entry (or **Add** one), change its fields and **Save**. Lists show each
-entry's art, and forms preview the art they point to:
+an entry (or click **New** to start one), change its fields and click **Save
+changes**. Lists show each entry's art, and forms preview the art they point
+to:
 
 - **NPCs** and **Dialogue**: characters, where they stand, their daily
   schedules (a row per stop: the time of day, the scene and the tile), patrol

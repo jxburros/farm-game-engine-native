@@ -115,14 +115,19 @@ Projects are saved in `%APPDATA%\FarmingRpgMaker\projects\`.
 ## Export Game
 
 **File → Export Game…** turns the open project into standalone games for
-Windows x64 and Linux x64 (including Steam Deck). Pick the targets and an
-output folder, and export writes one folder per target and, if you like, a
-`.zip` or `.tar.gz`:
+Windows x64 and Linux x64 (including Steam Deck), and into a **Web (browser
+demo)** page for itch.io. Pick the targets and an output folder, and export
+writes one folder per target and, if you like, a `.zip` or `.tar.gz`:
 
-```
+```text
 WillowCreek-windows-x64.zip   WillowCreek/WillowCreek.exe, game.cart, licenses/
 WillowCreek-linux-x64.tar.gz  WillowCreek/WillowCreek, game.cart, .png, .desktop, licenses/
+WillowCreek-web.zip           index.html, game.js, farm_wasm_bg.wasm, game.cart, licenses/
 ```
+
+The web demo runs the same Rust player compiled to WebAssembly, with touch
+controls on phones and tablets; test it from a web server (for example
+`python3 -m http.server` in its folder).
 
 The Windows `.exe` gets the game's icon and version info. Problems errors
 stop the export; warnings are listed in the report. Export needs no compiler:
