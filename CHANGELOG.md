@@ -60,8 +60,8 @@
   as the editor's Play Mode. `farm-wasm` is a wasm-bindgen package that mirrors
   `farm-ffi`: `Player` (frames with RGBA pixels for `ImageData`, sound cues,
   debug actions, keep changes, queries), `Session` (headless replays),
-  `Preview` and `renderJson`, `hashText`, and `sfxSamples` to play the
-  synthesized sound effects with WebAudio. Save slots and settings are kept in
+  `Preview` and `renderJson`, `hashState` (the state hash of a state as JSON),
+  and `sfxSamples` to play the synthesized sound effects with WebAudio. Save slots and settings are kept in
   memory and move to browser storage through `exportStorage`/`importStorage`.
   Pack plugins run inside the module. The player, session and preview protocol
   now lives in the new `farm-host` crate, shared by `farm-ffi` (unchanged C ABI)
@@ -72,9 +72,13 @@
   a folder and a flat zip ready for an itch.io page, with `index.html`, the
   `farm-wasm` player and the game's cartridge and icon. It runs the same title
   screen, save slots, settings and game UI as the desktop game, keeps saves in
-  the browser's storage, and plays sounds through WebAudio. `farmc export
-  --target web` does the same, and releases ship the web template with the
-  app.
+  the browser's storage, and plays sounds through WebAudio. The page sets a
+  Content-Security-Policy (nothing inline, only its own files), lays the game
+  interface out in CSS pixels on high-density phones, keeps the HUD, panels and
+  dialogue above its touch controls (which show no keyboard hints), and says
+  when the browser's storage is full instead of losing saves quietly.
+  `farmc export --target web` does the same, and releases ship the web
+  template with the app.
 - **Play Mode runs the exported cartridge.** A playtest now runs the cartridge
   the F# compiler makes, exactly what Export Game ships (it still starts while
   Problems lists errors). Keep changes writes the final game state back

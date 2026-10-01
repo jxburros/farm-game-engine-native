@@ -60,6 +60,7 @@ let fakeTemplates (root: string) (version: string) =
     File.WriteAllText(Path.Combine(web, "farm_wasm.js"), "export default async function init() {}\n")
     File.WriteAllText(Path.Combine(web, "game.js"), "import init from './farm_wasm.js';\n")
     File.WriteAllText(Path.Combine(web, "index.html"), "<title>{{TITLE}}</title><script type=module src=game.js></script>\n")
+    File.WriteAllText(Path.Combine(web, "style.css"), "body { margin: 0; }\n")
     root
 
 let options (templates: string) (output: string) (targets: string list) : ExportOptions =

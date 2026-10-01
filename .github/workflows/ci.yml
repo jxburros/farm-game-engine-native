@@ -85,12 +85,14 @@ jobs:
           node-version: 22
 
       # The web version's player (crates/farm-wasm): build the `--target web` package, then run
-      # it in Node (frames, storage, plugins and every golden replay).
+      # it in Node (frames, storage, plugins and every golden replay), and the web demo page's
+      # script (tools/wasm/web-template/game.js) against it.
       - name: WebAssembly player build and smoke test (farm-wasm)
         if: runner.os == 'Linux'
         run: |
           tools/wasm/build.sh
           node tools/wasm/smoke.mjs
+          node tools/wasm/game-page.mjs
 
       - name: Install cargo-about
         if: runner.os == 'Linux'

@@ -122,6 +122,17 @@ module Exporter =
               "ProductVersion", game.Version
               "Comments", "Made with Farming RPG Maker " + editorVersion ] }
 
+    /// A web page with `ExportTarget.webContentSecurityPolicy`: a template page that sets no
+    /// policy (an older template) gets it as the first element of its `<head>`, or first of all.
+    let withContentSecurityPolicy (page: string) : string =
+        if page.Contains("Content-Security-Policy", StringComparison.OrdinalIgnoreCase) then
+            page
+        else
+            let meta =
+                sprintf "<meta http-equiv=\"Content-Security-Policy\" content=\"%s\">" ExportTarget.webContentSecurityPolicy
+            let head = page.IndexOf("<head>", StringComparison.OrdinalIgnoreCase)
+            if head >= 0 then page.Insert(head + "<head>".Length, "\n" + meta) else meta + "\n" + page
+
     /// The files of one target's game folder, in memory. `icons` has every `Icons.sizes` entry.
     let package
         (game: GameIdentity)
@@ -159,10 +170,12 @@ module Exporter =
                 let page =
                     File.ReadAllText(Path.Combine(template.Folder, "index.html"))
                         .Replace("{{TITLE}}", WebUtility.HtmlEncode game.Title)
+                    |> withContentSecurityPolicy
                 let icon = icons |> List.find (fun (size, _) -> size = 256) |> snd
                 Ok(
                     [ { Path = "index.html"; Data = Encoding.UTF8.GetBytes page; Executable = false }
                       { Path = "game.js"; Data = read "game.js"; Executable = false }
+                      { Path = "style.css"; Data = read "style.css"; Executable = false }
                       { Path = "farm_wasm.js"; Data = read "farm_wasm.js"; Executable = false }
                       { Path = target.TemplateExecutable; Data = player; Executable = false }
                       { Path = "icon.png"; Data = icon; Executable = false } ]

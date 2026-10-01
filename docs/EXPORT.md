@@ -122,6 +122,7 @@ root, which is what itch.io expects):
 
 ```
 index.html            the page (the game's title filled in)
+style.css             its styles
 game.js               canvas loop, input, sound, saves in localStorage
 farm_wasm.js          farm-wasm's bindings
 farm_wasm_bg.wasm     the player
@@ -136,7 +137,22 @@ settings live in the browser's `localStorage`, one entry per game id. On a
 phone or tablet (a coarse pointer, or after the first touch) the page shows
 touch controls over the game: a D-pad, Interact, Sleep, Inventory and Menu.
 They send the player `action` events, so they keep working when a player
-rebinds the keys, and taps on the game's own buttons work as clicks. Browsers
+rebinds the keys, and taps on the game's own buttons work as clicks. While
+they show, the game names no keys in its prompts and keeps its bottom row,
+panels and dialogue box above them. The page passes the screen's pixel
+density with every frame, so the interface keeps its size in CSS pixels on
+high-density phones. If the browser's storage is full (itch.io pages share
+one quota), a notice says progress is not being saved until a later save
+works; stored settings the game can no longer read are reset with the saves
+kept, and a stored document it cannot read at all is kept aside under
+`<key>:unreadable`.
+
+The page sets a Content-Security-Policy in a `<meta>` tag: `default-src
+'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src
+'self'; style-src 'self'; base-uri 'none'; form-action 'none'`. It loads only
+its own files and runs nothing inline (its styles are in `style.css`), so a
+later change that put text into the page could not run script through it.
+Export adds the policy to a template page that has none. Browsers
 only load WebAssembly modules from a web server, so the export report reminds
 you to test it with `python3 -m http.server` in the folder (itch.io serves it
 for you).
@@ -394,9 +410,15 @@ gameplay HUD, dialogue and shop at 1280×800 and 1920×1080, in
 `fixtures/player/`), the shell flow from New Game to Continue, and the real
 window under Xvfb in CI. The standalone and embedded players draw with the
 same code, and so does the web player (`farm-wasm` builds the same `Player`).
-`tests/FarmEngine.Export.Tests` checks the web demo's files, its escaped title
-and the flat zip; a manual run in headless Chromium played an exported sample
-from the title screen into the game.
+`tests/FarmEngine.Export.Tests` checks the web demo's files, its escaped title,
+its Content-Security-Policy and the flat zip. `tools/wasm/game-page.mjs` (CI)
+runs the page's `game.js` in Node against the real module with a stand-in for
+the browser: frames sized by pixel density, keys, the touch controls (also
+when pointer capture is refused), sound, saves through `localStorage` and a
+reload, a full storage, unreadable stored settings, and a missing
+`game.cart`; it also checks that `index.html` has nothing inline. Manual runs
+in headless Chromium played an exported sample from the title screen into
+the game, under the page's policy without violations.
 
 ## Notes for creators
 
