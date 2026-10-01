@@ -122,6 +122,17 @@ type CartridgeCompiler =
     /// a project that still has errors (a playtest of unfinished work is allowed, as on the web).
     static member CompileForPlaytest(project: GameProject) : byte[] = CartridgeCompiler.Build project
 
+    /// A window side inside the range Export accepts (`ChecksExport`), so a playtest of a
+    /// project with an out-of-range size still gets a usable window.
+    static member WindowSide(value: int, low: int) : uint32 = uint32 (max low (min 8192 value))
+
+    /// A number as an unsigned field: clamped and truncated first, because .NET saturates a
+    /// float conversion where JavaScript's `>>> 0` wraps, and the bytes must be the same in both.
+    static member UInt32Of(value: float) : uint32 =
+        if Double.IsNaN value || value <= 0.0 then 0u
+        elif value >= 4294967295.0 then UInt32.MaxValue
+        else uint32 (Math.Truncate value)
+
     static member private Build(project: GameProject) : byte[] =
         let settings = defaultArg project.Export (Defaults.newExportSettings project)
         let title = defaultArg settings.Title project.Name
@@ -187,8 +198,8 @@ type CartridgeCompiler =
         builder.StartTable 11
         builder.AddOffsetField(10, creditsOffset)
         builder.AddOffsetField(9, scaleOffset)
-        builder.AddUInt32Field(7, uint32 settings.Window.Height, 800u)
-        builder.AddUInt32Field(6, uint32 settings.Window.Width, 1280u)
+        builder.AddUInt32Field(7, CartridgeCompiler.WindowSide(settings.Window.Height, 240), 800u)
+        builder.AddUInt32Field(6, CartridgeCompiler.WindowSide(settings.Window.Width, 320), 1280u)
         builder.AddOffsetField(5, executableOffset)
         builder.AddOffsetField(4, companyOffset)
         builder.AddOffsetField(3, authorOffset)
@@ -207,7 +218,7 @@ type CartridgeCompiler =
         builder.AddOffsetField(5, startOffset)
         builder.AddOffsetField(4, contentOffset)
         builder.AddOffsetField(2, info)
-        builder.AddUInt32Field(1, uint32 project.SchemaVersion, 0u)
+        builder.AddUInt32Field(1, CartridgeCompiler.UInt32Of project.SchemaVersion, 0u)
         builder.AddUInt32Field(0, CartridgeCompiler.Format, 0u)
         let cart = builder.EndTable()
         builder.Finish(cart, "FGCT")

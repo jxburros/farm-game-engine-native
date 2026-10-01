@@ -37,9 +37,15 @@ module Decode =
         | JString s -> s
         | _ -> expected "string" path json
 
+    /// A number JSON can write back: `JSON.stringify` writes ±Infinity as null, which would no
+    /// longer load, so it is refused here (zod `.finite()`). `Json.parse` refuses `1e400` already;
+    /// this covers `Json` built in code.
+    let private finite (path: Path) (n: float) : float =
+        if System.Double.IsInfinity n then fail path "Number must be finite" else n
+
     let number (path: Path) (json: Json) : float =
         match json with
-        | JNumber n -> n
+        | JNumber n -> finite path n
         | _ -> expected "number" path json
 
     let boolean (path: Path) (json: Json) : bool =
@@ -50,6 +56,7 @@ module Decode =
     /// A 32-bit integer (`int` fields).
     let int32 (path: Path) (json: Json) : int =
         match json with
+        | JNumber n when System.Double.IsInfinity n -> finite path n |> int
         | JNumber n when n = System.Math.Floor n && n >= -2147483648.0 && n <= 2147483647.0 -> int n
         | JNumber _ -> fail path "Expected integer, received float"
         | _ -> expected "number" path json
@@ -57,6 +64,7 @@ module Decode =
     /// An unsigned 32-bit integer (xoshiro state words).
     let uint32 (path: Path) (json: Json) : uint32 =
         match json with
+        | JNumber n when System.Double.IsInfinity n -> finite path n |> uint32
         | JNumber n when n = System.Math.Floor n && n >= 0.0 && n <= 4294967295.0 -> uint32 n
         | JNumber _ -> fail path "Expected a tuple of 4 integers"
         | _ -> expected "number" path json

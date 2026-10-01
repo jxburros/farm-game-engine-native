@@ -35,35 +35,63 @@ module Bytes =
             i <- i + 1
         out.ToArray()
 
-    /// The string a UTF-8 byte range encodes (malformed sequences become U+FFFD, like .NET and
-    /// `TextDecoder`).
+    /// The string a UTF-8 byte range encodes. Malformed input becomes U+FFFD once per maximal
+    /// subpart (the WHATWG decoder that `TextDecoder` and .NET's UTF8Encoding implement): a
+    /// truncated sequence such as `E2 82` at the end is one U+FFFD, not one per byte.
     let utf8Text (bytes: byte[]) (start: int) (length: int) : string =
         let out = System.Text.StringBuilder(length)
+        let append (codePoint: int) =
+            if codePoint >= 0x10000 then
+                let v = codePoint - 0x10000
+                out.Append(char (0xD800 + (v >>> 10))).Append(char (0xDC00 + (v &&& 0x3FF))) |> ignore
+            else
+                out.Append(char codePoint) |> ignore
         let stop = start + length
+        let mutable codePoint = 0
+        let mutable needed = 0
+        let mutable seen = 0
+        let mutable lower = 0x80
+        let mutable upper = 0xBF
         let mutable i = start
-        let continuation (k: int) = k < stop && (int bytes.[k] &&& 0xC0) = 0x80
         while i < stop do
             let b = int bytes.[i]
-            let append (codePoint: int) (size: int) =
-                if codePoint >= 0x10000 then
-                    let v = codePoint - 0x10000
-                    out.Append(char (0xD800 + (v >>> 10))).Append(char (0xDC00 + (v &&& 0x3FF))) |> ignore
-                else
-                    out.Append(char codePoint) |> ignore
-                i <- i + size
-            if b < 0x80 then append b 1
-            elif b >= 0xC2 && b < 0xE0 && continuation (i + 1) then
-                append (((b &&& 0x1F) <<< 6) ||| (int bytes.[i + 1] &&& 0x3F)) 2
-            elif b >= 0xE0 && b < 0xF0 && continuation (i + 1) && continuation (i + 2) then
-                let cp = ((b &&& 0x0F) <<< 12) ||| ((int bytes.[i + 1] &&& 0x3F) <<< 6) ||| (int bytes.[i + 2] &&& 0x3F)
-                if cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF) then append cp 3 else append 0xFFFD 1
-            elif b >= 0xF0 && b < 0xF5 && continuation (i + 1) && continuation (i + 2) && continuation (i + 3) then
-                let cp =
-                    ((b &&& 0x07) <<< 18) ||| ((int bytes.[i + 1] &&& 0x3F) <<< 12)
-                    ||| ((int bytes.[i + 2] &&& 0x3F) <<< 6) ||| (int bytes.[i + 3] &&& 0x3F)
-                if cp >= 0x10000 && cp <= 0x10FFFF then append cp 4 else append 0xFFFD 1
+            if needed = 0 then
+                if b < 0x80 then append b
+                elif b >= 0xC2 && b <= 0xDF then
+                    needed <- 1
+                    codePoint <- b &&& 0x1F
+                elif b >= 0xE0 && b <= 0xEF then
+                    if b = 0xE0 then lower <- 0xA0
+                    if b = 0xED then upper <- 0x9F
+                    needed <- 2
+                    codePoint <- b &&& 0x0F
+                elif b >= 0xF0 && b <= 0xF4 then
+                    if b = 0xF0 then lower <- 0x90
+                    if b = 0xF4 then upper <- 0x8F
+                    needed <- 3
+                    codePoint <- b &&& 0x07
+                else append 0xFFFD
+                i <- i + 1
+            elif b < lower || b > upper then
+                // The sequence so far is one U+FFFD; this byte starts over (not consumed).
+                append 0xFFFD
+                codePoint <- 0
+                needed <- 0
+                seen <- 0
+                lower <- 0x80
+                upper <- 0xBF
             else
-                append 0xFFFD 1
+                lower <- 0x80
+                upper <- 0xBF
+                codePoint <- (codePoint <<< 6) ||| (b &&& 0x3F)
+                seen <- seen + 1
+                if seen = needed then
+                    append codePoint
+                    codePoint <- 0
+                    needed <- 0
+                    seen <- 0
+                i <- i + 1
+        if needed <> 0 then append 0xFFFD
         out.ToString()
 
     let private base64Value (c: char) : int =

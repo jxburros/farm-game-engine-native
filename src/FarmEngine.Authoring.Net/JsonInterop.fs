@@ -8,13 +8,18 @@ open FarmEngine.Authoring
 /// Object members keep their order both ways.
 module JsonInterop =
 
+    /// A number `Json` can hold: finite (the F# parser refuses `1e400` the same way).
+    let private finite (n: float) : float =
+        if System.Double.IsNaN n || System.Double.IsInfinity n then raise (System.FormatException "Number out of range") else n
+
     // A parsed node wraps a JsonElement and converts directly; a value C# created from another
-    // CLR type (an int, say) goes through its JSON form.
+    // CLR type (an int, say) goes through its JSON form. `GetDouble` throws FormatException for
+    // a literal beyond the double range (`1e400`), and so does a non-finite CLR double.
     let private number (value: JsonValue) : float =
         try
-            value.GetValue<float>()
+            finite (value.GetValue<float>())
         with :? System.InvalidOperationException ->
-            JsonSerializer.SerializeToElement(value).GetDouble()
+            finite (JsonSerializer.SerializeToElement(value).GetDouble())
 
     let private text (value: JsonValue) : string =
         let s: string | null =
@@ -26,7 +31,9 @@ module JsonInterop =
         | null -> ""
         | s -> s
 
-    /// A `JsonNode` (null for JSON null) as `Json`.
+    /// A `JsonNode` (null for JSON null) as `Json`. Throws for what `Json` cannot hold: a number
+    /// beyond the double range (FormatException) or an object with a duplicate key
+    /// (ArgumentException); `tryOfNode` reports those instead.
     let rec ofNode (node: JsonNode | null) : Json =
         match node with
         | null -> JNull
@@ -41,6 +48,13 @@ module JsonInterop =
             | _ -> JNull
         | _ -> JNull
 
+    /// `ofNode`, with every exception as an error message.
+    let tryOfNode (node: JsonNode | null) : Result<Json, string> =
+        try
+            Ok(ofNode node)
+        with error ->
+            Error error.Message
+
     /// A `JsonElement` as `Json`.
     let rec ofElement (element: JsonElement) : Json =
         match element.ValueKind with
@@ -50,16 +64,18 @@ module JsonInterop =
             match element.GetString() with
             | null -> JNull
             | s -> JString s
-        | JsonValueKind.Number -> JNumber(element.GetDouble())
+        | JsonValueKind.Number -> JNumber(finite (element.GetDouble()))
         | JsonValueKind.True -> JBool true
         | JsonValueKind.False -> JBool false
         | _ -> JNull
 
-    /// `Json` as a fresh, detached `JsonNode` (null for JSON null).
+    /// `Json` as a fresh, detached `JsonNode` (null for JSON null). A non-finite number becomes
+    /// null, as `Json.stringify` writes it (System.Text.Json refuses to write one).
     let rec toNode (value: Json) : JsonNode | null =
         match value with
         | JNull -> null
         | JBool b -> JsonValue.Create b
+        | JNumber n when System.Double.IsNaN n || System.Double.IsInfinity n -> null
         | JNumber n -> JsonValue.Create n
         | JString s -> JsonValue.Create s
         | JArray items ->
