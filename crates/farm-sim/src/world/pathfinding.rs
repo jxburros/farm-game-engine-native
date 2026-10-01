@@ -80,6 +80,74 @@ impl Grid {
     fn index(&self, x: i32, y: i32) -> Option<usize> {
         (x >= 0 && x < self.width && y >= 0 && y < self.height).then(|| y as usize * self.width as usize + x as usize)
     }
+
+    fn point(&self, index: usize) -> (i32, i32) {
+        ((index % self.width as usize) as i32, (index / self.width as usize) as i32)
+    }
+}
+
+/// [`is_walkable`] per tile, computed once per search.
+struct WalkCache {
+    cells: Vec<u8>,
+}
+
+impl WalkCache {
+    const UNKNOWN: u8 = 0;
+    const WALKABLE: u8 = 1;
+    const BLOCKED: u8 = 2;
+
+    fn new(cells: usize) -> Self {
+        Self { cells: vec![Self::UNKNOWN; cells] }
+    }
+
+    fn walkable(&mut self, w: &Walkability<'_>, index: usize, x: i32, y: i32) -> bool {
+        if self.cells[index] == Self::UNKNOWN {
+            self.cells[index] = if is_walkable(w, x, y) { Self::WALKABLE } else { Self::BLOCKED };
+        }
+        self.cells[index] == Self::WALKABLE
+    }
+}
+
+/// Whether `goal` can be reached from `start` over walkable tiles (the start tile itself need not
+/// be walkable, as in the search). Grows a region from both ends, one ring at a time from the
+/// smaller frontier, and stops when they meet or when either side is enclosed: an unreachable
+/// goal behind walls (or an NPC boxed in) costs only the small side, not the whole scene.
+fn connected(w: &Walkability<'_>, grid: &Grid, cache: &mut WalkCache, start: usize, goal: usize) -> bool {
+    const FROM_START: u8 = 1;
+    const FROM_GOAL: u8 = 2;
+    let mut seen = vec![0_u8; cache.cells.len()];
+    seen[start] = FROM_START;
+    seen[goal] = FROM_GOAL;
+    let mut frontiers = [vec![start], vec![goal]];
+    loop {
+        let side = usize::from(frontiers[1].len() < frontiers[0].len());
+        let (mine, theirs) = if side == 0 { (FROM_START, FROM_GOAL) } else { (FROM_GOAL, FROM_START) };
+        if frontiers[side].is_empty() {
+            return false;
+        }
+        let mut next = Vec::new();
+        for &cell in &frontiers[side] {
+            let (x, y) = grid.point(cell);
+            for (dx, dy) in NEIGHBORS {
+                let Some(neighbor) = grid.index(x + dx, y + dy) else {
+                    continue;
+                };
+                if seen[neighbor] == theirs {
+                    return true;
+                }
+                if seen[neighbor] == mine {
+                    continue;
+                }
+                // The start tile is entered from the goal side even when it isn't walkable.
+                if neighbor != start && !cache.walkable(w, neighbor, x + dx, y + dy) {
+                    continue;
+                }
+                seen[neighbor] = mine;
+                next.push(neighbor);
+            }
+        }
+        frontiers[side] = next;
+    }
 }
 
 /// Find a path from start to goal (exclusive of start, inclusive of goal). Returns `None` when
@@ -94,12 +162,17 @@ pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Opti
     let grid = Grid { width: w.scene.width.max(0), height: w.scene.height.max(0) };
     // An NPC standing outside its scene has nowhere to path from.
     let start_index = grid.index(start.x, start.y)?;
+    let goal_index = grid.index(goal.x, goal.y)?;
     let cells = grid.width as usize * grid.height as usize;
+    let mut walkable = WalkCache::new(cells);
 
-    const UNKNOWN: u8 = 0;
-    const WALKABLE: u8 = 1;
-    const BLOCKED: u8 = 2;
-    let mut walkable = vec![UNKNOWN; cells];
+    // Unreachable goals are common (a schedule target behind a locked door, the player standing
+    // in a doorway) and are searched for again every game minute. Settling reachability first is
+    // cheap when either end is enclosed; the path itself still comes from A* alone.
+    if !connected(w, &grid, &mut walkable, start_index, goal_index) {
+        return None;
+    }
+
     let mut g_score = vec![i64::MAX; cells];
     // The index each tile was reached from (`usize::MAX`: none).
     let mut came_from = vec![usize::MAX; cells];
@@ -156,10 +229,7 @@ pub fn find_path(w: &Walkability<'_>, start: PathPoint, goal: PathPoint) -> Opti
             if closed[neighbor] {
                 continue;
             }
-            if walkable[neighbor] == UNKNOWN {
-                walkable[neighbor] = if is_walkable(w, nx, ny) { WALKABLE } else { BLOCKED };
-            }
-            if walkable[neighbor] == BLOCKED {
+            if !walkable.walkable(w, neighbor, nx, ny) {
                 continue;
             }
             let tentative_g = g + 1;

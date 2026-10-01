@@ -6,8 +6,8 @@
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use farm_bench::{
-    farm, gameplay_player, load_cartridge, render_frame, sample_cartridges, sleep, start_cartridge, FarmSpec,
-    SaveFixture,
+    farm, gameplay_player, load_cartridge, npc_ticks, npc_town, render_frame, sample_cartridges, sleep,
+    start_cartridge, FarmSpec, SaveFixture,
 };
 use std::hint::black_box;
 use std::time::Duration;
@@ -76,5 +76,24 @@ fn frames(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, overnight, save, cartridges, frames);
+fn npcs(c: &mut Criterion) {
+    let mut group = c.benchmark_group("npcs");
+    group.sample_size(10);
+    for (name, walled) in [("20 walking 64x64 1000 ticks", false), ("20 walled off 64x64 1000 ticks", true)] {
+        let town = npc_town(walled);
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || town.state.clone(),
+                |mut state| {
+                    black_box(npc_ticks(&town.ctx, &mut state));
+                    state
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, overnight, save, cartridges, frames, npcs);
 criterion_main!(benches);
