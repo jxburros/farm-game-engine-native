@@ -1,4 +1,7 @@
 [toolchain]
-channel = "1.94"
+# The full version: a channel such as "1.94" follows its patch releases, and the shipped
+# binaries (and the checked-in plugin guest) must not change under the same commit.
+channel = "1.94.1"
+profile = "minimal"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]

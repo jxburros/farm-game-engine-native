@@ -29,7 +29,7 @@ if [[ "$(wasm-bindgen --version 2>/dev/null | awk '{print $2}')" != "$version" ]
   cargo install wasm-bindgen-cli --version "$version" --locked
 fi
 
-cargo build --manifest-path "$root/Cargo.toml" -p farm-wasm --target wasm32-unknown-unknown --release
+cargo build --locked --manifest-path "$root/Cargo.toml" -p farm-wasm --target wasm32-unknown-unknown --release
 wasm="$target_dir/wasm32-unknown-unknown/release/farm_wasm.wasm"
 
 rm -rf "$out"

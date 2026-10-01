@@ -72,7 +72,7 @@
     </Exec>
     <Message Importance="high" Text="FarmEngine.Export: cargo not found; building without a player template (set FarmPlayerSkipCargo=true to silence this)."
              Condition="'$(FarmPlayerCargoProbe)' != '' And '$(FarmPlayerCargoProbe)' != '0'" />
-    <Exec Command="cargo build --profile $(CargoProfile) -p farm-player" WorkingDirectory="$(MSBuildThisFileDirectory)../.."
+    <Exec Command="cargo build --locked --profile $(CargoProfile) -p farm-player" WorkingDirectory="$(MSBuildThisFileDirectory)../.."
           Condition="'$(FarmPlayerCargoProbe)' == '0'" />
     <GetFileHash Files="$(FarmPlayerExecutablePath)" Algorithm="SHA256" HashEncoding="hex"
                  Condition="'$(FarmPlayerCargoProbe)' == '0' And Exists('$(FarmPlayerExecutablePath)')">
