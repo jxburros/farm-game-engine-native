@@ -65,6 +65,7 @@ impl Fixture {
         let modal = self.game_ui.panel.is_some();
         let panel_views = panels::render(&self.panels, &PanelState::from_game_state(&self.state, modal));
         let bindings = Bindings::default();
+        let planting = self.game_ui.planting.clone();
         let view = GameView {
             state: &self.state,
             content: &self.ctx.content,
@@ -76,6 +77,7 @@ impl Fixture {
             bindings: &bindings,
             show_made_with: true,
             keys_active: true,
+            planting: &planting,
         };
         self.ui.begin_frame(input, self.size, self.scale, self.text_scale, 0.0);
         let actions = self.game_ui.draw(&mut self.ui, &view, &mut self.images);

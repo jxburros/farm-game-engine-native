@@ -1,7 +1,10 @@
 //! Port of the retired C# `InventoryTests.cs`
 //! (packages/engine-core/src/inventory.test.ts).
 
-use farm_sim::inventory::{add_item, find_slot, find_tool_slot, remove_item, replace_item, AddItemOptions};
+use farm_sim::inventory::{
+    add_item, add_item_with_quality, count_item, count_item_with_quality, find_slot, find_tool_slot, refresh_item,
+    remove_item, remove_item_with_quality, replace_item, AddItemOptions,
+};
 use farm_sim::schema::{InventorySlot, Item};
 
 fn make_item(id: &str, max_stack: u32) -> Item {
@@ -18,7 +21,7 @@ fn make_item(id: &str, max_stack: u32) -> Item {
 }
 
 fn slot(item: &Item, quantity: u32) -> InventorySlot {
-    InventorySlot { item: item.clone(), quantity }
+    InventorySlot::new(item.clone(), quantity)
 }
 
 // describe('removeItem')
@@ -69,14 +72,88 @@ fn absorbs_what_fits_and_rejects_overflow_when_the_inventory_is_full() {
 }
 
 #[test]
-#[ignore = "schema: Item.max_stack is a non-optional u32, so an item without a cap cannot be represented — enable if max_stack becomes Option<u32>"]
 fn keeps_the_historical_unbounded_merge_for_items_without_a_cap() {
-    // TS deletes maxStack from the item; the port cannot express "absent" for a
-    // required number. With an optional max_stack this would be `max_stack: None`.
-    let uncapped = make_item("wood", 99);
+    // A maxStack of 0 (an item authored without one) means no cap.
+    let uncapped = make_item("wood", 0);
     let result = add_item(&[slot(&uncapped, 500)], &uncapped, 600, 1, None);
     assert!(result.added);
-    assert_eq!(result.inventory[0].quantity, 1100);
+    assert_eq!(result.inventory, vec![slot(&uncapped, 1100)]);
+    let fresh = add_item(&[], &uncapped, 600, 1, None);
+    assert_eq!(fresh.inventory, vec![slot(&uncapped, 600)]);
+}
+
+// The stacking bugs of #22, with seed-wheat's cap of 99.
+
+#[test]
+fn new_slots_are_capped_at_max_stack() {
+    let seeds = make_item("seed-wheat", 99);
+    let result = add_item(&[], &seeds, 500, 20, None);
+    let quantities: Vec<u32> = result.inventory.iter().map(|s| s.quantity).collect();
+    assert_eq!(quantities, vec![99, 99, 99, 99, 99, 5]);
+    assert_eq!(result.added_quantity, 500);
+}
+
+#[test]
+fn overflow_tops_up_then_splits_into_capped_slots() {
+    let seeds = make_item("seed-wheat", 99);
+    let result = add_item(&[slot(&seeds, 1)], &seeds, 500, 20, None);
+    let quantities: Vec<u32> = result.inventory.iter().map(|s| s.quantity).collect();
+    assert_eq!(quantities, vec![99, 99, 99, 99, 99, 6]);
+}
+
+#[test]
+fn single_adds_fill_any_slot_with_room_before_opening_a_new_one() {
+    let seeds = make_item("seed-wheat", 99);
+    let mut inventory = vec![slot(&seeds, 99), slot(&seeds, 50)];
+    for _ in 0..5 {
+        inventory = add_item(&inventory, &seeds, 1, 20, None).inventory;
+    }
+    assert_eq!(inventory, vec![slot(&seeds, 99), slot(&seeds, 55)]);
+}
+
+#[test]
+fn a_partial_add_reports_how_much_fit() {
+    let seeds = make_item("seed-wheat", 99);
+    let result = add_item(&[slot(&seeds, 90)], &seeds, 120, 2, None);
+    assert!(!result.added);
+    assert_eq!(result.added_quantity, 108);
+    assert_eq!(result.rejected(120), 12);
+    assert_eq!(result.inventory, vec![slot(&seeds, 99), slot(&seeds, 99)]);
+}
+
+#[test]
+fn qualities_stack_apart() {
+    let wheat = make_item("crop-wheat", 99);
+    let result = add_item_with_quality(&[slot(&wheat, 3)], &wheat, Some("gold"), 2, 5, None);
+    assert_eq!(result.inventory[0], slot(&wheat, 3));
+    assert_eq!(result.inventory[1].quality.as_deref(), Some("gold"));
+    // Normal quality is stored as no quality, so it stacks with older slots.
+    let normal = add_item_with_quality(&result.inventory, &wheat, Some("normal"), 1, 5, None);
+    assert_eq!(normal.inventory[0], slot(&wheat, 4));
+    assert_eq!(count_item(&normal.inventory, "crop-wheat"), 6);
+    assert_eq!(count_item_with_quality(&normal.inventory, "crop-wheat", Some("gold")), 2);
+    let sold = remove_item_with_quality(&normal.inventory, "crop-wheat", Some("gold"), 2);
+    assert_eq!(sold, vec![slot(&wheat, 4)]);
+}
+
+#[test]
+fn refreshing_an_item_keeps_its_durability_within_the_new_maximum() {
+    let mut hoe = make_item("hoe", 1);
+    hoe.durability = Some(80);
+    hoe.max_durability = Some(100);
+    let mut renamed = hoe.clone();
+    renamed.name = "Old Hoe".to_owned();
+    renamed.durability = Some(100);
+    renamed.max_durability = Some(60);
+    let refreshed = refresh_item(&hoe, &renamed);
+    assert_eq!(refreshed.name, "Old Hoe");
+    assert_eq!(refreshed.durability, Some(60));
+    renamed.max_durability = Some(120);
+    assert_eq!(refresh_item(&hoe, &renamed).durability, Some(80));
+    // An unbreakable tool now: it takes the definition's (absent) durability.
+    renamed.max_durability = None;
+    renamed.durability = None;
+    assert_eq!(refresh_item(&hoe, &renamed).durability, None);
 }
 
 // Extra coverage of the remaining helpers (inventory.ts has no tests for them).

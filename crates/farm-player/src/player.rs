@@ -524,6 +524,9 @@ impl Player {
             Panel::Crafting => BindAction::Craft.canonical_key(),
         });
         let close_own = own_key.is_some_and(|key| input.game_pressed.iter().any(|pressed| pressed == key));
+        // Interact presses carry what the player holds for planting.
+        let planting = &self.game_ui.planting;
+        session.set_planting(Some((planting.seed.clone(), planting.fertilizer.clone())));
         let toggles = session.update(dt, self.game_ui.panel.is_some());
         game.play_seconds += dt;
         if close_own {
@@ -739,6 +742,7 @@ impl Player {
             let content = session.content();
             let overlay = overlay::overlay_view(session.context(), state);
             let calendar = calendar_view(content, state);
+            let planting = self.game_ui.planting.clone();
             let panel_views = panels::render(
                 &self.def.presentation.game_panels,
                 &PanelState::from_game_state(state, self.game_ui.panel.is_some() || !playing),
@@ -758,6 +762,7 @@ impl Player {
                 bindings: &self.settings.controls,
                 show_made_with: self.def.presentation.show_made_with_credit,
                 keys_active: playing && game_modal,
+                planting: &planting,
             };
             game_actions = self.game_ui.draw(&mut self.ui, &view, &mut self.renderer.ui_images);
         } else {
@@ -840,6 +845,12 @@ impl Player {
                     game.session.minigame_input(input);
                 }
                 self.drain_session_events();
+            }
+            GameAction::Hold(item_id) => {
+                self.ui_sound();
+                if let Some(game) = self.game.as_ref() {
+                    self.game_ui.planting.toggle(game.session.content(), &item_id);
+                }
             }
         }
     }

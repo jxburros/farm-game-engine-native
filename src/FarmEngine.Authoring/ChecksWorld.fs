@@ -206,7 +206,21 @@ module internal ChecksWorld =
                     sink.Error("dialogue.optionUnknownItem", opath + ".requiresItem", sprintf "Dialogue \"%s\" requires missing item \"%s\"" dialogue.Id (defaultArg option.RequiresItem ""), target)
                 // validate-extensibility.ts: a bound action must exist.
                 if dangling context.ActionIds option.ActionId then
-                    sink.Error("dialogue.optionUnknownAction", opath + ".actionId", sprintf "Dialogue \"%s\" performs missing action \"%s\"" dialogue.Id (defaultArg option.ActionId ""), target))
+                    sink.Error("dialogue.optionUnknownAction", opath + ".actionId", sprintf "Dialogue \"%s\" performs missing action \"%s\"" dialogue.Id (defaultArg option.ActionId ""), target)
+                // A reward (money or an item) with nothing stopping a repeat pays out every time
+                // the player talks again. Once-only, a hidden-if flag or a price bound it.
+                let pays = option.GiveMoney |> Option.exists (fun money -> money > 0.0) || Context.hasValue option.GiveItem
+                let guarded =
+                    option.Once = Some true
+                    || Context.hasValue option.HiddenIfFlag
+                    || option.TakeMoney |> Option.exists (fun money -> money > 0.0)
+                if pays && not guarded then
+                    sink.Warning(
+                        "dialogue.repeatableReward",
+                        opath + ".once",
+                        sprintf "Dialogue \"%s\" option \"%s\" gives its reward every time it is chosen; make it once-only or hide it behind a flag" dialogue.Id option.Text,
+                        target
+                    ))
         let checkText (path: string) (owner: string) (dialogue: Dialogue) (target: NavigationTarget option) =
             checkOptions path dialogue target
             if System.String.IsNullOrWhiteSpace dialogue.Text then

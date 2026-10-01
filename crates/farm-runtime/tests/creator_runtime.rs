@@ -125,7 +125,7 @@ fn panel_entries_render_flags_items_and_text() {
         energy: 42.5,
         day: 3.0,
         flags: [("met".to_owned(), Value::from("yes"))].into_iter().collect(),
-        inventory: vec![InventorySlot { item: wheat.clone(), quantity: 4 }, InventorySlot { item: wheat, quantity: 2 }],
+        inventory: vec![InventorySlot::new(wheat.clone(), 4), InventorySlot::new(wheat, 2)],
         blocked: false,
     };
     let panel = GamePanel {

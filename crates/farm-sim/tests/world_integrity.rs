@@ -294,7 +294,7 @@ fn machine_project(p: &mut GameProject) {
     let base = p.items.iter().find(|item| item.id == "seed-wheat").cloned().expect("an item");
     let keg = Item { id: "machine-keg-item".to_owned(), name: "Keg".to_owned(), r#type: "material".to_owned(), ..base };
     p.items.push(keg.clone());
-    p.player.inventory.push(InventorySlot { item: keg, quantity: 2 });
+    p.player.inventory.push(InventorySlot::new(keg, 2));
 }
 
 fn place(ctx: &EngineContext, state: &mut GameState) -> Vec<Effect> {

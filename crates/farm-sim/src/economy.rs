@@ -8,9 +8,9 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
 use crate::quests;
-use crate::schema::{DialogueOption, GameState, Item, ShopDefinition, ShopSession};
-use crate::units;
+use crate::schema::{crop_qualities, DialogueOption, GameState, Item, ShopDefinition, ShopSession};
 use crate::world::world_movement;
+use crate::{content_builtin, units};
 
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
     ctx.content.shops.iter().find(|shop| shop.id == shop_id)
@@ -79,10 +79,30 @@ fn purchased_today(state: &GameState, shop_id: &str, item_id: &str) -> Option<u3
     state.shop_purchases_today.get(shop_id).and_then(|per_item| per_item.get(item_id)).copied()
 }
 
-/// What `shop` pays for one `item`: `floor(value × sellPriceMultiplier)` (the multiplier in
-/// thousandths).
+/// What `shop` pays for one normal-quality `item`: `floor(value × sellPriceMultiplier)` (the
+/// multiplier in thousandths).
 pub fn sell_unit_price(item: &Item, shop: &ShopDefinition) -> i64 {
-    item.value.saturating_mul(i64::from(shop.sell_price_multiplier)).div_euclid(i64::from(units::MILLI_ONE))
+    sell_unit_price_with_quality(item, None, shop)
+}
+
+/// The value of one `item` at a crop `quality` (`None`: normal): `floor(value × quality
+/// multiplier)`, the same multipliers the harvest message uses.
+pub fn quality_value(item: &Item, quality: Option<&str>) -> i64 {
+    let multiplier = quality
+        .and_then(|quality| content_builtin::quality_multipliers().get(quality).copied())
+        .unwrap_or(units::MILLI_ONE);
+    if multiplier == units::MILLI_ONE {
+        return item.value;
+    }
+    item.value.saturating_mul(i64::from(multiplier)).div_euclid(i64::from(units::MILLI_ONE))
+}
+
+/// What `shop` pays for one `item` at a crop `quality`: `floor(quality value ×
+/// sellPriceMultiplier)`.
+pub fn sell_unit_price_with_quality(item: &Item, quality: Option<&str>, shop: &ShopDefinition) -> i64 {
+    quality_value(item, quality)
+        .saturating_mul(i64::from(shop.sell_price_multiplier))
+        .div_euclid(i64::from(units::MILLI_ONE))
 }
 
 /// What `shop` charges to restore `missing` durability points: `ceil(missing ×
@@ -157,7 +177,16 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
     effects
 }
 
-pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
+/// Sell `quantity` units of `item_id`, drawn from every slot holding them: at one crop `quality`
+/// (`normal` included), or, without one, at any quality, lowest first, each unit at its own
+/// quality's price.
+pub fn handle_sell_item(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    item_id: &str,
+    quantity: u32,
+    quality: Option<&str>,
+) -> Effects {
     let Some(session) = &state.shop else {
         return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
     };
@@ -172,16 +201,41 @@ pub fn handle_sell_item(ctx: &EngineContext, state: &mut GameState, item_id: &st
         return vec![Effect::message(message_levels::ERROR, format!("{} doesn't buy items.", shop.name))];
     }
 
-    let slot = state.player.inventory.iter().find(|s| s.item.id == item_id);
-    let Some(slot) = slot.filter(|slot| slot.quantity >= quantity) else {
+    // Items routinely span several slots (stack caps, qualities), so count across all of them.
+    let tiers: Vec<Option<String>> = match quality {
+        Some(quality) => vec![inventory::slot_quality(Some(quality))],
+        None => crop_qualities::ALL.iter().map(|tier| inventory::slot_quality(Some(tier))).collect(),
+    };
+    let held: u64 = tiers
+        .iter()
+        .map(|tier| inventory::count_item_with_quality(&state.player.inventory, item_id, tier.as_deref()))
+        .sum();
+    let first = state.player.inventory.iter().find(|s| s.item.id == item_id);
+    let Some(first) = first.filter(|_| held >= u64::from(quantity)) else {
         return vec![Effect::message(message_levels::ERROR, "You don't have that many.")];
     };
+    let item_name = match tiers.as_slice() {
+        [Some(quality)] => format!("{} ({quality})", first.item.name),
+        _ => first.item.name.clone(),
+    };
 
-    let unit_price = sell_unit_price(&slot.item, shop);
-    let total = unit_price.saturating_mul(i64::from(quantity));
-    let item_name = slot.item.name.clone();
+    let mut inventory = state.player.inventory.clone();
+    let mut remaining = quantity;
+    let mut total: i64 = 0;
+    for tier in &tiers {
+        let have = inventory::count_item_with_quality(&inventory, item_id, tier.as_deref());
+        let take = u32::try_from(have).unwrap_or(u32::MAX).min(remaining);
+        let Some(slot) = inventory.iter().find(|s| s.item.id == item_id && s.quality == *tier).filter(|_| take > 0)
+        else {
+            continue;
+        };
+        let unit_price = sell_unit_price_with_quality(&slot.item, tier.as_deref(), shop);
+        total = total.saturating_add(unit_price.saturating_mul(i64::from(take)));
+        inventory = inventory::remove_item_with_quality(&inventory, item_id, tier.as_deref(), take);
+        remaining -= take;
+    }
 
-    state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, quantity);
+    state.player.inventory = inventory;
     state.player.money = state.player.money.saturating_add(total);
     vec![Effect::message(message_levels::SUCCESS, format!("Sold {quantity}x {item_name} for ${total}"))]
 }

@@ -22,8 +22,16 @@ pub struct DialogueOption {
     pub take_money: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::money::opt")]
     pub give_money: Option<i64>,
+    /// Choosing this option sets this flag (true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_flag: Option<String>,
+    /// Only once: the option is hidden after it has been chosen (it remembers through its
+    /// `eventFlag`, or a flag of its own when it has none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub once: Option<bool>,
+    /// The option is hidden while this flag is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden_if_flag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_item: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -320,16 +320,15 @@ fn choosing_an_option_gives_money_and_items() {
     in_dialogue(&mut state);
     assert!(handle_choose_dialogue_option(&ctx, &mut state, 4).is_empty());
 
-    // A full inventory reports it and keeps the money.
+    // A full inventory reports it, and the option does nothing (no money either), so the
+    // player can make room and choose it again.
     in_dialogue(&mut state);
     state.player.inventory.retain(|s| s.item.id != "gift-flower");
     state.player.max_inventory_size = state.player.inventory.len() as u32;
     let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
-    assert_eq!(
-        effects,
-        vec![Effect::message("success", "Received $25"), Effect::message("error", "Inventory is full!")]
-    );
-    assert_eq!(state.player.money, 150);
+    assert_eq!(effects, vec![Effect::message("error", "Inventory is full!")]);
+    assert_eq!(state.player.money, 125);
+    assert_eq!(state.dialogue.as_ref().map(|d| d.dialogue_id.as_str()), Some(GREETING));
 }
 
 #[test]
@@ -406,4 +405,131 @@ fn find_dialogue_prefers_the_npc_owned_dialogue_over_the_global_list() {
     );
     assert_eq!(find_dialogue(&ctx, NPC, "dialogue-nope"), None);
     let _: &EngineContext = &ctx;
+}
+
+// --- once-only options, flags, takeMoney, actions that open a conversation (#31) ---
+
+#[test]
+fn a_once_option_pays_out_once_and_then_disappears() {
+    let (ctx, mut state) = make_engine("once", |project| {
+        add_greeting_option(
+            project,
+            DialogueOption {
+                text: "Gift me".to_owned(),
+                give_money: Some(25),
+                once: Some(true),
+                ..DialogueOption::default()
+            },
+        );
+    });
+    let money = state.player.money;
+    for _ in 0..10 {
+        in_dialogue(&mut state);
+        let greeting = find_dialogue(&ctx, NPC, GREETING).unwrap();
+        let visible = visible_dialogue_options(&ctx, &state, greeting);
+        if let Some(index) = visible.iter().position(|option| option.text == "Gift me") {
+            handle_choose_dialogue_option(&ctx, &mut state, index as i32);
+        }
+        handle_close_dialogue(&mut state);
+    }
+    assert_eq!(state.player.money, money + 25);
+    assert_eq!(state.flags.get("dialogue:dialogue-farmer-greeting:option2"), Some(&serde_json::Value::Bool(true)));
+}
+
+#[test]
+fn an_option_sets_its_event_flag_and_hides_behind_hidden_if_flag() {
+    let (ctx, mut state) = make_engine("flags", |project| {
+        add_greeting_option(
+            project,
+            DialogueOption {
+                text: "Promise".to_owned(),
+                event_flag: Some("promised".to_owned()),
+                hidden_if_flag: Some("promised".to_owned()),
+                ..DialogueOption::default()
+            },
+        );
+    });
+    in_dialogue(&mut state);
+    handle_choose_dialogue_option(&ctx, &mut state, 2);
+    assert_eq!(state.flags.get("promised"), Some(&serde_json::Value::Bool(true)));
+    in_dialogue(&mut state);
+    let greeting = find_dialogue(&ctx, NPC, GREETING).unwrap();
+    assert!(visible_dialogue_options(&ctx, &state, greeting).iter().all(|option| option.text != "Promise"));
+}
+
+#[test]
+fn take_money_needs_the_funds_and_changes_nothing_without_them() {
+    let (ctx, mut state) = make_engine("pay", |project| {
+        add_greeting_option(
+            project,
+            DialogueOption {
+                text: "Buy a map".to_owned(),
+                take_money: Some(60),
+                give_item: Some("gift-flower".to_owned()),
+                once: Some(true),
+                ..DialogueOption::default()
+            },
+        );
+    });
+    state.player.money = 50;
+    in_dialogue(&mut state);
+    let before = state.clone();
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
+    assert_eq!(effects, vec![Effect::message("error", "Not enough money!")]);
+    assert_eq!(state, before, "nothing paid, nothing given, the option stays");
+
+    state.player.money = 100;
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
+    assert_eq!(effects, vec![Effect::message("info", "Paid $60"), Effect::message("success", "Received Flower")]);
+    assert_eq!(state.player.money, 40);
+    assert_eq!(quantity(&state, "gift-flower"), Some(1));
+}
+
+#[test]
+fn a_reward_that_does_not_fit_changes_nothing() {
+    let (ctx, mut state) = make_engine("full", |project| {
+        add_greeting_option(
+            project,
+            DialogueOption {
+                text: "Gift me".to_owned(),
+                give_money: Some(25),
+                give_item: Some("gift-flower".to_owned()),
+                once: Some(true),
+                ..DialogueOption::default()
+            },
+        );
+    });
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    in_dialogue(&mut state);
+    let before = state.clone();
+    let effects = handle_choose_dialogue_option(&ctx, &mut state, 2);
+    assert_eq!(effects, vec![Effect::message("error", "Inventory is full!")]);
+    assert_eq!(state, before);
+}
+
+#[test]
+fn an_option_action_can_open_another_conversation() {
+    let (ctx, mut state) = make_engine("chain", |project| {
+        project.actions.push(farm_sim::schema::ActionDef {
+            id: "action-call-merchant".to_owned(),
+            name: "Call the merchant".to_owned(),
+            outcomes: vec![farm_sim::schema::EventOutcome {
+                r#type: "startDialogue".to_owned(),
+                npc_id: Some("npc-merchant".to_owned()),
+                ..farm_sim::schema::EventOutcome::default()
+            }],
+            ..farm_sim::schema::ActionDef::default()
+        });
+        add_greeting_option(
+            project,
+            DialogueOption {
+                text: "Fetch the merchant".to_owned(),
+                action_id: Some("action-call-merchant".to_owned()),
+                ..DialogueOption::default()
+            },
+        );
+    });
+    in_dialogue(&mut state);
+    handle_choose_dialogue_option(&ctx, &mut state, 2);
+    assert_eq!(state.dialogue.as_ref().map(|dialogue| dialogue.npc_id.as_str()), Some("npc-merchant"));
 }

@@ -176,7 +176,10 @@ module References =
           optionalOneOf "Item" "ToolType" toolTypes
           optional "Item" "UseActionId" ReferenceKind.Action
           list "CropDefinition" "Seasons" ReferenceKind.Season
+          optionalAs "CropDefinition" "HarvestItemId" ReferenceKind.Item "(crop-<id>)"
           list "CustomCropDefinition" "Seasons" ReferenceKind.Season
+          optionalAs "CustomCropDefinition" "HarvestItemId" ReferenceKind.Item "(crop-<id>)"
+          optionalOneOf "InventorySlot" "Quality" (same CropQualities.All)
           plain "CustomCropDefinition" "CustomAsset" "legacy crop image as a data URL"
           // Characters and dialogue
           reference "Npc" "SceneId" ReferenceKind.Scene
@@ -193,6 +196,7 @@ module References =
           optionalAs "DialogueOption" "NextDialogueId" ReferenceKind.Dialogue "(end conversation)"
           optional "DialogueOption" "GiveItem" ReferenceKind.Item
           plain "DialogueOption" "EventFlag" flag
+          plain "DialogueOption" "HiddenIfFlag" flag
           optional "DialogueOption" "RequiresItem" ReferenceKind.Item
           plain "DialogueOption" "RequiresFlag" flag
           optional "DialogueOption" "OpenShopId" ReferenceKind.Shop
@@ -209,6 +213,7 @@ module References =
           optional "QuestObjective" "TargetNpcId" ReferenceKind.Npc
           optional "QuestObjective" "TargetSceneId" ReferenceKind.Scene
           reference "QuestRewardItem" "ItemId" ReferenceKind.Item
+          optionalAs "QuestRewards" "Skill" ReferenceKind.Skill "(farming)"
           // Events and the condition/outcome vocabulary
           optionalAs "GameEvent" "SceneId" ReferenceKind.Scene "(every scene)"
           oneOf "GameEvent" "Trigger" (same EventTriggers.All)

@@ -401,6 +401,33 @@
     like the web version.
   - Saving the last-opened project no longer rewrites the Update Center's
     settings.
+- **Gameplay fixes (inventory, crafting, farming, quests, dialogue):**
+  - Stacks respect `maxStack` everywhere (0 means no cap): adds top up every
+    slot of the item, then open capped slots while there is room, and say how
+    much fit. Selling, pack starting items, restored save items and the
+    debug drawer's "give" buttons follow the same rules.
+  - Crafting is all or nothing: a craft whose outputs don't fit uses no
+    ingredients and counts for nothing. Craft objectives count the items made,
+    by hand or collected from a machine.
+  - Planting: the inventory's **Hold** button picks the seed and fertilizer
+    to plant with (`interactWith`); fertilizer is no longer used unasked.
+  - Multi-tile crops (pumpkin, cauliflower) are one crop: one harvest, one
+    watering, fertilizer under every tile, cleared and storm-damaged whole,
+    and they no longer fit over machines, items or rocks.
+  - Harvest quality rises with farming skill and stays on the items: a
+    silver, gold or iridium stack sells at its quality's price, which the
+    harvest message now shows. Crops can name their harvest item
+    (`harvestItemId`); Problems reports a crop without one.
+  - Dialogue options can be once-only (`once`) or hidden by a flag
+    (`hiddenIfFlag`); `eventFlag` and `takeMoney` now work, the editor makes
+    new reward options once-only, and Problems warns about repeatable
+    rewards. An option's action can open another conversation.
+  - Quests: `rewards.experience` grants skill XP (to `rewards.skill`,
+    farming by default), repeatable quests can be started again (auto-start
+    ones restart the next morning), and a partly lost reward says how much.
+  - Saves keep tool wear across game updates and refresh items lying on the
+    ground; `waterArea` waters like the watering can; `modifyEnergy`
+    saturates.
 
 ## 0.1.0
 

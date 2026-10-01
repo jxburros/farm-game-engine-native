@@ -5,6 +5,7 @@
 
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
+use crate::farming::farming_actions;
 use crate::hooks::{ActionHookPayload, HookEvent, RelationshipChangeHookPayload};
 use crate::schema::{
     event_fired_flag, DialogueState, EventCondition, EventOutcome, GameEvent, GameState, MinigameSession,
@@ -198,8 +199,8 @@ fn apply_outcome(
             vec![]
         }
         "modifyEnergy" => {
-            // Thousandths of a point: the energy unit.
-            let amount = i32::try_from(outcome.amount.unwrap_or(0)).unwrap_or(0);
+            // Thousandths of a point: the energy unit. Out-of-range amounts saturate.
+            let amount = outcome.amount.unwrap_or(0).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
             if !ctx.content.settings.energy_enabled {
                 return vec![];
             }
@@ -210,29 +211,17 @@ fn apply_outcome(
             vec![]
         }
         "waterArea" => {
+            // The watering can's rule on every tile of the square around the player (grid
+            // positions, bounded to the area), so fertilized soil stays fertilized, withered
+            // crops stay dry and a multi-tile crop is watered whole.
             let radius = i64::from(outcome.radius.unwrap_or(1).min(10));
             let center = world_movement::player_tile(state);
             let (cx, cy) = (i64::from(center.x), i64::from(center.y));
-            let day = state.clock.day;
             let scene_id = state.player.scene_id.clone();
-            for scene in &mut state.world.scenes {
-                if scene.id != scene_id {
-                    continue;
-                }
-                for row in &mut scene.tiles {
-                    for tile in row {
-                        if (i64::from(tile.x) - cx).abs() > radius
-                            || (i64::from(tile.y) - cy).abs() > radius
-                            || tile.background != "soil"
-                        {
-                            continue;
-                        }
-                        tile.soil_state = Some("watered".to_owned());
-                        tile.soil_moisture = 100;
-                        if let Some(crop) = &mut tile.crop {
-                            crop.watered = true;
-                            crop.last_watered_day = Some(day);
-                        }
+            if let Some(index) = state.world.scenes.iter().position(|scene| scene.id == scene_id) {
+                for y in (cy - radius).max(0)..=cy + radius {
+                    for x in (cx - radius).max(0)..=cx + radius {
+                        farming_actions::water_at(ctx, state, index, x as usize, y as usize);
                     }
                 }
             }

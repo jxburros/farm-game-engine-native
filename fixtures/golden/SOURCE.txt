@@ -15,11 +15,11 @@ without the switch):
                    (inputs: v8/saves, plus a current v5 and a future v6 save)
 
 Last recorded (stamped by the recorders):
-  replays: re-recorded when the calendar and world-hardening branches were merged
-  content: committed in f2c2a08 (recorded before the recorders stamped)
+  replays: bc586b12520b + uncommitted engine changes
+  content: bc586b12520b + uncommitted engine changes
   rng.json: committed in f2c2a08 (recorded before the recorders stamped)
-  hash.json: committed in f2c2a08 (recorded before the recorders stamped)
-  saves: committed in f5338b4 (recorded before the recorders stamped)
+  hash.json: bc586b12520b + uncommitted engine changes
+  saves: bc586b12520b + uncommitted engine changes
 
 v8/ holds the goldens of the compatibility phase, kept as migration inputs: every v8
 project, save and replay must still load (golden_content, golden_saves, v8_outcomes).

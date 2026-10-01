@@ -220,13 +220,15 @@ and CropDefinition =
         MutationChance: float option
         YieldMin: float
         YieldMax: float
+        /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+        HarvestItemId: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `CropDefinition` with every field at its schema default.
     static member Default : CropDefinition =
-        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; Extra = [] }
+        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; HarvestItemId = None; Extra = [] }
 
 /// TS `CropDefinitionSchema.multiTile` (inline object).
 and CropMultiTile =
@@ -287,6 +289,8 @@ and CustomCropDefinition =
         MutationChance: float option
         YieldMin: float
         YieldMax: float
+        /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+        HarvestItemId: string option
         CustomAsset: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
@@ -294,7 +298,7 @@ and CustomCropDefinition =
 
     /// A `CustomCropDefinition` with every field at its schema default.
     static member Default : CustomCropDefinition =
-        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; CustomAsset = None; Extra = [] }
+        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; HarvestItemId = None; CustomAsset = None; Extra = [] }
 
 and Dialogue =
     {
@@ -318,7 +322,13 @@ and DialogueOption =
         GiveItemQuantity: float option
         TakeMoney: float option
         GiveMoney: float option
+        /// Choosing this option sets this flag (true).
         EventFlag: string option
+        /// Only once: the option is hidden after it has been chosen (it remembers through its
+        /// `EventFlag`, or a flag of its own when it has none).
+        Once: bool option
+        /// The option is hidden while this flag is set.
+        HiddenIfFlag: string option
         RequiresItem: string option
         RequiresFlag: string option
         /// Choosing this option closes the dialogue and opens the given shop (M2).
@@ -335,7 +345,7 @@ and DialogueOption =
 
     /// A `DialogueOption` with every field at its schema default.
     static member Default : DialogueOption =
-        { Text = ""; NextDialogueId = None; GiveItem = None; GiveItemQuantity = None; TakeMoney = None; GiveMoney = None; EventFlag = None; RequiresItem = None; RequiresFlag = None; OpenShopId = None; OfferQuestId = None; RequiresFriendship = None; ActionId = None; Extra = [] }
+        { Text = ""; NextDialogueId = None; GiveItem = None; GiveItemQuantity = None; TakeMoney = None; GiveMoney = None; EventFlag = None; Once = None; HiddenIfFlag = None; RequiresItem = None; RequiresFlag = None; OpenShopId = None; OfferQuestId = None; RequiresFriendship = None; ActionId = None; Extra = [] }
 
 /// A single event/action outcome. Not a discriminated union: one flat object whose `type` selects which optional fields apply.
 and EventOutcome =
@@ -690,11 +700,14 @@ and InventorySlot =
     {
         Item: Item
         Quantity: float
+        /// The crop quality of the units in this slot (one of `CropQualities` other than normal);
+        /// absent for normal quality.
+        Quality: string option
     }
 
     /// A `InventorySlot` with every field at its schema default.
     static member Default : InventorySlot =
-        { Item = Item.Default; Quantity = 0.0 }
+        { Item = Item.Default; Quantity = 0.0; Quality = None }
 
 and Item =
     {
@@ -1238,13 +1251,15 @@ and QuestRewards =
         Money: float option
         Items: (QuestRewardItem list) option
         Experience: float option
+        /// The skill `Experience` goes to (farming, mining, foraging, fishing, social, …). Absent: farming.
+        Skill: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `QuestRewards` with every field at its schema default.
     static member Default : QuestRewards =
-        { Money = None; Items = None; Experience = None; Extra = [] }
+        { Money = None; Items = None; Experience = None; Skill = None; Extra = [] }
 
 and RecipeDefinition =
     {

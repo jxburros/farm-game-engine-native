@@ -161,11 +161,37 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
 /// required items and flags are finally honored. Used by BOTH the UI and
 /// chooseDialogueOption so indices always agree.
 pub fn visible_dialogue_options(ctx: &EngineContext, state: &GameState, dialogue: &Dialogue) -> Vec<DialogueOption> {
+    visible_dialogue_option_indices(ctx, state, dialogue)
+        .into_iter()
+        .map(|index| dialogue.options[index].clone())
+        .collect()
+}
+
+/// The flag a once-only option remembers being chosen by: its `eventFlag`, else one of its own
+/// (`dialogue:{dialogueId}:option{index}`).
+pub fn once_flag(dialogue: &Dialogue, index: usize) -> String {
+    match dialogue.options.get(index).and_then(|option| non_empty(option.event_flag.as_deref())) {
+        Some(flag) => flag.to_owned(),
+        None => format!("dialogue:{}:option{index}", dialogue.id),
+    }
+}
+
+/// The indices (into `dialogue.options`) of [`visible_dialogue_options`].
+pub fn visible_dialogue_option_indices(ctx: &EngineContext, state: &GameState, dialogue: &Dialogue) -> Vec<usize> {
     let _ = ctx;
     dialogue
         .options
         .iter()
-        .filter(|option| {
+        .enumerate()
+        .filter(|(index, option)| {
+            if option.once == Some(true) && text::truthy(events::flag_value(state, &once_flag(dialogue, *index))) {
+                return false;
+            }
+            if let Some(hidden_if_flag) = non_empty(option.hidden_if_flag.as_deref()) {
+                if text::truthy(events::flag_value(state, hidden_if_flag)) {
+                    return false;
+                }
+            }
             if let (Some(requires_friendship), Some(open)) = (option.requires_friendship, &state.dialogue) {
                 if friendship_with(state, &open.npc_id) < requires_friendship {
                     return false;
@@ -183,6 +209,6 @@ pub fn visible_dialogue_options(ctx: &EngineContext, state: &GameState, dialogue
             }
             true
         })
-        .cloned()
+        .map(|(index, _)| index)
         .collect()
 }

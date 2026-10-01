@@ -11,6 +11,8 @@
 //! the engine stores numbers. The files were recorded once, by the v8 engine (farm-game-engine-native
 //! e09d1d0, with the recorder that commit had); they are never re-recorded, so this test has no
 //! record switch.
+//! A gameplay fix that changes what a replay plays is listed in `INTENDED_DIVERGENCES` instead,
+//! from the step where it shows.
 
 use farm_sim::replay::{self, ReplayInput};
 use farm_sim::schema::GameProject;
@@ -285,6 +287,26 @@ fn decode(encoded: &Value) -> Vec<Map<String, Value>> {
     out
 }
 
+/// Replays whose game changed on purpose after v8 (gameplay fixes), with the first step where
+/// it shows. The steps before it must still match v8 exactly, and that step must differ, so the
+/// list stays honest; everything after it is the fixed game and is not compared.
+const INTENDED_DIVERGENCES: &[(&str, usize, &str)] = &[
+    (
+        "calendar-festivals",
+        87,
+        "#32: a harvest's \"worth\" is what its units sell for; a mutation pays through its bigger yield only",
+    ),
+    (
+        "content-packs-and-plugins",
+        105,
+        "#32: a pack crop's harvest item is found under the pack's namespace (pack:crop-local)",
+    ),
+    ("farming-lifecycle", 48, "#30: fertilizer feeds the soil under every tile of a multi-tile crop"),
+    ("fuzz-thousand-commands", 751, "#32: harvests keep their quality in the inventory; qualities don't stack"),
+    ("replay-three-days", 12, "#32: a fertilized (silver) harvest sells at the silver price"),
+    ("starter-farm-first-week", 74, "#32: a fertilized (silver) harvest sells at the silver price"),
+];
+
 fn outcome_path(name: &str) -> PathBuf {
     golden_dir(&format!("v8/outcomes/{name}.json"))
 }
@@ -327,9 +349,20 @@ fn replays_play_the_same_game_as_v8() {
             report.push(format!("{name}: {} steps recorded, {} played", expected.len(), summaries.len()));
             continue;
         }
+        let diverges_at = INTENDED_DIVERGENCES.iter().find(|(replay, _, _)| *replay == name).map(|(_, step, _)| *step);
         let mut lines = Vec::new();
         for (index, (want, got)) in expected.iter().zip(&summaries).enumerate() {
-            for difference in differences(want, got) {
+            if diverges_at.is_some_and(|step| index > step) {
+                break;
+            }
+            let found = differences(want, got);
+            if Some(index) == diverges_at {
+                if found.is_empty() {
+                    lines.push(format!("  step {index}: listed as an intended divergence, but it matches v8 now"));
+                }
+                break;
+            }
+            for difference in found {
                 lines.push(format!("  step {index}: {difference}"));
             }
         }

@@ -355,3 +355,64 @@ fn loading_fits_the_clock_to_the_calendar_and_reseeds_an_empty_rng() {
     assert!(!state.rng.is_degenerate());
     assert!(loaded.warnings.iter().any(|w| w.contains("random")), "{:?}", loaded.warnings);
 }
+
+/// #52: an update refreshes items on the ground too, sets aside dropped items that no longer
+/// exist, and keeps a tool's wear (clamped to the new maximum) instead of resetting it.
+#[test]
+fn updates_refresh_dropped_items_and_keep_tool_durability() {
+    let v1 = starter_project();
+    let (_, target_v1) = build(&v1);
+    let mut save_state = state::create_game_state(&v1, Some("save-file"));
+    let hoe = save_state.player.inventory.iter_mut().find(|slot| slot.item.id == "tool-hoe").expect("hoe");
+    hoe.item.durability = Some(70);
+    let flower = v1.items.iter().find(|item| item.id == "gift-flower").expect("flower").clone();
+    let boot = v1.items.iter().find(|item| item.id == "junk-boot").expect("boot").clone();
+    save_state.world.scenes[0].tiles[1][1].item = Some(flower.clone());
+    save_state.world.scenes[0].tiles[1][2].item = Some(boot.clone());
+    let text = write_save(&save_state, &target_v1);
+
+    // Version 1.1: the flower is renamed, the boot is gone, the hoe wears out sooner.
+    let mut v11 = v1.clone();
+    v11.version = "1.1".to_owned();
+    v11.items.retain(|item| item.id != "junk-boot");
+    for item in &mut v11.items {
+        match item.id.as_str() {
+            "gift-flower" => item.name = "Daisy".to_owned(),
+            "tool-hoe" => item.max_durability = Some(50),
+            _ => {}
+        }
+    }
+    let (content_v11, target_v11) = build(&v11);
+    let loaded = load_save(&text, &target_v11, &content_v11);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    assert_eq!(loaded.quarantined, vec!["junk-boot".to_owned()]);
+    let state = loaded.state.expect("state");
+    let tiles = &state.world.scenes[0].tiles;
+    assert_eq!(tiles[1][1].item.as_ref().map(|item| item.name.as_str()), Some("Daisy"));
+    assert!(tiles[1][2].item.is_none());
+    assert_eq!(state.quarantined_items.iter().map(|s| s.item.id.as_str()).collect::<Vec<_>>(), vec!["junk-boot"]);
+    let hoe = state.player.inventory.iter().find(|slot| slot.item.id == "tool-hoe").expect("hoe");
+    assert_eq!(hoe.item.durability, Some(50), "worn hoe clamped to the new maximum, not repaired");
+    assert_eq!(hoe.item.max_durability, Some(50));
+}
+
+/// Restored items merge like any add: what doesn't fit stays set aside.
+#[test]
+fn restored_items_respect_the_inventory_limit() {
+    let project = starter_project();
+    let (content, target) = build(&project);
+    let mut state = state::create_game_state(&project, Some("save-file"));
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    let wood = project.items.iter().find(|item| item.id == "material-wood").expect("wood").clone();
+    state.quarantined_items.push(InventorySlot::new(wood, 5));
+    let bare = serde_json::to_string(&state).unwrap();
+    let loaded = load_save(&bare, &target, &content);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    assert!(loaded.restored.is_empty());
+    let state = loaded.state.unwrap();
+    assert!(!inventory_ids(&state).contains(&"material-wood"));
+    assert_eq!(
+        state.quarantined_items.iter().map(|s| (s.item.id.as_str(), s.quantity)).collect::<Vec<_>>(),
+        vec![("material-wood", 5)]
+    );
+}

@@ -1,6 +1,7 @@
 //! The inventory (web PlayerInventory, C# `PlayOverlays.Inventory`): every slot with its art,
-//! quantity, value and durability; Use runs the item's bound action, Gift gives it to the NPC the
-//! player faces; the footer totals the inventory's value.
+//! quantity, value and durability; Hold picks the seed and fertilizer to plant with, Use runs the
+//! item's bound action, Gift gives it to the NPC the player faces; the footer totals the
+//! inventory's value.
 
 use super::{draw_item_art, right_aligned, GameAction, GameView};
 use crate::format::{money, num};
@@ -49,12 +50,23 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             ui.row_background(rect);
             let mut inner = rect.inset_xy(10.0, 8.0);
 
-            // Buttons: Use (bound action), Gift (to the faced NPC; not tools).
+            // Buttons: Hold (seeds and fertilizer, for planting), Use (bound action), Gift (to
+            // the faced NPC; not tools).
+            let held = view.planting.holds(&item.id);
+            let hold_button = if held {
+                Button::new(lang.tr("inventory.held")).primary().size(12.0)
+            } else {
+                Button::new(lang.tr("inventory.hold")).size(12.0)
+            };
             let use_button = Button::new(lang.tr("inventory.use")).size(12.0);
             let gift_button = Button::new(lang.tr("inventory.gift")).size(12.0);
+            let can_hold = item.r#type == item_types::SEED || item.r#type == item_types::FERTILIZER;
             let can_use = item.use_action_id.as_deref().is_some_and(|id| !id.is_empty());
             let can_gift = item.r#type != item_types::TOOL;
             let mut widths = Vec::new();
+            if can_hold {
+                widths.push(ui.button_width(&hold_button));
+            }
             if can_use {
                 widths.push(ui.button_width(&use_button));
             }
@@ -66,6 +78,12 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             let rects = right_aligned(buttons, &widths, small, 4.0);
             let id = WidgetId::new("inventory").with(index).with(&item.id);
             let mut next = 0;
+            if can_hold {
+                if ui.button(id.with("hold"), rects[next], hold_button) {
+                    actions.push(GameAction::Hold(item.id.clone()));
+                }
+                next += 1;
+            }
             if can_use {
                 if ui.button(id.with("use"), rects[next], use_button) {
                     actions.push(GameAction::ClosePanel);
@@ -90,7 +108,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             let top = inner.y + (inner.height - title - description - meta) / 2.0;
             ui.label(
                 Rect::new(inner.x, top, inner.width, title),
-                &item.name,
+                &super::slot_name(&item.name, slot.quality.as_deref()),
                 14.0,
                 FontId::Bold,
                 colors.text,
@@ -117,7 +135,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
                 );
                 meta_row.cut_left(width + 8.0);
             }
-            let mut meta_text = money(item.value);
+            let mut meta_text = money(farm_sim::economy::quality_value(item, slot.quality.as_deref()));
             if item.r#type == item_types::TOOL {
                 if let (Some(durability), Some(max)) = (item.durability, item.max_durability) {
                     meta_text.push_str(&format!("  {}/{}", num(durability), num(max)));
@@ -131,8 +149,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     }
     ui.end_modal_body(y);
     if let Some(footer) = modal.footer {
-        let total: i64 =
-            player.inventory.iter().map(|slot| slot.item.value.saturating_mul(i64::from(slot.quantity))).sum();
+        let total: i64 = player
+            .inventory
+            .iter()
+            .map(|slot| {
+                farm_sim::economy::quality_value(&slot.item, slot.quality.as_deref())
+                    .saturating_mul(i64::from(slot.quantity))
+            })
+            .sum();
         let mut footer = footer;
         let close = Button::new(lang.tr("common.close")).primary();
         let width = ui.button_width(&close);

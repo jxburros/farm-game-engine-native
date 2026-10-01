@@ -35,7 +35,7 @@ use farm_cart_schema::flatbuffers::FlatBufferBuilder;
 use farm_sim::schema::{
     GameContent, GameProject, GameState, InventorySlot, Item, NpcState, Scene, SceneTransition, Tile,
 };
-use farm_sim::{game_time, hash_state, rng, stable_json, text};
+use farm_sim::{game_time, hash_state, inventory, packs, rng, stable_json, text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -416,13 +416,22 @@ fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Maps a save's inventory onto `content` by stable item id (the save was written against other
-/// content): slots whose item still exists take its current definition, slots whose item is gone
-/// move to `quarantined_items`, and quarantined slots whose item is back return to the
-/// inventory. Returns the ids quarantined and restored, in inventory order.
+/// Maps a save's items onto `content` by stable item id (the save was written against other
+/// content):
+/// - inventory slots and items lying on world tiles whose item still exists take its current
+///   definition, keeping their instance data (a tool's durability, clamped to the new maximum;
+///   see [`inventory::refresh_item`]);
+/// - inventory slots and dropped items whose item is gone move to `quarantined_items`;
+/// - quarantined slots whose item is back return to the inventory through the normal add (stack
+///   caps, slot limit); what doesn't fit stays quarantined.
+///
+/// Returns the ids quarantined and restored, in inventory (then world) order.
 pub fn reconcile_items(state: &mut GameState, content: &GameContent) -> (Vec<String>, Vec<String>) {
     let current = |id: &str| -> Option<&Item> { content.items.iter().find(|item| item.id == id) };
-    let refresh = |slot: &InventorySlot, item: &Item| InventorySlot { item: item.clone(), quantity: slot.quantity };
+    let refresh = |slot: &InventorySlot, item: &Item| InventorySlot {
+        item: inventory::refresh_item(&slot.item, item),
+        ..slot.clone()
+    };
 
     let mut quarantined = Vec::new();
     let mut inventory = Vec::with_capacity(state.player.inventory.len());
@@ -437,16 +446,36 @@ pub fn reconcile_items(state: &mut GameState, content: &GameContent) -> (Vec<Str
         }
     }
 
+    // Items lying on the ground: refreshed in place, or picked up into quarantine.
+    for tile in state.world.scenes.iter_mut().flat_map(|scene| scene.tiles.iter_mut().flatten()) {
+        let Some(dropped) = tile.item.take() else { continue };
+        match current(&dropped.id) {
+            Some(item) => tile.item = Some(inventory::refresh_item(&dropped, item)),
+            None => {
+                quarantined.push(dropped.id.clone());
+                set_aside.push(InventorySlot::new(dropped, 1));
+            }
+        }
+    }
+
     let mut restored = Vec::new();
     let mut still_quarantined = Vec::new();
     for slot in &state.quarantined_items {
-        match current(&slot.item.id) {
-            Some(item) => {
-                restored.push(slot.item.id.clone());
-                inventory.push(refresh(slot, item));
-            }
-            None => still_quarantined.push(slot.clone()),
+        let Some(item) = current(&slot.item.id) else {
+            still_quarantined.push(slot.clone());
+            continue;
+        };
+        let slot = refresh(slot, item);
+        let (next, left_over) = packs::restore_slots(
+            std::mem::take(&mut inventory),
+            std::slice::from_ref(&slot),
+            state.player.max_inventory_size,
+        );
+        inventory = next;
+        if left_over.first().is_none_or(|rest| rest.quantity < slot.quantity) {
+            restored.push(slot.item.id.clone());
         }
+        still_quarantined.extend(left_over);
     }
 
     state.player.inventory = inventory;

@@ -239,6 +239,30 @@ fn debug_actions_change_state_without_commands() {
     let quantity: u32 =
         session.state().player.inventory.iter().filter(|slot| slot.item.id == seed).map(|slot| slot.quantity).sum();
     assert!(quantity >= 10);
+    // The drawer adds like play does: no stack above its cap, no slot past the limit.
+    let max_slots = session.state().player.max_inventory_size;
+    for _ in 0..600 {
+        session.debug(&DebugAction::GiveFirst { item_type: "seed".into() });
+        session.debug(&DebugAction::GiveFirst { item_type: "material".into() });
+    }
+    let player = &session.state().player;
+    assert!(player.inventory.len() <= max_slots as usize, "{} slots > {max_slots}", player.inventory.len());
+    for slot in &player.inventory {
+        assert!(
+            slot.item.max_stack == 0 || slot.quantity <= slot.item.max_stack,
+            "{} x {}",
+            slot.item.id,
+            slot.quantity
+        );
+    }
+    let full = session.drain_events().into_iter().any(
+        |event| matches!(event, SessionEvent::Toast { text, kind: ToastKind::Error } if text == "Inventory is full!"),
+    );
+    assert!(full, "a full inventory says so");
+    // Minutes stop at the end of the day window.
+    session.debug(&DebugAction::AddMinutes { minutes: 100_000.0 });
+    let day_end = session.content().settings.time.day_end_minute;
+    assert_eq!(session.state().clock.time_minutes, farm_sim::units::minutes(day_end));
     let day = session.state().clock.day;
     session.debug(&DebugAction::SkipDay);
     assert_eq!(session.state().clock.day, day + 1);
@@ -276,4 +300,30 @@ fn toasts_keep_the_message_level() {
         })
         .collect();
     assert!(!toasts.is_empty());
+}
+
+/// #25: with a planting choice set, an interact press plants the held seed and uses fertilizer
+/// only when one is held.
+#[test]
+fn interact_presses_carry_the_held_seed() {
+    let mut session = session_for(&starter());
+    let mut state = session.state().clone();
+    // Stand on the soil patch facing open soil (the starter farm's soil is x 5..=11, y 4..=8).
+    state.player.x = farm_sim::units::tile_center(6);
+    state.player.y = farm_sim::units::tile_center(4);
+    state.player.direction = "down".to_owned();
+    session.replace_state(state);
+    let fertilizer = |session: &PlaySession| -> u32 {
+        session.state().player.inventory.iter().filter(|s| s.item.id == "fertilizer-basic").map(|s| s.quantity).sum()
+    };
+    let before = fertilizer(&session);
+    session.set_planting(Some((Some("seed-wheat".to_owned()), None)));
+    session.key_down("e");
+    frames(&mut session, 1);
+    session.key_up("e");
+    frames(&mut session, 1);
+    let crop = session.state().world.scenes[0].tiles[5][6].crop.as_ref().expect("planted");
+    assert_eq!(crop.r#type, "wheat");
+    assert_eq!(crop.quality, "normal");
+    assert_eq!(fertilizer(&session), before, "no fertilizer unless held");
 }

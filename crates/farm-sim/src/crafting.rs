@@ -148,51 +148,72 @@ pub fn craftable_status(ctx: &EngineContext, state: &GameState, recipe: &RecipeD
     CraftableStatus { craftable: true, reason: None, message: None }
 }
 
-/// C# `ConsumeInputs`: removes every recipe input from the player's inventory (in place).
-fn consume_inputs(state: &mut GameState, recipe: &RecipeDefinition) {
-    let mut inventory = std::mem::take(&mut state.player.inventory);
+/// C# `ConsumeInputs`: the inventory without every recipe input.
+fn consume_inputs(inventory: &[InventorySlot], recipe: &RecipeDefinition) -> Vec<InventorySlot> {
+    let mut inventory = inventory.to_vec();
     for input in &recipe.inputs {
         inventory = inventory::remove_item(&inventory, &input.item_id, input.quantity);
     }
-    state.player.inventory = inventory;
+    inventory
 }
 
-/// C# `GrantOutputsResult` minus the state: the inventory after granting (the caller decides
-/// whether to store it), the messages, and whether every output fit.
-struct GrantOutputsResult {
+/// The inventory after granting every output, and the "Crafted …" messages; `None` when any
+/// output doesn't fit. Outputs are all-or-nothing: a recipe with several outputs never grants
+/// some of them.
+struct GrantedOutputs {
     inventory: Vec<InventorySlot>,
     effects: Effects,
-    all_added: bool,
 }
 
-/// C# `GrantOutputs`, pure over the inventory: `CollectMachineOutput` discards a partial grant.
+/// C# `GrantOutputs`, pure over the inventory. Outputs naming an unknown item are skipped.
 fn grant_outputs(
     ctx: &EngineContext,
     inventory: &[InventorySlot],
     max_inventory_size: u32,
     outputs: &[RecipeIngredient],
-) -> GrantOutputsResult {
+) -> Option<GrantedOutputs> {
     let mut inventory = inventory.to_vec();
     let mut effects = Vec::new();
-    let mut all_added = true;
     for output in outputs {
         let Some(item) = ctx.content.items.iter().find(|i| i.id == output.item_id) else {
             continue;
         };
         let result = inventory::add_item(&inventory, item, output.quantity, max_inventory_size, None);
-        if result.added {
-            inventory = result.inventory;
-            effects
-                .push(Effect::message(message_levels::SUCCESS, format!("Crafted {}x {}", output.quantity, item.name)));
-        } else {
-            all_added = false;
-            effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+        if !result.added {
+            return None;
         }
+        inventory = result.inventory;
+        effects.push(Effect::message(message_levels::SUCCESS, format!("Crafted {}x {}", output.quantity, item.name)));
     }
-    GrantOutputsResult { inventory, effects, all_added }
+    Some(GrantedOutputs { inventory, effects })
 }
 
-/// Hand-craft an instant recipe.
+/// Craft objectives count the items made: one progress call per output, with its quantity. A
+/// hand craft also reports its recipe id once, as it always did, so objectives written against
+/// recipe ids (older hand-written content) keep counting.
+fn progress_craft_quests(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    recipe_id: Option<&str>,
+    outputs: &[RecipeIngredient],
+) -> Effects {
+    let mut effects = Vec::new();
+    if let Some(recipe_id) = recipe_id {
+        effects.extend(quests::progress_quests(ctx, state, "craft", recipe_id, 1));
+    }
+    for output in outputs.iter().filter(|output| Some(output.item_id.as_str()) != recipe_id) {
+        effects.extend(quests::progress_quests(ctx, state, "craft", &output.item_id, output.quantity));
+    }
+    effects
+}
+
+/// The message for outputs that don't fit.
+fn no_room() -> Effect {
+    Effect::message(message_levels::ERROR, "Inventory is full!")
+}
+
+/// Hand-craft an instant recipe. Nothing happens (no ingredients used, no hooks, no quest
+/// progress) unless every output fits in the inventory left after the ingredients are used.
 pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str) -> Effects {
     let Some(recipe) = recipe_by_id(ctx, recipe_id) else {
         return vec![Effect::message(message_levels::ERROR, "Unknown recipe.")];
@@ -208,14 +229,15 @@ pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str)
         )];
     }
 
-    consume_inputs(state, recipe);
-    let granted = grant_outputs(ctx, &state.player.inventory, state.player.max_inventory_size, &recipe.outputs);
+    let consumed = consume_inputs(&state.player.inventory, recipe);
+    let Some(granted) = grant_outputs(ctx, &consumed, state.player.max_inventory_size, &recipe.outputs) else {
+        return vec![no_room()];
+    };
     state.player.inventory = granted.inventory;
     ctx.emit(HookEvent::RecipeCraft(RecipeCraftHookPayload { recipe_id: recipe_id.to_owned() }));
 
-    let quest_effects = quests::progress_quests(ctx, state, "craft", recipe_id, 1);
     let mut effects = granted.effects;
-    effects.extend(quest_effects);
+    effects.extend(progress_craft_quests(ctx, state, Some(recipe_id), &recipe.outputs));
     effects
 }
 
@@ -369,7 +391,7 @@ pub fn handle_machine_load(ctx: &EngineContext, state: &mut GameState, recipe_id
     }
 
     let scene_id = scene.id.clone();
-    consume_inputs(state, recipe);
+    state.player.inventory = consume_inputs(&state.player.inventory, recipe);
     let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else {
         return Vec::new();
     };
@@ -419,18 +441,19 @@ pub fn collect_machine_output(ctx: &EngineContext, state: &mut GameState, scene_
     };
     let output = output.clone();
 
-    let granted = grant_outputs(ctx, &state.player.inventory, state.player.max_inventory_size, &output);
-    if !granted.all_added {
-        return granted.effects;
-    }
-    state.player.inventory = granted.inventory;
-
-    let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else {
-        return granted.effects;
+    // All or nothing: the goods stay in the machine until every output fits.
+    let Some(granted) = grant_outputs(ctx, &state.player.inventory, state.player.max_inventory_size, &output) else {
+        return vec![no_room()];
     };
+    let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else {
+        return Vec::new();
+    };
+    state.player.inventory = granted.inventory;
     if let Some(machine) = state.world.scenes[scene_index].tile_mut(x, y).and_then(|tile| tile.machine.as_mut()) {
         machine.output = None;
     }
 
-    granted.effects
+    let mut effects = granted.effects;
+    effects.extend(progress_craft_quests(ctx, state, None, &output));
+    effects
 }

@@ -102,10 +102,13 @@ fn shop_buys_sells_and_repairs_through_commands() {
     assert_eq!(fixture.game_ui.shop_tab, ShopTab::Sell);
     fixture.idle();
     let sell = WidgetId::new("shop-sell").with("seed-wheat");
-    assert_eq!(command(&fixture.click(sell)), Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1 }));
+    assert_eq!(
+        command(&fixture.click(sell)),
+        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1, quality: Some("normal".into()) })
+    );
     assert_eq!(
         command(&fixture.click(sell.with("all"))),
-        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10 })
+        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10, quality: Some("normal".into()) })
     );
 
     // Repair a worn hoe.
@@ -153,7 +156,7 @@ fn crafting_crafts_loads_machines_and_places_them() {
     fixture.game_ui.panel = Some(Panel::Crafting);
     let item = |id: &str, quantity: u32| {
         let item = fixture_item(id);
-        InventorySlot { item, quantity }
+        InventorySlot::new(item, quantity)
     };
     fn fixture_item(id: &str) -> farm_sim::schema::Item {
         let project = super::test_support::starter_project();
@@ -413,4 +416,35 @@ fn readable_font_draws_the_interface_in_atkinson_hyperlegible() {
     let width = fixture.ui.last_rect(WidgetId::new("hud").with("quests")).unwrap().width;
     assert_ne!(width, default_width);
     assert_eq!(command(&fixture.click(WidgetId::new("hud").with("sleep"))), Some(&Command::Sleep));
+}
+
+#[test]
+fn inventory_holds_seeds_and_fertilizer_for_planting() {
+    let mut fixture = Fixture::starter();
+    fixture.game_ui.panel = Some(Panel::Inventory);
+    fixture.idle();
+    fixture.idle();
+    let slot_id = |fixture: &Fixture, id: &str| {
+        let index = fixture.state.player.inventory.iter().position(|slot| slot.item.id == id).unwrap();
+        WidgetId::new("inventory").with(index).with(id)
+    };
+    let seed = slot_id(&fixture, "seed-tomato");
+    assert_eq!(fixture.click(seed.with("hold")), [GameAction::Hold("seed-tomato".into())]);
+    // The host toggles what is held; the button then reads "Held".
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "seed-tomato");
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "fertilizer-basic");
+    fixture.idle();
+    assert!(fixture.texts().iter().any(|text| text == "Held"));
+    assert_eq!(fixture.game_ui.planting.seed.as_deref(), Some("seed-tomato"));
+    assert_eq!(fixture.game_ui.planting.fertilizer.as_deref(), Some("fertilizer-basic"));
+    // Tools can't be held; toggling again puts the seed away.
+    let hoe = slot_id(&fixture, "tool-hoe");
+    assert!(fixture.ui.last_rect(hoe.with("hold")).is_none());
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "tool-hoe");
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "seed-tomato");
+    assert_eq!(fixture.game_ui.planting.seed, None);
+    // Running out puts it away.
+    fixture.state.player.inventory.retain(|slot| slot.item.id != "fertilizer-basic");
+    fixture.idle();
+    assert_eq!(fixture.game_ui.planting.fertilizer, None);
 }
