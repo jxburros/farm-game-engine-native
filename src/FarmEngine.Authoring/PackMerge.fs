@@ -122,6 +122,26 @@ module PackMerge =
                         pack.Manifest.Id label id))
         List.ofSeq result
 
+    /// The largest scene side the engine accepts (Rust `MAX_SCENE_SIZE`).
+    let private maxSceneSize = 256.0
+
+    /// Rust `tiles::normalize_scene_grid`: the scene's size clamped to 1..256 and its grid cut or
+    /// padded with grass to match. `None` when it already fits.
+    let normalizeSceneGrid (scene: Scene) : Scene option =
+        let width = max 1.0 (min maxSceneSize scene.Width)
+        let height = max 1.0 (min maxSceneSize scene.Height)
+        let columns = int width
+        let rows = int height
+        let fitRow (y: int) (row: Tile list) =
+            if row.Length = columns then row
+            else
+                let kept = List.truncate columns row
+                kept @ [ for x in kept.Length .. columns - 1 -> AuthoringTiles.CreateEmptyTile(float x, float y, "grass") ]
+        let kept = scene.Tiles |> List.truncate rows |> List.mapi fitRow
+        let tiles = kept @ [ for y in kept.Length .. rows - 1 -> [ for x in 0 .. columns - 1 -> AuthoringTiles.CreateEmptyTile(float x, float y, "grass") ] ]
+        if width = scene.Width && height = scene.Height && tiles = scene.Tiles then None
+        else Some { scene with Width = width; Height = height; Tiles = tiles }
+
     /// Preview enabled pack layers over base content. Collection order and override semantics
     /// match the TypeScript engine, including warnings for undeclared collisions.
     let mergeIntoContent (baseContent: GameContent) (installs: PackInstallation list) : GameContent * PackProblem list =
@@ -133,6 +153,17 @@ module PackMerge =
                 if contentBlocked rawPack problems then content
                 else
                     let pack = PackRules.namespacePack rawPack
+                    // A pack's scenes join the world when the player first enters them: their grids
+                    // are fixed here, before anything reads them (as Rust `merge_packs_into_content`).
+                    let scenes =
+                        pack.Content.Scenes
+                        |> List.map (fun scene ->
+                            match normalizeSceneGrid scene with
+                            | Some fixedScene ->
+                                problems.Add(problem pack.Manifest.Id "warning" (sprintf "scene '%s' has a tile grid that doesn't match its size; it was fixed" scene.Id))
+                                fixedScene
+                            | None -> scene)
+                    let pack = { pack with Content = { pack.Content with Scenes = scenes } }
                     let added = pack.Content
                     let overrides = HashSet<string>(pack.Manifest.Overrides)
                     let mutable crops = content.Crops

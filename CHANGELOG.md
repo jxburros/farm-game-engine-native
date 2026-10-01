@@ -29,6 +29,34 @@
     world. A save without a random state gets a new one, and a save/load round
     trip no longer changes which NPC you talk to or the state hash.
 
+- **Authoring core hardening.**
+  - **Hostile project files are refused, not crashes.** Deeply nested JSON is
+    an error instead of a stack overflow that killed `farmc` and the editor,
+    and a number like `1e400` is refused when the project loads instead of
+    being saved as `null` (after which the project no longer opened). Loaders,
+    the cartridge reader and the web API report every failure in their
+    results.
+  - **Deleting things no longer unlocks what they gated.** Removing an item,
+    NPC, quest or season keeps the conditions, required items, prerequisites,
+    unlocks and season lists that named it: the gated content stays locked and
+    Problems lists each reference to fix. Before, winter-only stock became
+    available all year when "winter" was deleted.
+  - **Dialogue copies are reconciled.** Projects whose NPC dialogue and project
+    dialogue list differ (the web Romance pattern) load with the NPC's copy,
+    the one the game plays, and saving in the Dialogue editor no longer drops
+    options that only the NPC's copy had.
+  - **Problems** also lists empty ids, inverted regions and day or year
+    ranges as warnings, reports each dangling dialogue link once, and gives
+    numeric weather-table seasons readable paths. Reordering content packs
+    with a duplicated id no longer throws or loses a pack.
+  - **`farmc`** takes options in any order, has `--help` and `--version`,
+    exits 2 with a specific message for a wrong command line and 1 (never a
+    stack trace) for any failure.
+  - **F# and Rust stay in step.** New parity tests check that the Rust engine
+    reads every field the F# records write and that the editor's previews and
+    exported cartridges compile the same content; they found and fixed pack
+    scenes whose grids only Rust repaired.
+
 - **A world that can't be broken from outside.** Doors and warps land on the
   nearest walkable tile, tile grids that don't match their scene are repaired
   when a game or save loads, action chains stop after 256 actions, mine floors

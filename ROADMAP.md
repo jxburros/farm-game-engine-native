@@ -272,8 +272,9 @@ project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
 
 - [x] **Schema records in F#.** `src/FarmEngine.Authoring/Schema.fs` holds
   the project, content and save shapes as immutable F# records (options,
-  lists, ordered maps and the `EventCondition` union) with generated JSON
-  codecs (`SchemaJson.fs`). The C# `FarmEngine.Schemas` project and its
+  lists, ordered maps and the `EventCondition` union) with JSON codecs
+  (`SchemaJson.fs`), generated once and kept by hand since; parity tests against the Rust
+  serde types guard them (docs/LANGUAGES.md "Two project pipelines"). The C# `FarmEngine.Schemas` project and its
   migrations, validation and generated FlatBuffers readers are deleted. The
   editor builds and updates records through generated `WithField` extensions
   (`RecordWith`), and reads them through `FSharpInterop`.

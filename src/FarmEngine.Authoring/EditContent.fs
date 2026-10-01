@@ -11,6 +11,37 @@ type InventoryAddResult =
     | InventoryFull
     | UnknownItem
 
+/// The two copies of every dialogue: each NPC carries its own (`npc.Dialogue`, the copy the game
+/// plays) and `project.Dialogues` lists them all again (the web keeps both; the Dialogue editor
+/// lists that one). The edits keep them equal, but a project made elsewhere can carry copies that
+/// differ, and saving the stale copy would overwrite the one that plays (#43).
+module DialogueCopies =
+    /// The copy the game plays for each dialogue id an NPC carries (the first NPC's).
+    let private onNpcs (project: GameProject) : Dictionary<string, Dialogue> =
+        let byId = Dictionary<string, Dialogue>()
+        for npc in project.Npcs do
+            for dialogue in npc.Dialogue do
+                if not (byId.ContainsKey dialogue.Id) then byId.[dialogue.Id] <- dialogue
+        byId
+
+    /// `project.Dialogues` with each entry an NPC also carries as the NPC's copy.
+    let shown (project: GameProject) : Dialogue list =
+        let played = onNpcs project
+        project.Dialogues
+        |> List.map (fun dialogue ->
+            match played.TryGetValue dialogue.Id with
+            | true, copy -> copy
+            | _ -> dialogue)
+
+    /// The NPC copies win: `project.Dialogues` takes each NPC's copy in place of its own and
+    /// gains the NPC dialogues it lacks (at the end). Entries no NPC carries stay; Problems reports
+    /// them. The same instance when the copies already agree. Runs when a project loads.
+    let reconcile (project: GameProject) : GameProject =
+        let listed = HashSet<string>(project.Dialogues |> List.map (fun d -> d.Id))
+        let missing = project.Npcs |> List.collect (fun npc -> npc.Dialogue) |> List.filter (fun d -> listed.Add d.Id)
+        let next = shown project @ missing
+        if next = project.Dialogues then project else { project with Dialogues = next }
+
 /// The content edits (NPCEditor, ItemEditor, CropEditor, QuestEditor, EventsEditor, ShopEditor,
 /// RecipeEditor, NodeTypeEditor, WildlifeEditor, ActionsEditor, ProjectSettingsEditor weather and
 /// mine sections, InterfaceEditor). Each function returns the same instance when nothing changed.

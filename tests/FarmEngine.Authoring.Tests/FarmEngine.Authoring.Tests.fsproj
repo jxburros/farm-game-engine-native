@@ -30,6 +30,7 @@
     <Compile Include="ValidationTests.fs" />
     <Compile Include="CartridgeTests.fs" />
     <Compile Include="SnapshotTests.fs" />
+    <Compile Include="ParityTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

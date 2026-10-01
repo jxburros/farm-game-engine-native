@@ -149,3 +149,91 @@ let ``System.Text.Json conversion round-trips and keeps member order`` () =
     created["i"] <- JsonValue.Create 42
     created["s"] <- JsonValue.Create "t"
     Assert.Equal(obj [ "i", JNumber 42.0; "s", JString "t" ], JsonInterop.ofNode created)
+
+// ── Hostile input (#84, #85, #135, #136) ────────────────────────────────────
+
+let private parseError (text: string) =
+    match Json.parse text with
+    | Error message -> message
+    | Ok value -> failwithf "expected a parse error, got %A" value
+
+[<Fact>]
+let ``deep nesting is an error, not a stack overflow`` () =
+    for depth in [ 300; 10_000; 200_000 ] do
+        Assert.StartsWith("Too deeply nested", parseError ("{\"a\":" + String.replicate depth "[" + String.replicate depth "]" + "}"))
+    Assert.StartsWith("Too deeply nested", parseError (String.replicate 10_000 "{\"a\":" + "1" + String.replicate 10_000 "}"))
+    // Up to the limit parses.
+    let ok = String.replicate Json.MaxDepth "[" + String.replicate Json.MaxDepth "]"
+    Assert.True((Json.parse ok |> Result.isOk))
+    Assert.False((Json.parse ("[" + ok + "]") |> Result.isOk))
+    // Every loader reports it.
+    let deep = "{\"schemaVersion\":9,\"a\":" + String.replicate 10_000 "[" + String.replicate 10_000 "]" + "}"
+    let migrated = ProjectLoad.migrateProjectText deep
+    Assert.False migrated.Ok
+    Assert.Contains("Too deeply nested", String.concat "\n" migrated.Errors)
+    Assert.Contains("Too deeply nested", WebApi.problems deep)
+    Assert.Contains("\"ok\":false", WebApi.migrateProject deep)
+
+[<Fact>]
+let ``many comments in a row do not recurse`` () =
+    let text = String.replicate 100_000 "// c\n" + String.replicate 100_000 "/* c */" + "[1]"
+    Assert.Equal(Ok(JArray [ JNumber 1.0 ]), Json.parse text)
+    Assert.StartsWith("Unterminated comment", parseError "[1] /* no end *")
+
+[<Fact>]
+let ``numbers beyond the double range are refused when they load`` () =
+    Assert.StartsWith("Number out of range at position 6", parseError "{\"m\": 1e400}")
+    Assert.StartsWith("Number out of range", parseError "[-1e999]")
+    Assert.Equal(Ok(JNumber 1.7976931348623157e308), Json.parse "1.7976931348623157e308")
+    Assert.Equal(Ok(JNumber 0.0), Json.parse "1e-400")
+    // Json built in code still decodes to the zod issue.
+    let issue = Decode.run Decode.number (JNumber infinity)
+    Assert.Equal(Error ": Number must be finite", issue)
+    Assert.Equal(Error "x: Number must be finite", Decode.run (fun path json -> Decode.int32 ("x" :: path) json) (JNumber -infinity))
+
+[<Fact>]
+let ``JsonInterop refuses what Json cannot hold and migrateProject reports it`` () =
+    let node = JsonNode.Parse """{"schemaVersion":9,"player":{"money":1e400}}"""
+    Assert.Throws<System.FormatException>(fun () -> JsonInterop.ofNode node |> ignore) |> ignore
+    Assert.True((JsonInterop.tryOfNode node |> Result.isError))
+    let result = ProjectMigrations.migrateProject node
+    Assert.False result.Ok
+    Assert.Contains("Number out of range", String.concat "\n" result.Errors)
+    // A non-finite number never reaches System.Text.Json's writer.
+    Assert.Null(JsonInterop.toNode (JNumber infinity))
+    Assert.Equal("[null]", (JsonInterop.toNode (JArray [ JNumber nan ])).ToJsonString())
+
+[<Fact>]
+let ``objects with many members keep the last duplicate in the first position`` () =
+    let keys = [ for k in 0 .. 999 -> sprintf "\"k%d\":%d" k k ]
+    let text = "{" + String.concat "," keys + ",\"k5\":-1,\"k500\":-2,\"new\":3}"
+    match Json.parse text with
+    | Ok(JObject members) ->
+        Assert.Equal(1001, members.Length)
+        Assert.Equal(("k5", JNumber -1.0), members.[5])
+        Assert.Equal(("k500", JNumber -2.0), members.[500])
+        Assert.Equal(("new", JNumber 3.0), List.last members)
+    | other -> failwithf "%A" other
+    Assert.Equal(Ok(JObject [ "a", JNumber 2.0; "b", JNumber 1.0 ]), Json.parse """{"a":1,"b":1,"a":2}""")
+
+[<Fact>]
+let ``1e400 in a required or an optional field is a load error, not a later null`` () =
+    let text = ProjectLoad.toText (ProjectCatalog.CreateInitialProject 0.0)
+    let money = System.Text.RegularExpressions.Regex("\"money\": [0-9.]+")
+    Assert.True(money.IsMatch text)
+    let required = money.Replace(text, "\"money\": 1e400", 1)
+    let optional = text.Replace("{\n  \"schemaVersion\"", "{\n  \"mineDeepestFloor\": 1e999,\n  \"schemaVersion\"")
+    Assert.NotEqual<string>(text, optional)
+    for broken in [ required; optional ] do
+        let result = ProjectLoad.migrateProjectText broken
+        Assert.False result.Ok
+        Assert.Contains("Number out of range", String.concat "\n" result.Errors)
+    // The same value in Json built in code fails the typed parse.
+    match Json.parse text with
+    | Ok(JObject members) ->
+        let player = members |> List.find (fun (key, _) -> key = "player") |> snd
+        let raw = JObject(Json.setMember "player" (Json.set "money" (JNumber infinity) player) members)
+        let result = ProjectLoad.migrateProject raw
+        Assert.False result.Ok
+        Assert.Equal<string list>([ "player.money: Number must be finite" ], result.Errors)
+    | other -> failwithf "%A" other

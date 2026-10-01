@@ -8,6 +8,12 @@ open FarmEngine.Schemas
 type ProjectContent =
     static member Compile(project: GameProject) : GameContent = ContentCompiler.compile project
 
+    /// The project's dialogue list as the game plays it: each entry an NPC carries is the NPC's
+    /// copy (the Dialogue editor lists and saves these, so a stale project-list copy never
+    /// overwrites the one that plays).
+    static member Dialogues(project: GameProject) : IReadOnlyList<Dialogue> =
+        DialogueCopies.shown project |> Array.ofList :> IReadOnlyList<Dialogue>
+
 /// The C# boundary (docs/LANGUAGES.md "C# friendliness at the boundary"): static factories for
 /// every `Edit` case so view models never spell out F# union syntax, with .NET collections and
 /// nullable references instead of F# lists and options.

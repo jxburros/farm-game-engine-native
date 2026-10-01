@@ -46,6 +46,23 @@ for (const template of ["starter", "blank", "cozy", "quest"]) {
 // Refusals are reported, not thrown.
 check(JSON.parse(WebApi.migrateProject("garbage")).ok === false, "invalid JSON was accepted");
 
+// Hostile input (#84, #85, #135): deep nesting is an error result, not a RangeError, and a
+// number beyond the double range is refused instead of turning into null on the next save.
+const deep = '{"schemaVersion":9,"a":' + "[".repeat(10000) + "]".repeat(10000) + "}";
+for (const [name, call] of [["migrateProject", WebApi.migrateProject], ["problems", WebApi.problems], ["compileContent", WebApi.compileContent]]) {
+  let result;
+  try {
+    result = JSON.parse(call(deep));
+  } catch (error) {
+    check(false, `${name} threw on deep nesting: ${error}`);
+    continue;
+  }
+  check(result.ok === false && result.errors.some((e) => e.includes("Too deeply nested")), `${name}: deep nesting not reported`);
+}
+const huge = WebApi.createProject("starter", 0).replace(/"money":\s*\d+/, '"money":1e400');
+const refused = JSON.parse(WebApi.migrateProject(huge));
+check(refused.ok === false && refused.errors.some((e) => e.includes("Number out of range")), "1e400 was accepted");
+
 if (failures > 0) {
   console.error(`${failures} check(s) failed`);
   process.exit(1);

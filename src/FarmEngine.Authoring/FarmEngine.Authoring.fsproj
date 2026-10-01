@@ -14,11 +14,11 @@
     <Compile Include="SchemaJson.fs" />
     <Compile Include="SchemaConstants.fs" />
     <Compile Include="Migrations.fs" />
+    <Compile Include="AuthoringTiles.fs" />
     <Compile Include="PackRules.fs" />
     <Compile Include="Builtin.fs" />
     <Compile Include="PackMerge.fs" />
     <Compile Include="ContentCompiler.fs" />
-    <Compile Include="AuthoringTiles.fs" />
     <Compile Include="StarterContent.fs" />
     <Compile Include="ProjectCatalog.fs" />
     <Compile Include="Edits.fs" />

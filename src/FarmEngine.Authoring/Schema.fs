@@ -6,6 +6,16 @@ open FarmEngine.Authoring
 // kept by hand. JSON: SchemaJson.fs. Numbers are `float` (JS numbers) until the native-numerics
 // cutover; `option` is an optional or nullable field; `Extra` keeps the keys the schema does not
 // declare (zod `.passthrough()`), in order.
+//
+// Forward compatibility: a record without `Extra` (zod's default `.strip()`) drops keys it does
+// not declare when it loads, so a key a newer build writes at the same schema version (a new
+// `settings.*` field, say) is gone after the next save here. That is zod parity, on purpose. A
+// field older builds must carry through needs a schema version bump with a migration, or `Extra`
+// on its record.
+//
+// The Rust engine has its own serde types for the same JSON (crates/farm-sim/src/schema). The
+// parity tests keep the two in step: ParityTests.fs records an F# encoding of every field of every
+// record (fixtures/parity), which crates/farm-sim/tests/fsharp_parity.rs reads back through serde.
 
 type ActionDef =
     {

@@ -473,3 +473,62 @@ let ``quest experience names a known skill`` () =
     let odd = { quest with Rewards = { quest.Rewards with Experience = Some 10.0; Skill = Some "cooking" } }
     Assert.EndsWith(".rewards.skill", (has "quest.unknownSkill" (project |> apply (UpsertQuest odd))).Path)
     lacks "quest.unknownSkill" (project |> apply (UpsertQuest { odd with Rewards = { odd.Rewards with Skill = Some "mining" } }))
+
+[<Fact>]
+let ``structural lints zod cannot express are warnings, each reported once`` () =
+    let project = starter ()
+    let event =
+        { Defaults.newEvent project with
+            Conditions =
+                [ EventCondition.EnterTile { EnterTileCondition.Default with X = 4.0; Y = 4.0; X2 = Some 2.0 }
+                  EventCondition.DayRange { MinDay = Some 9.0; MaxDay = Some 3.0 }
+                  EventCondition.Flag { Flag = ""; Value = true } ] }
+    let broken = project |> apply (UpsertEvent event)
+    let lints = Problems.collect broken |> List.filter (fun p -> p.Code = "lint.events")
+    Assert.Equal(3, lints.Length)
+    Assert.True(lints |> List.forall (fun p -> p.Severity = Severity.Warning && p.Target = Some(NavigationTarget.Event event.Id)), describe lints)
+    Assert.Contains(lints, fun p -> p.Message = "x2 must be >= x" && p.Path.EndsWith "conditions[0].x2")
+    // Grids, duplicate scenes and the start scene keep their own codes, without a lint twin.
+    let farm = farm project
+    let grid = { project with Scenes = project.Scenes @ [ { farm with Tiles = List.tail farm.Tiles } ]; StartSceneId = "nowhere" }
+    let problems = Problems.collect grid
+    Assert.Empty(problems |> List.filter (fun p -> p.Code.StartsWith "lint."))
+    for code in [ "scene.gridRows"; "duplicate.scene"; "content.scenes" ] do
+        Assert.Contains(problems, fun p -> p.Code = code)
+    lacks "lint.scenes" (starter ())
+
+[<Fact>]
+let ``a dialogue whose two copies differ is a warning and its links are linted once`` () =
+    let project = starter ()
+    let greeting = project.Dialogues |> List.find (fun d -> d.Id = "dialogue-farmer-greeting")
+    let dangling = { DialogueOption.Default with Text = "Next"; NextDialogueId = Some "nowhere" }
+    let both = project |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ dangling ] })
+    lacks "dialogue.copyMismatch" both
+    // Both copies carry the dangling link: one problem, not two.
+    let links = Problems.collect both |> List.filter (fun p -> p.Code = "content.dialogue" && p.Message.Contains "\"nowhere\"")
+    Assert.Equal(1, links.Length)
+    // Only the flat copy changes (a hand edit): the mismatch says which copy plays.
+    let stale = { both with Dialogues = both.Dialogues |> List.map (fun d -> if d.Id = greeting.Id then greeting else d) }
+    let mismatch = has "dialogue.copyMismatch" stale
+    Assert.Equal(Severity.Warning, mismatch.Severity)
+    Assert.Equal(Some(NavigationTarget.Npc "npc-farmer"), mismatch.Target)
+    let staleLinks = Problems.collect stale |> List.filter (fun p -> p.Code = "content.dialogue" && p.Message.Contains "\"nowhere\"")
+    Assert.Equal(1, staleLinks.Length)
+
+[<Fact>]
+let ``numeric and dotted weather-table keys get bracketed JSON paths`` () =
+    let project = starter ()
+    let entry = { WeatherTableEntry.Default with WeatherId = "nope"; Weight = -1.0 }
+    let weather = { project.Weather with Table = project.Weather.Table @ [ "1", [ entry ]; "a.b", [ entry ] ] }
+    let problems = Problems.collect { project with Weather = weather }
+    let paths = problems |> List.map (fun p -> p.Path)
+    for path in [ "weather.table[\"1\"]"; "weather.table[\"1\"][0].weatherId"; "weather.table[\"1\"][0].weight"; "weather.table[\"a.b\"][0].weight" ] do
+        Assert.Contains(path, paths)
+    Assert.Equal("scenes[0].tiles[1][2].background", Problems.jsonPath "scenes.0.tiles.1.2.background")
+
+[<Fact>]
+let ``WebApi reports failures in its result instead of throwing`` () =
+    let deep = String.replicate 5000 "[" + String.replicate 5000 "]"
+    for result in [ WebApi.problems deep; WebApi.compileContent deep; WebApi.migrateProject deep; WebApi.applyPlaytestState deep deep ] do
+        Assert.Contains("\"ok\":false", result)
+    Assert.Contains("\"ok\":false", WebApi.problems "{\"schemaVersion\": 1e400}")

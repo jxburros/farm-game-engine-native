@@ -80,7 +80,7 @@ public sealed class ContentEditorView : UserControl
         {
             Art = entity => ((Npc)entity).Visual.OrNull(),
         },
-        Of("Dialogue", p => p.Dialogues, p => p.Npcs.Length > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
+        Of("Dialogue", p => ProjectContent.Dialogues(p), p => p.Npcs.Length > 0 ? Defaults.NewDialogue(p, p.Npcs[0].Id) : null, Edits.UpsertDialogue, Edits.RemoveDialogue),
         Of("Items", p => p.Items, Defaults.NewItem, Edits.UpsertItem, Edits.RemoveItem) with
         {
             Art = entity => ((Item)entity).Visual.OrNull(),

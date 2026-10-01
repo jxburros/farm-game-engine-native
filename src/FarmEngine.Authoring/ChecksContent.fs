@@ -603,19 +603,21 @@ module internal ChecksContent =
             |> Seq.iteri (fun y row ->
                 row
                 |> Seq.iteri (fun x tile ->
-                    let path = sprintf "scenes[%d].tiles[%d][%d]" s y x
-                    let target = Some(NavigationTarget.Scene(scene.Id, x, y))
-                    let label = sprintf "%s (%d,%d)" scene.Name x y
-                    match tile.Visuals with
-                    | None -> ()
-                    | Some visuals ->
-                        visual (path + ".visuals.background") visuals.Background (label + " background") target
-                        visual (path + ".visuals.overlay") visuals.Overlay (label + " overlay") target
-                        visual (path + ".visuals.object") visuals.Object (label + " object") target
-                    customImage (path + ".customImage") tile.CustomImage label target
-                    match tile.Item with
-                    | None -> ()
-                    | Some item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
+                    // Most tiles carry no art of their own: no path or label strings for those.
+                    if tile.Visuals.IsSome || tile.CustomImage.IsSome || (match tile.Item with Some item -> item.Visual.IsSome | None -> false) then
+                        let path = sprintf "scenes[%d].tiles[%d][%d]" s y x
+                        let target = Some(NavigationTarget.Scene(scene.Id, x, y))
+                        let label = sprintf "%s (%d,%d)" scene.Name x y
+                        match tile.Visuals with
+                        | None -> ()
+                        | Some visuals ->
+                            visual (path + ".visuals.background") visuals.Background (label + " background") target
+                            visual (path + ".visuals.overlay") visuals.Overlay (label + " overlay") target
+                            visual (path + ".visuals.object") visuals.Object (label + " object") target
+                        customImage (path + ".customImage") tile.CustomImage label target
+                        match tile.Item with
+                        | None -> ()
+                        | Some item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
         match project.GamePanels with
         | None -> ()
         | Some panels ->
@@ -714,7 +716,7 @@ module internal ChecksContent =
                 sink.Warning(
                     "numbers.offGrid",
                     path,
-                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (Migrations.roundAway value)),
+                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (JsNumber.roundHalfAway value)),
                     target
                 )
         let checkSome path what (value: float option) target = value |> Option.iter (fun v -> check path what v target)

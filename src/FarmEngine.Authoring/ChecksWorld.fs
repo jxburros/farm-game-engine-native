@@ -258,7 +258,11 @@ module internal ChecksWorld =
                     sink.Warning("dialogue.unreachable", path, sprintf "Dialogue \"%s\" of %s can never be reached (no option or event leads to it)" dialogue.Id npc.Name, target)
                 checkText path npc.Name dialogue target))
         // The flat list must mirror the NPC lists (NPCEditor keeps both).
-        let onNpcs = HashSet<string>(project.Npcs |> Seq.collect (fun n -> n.Dialogue |> Seq.map (fun d -> d.Id)))
+        let npcCopies = Dictionary<string, Npc * Dialogue>()
+        for npc in project.Npcs do
+            for dialogue in npc.Dialogue do
+                if not (npcCopies.ContainsKey dialogue.Id) then npcCopies.[dialogue.Id] <- (npc, dialogue)
+        let onNpcs = HashSet<string>(npcCopies.Keys)
         project.Dialogues
         |> Seq.iteri (fun d dialogue ->
             let path = sprintf "dialogues[%d]" d
@@ -266,6 +270,12 @@ module internal ChecksWorld =
                 sink.Error("dialogue.npcMissing", path + ".npcId", sprintf "Dialogue \"%s\" belongs to missing NPC \"%s\"" dialogue.Id dialogue.NpcId, None)
             elif not (onNpcs.Contains dialogue.Id) then
                 sink.Warning("dialogue.notOnNpc", path, sprintf "Dialogue \"%s\" is in the project list but not on NPC \"%s\"" dialogue.Id dialogue.NpcId, Some(NavigationTarget.Npc dialogue.NpcId))
+            match npcCopies.TryGetValue dialogue.Id with
+            | true, (npc, copy) when copy <> dialogue ->
+                // Loading a project reconciles the copies; one that differs came from an edit
+                // outside the editor. The game plays the NPC's copy.
+                sink.Warning("dialogue.copyMismatch", path, sprintf "Dialogue \"%s\" differs from the copy on %s, which is the one the game plays" dialogue.Id npc.Name, Some(NavigationTarget.Npc npc.Id))
+            | _ -> ()
             // Dialogues on an NPC were checked above; the flat list only adds strays.
             if not (onNpcs.Contains dialogue.Id) then checkOptions path dialogue None)
         let inProject = HashSet<string>(project.Dialogues |> Seq.map (fun d -> d.Id))
@@ -394,11 +404,11 @@ module internal ChecksWorld =
                 sink.Error("weather.duplicateType", sprintf "weather.types[%d].id" i, sprintf "Duplicate weather id \"%s\"" weather.Id, settings))
         for season, entries in project.Weather.Table do
             if not (context.SeasonIds.Contains season) then
-                sink.Warning("weather.tableUnknownSeason", sprintf "weather.table.%s" season, sprintf "The weather table has a row for unknown season \"%s\"" season, settings)
+                sink.Warning("weather.tableUnknownSeason", ProblemPath.memberPath "weather.table" season, sprintf "The weather table has a row for unknown season \"%s\"" season, settings)
             entries
             |> Seq.iteri (fun k entry ->
                 if not (context.WeatherIds.Contains entry.WeatherId) then
-                    sink.Error("weather.tableUnknownType", sprintf "weather.table.%s[%d].weatherId" season k, sprintf "The %s weather table rolls missing weather \"%s\"" season entry.WeatherId, settings))
+                    sink.Error("weather.tableUnknownType", sprintf "%s[%d].weatherId" (ProblemPath.memberPath "weather.table" season) k, sprintf "The %s weather table rolls missing weather \"%s\"" season entry.WeatherId, settings))
 
     let run (context: Context) (sink: Sink) =
         player context sink

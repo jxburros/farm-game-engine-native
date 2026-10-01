@@ -103,14 +103,18 @@ module ContentLints =
               if not (isGenerated scene) && not (reachable.Contains scene.Id) then
                   warning "scenes" $"Scene \"{scene.Name}\" is unreachable (no transition leads to it)" scene.Id
 
-          // Dialogue references, NPC placement and schedules
+          // Dialogue references, NPC placement and schedules. The NPC copies mirror the project
+          // list, so an NPC copy is only linted when it differs from the listed one (or is
+          // missing from the list): otherwise every dangling link would be reported twice.
           for dialogue in project.Dialogues do
               for problem in dialogueLinks dialogue do
                   problem
+          let listed = project.Dialogues |> List.map (fun d -> d.Id, d) |> List.distinctBy fst |> Map.ofList
           for npc in project.Npcs do
               for dialogue in npc.Dialogue do
-                  for problem in dialogueLinks dialogue do
-                      problem
+                  if Map.tryFind dialogue.Id listed <> Some dialogue then
+                      for problem in dialogueLinks dialogue do
+                          problem
               if not (sceneIds.Contains npc.SceneId) then
                   error "npcs" $"NPC \"{npc.Name}\" is placed in missing scene \"{npc.SceneId}\"" npc.Id
               for entry in orEmpty npc.Schedule do

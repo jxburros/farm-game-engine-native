@@ -207,3 +207,59 @@ let ``keep changes keeps the project key order`` () =
     let after = Playtest.applyStateJson before (engineState project [] [])
     Assert.Equal<string list>(keys (Json.get "player" before) |> List.filter ((<>) "equippedTool"), keys (Json.get "player" after) |> List.filter (fun key -> Json.has key (Json.get "player" before)))
     Assert.Equal<string list>(keys before, keys after |> List.filter (fun key -> Json.has key before))
+
+// ── Hostile cartridges and byte parity (#135, #136) ─────────────────────────
+
+let private i32At (b: byte[]) (at: int) = BitConverter.ToInt32(b, at)
+
+/// Where the length of the root table's vector field `index` sits.
+let private vectorLengthAt (b: byte[]) (index: int) : int =
+    let root = i32At b 0
+    let vtable = root - i32At b root
+    let at = root + int (BitConverter.ToUInt16(b, vtable + 4 + 2 * index))
+    at + i32At b at
+
+[<Fact>]
+let ``a vector length near Int32.MaxValue is malformed, not an exception`` () =
+    let bytes = CartridgeCompiler.Compile(starter ())
+    for length in [ Int32.MaxValue; Int32.MaxValue - 3; Int32.MinValue; bytes.Length ] do
+        let broken = Array.copy bytes
+        BitConverter.GetBytes(length).CopyTo(broken, vectorLengthAt bytes 4)
+        match CartridgeReader.read broken with
+        | Error message -> Assert.StartsWith("Malformed cartridge:", message)
+        | Ok _ -> failwithf "length %d read" length
+    // No other 32-bit word of the header makes `read` throw either.
+    for at in 8 .. 4 .. 400 do
+        for value in [ Int32.MaxValue; -1; 1 <<< 30 ] do
+            let broken = Array.copy bytes
+            BitConverter.GetBytes(value).CopyTo(broken, at)
+            CartridgeReader.read broken |> ignore
+
+[<Fact>]
+let ``out-of-range window sizes are clamped the same way in every runtime`` () =
+    let project = starter ()
+    let export = Defaults.newExportSettings project
+    let sized (width: int) (height: int) =
+        let cart = read (CartridgeCompiler.CompileForPlaytest { project with Export = Some { export with Window = { export.Window with Width = width; Height = height } } })
+        cart.Info.WindowWidth, cart.Info.WindowHeight
+    Assert.Equal((320u, 240u), sized -1 0)
+    Assert.Equal((8192u, 8192u), sized Int32.MaxValue 100000)
+    Assert.Equal((1024u, 768u), sized 1024 768)
+    Assert.Equal(0u, CartridgeCompiler.UInt32Of -1.0)
+    Assert.Equal(0u, CartridgeCompiler.UInt32Of nan)
+    Assert.Equal(UInt32.MaxValue, CartridgeCompiler.UInt32Of 1e12)
+    Assert.Equal(9u, CartridgeCompiler.UInt32Of 9.7)
+
+[<Fact>]
+let ``utf8Text replaces each maximal malformed subpart once, like dotnet and TextDecoder`` () =
+    let decode (bytes: byte list) =
+        let b = Array.ofList bytes
+        Bytes.utf8Text b 0 b.Length
+    Assert.Equal("a�", decode [ 0x61uy; 0xE2uy; 0x82uy ])
+    Assert.Equal("��", decode [ 0xE0uy; 0x80uy ])
+    Assert.Equal("�a", decode [ 0xF0uy; 0x9Fuy; 0x98uy; 0x61uy ])
+    Assert.Equal("€😀", decode [ 0xE2uy; 0x82uy; 0xACuy; 0xF0uy; 0x9Fuy; 0x98uy; 0x80uy ])
+    let random = Random(1234)
+    for _ in 1 .. 5000 do
+        let bytes = Array.init (random.Next(0, 12)) (fun _ -> byte (if random.Next 3 = 0 then random.Next 0x80 else 0x80 + random.Next 0x80))
+        Assert.Equal(Text.Encoding.UTF8.GetString bytes, Bytes.utf8Text bytes 0 bytes.Length)

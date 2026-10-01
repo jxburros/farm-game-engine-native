@@ -67,7 +67,9 @@ module CartridgeReader =
     let private bytesAt (b: byte[]) (at: int) : int * int =
         let start = deref b at
         let length = i32 b start
-        if length < 0 || start + 4 + length > b.Length then raise (Malformed(sprintf "vector at %d runs past the buffer" start))
+        // `length > b.Length - start - 4`, not `start + 4 + length > b.Length`: the sum
+        // overflows for a length near Int32.MaxValue.
+        if length < 0 || start < 0 || length > b.Length - start - 4 then raise (Malformed(sprintf "vector at %d runs past the buffer" start))
         start + 4, length
 
     let private stringAt (b: byte[]) (at: int) =
@@ -158,3 +160,5 @@ module CartridgeReader =
                 Ok(readUnchecked bytes)
             with
             | Malformed message -> Error("Malformed cartridge: " + message)
+            // Anything else a hostile buffer provokes is malformed too.
+            | error -> Error("Malformed cartridge: " + error.Message)

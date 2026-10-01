@@ -304,15 +304,10 @@ module Migrations =
     let migrateV7ToV8 (project: Json) : Json =
         project |> Json.withDefault "graphics" (fun () -> JObject [ "pixelArt", JBool true ])
 
-    /// `f64::round`: to the nearest integer, ties away from zero (exact for every double).
-    let roundAway (x: float) : float =
-        let t = System.Math.Truncate x
-        if abs (x - t) >= 0.5 then t + (if x < 0.0 then -1.0 else 1.0) else t
-
     /// A number moved to the nearest multiple of `1 / scale` (other JSON stays as it is).
     let private onGrid (scale: float) (value: Json) : Json =
         match value with
-        | JNumber n when not (System.Double.IsNaN n || System.Double.IsInfinity n) -> JNumber(roundAway (n * scale) / scale)
+        | JNumber n when not (System.Double.IsNaN n || System.Double.IsInfinity n) -> JNumber(JsNumber.roundHalfAway (n * scale) / scale)
         | other -> other
 
     let private gridMembers (grids: (string * float) list) (value: Json) : Json =
