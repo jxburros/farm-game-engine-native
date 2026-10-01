@@ -85,6 +85,7 @@
     "json": "c061e32e05c99aaf",
     "stable": "c8307317db070c23",
     "problems": [
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Fall; the game starts on day 1 of Fall|settings",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "90123abd946c16d7",
@@ -102,6 +103,7 @@
     "stable": "9daad6f05468a60a",
     "problems": [
       "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Fall; the game starts on day 1 of Fall|settings",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "681e0ab478fc5f36",
@@ -119,6 +121,7 @@
     "stable": "e5e31e2101ae120e",
     "problems": [
       "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Fall; the game starts on day 1 of Fall|settings",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "6886ba4f2fb1520c",
@@ -248,6 +251,7 @@
     "stable": "e5e31e2101ae120e",
     "problems": [
       "warning|content.packs|contentPacks[3]|Pack 'rebalance' redefines item 'crop-carrot' without declaring it in manifest.overrides — keeping the earlier definition|pack",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Fall; the game starts on day 1 of Fall|settings",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "6886ba4f2fb1520c",
@@ -730,6 +734,7 @@
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Summer; the game starts on day 1 of Summer|settings",
       "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
@@ -826,7 +831,8 @@
     "stable": "9a1e2fc4535c3e18",
     "problems": [
       "warning|content.crops|scenes[0].tiles|Scene \"Farm\": Wheat at (0,1) cannot grow in the starting season (summer)|scene",
-      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|"
+      "error|player.sceneMissing|player.sceneId|The player starts in missing scene \"\"|",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 3 of the calendar is day 3 of Spring, not in the starting season Summer; the game starts on day 3 of Summer|settings"
     ],
     "content": "b28c17ad6d1e0fd1",
     "cartridge": "throws InvalidOperationException: player.sceneId: The player starts in missing scene \"\"",
@@ -863,6 +869,7 @@
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Summer; the game starts on day 1 of Summer|settings",
       "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
@@ -903,6 +910,7 @@
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Half at (0,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Quick at (1,1) cannot grow in the starting season (summer)|scene",
       "warning|content.crops|scenes[0].tiles|Scene \"A\": Glowberry at (3,1) cannot grow in the starting season (summer)|scene",
+      "warning|project.currentDayOutsideSeason|currentDay|Day 1 of the calendar is day 1 of Spring, not in the starting season Summer; the game starts on day 1 of Summer|settings",
       "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowberry\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[1]|Crop \"Slowroot\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noSeedItem|customCrops[2]|Crop \"Quick\" has no seed item, so nobody can plant it|crop",
