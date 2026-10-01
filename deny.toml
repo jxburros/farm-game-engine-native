@@ -1,0 +1,18 @@
+# cargo-deny (https://embarkstudios.github.io/cargo-deny/): CI runs
+# `cargo deny check advisories sources` over Cargo.lock and over the plugin guest's and the
+# meter's own lock files. Licenses are covered by cargo-about (tools/player-licenses).
+
+[advisories]
+# Every RustSec vulnerability fails the check. Unmaintained and unsound notices do too, unless
+# they are triaged here with a reason.
+ignore = [
+    # ttf-parser is unmaintained and has no maintained drop-in release. farm-render parses only
+    # the fonts the player embeds (assets/, trusted input), and winit's sctk-adwaita uses it
+    # for window decorations on Wayland. Revisit when moving the text path to skrifa.
+    { id = "RUSTSEC-2026-0192", reason = "unmaintained, no safe upgrade; parses only bundled fonts" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
