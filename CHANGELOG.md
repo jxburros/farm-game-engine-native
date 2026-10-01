@@ -68,6 +68,30 @@
   - Smaller fixes: a NaN frame time can't stall the simulation, save folders
     avoid Windows device names (`Con`) and overlong names, and scripted input
     at the last frame index no longer overflows.
+- **Export Game and imports, from the 2026-09-30 audit:**
+  - Export never throws: every failure, expected or not, is a sentence in the
+    report for the target it hit, the dialog shows it, and `farmc export`
+    prints it. Executable names are at most 64 characters and can't be
+    `licenses`; a name made from the title avoids reserved names (`con-game`).
+  - Each target is written under temporary names and renamed into place, so
+    a failed or cancelled export leaves the previous one intact. Export never
+    writes through a link in the output folder, and `.DS_Store`, `Thumbs.db`,
+    `desktop.ini` and `.directory` no longer block a re-export.
+  - Closing the Export Game window during an export cancels it and closes
+    once it has stopped; the result is never lost.
+  - A signed Windows template has its signature removed rather than shipping a
+    broken one. Patching only ever rewrites the resource section, and every
+    template file (the web page files too) is checked against `template.json`
+    and exported from the checked bytes.
+  - Content packs exported from the Mods view carry the art their entries use,
+    and installing a pack adds it to the project's art.
+  - Images inside imported projects and packs, and the export icon, are
+    checked against the art import limits from their header before they are
+    decoded; content form thumbnails decode small, once per image, and are
+    freed. Picked project files over 256 MB and packs over 64 MB are refused,
+    and Export Project JSON replaces the file atomically.
+  - The Art tab's preview redraws only while an animation plays, into the same
+    bitmap.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:
