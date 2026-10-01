@@ -28,7 +28,7 @@
 //! A bare `GameState` (what the web version writes) also loads: it has no header, so it is
 //! treated as coming from unknown content.
 
-use crate::save::{migrate_game_state, MAX_ERRORS};
+use crate::save::{migrate_game_state_owned, MAX_ERRORS};
 use farm_cart_schema::farm_engine::save as fb_save;
 use farm_cart_schema::farm_engine::save::save_file_buffer_has_identifier;
 use farm_cart_schema::flatbuffers::FlatBufferBuilder;
@@ -141,11 +141,14 @@ pub struct LoadedSave {
 /// Loads a JSON save file (or a bare web `GameState`) for the running game `target` with
 /// `content`. Never panics.
 pub fn load_save(text: &str, target: &SaveTarget, content: &GameContent) -> LoadedSave {
+    if text.len() > MAX_STATE_BYTES {
+        return refused(None, "Save file is too large.".to_owned());
+    }
     let raw: Value = match serde_json::from_str(text) {
         Ok(raw) => raw,
         Err(error) => return refused(None, format!("Save file is not valid JSON: {error}")),
     };
-    let (header, state_raw) = match split_envelope(&raw) {
+    let (header, state_raw) = match split_envelope(raw) {
         Ok(parts) => parts,
         Err(error) => return refused(None, error),
     };
@@ -168,10 +171,10 @@ pub fn load_save_bytes(bytes: &[u8], target: &SaveTarget, content: &GameContent)
         Ok(raw) => raw,
         Err(error) => return refused(Some(header), format!("Save state is not valid JSON: {error}")),
     };
-    load_parts(Some(header), &raw, target, content)
+    load_parts(Some(header), raw, target, content)
 }
 
-fn load_parts(header: Option<SaveHeader>, state_raw: &Value, target: &SaveTarget, content: &GameContent) -> LoadedSave {
+fn load_parts(header: Option<SaveHeader>, state_raw: Value, target: &SaveTarget, content: &GameContent) -> LoadedSave {
     let mut warnings = Vec::new();
     if let Some(header) = &header {
         if header.format > SAVE_FORMAT {
@@ -197,7 +200,7 @@ fn load_parts(header: Option<SaveHeader>, state_raw: &Value, target: &SaveTarget
         }
     }
 
-    let migration = migrate_game_state(state_raw);
+    let migration = migrate_game_state_owned(state_raw);
     let Some(mut state) = migration.data.filter(|_| migration.ok) else {
         return LoadedSave {
             header,
@@ -299,8 +302,10 @@ impl SavePreview {
 const COMPRESSION_STORED: u8 = 0;
 const COMPRESSION_ZSTD: u8 = 1;
 
-/// Largest decompressed state a save may claim (a guard against decompression bombs).
-const MAX_STATE_BYTES: usize = 256 * 1024 * 1024;
+/// Largest state a save may hold, decompressed, and largest JSON save file: a guard against
+/// decompression bombs and files built to exhaust memory once parsed into a JSON tree (which
+/// takes several times the text's size; #80). A 256×256 farm's state is about 20 MB.
+pub const MAX_STATE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Is `bytes` a binary (`FGSV`) save?
 pub fn is_binary_save(bytes: &[u8]) -> bool {
@@ -396,21 +401,25 @@ fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<Sa
     }
     let data = file.state().bytes();
     let state = match file.compression() {
+        COMPRESSION_STORED if data.len() > MAX_STATE_BYTES => {
+            return Err((Some(header), "Save state is too large.".to_owned()))
+        }
         COMPRESSION_STORED => data.to_vec(),
-        COMPRESSION_ZSTD => decompress(data).map_err(|error| (Some(header.clone()), error))?,
+        COMPRESSION_ZSTD => decompress(data, MAX_STATE_BYTES).map_err(|error| (Some(header.clone()), error))?,
         other => return Err((Some(header), format!("Save file uses an unknown compression ({other})."))),
     };
     Ok((header, preview, Some(state)))
 }
 
-fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
+/// The zstd frame `data`, refused once it inflates past `limit` bytes.
+fn decompress(data: &[u8], limit: usize) -> Result<Vec<u8>, String> {
     use std::io::Read;
     let mut decoder = ruzstd::decoding::StreamingDecoder::new(data)
         .map_err(|error| format!("Save state could not be decompressed: {error}"))?;
     let mut out = Vec::new();
-    let mut limited = (&mut decoder).take(MAX_STATE_BYTES as u64 + 1);
+    let mut limited = (&mut decoder).take(limit as u64 + 1);
     limited.read_to_end(&mut out).map_err(|error| format!("Save state could not be decompressed: {error}"))?;
-    if out.len() > MAX_STATE_BYTES {
+    if out.len() > limit {
         return Err("Save state is too large.".to_owned());
     }
     Ok(out)
@@ -572,22 +581,44 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
 }
 
 /// `{"header", "state"}` → its parts; any other object is a bare `GameState`.
-fn split_envelope(raw: &Value) -> Result<(Option<SaveHeader>, &Value), String> {
-    let Value::Object(map) = raw else {
+fn split_envelope(raw: Value) -> Result<(Option<SaveHeader>, Value), String> {
+    let Value::Object(mut map) = raw else {
         return Ok((None, raw));
     };
-    match (map.get("header"), map.get("state")) {
-        (Some(header), Some(state)) => {
-            let header: SaveHeader =
-                serde_json::from_value(header.clone()).map_err(|error| format!("Save header is not valid: {error}"))?;
-            Ok((Some(header), state))
-        }
-        _ => Ok((None, raw)),
+    if !(map.contains_key("header") && map.contains_key("state")) {
+        return Ok((None, Value::Object(map)));
     }
+    let header =
+        SaveHeader::deserialize(&map["header"]).map_err(|error| format!("Save header is not valid: {error}"))?;
+    Ok((Some(header), map.swap_remove("state").unwrap_or_default()))
 }
 
 fn refused(header: Option<SaveHeader>, error: String) -> LoadedSave {
     let mut errors = vec![error];
     errors.truncate(MAX_ERRORS);
     LoadedSave { header, errors, ..LoadedSave::default() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompression_stops_at_the_limit() {
+        // Repetitive data compresses to almost nothing: the bomb shape of #80.
+        let json = format!("{{\"junk\":[{}0]}}", "0,".repeat(64 * 1024));
+        let packed = ruzstd::encoding::compress_to_vec(json.as_bytes(), ruzstd::encoding::CompressionLevel::Fastest);
+        assert!(packed.len() * 50 < json.len(), "{} bytes", packed.len());
+        assert_eq!(decompress(&packed, json.len()).unwrap(), json.as_bytes());
+        assert_eq!(decompress(&packed, json.len() - 1).unwrap_err(), "Save state is too large.");
+    }
+
+    #[test]
+    fn oversized_json_saves_are_refused_before_parsing() {
+        let target = SaveTarget::default();
+        let text = " ".repeat(MAX_STATE_BYTES + 1);
+        let loaded = load_save(&text, &target, &GameContent::default());
+        assert!(!loaded.ok);
+        assert_eq!(loaded.errors, vec!["Save file is too large."]);
+    }
 }
