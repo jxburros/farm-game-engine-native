@@ -137,17 +137,42 @@ module SchemaChecks =
 
     // ── Project sections, in the C# order ───────────────────────────────────
 
-    let private tile (tp: string) (tile: Tile) =
-        [ yield! oneOf (tp + ".type") tile.Type TileTypes.All
-          yield! oneOf (tp + ".background") tile.Background TileTypes.All
-          yield! optionalOneOf (tp + ".overlay") tile.Overlay TileTypes.All
-          yield! optionalOneOf (tp + ".object") tile.Object TileTypes.All
-          yield! optionalOneOf (tp + ".soilState") tile.SoilState SoilStates.All
-          match tile.Crop with
-          | None -> ()
-          | Some crop ->
-              yield! oneOf (tp + ".crop.quality") crop.Quality CropQualities.All
-              yield! optionalOneOf (tp + ".crop.mutation") crop.Mutation CropMutations.All ]
+    let private tileTypes = System.Collections.Generic.HashSet<string>(TileTypes.All)
+    let private soilStates = System.Collections.Generic.HashSet<string>(SoilStates.All)
+    let private cropQualities = System.Collections.Generic.HashSet<string>(CropQualities.All)
+    let private cropMutations = System.Collections.Generic.HashSet<string>(CropMutations.All)
+
+    /// Whether a tile passes every check below: tested first, so the common valid tile costs
+    /// a few set lookups and no path strings (Problems runs this over every tile).
+    let private validTile (tile: Tile) =
+        let optional (allowed: System.Collections.Generic.HashSet<string>) (value: string option) =
+            match value with
+            | None -> true
+            | Some value -> allowed.Contains value
+        tileTypes.Contains tile.Type
+        && tileTypes.Contains tile.Background
+        && optional tileTypes tile.Overlay
+        && optional tileTypes tile.Object
+        && optional soilStates tile.SoilState
+        && (match tile.Crop with
+            | None -> true
+            | Some crop -> cropQualities.Contains crop.Quality && optional cropMutations crop.Mutation)
+
+    /// A tile's checks; `path` builds its path only when one fails.
+    let private tile (path: unit -> string) (tile: Tile) =
+        if validTile tile then []
+        else
+            let tp = path ()
+            [ yield! oneOf (tp + ".type") tile.Type TileTypes.All
+              yield! oneOf (tp + ".background") tile.Background TileTypes.All
+              yield! optionalOneOf (tp + ".overlay") tile.Overlay TileTypes.All
+              yield! optionalOneOf (tp + ".object") tile.Object TileTypes.All
+              yield! optionalOneOf (tp + ".soilState") tile.SoilState SoilStates.All
+              match tile.Crop with
+              | None -> ()
+              | Some crop ->
+                  yield! oneOf (tp + ".crop.quality") crop.Quality CropQualities.All
+                  yield! optionalOneOf (tp + ".crop.mutation") crop.Mutation CropMutations.All ]
 
     let private scene (scenes: Scene list) (s: int) (scene: Scene) =
         let sp = $"scenes.{s}"
@@ -166,7 +191,7 @@ module SchemaChecks =
                   let rp = $"{sp}.tiles.{y}"
                   [ if validWidth && float row.Length <> scene.Width then
                         yield! lint rp $"Expected {num scene.Width} tiles (scene width), found {row.Length}"
-                    yield! each row (fun x t -> tile $"{rp}.{x}" t) ])
+                    yield! each row (fun x t -> tile (fun () -> $"{rp}.{x}") t) ])
           yield! each scene.Transitions (fun t transition -> nonEmpty $"{sp}.transitions.{t}.toSceneId" transition.ToSceneId) ]
 
     let private scenes (p: GameProject) =
@@ -367,6 +392,12 @@ module SchemaChecks =
     /// Structural lint zod cannot express (C# `SchemaValidation.LintProject`). The web editor
     /// lets creators save all of these, so they are reported, not rejected.
     let projectLints (project: GameProject) : SchemaIssue list = findings project |> at Level.Lint
+
+    /// `projectIssues` and `projectLints` from one pass over the project (the Problems panel
+    /// shows both).
+    let projectChecks (project: GameProject) : SchemaIssue list * SchemaIssue list =
+        let all = findings project
+        at Level.Parse all, at Level.Lint all
 
     // ── Exported games ───────────────────────────────────────────────────────
 

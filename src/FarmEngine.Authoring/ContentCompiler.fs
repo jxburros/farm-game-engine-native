@@ -8,16 +8,20 @@ open FarmEngine.Schemas
 module ContentCompiler =
     let private integer (value: float) = not (Double.IsNaN value || Double.IsInfinity value) && Math.Truncate value = value
 
-    /// Built-in crops with the project's custom crops over them (a custom crop's `customAsset`
-    /// and passthrough fields ride along, like the structural TS type).
+    /// A custom crop as the crop definition the engine gets: its `customAsset` and passthrough
+    /// fields ride along, like the structural TS type. Through JSON, so every field the two
+    /// records share carries over without a hand-kept field list (`Readouts.cropOfCustom` is this
+    /// too). Throws InvalidOperationException for a crop the crop decoder refuses.
+    let cropOfCustom (crop: CustomCropDefinition) : CropDefinition =
+        match Decode.run SchemaJson.decodeCropDefinition (SchemaJson.encodeCustomCropDefinition crop) with
+        | Ok definition -> definition
+        | Error message -> invalidOp message
+
+    /// Built-in crops with the project's custom crops over them.
     let mergeCrops (custom: CustomCropDefinition list option) : (string * CropDefinition) list =
-        let asCrop (crop: CustomCropDefinition) =
-            match Decode.run SchemaJson.decodeCropDefinition (SchemaJson.encodeCustomCropDefinition crop) with
-            | Ok definition -> definition
-            | Error message -> invalidOp message
         (Builtin.crops (), Option.defaultValue [] custom)
         ||> List.fold (fun crops crop ->
-            let definition = asCrop crop
+            let definition = cropOfCustom crop
             if crops |> List.exists (fun (id, _) -> id = crop.Id) then
                 crops |> List.map (fun (id, existing) -> if id = crop.Id then id, definition else id, existing)
             else

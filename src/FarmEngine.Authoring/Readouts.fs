@@ -15,7 +15,7 @@ type FormTab = { Title: string; Properties: string list }
 module Readouts =
     /// Rounds to a whole number like the web's `toFixed(0)`: half away from zero (so a negative
     /// profit rounds like its positive twin). Same as `Math.round` for the non-negative day counts.
-    let private round (value: float) = if value < 0.0 then -(Math.Floor(-value + 0.5)) else Math.Floor(value + 0.5)
+    let private round (value: float) = JsNumber.roundHalfAway value
 
     /// Money like the web (`$12`, `-$5`).
     let money (value: float) = (if value < 0.0 then "-$" else "$") + JsNumber.format (abs value)
@@ -70,10 +70,7 @@ module Readouts =
     // ---- Crops ----
 
     /// A custom crop as the crop definition the engine gets (its extra fields ride along).
-    let cropOfCustom (crop: CustomCropDefinition) : CropDefinition =
-        match Decode.run SchemaJson.decodeCropDefinition (SchemaJson.encodeCustomCropDefinition crop) with
-        | Ok definition -> definition
-        | Error message -> invalidOp message
+    let cropOfCustom (crop: CustomCropDefinition) : CropDefinition = ContentCompiler.cropOfCustom crop
 
     /// A crop definition as a custom crop with the same id and values (a built-in crop's
     /// replacement, so the creator can change it).

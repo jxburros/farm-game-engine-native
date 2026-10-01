@@ -18,20 +18,26 @@ module ProjectLoad =
     let private failed (raw: RawMigrationResult) (errors: string list) : MigrationResult<'T> =
         { Ok = false; Data = None; FromVersion = raw.FromVersion; Migrated = raw.Migrated; Errors = errors }
 
-    let private finish (decode: Path -> Json -> 'T) (validate: 'T -> string list) (raw: RawMigrationResult) : MigrationResult<'T> =
+    /// The typed parse and checks after the raw migrations; `prepare` runs on the parsed value
+    /// before the checks. An exception from any step is an error in the result.
+    let private finish (decode: Path -> Json -> 'T) (prepare: 'T -> 'T) (validate: 'T -> string list) (raw: RawMigrationResult) : MigrationResult<'T> =
         match raw.Data with
         | Some data when raw.Ok ->
-            match Decode.run decode data with
-            | Error issue -> failed raw [ issue ]
-            | Ok value ->
-                match List.truncate 20 (validate value) with
-                | [] -> { Ok = true; Data = Some value; FromVersion = raw.FromVersion; Migrated = raw.Migrated; Errors = [] }
-                | errors -> failed raw errors
+            try
+                match Decode.run decode data with
+                | Error issue -> failed raw [ issue ]
+                | Ok value ->
+                    let value = prepare value
+                    match List.truncate 20 (validate value) with
+                    | [] -> { Ok = true; Data = Some value; FromVersion = raw.FromVersion; Migrated = raw.Migrated; Errors = [] }
+                    | errors -> failed raw errors
+            with error ->
+                failed raw [ "Project data could not be read: " + error.Message ]
         | _ -> failed raw raw.Errors
 
     /// Migrate raw project data up to the current schema version, parse it and validate it.
     let migrateProject (raw: Json) : MigrationResult<GameProject> =
-        Migrations.migrateProjectRaw raw |> finish SchemaJson.decodeGameProject SchemaChecks.validateProject
+        Migrations.migrateProjectRaw raw |> finish SchemaJson.decodeGameProject DialogueCopies.reconcile SchemaChecks.validateProject
 
     /// `migrateProject` over JSON text.
     let migrateProjectText (text: string) : MigrationResult<GameProject> =
@@ -42,7 +48,7 @@ module ProjectLoad =
 
     /// Migrate raw exported-game data, parse it and validate it (`SchemaChecks.validateExportedGame`).
     let migrateExportedGame (raw: Json) : MigrationResult<ExportedGame> =
-        Migrations.migrateExportedGameRaw raw |> finish SchemaJson.decodeExportedGame SchemaChecks.validateExportedGame
+        Migrations.migrateExportedGameRaw raw |> finish SchemaJson.decodeExportedGame id SchemaChecks.validateExportedGame
 
     /// `migrateExportedGame` over JSON text.
     let migrateExportedGameText (text: string) : MigrationResult<ExportedGame> =
