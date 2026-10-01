@@ -177,8 +177,11 @@ public sealed class ArtStudioTests
         Assert.Same(shown, FindByName<Border>(host.Window, "ArtPreview").Child);
 
         // Redrawing (any project change) keeps the paused frame: frames 0–5 are red, 6–11 blue.
+        // The frame is drawn again into the bitmap on show, not into a new one.
+        var bitmap = ((Image)shown!).Source;
         art.Refresh();
-        Assert.NotSame(shown, FindByName<Border>(host.Window, "ArtPreview").Child);
+        Assert.Same(shown, FindByName<Border>(host.Window, "ArtPreview").Child);
+        Assert.Same(bitmap, ((Image)shown!).Source);
         Assert.Equal(colour, PreviewCentre(host));
         var red = tick % 12 < 6;
         Assert.Equal(red ? (byte)255 : (byte)0, colour.R);
@@ -189,6 +192,39 @@ public sealed class ArtStudioTests
         Assert.Equal("Pause preview", play.Content);
         art.AdvancePreview();
         Assert.True(art.PreviewTick > tick);
+    }
+
+    [AvaloniaFact]
+    public void ThePreviewTimerRunsOnlyForAPlayingAnimation()
+    {
+        using var host = new GameTestHost();
+        var art = OpenArt(host);
+        art.ImportBytes("still.png", Png(16, 16, SKColors.Red));
+        Pump();
+        // A still image is drawn once; nothing ticks.
+        Assert.True(art.PreviewPlaying);
+        Assert.False(art.PreviewTimerRunning);
+        var still = FindByName<Border>(host.Window, "ArtPreview").Child;
+        Assert.NotNull(still);
+
+        // A clip of several frames animates while playing, into the same image and bitmap.
+        art.ImportBytes("sheet.png", Png(32, 16, SKColors.Red, SKColors.Blue));
+        Press(host.Window, "SliceArtButton");
+        Assert.True(art.PreviewTimerRunning);
+        var shown = Assert.IsType<Image>(FindByName<Border>(host.Window, "ArtPreview").Child);
+        var bitmap = shown.Source;
+        for (var i = 0; i < 8; i++) art.AdvancePreview();
+        Assert.Same(shown, FindByName<Border>(host.Window, "ArtPreview").Child);
+        Assert.Same(bitmap, shown.Source);
+
+        Press(host.Window, "ArtPreviewPlayButton");
+        Assert.False(art.PreviewTimerRunning);
+        Press(host.Window, "ArtPreviewPlayButton");
+        Assert.True(art.PreviewTimerRunning);
+
+        // Back to the still image: the timer stops again.
+        art.SelectAsset(Asset(host, "still.png").Id);
+        Assert.False(art.PreviewTimerRunning);
     }
 
     [AvaloniaFact]

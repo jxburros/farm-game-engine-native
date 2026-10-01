@@ -95,6 +95,7 @@ public sealed class ArtEditorView : UserControl
             }
             RefreshFrames();
             DrawPreview();
+            UpdatePreviewTimer();
         };
         _bindingAsset.SelectionChanged += (_, _) => RefreshBindingClips();
 
@@ -192,7 +193,7 @@ public sealed class ArtEditorView : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        if (_playing) _previewTimer.Start();
+        UpdatePreviewTimer();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -220,6 +221,9 @@ public sealed class ArtEditorView : UserControl
     /// <summary>The animation tick the preview shows.</summary>
     public double PreviewTick => _tick;
 
+    /// <summary>Whether the preview timer runs (only while an animation with several frames plays on screen).</summary>
+    internal bool PreviewTimerRunning => _previewTimer.IsEnabled;
+
     /// <summary>One step of the preview timer: the next tick is drawn unless the preview is paused or hidden.</summary>
     internal void AdvancePreview()
     {
@@ -228,12 +232,28 @@ public sealed class ArtEditorView : UserControl
         DrawPreview();
     }
 
+    /// <summary>
+    /// Runs the preview timer only while it changes something: playing, on screen, and a clip
+    /// with more than one frame selected. A still image is drawn once, not 20 times a second.
+    /// </summary>
+    private void UpdatePreviewTimer()
+    {
+        var animated = SelectedClip() is { } clip && clip.Frames.Length > 1;
+        if (_playing && animated && TopLevel.GetTopLevel(this) is not null)
+        {
+            if (!_previewTimer.IsEnabled) _previewTimer.Start();
+        }
+        else
+        {
+            _previewTimer.Stop();
+        }
+    }
+
     private void TogglePreview()
     {
         _playing = !_playing;
         _play.Content = _playing ? "Pause preview" : "Play preview";
-        if (_playing && TopLevel.GetTopLevel(this) is not null) _previewTimer.Start();
-        else _previewTimer.Stop();
+        UpdatePreviewTimer();
     }
 
     /// <summary>Opens an asset by id (Problems "Go to").</summary>
@@ -451,6 +471,7 @@ public sealed class ArtEditorView : UserControl
         RefreshSheet(asset);
         RefreshFrames();
         DrawPreview();
+        UpdatePreviewTimer();
     }
 
     /// <summary>The asset's list thumbnail (at most 64px, for crisp 32px display), decoded once per image.</summary>
@@ -488,10 +509,11 @@ public sealed class ArtEditorView : UserControl
     {
         var asset = SelectedAsset();
         var project = _workspace.Current;
-        if (asset is null || project is null) { _preview.Child = null; return; }
+        if (asset is null || project is null) { VisualPreview.Release(_preview.Child as Image); _preview.Child = null; return; }
         var visual = VisualRef.Default.WithAssetId(asset.Id).WithAnimation((_clips.SelectedItem as ComboBoxItem)?.Tag as string);
-        // The Rust renderer resolves and draws the frame, exactly as the game will show it.
-        _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
+        // The Rust renderer resolves and draws the frame, exactly as the game will show it, into
+        // the bitmap already on show when the size is the same.
+        _preview.Child = _art.Draw(_preview.Child as Image, project, visual, _tick, _preview.Width);
     }
 
     /// <summary>
