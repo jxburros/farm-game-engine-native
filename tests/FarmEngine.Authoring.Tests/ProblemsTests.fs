@@ -288,3 +288,86 @@ let ``placed machines, scene lists, player quests and recipe skills are checked`
     let unlock = { RecipeUnlock.Default with Skill = Some({ RecipeSkillRequirement.Default with Skill = "juggling"; Level = 1.0 }) }
     let recipe = { (Defaults.newRecipe project) with Unlock = Some unlock }
     Assert.EndsWith(".unlock.skill.skill", (has "recipe.unknownSkill" (project |> apply (UpsertRecipe recipe))).Path)
+
+[<Fact>]
+let ``scene grids, sizes and scene ids the game would have to fix are errors`` () =
+    let project = starter ()
+    let scene = farm project
+    let index = project.Scenes |> List.findIndex (fun s -> s.Id = scene.Id)
+    let withFarm (edited: Scene) = { project with Scenes = project.Scenes |> List.map (fun s -> if s.Id = scene.Id then edited else s) }
+    for code in [ "scene.gridWidth"; "scene.gridRows"; "scene.tooLarge"; "duplicate.scene" ] do
+        lacks code project
+    let ragged = withFarm { scene with Tiles = scene.Tiles |> List.mapi (fun y row -> if y = 3 then List.truncate 3 row else row) }
+    let width = has "scene.gridWidth" ragged
+    Assert.Equal(sprintf "scenes[%d].tiles[3]" index, width.Path)
+    Assert.True width.IsError
+    Assert.Equal(sprintf "scenes[%d].tiles" index, (has "scene.gridRows" (withFarm { scene with Tiles = List.truncate 5 scene.Tiles })).Path)
+    Assert.True((has "scene.tooLarge" (withFarm { scene with Width = 300.0 })).IsError)
+    Assert.True((has "duplicate.scene" { project with Scenes = project.Scenes @ [ scene ] }).IsError)
+    Assert.True(Problems.blocksExport (Problems.collect ragged))
+
+[<Fact>]
+let ``mine floors outside 3 to 256 tiles a side are errors`` () =
+    let project = starter ()
+    let mine = Defaults.mineEnabled project true
+    lacks "mine.floorSize" (project |> apply (SetMine mine))
+    let huge = has "mine.floorSize" (project |> apply (SetMine { mine with FloorWidth = 50000.0 }))
+    Assert.Equal("mine.floorWidth", huge.Path)
+    Assert.True huge.IsError
+    Assert.Equal("mine.floorHeight", (has "mine.floorSize" (project |> apply (SetMine { mine with FloorHeight = 2.0 }))).Path)
+
+[<Fact>]
+let ``a player speed too fast to control is a warning`` () =
+    let project = starter ()
+    lacks "settings.playerSpeedFast" project
+    let settings = { project.Settings with Movement = { project.Settings.Movement with PlayerSpeed = 60.0 } }
+    let fast = has "settings.playerSpeedFast" (project |> apply (SetSettings settings))
+    Assert.True fast.IsWarning
+    Assert.Equal("settings.movement.playerSpeed", fast.Path)
+
+[<Fact>]
+let ``doors, warps and the player start that land on blocked tiles are warnings`` () =
+    let project = starter ()
+    let scene = farm project
+    // The starter farm has a wall border.
+    Assert.True((List.head (List.head scene.Tiles)).Collision)
+    let door = { SceneTransition.Default with FromX = 8.0; FromY = 11.0; ToSceneId = scene.Id; ToX = 0.0; ToY = 0.0 }
+    let blocked = has "transition.landsBlocked" (project |> apply (SetTransition(scene.Id, door)))
+    Assert.True blocked.IsWarning
+    let warp = { Defaults.newAction project with Outcomes = [ { EventOutcome.Default with Type = "warpPlayer"; SceneId = Some scene.Id; X = Some 0.0; Y = Some 0.0 } ] }
+    Assert.True((has "action.outcomeWarpBlocked" (project |> apply (UpsertAction warp))).IsWarning)
+    let walled = { project with Player = { project.Player with SceneId = scene.Id; X = 0.0; Y = 0.0 } }
+    Assert.True((has "player.startBlocked" walled).IsWarning)
+    lacks "player.startBlocked" project
+
+[<Fact>]
+let ``actions that perform each other in a loop are warnings`` () =
+    let project = starter ()
+    let perform (id: string) = { EventOutcome.Default with Type = "performAction"; ActionId = Some id }
+    let a = { Defaults.newAction project with Id = "action-a"; Name = "A"; Outcomes = [ perform "action-b" ] }
+    let b = { Defaults.newAction project with Id = "action-b"; Name = "B"; Outcomes = [ perform "action-a" ] }
+    let c = { Defaults.newAction project with Id = "action-c"; Name = "C"; Outcomes = [ perform "action-a" ] }
+    let looping = project |> apply (UpsertAction a) |> apply (UpsertAction b) |> apply (UpsertAction c)
+    let cycles = Problems.collect looping |> List.filter (fun p -> p.Code = "action.cycle")
+    Assert.Equal<string list>([ "action-a"; "action-b" ], cycles |> List.map (fun p -> p.TargetId))
+    Assert.True(cycles |> List.forall (fun p -> p.IsWarning))
+    lacks "action.cycle" (project |> apply (UpsertAction c))
+
+[<Fact>]
+let ``pack warps are checked against the project's and the packs' scenes`` () =
+    let cave = { Scene.Default with Id = "cave"; Name = "Cave"; Width = 4.0; Height = 3.0 }
+    let warp (sceneId: string) (x: float) = { EventOutcome.Default with Type = "warpPlayer"; SceneId = Some sceneId; X = Some x; Y = Some 1.0 }
+    let action (id: string) outcome = { ActionDef.Default with Id = id; Name = id; Outcomes = [ outcome ] }
+    let pack =
+        { ContentPack.Default with
+            Manifest = { PackManifest.Default with Id = "caves"; Name = "Caves"; Version = "1.0.0" }
+            Content =
+                { PackContent.Default with
+                    Scenes = [ cave ]
+                    Actions = [ action "local" (warp "cave" 1.0); action "far" (warp "caves:cave" 9.0); action "fine" (warp "caves:cave" 1.0) ] } }
+    let packed = blank () |> apply (InstallPack pack)
+    let unknown = has "pack.warpUnknownScene" packed
+    Assert.Contains("write \"caves:cave\"", unknown.Message)
+    Assert.Equal("pack", unknown.TargetKind)
+    Assert.Equal("contentPacks[0].pack.content.actions[1].outcomes[0].x", (has "pack.warpOutOfBounds" packed).Path)
+    Assert.Equal(2, Problems.collect packed |> List.filter (fun p -> p.Code.StartsWith "pack.warp") |> List.length)
