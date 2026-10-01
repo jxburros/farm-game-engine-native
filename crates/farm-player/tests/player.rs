@@ -274,7 +274,8 @@ fn pack_plugins_run_in_the_player() {
     let mut player = Player::from_project(project, stores.options(PlayerMode::Embedded)).unwrap();
     assert!(player.session().unwrap().has_plugins());
     player.run_command(&Command::Sleep).unwrap();
-    idle(&mut player, 2);
+    // The plugin's answer applies before the next tick (20 a second, so within 3 frames).
+    idle(&mut player, 4);
     assert!(player.plugin_errors().is_empty(), "{:?}", player.plugin_errors());
     assert!(
         player.toast_history().iter().any(|(text, _)| text.contains("glowshrooms hum")),

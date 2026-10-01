@@ -8,8 +8,9 @@
 //! - Effects become [`SessionEvent`]s (toasts, sound cues, scene changes, new days) and floating
 //!   pops; the host drains them once per frame.
 //! - Plugins see every step's hook events (engine hooks, then one `onEffect` per effect), and
-//!   their mutations enter the command log at one fixed point per frame (before input), so a
-//!   replay of the command log is deterministic.
+//!   their mutations enter the command log at one fixed point per tick (right before it), so a
+//!   mutation answering tick `k` applies before tick `k + 1` at any frame rate, and a replay of
+//!   the command log is deterministic.
 //! - Minigames are hosted here: the UI forwards presses and choices, and a finished minigame
 //!   enters the command log exactly once as `resolveMinigame`.
 
@@ -89,10 +90,15 @@ impl FrameToggles {
 /// The plugin sandbox as the session sees it (implemented over `farm-plugins`). `Send`, so a
 /// session can run on a background thread (the editor steps frames off its UI thread).
 pub trait SessionPlugins: Send {
-    /// The hook events of one engine step, in order.
-    fn dispatch(&mut self, events: &[HookEvent]);
-    /// Plugin mutations to run now, as `pluginMutation` commands, in arrival order.
-    fn drain_commands(&mut self) -> Vec<Command>;
+    /// The hook events of one engine step, in order. `depth` is 0 for ticks and the player's
+    /// commands, and a plugin mutation's depth + 1 for the step that ran it (plugins do not
+    /// hear `onCommand` / `onEffect` from such steps, and deep chains are cut off).
+    fn dispatch(&mut self, events: &[HookEvent], depth: u32);
+    /// Plugin mutations to run now, as `pluginMutation` commands with their depth, in arrival
+    /// order.
+    fn drain_commands(&mut self) -> Vec<(Command, u32)>;
+    /// The game is about to run tick `tick` (plugin budgets follow the game clock).
+    fn begin_tick(&mut self, _tick: u64) {}
     /// The most recent plugin errors (init failures, throws, overruns), oldest first.
     fn recent_errors(&self) -> Vec<String> {
         Vec::new()
@@ -213,7 +219,7 @@ impl PlaySession {
     /// auto-started quests) go to it first; then it sees every later step.
     pub fn set_plugins(&mut self, plugins: Option<Box<dyn SessionPlugins>>) {
         self.plugins = plugins;
-        self.dispatch_hooks(&[]);
+        self.dispatch_hooks(&[], 0);
     }
 
     pub fn has_plugins(&self) -> bool {
@@ -311,30 +317,39 @@ impl PlaySession {
 
     /// Run one command from the UI and react to its effects.
     pub fn run_command(&mut self, command: &Command) {
+        self.run_step(command, 0);
+    }
+
+    /// Run a command as a step at plugin depth `depth` (see [`SessionPlugins::dispatch`]).
+    fn run_step(&mut self, command: &Command, depth: u32) {
         if self.recent.len() >= RECENT_COMMANDS {
             self.recent.pop_front();
         }
         let json = serde_json::to_string(command).unwrap_or_default();
         self.recent.push_back(format!("tick {}: {json}", self.state.clock.tick));
         let effects = engine::apply_command(&self.ctx, &mut self.state, command);
-        self.after_step(effects);
+        self.after_step(effects, depth);
     }
 
-    /// One display frame: drain plugin mutations, sync the held movement intent, advance the
-    /// fixed-timestep simulation, then turn this frame's one-shot key presses into commands.
-    /// `host_modal_open` is true while a host panel (inventory, quests, crafting, a menu) is
-    /// open: world input pauses. Non-finite or negative frame times count as zero.
+    /// The fixed point before each tick: queued plugin mutations enter the command log, each
+    /// as a step one level deeper than the mutation.
+    fn apply_plugin_mutations(&mut self) {
+        let Some(plugins) = self.plugins.as_mut() else { return };
+        plugins.begin_tick(self.state.clock.tick);
+        for (command, depth) in plugins.drain_commands() {
+            self.run_step(&command, depth.saturating_add(1));
+        }
+    }
+
+    /// One display frame: sync the held movement intent, advance the fixed-timestep
+    /// simulation one tick at a time (queued plugin mutations apply before each tick), then
+    /// turn this frame's one-shot key presses into commands. `host_modal_open` is true while a
+    /// host panel (inventory, quests, crafting, a menu) is open: world input pauses. Non-finite
+    /// or negative frame times count as zero.
     pub fn update(&mut self, delta_seconds: f64, host_modal_open: bool) -> FrameToggles {
         let delta = if delta_seconds.is_finite() { delta_seconds.max(0.0) } else { 0.0 };
         self.elapsed_ms += delta * 1000.0;
         self.pops.retain(|(_, born)| self.elapsed_ms - born < POP_LIFETIME_MS);
-
-        // Plugin mutations enter the command log at ONE fixed point per frame.
-        if let Some(plugins) = self.plugins.as_mut() {
-            for command in plugins.drain_commands() {
-                self.run_command(&command);
-            }
-        }
 
         // Free movement: only CHANGES of the held intent become commands; zero while any
         // modal is open.
@@ -347,11 +362,17 @@ impl PlaySession {
             // The intent is −1, 0 or 1 on each axis.
             self.run_command(&Command::SetMoveIntent { dx: intent.dx as i32, dy: intent.dy as i32 });
         }
-        if ticks > 0 {
-            let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
-            self.prev_player = Some((x, y, self.state.player.scene_id.clone()));
-            let effects = engine::advance_tick(&self.ctx, &mut self.state, u64::from(ticks));
-            self.after_step(effects);
+        // One tick at a time, so plugin mutations answering tick k apply before tick k + 1
+        // whether the frame holds one tick or five: the same input reaches the same state at
+        // any frame rate. (advance_tick(n) is exactly n × advance_tick(1).)
+        for tick in 0..ticks {
+            self.apply_plugin_mutations();
+            if tick == 0 {
+                let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
+                self.prev_player = Some((x, y, self.state.player.scene_id.clone()));
+            }
+            let effects = engine::advance_tick(&self.ctx, &mut self.state, 1);
+            self.after_step(effects, 0);
         }
 
         let frame = input::poll_play_frame(&self.input, &self.state, &self.ctx.content, host_modal_open);
@@ -461,7 +482,7 @@ impl PlaySession {
             }
             DebugAction::SkipDay => {
                 game_time::perform_sleep(&self.ctx, &mut self.state, game_time::SleepOptions { collapsed: false });
-                self.dispatch_hooks(&[]);
+                self.dispatch_hooks(&[], 0);
             }
             DebugAction::AddMoney { .. } | DebugAction::AddMinutes { .. } => {}
         }
@@ -487,8 +508,8 @@ impl PlaySession {
         }
     }
 
-    fn after_step(&mut self, effects: Vec<Effect>) {
-        self.dispatch_hooks(&effects);
+    fn after_step(&mut self, effects: Vec<Effect>, depth: u32) {
+        self.dispatch_hooks(&effects, depth);
         for effect in &effects {
             if let Some(cue) = farm_runtime::audio::sfx_for_effect(effect) {
                 self.events.push(SessionEvent::Sound { cue: cue.to_owned() });
@@ -525,14 +546,14 @@ impl PlaySession {
 
     /// Engine hooks of the step, then one `onEffect` per effect (the order plugins see on the
     /// web and in the C# bridge).
-    fn dispatch_hooks(&mut self, effects: &[Effect]) {
+    fn dispatch_hooks(&mut self, effects: &[Effect], depth: u32) {
         let mut events = self.ctx.drain_hook_events();
         let Some(plugins) = self.plugins.as_mut() else { return };
         events.extend(
             effects.iter().map(|e| HookEvent::Effect(EffectHookPayload { effect_type: e.type_name().to_owned() })),
         );
         if !events.is_empty() {
-            plugins.dispatch(&events);
+            plugins.dispatch(&events, depth);
         }
     }
 

@@ -7,13 +7,23 @@ use farm_sim::schema::GameProject;
 use farm_sim::{Command, HookEvent};
 
 impl SessionPlugins for PluginRuntime<WasmPluginHost> {
-    fn dispatch(&mut self, events: &[HookEvent]) {
+    fn dispatch(&mut self, events: &[HookEvent], depth: u32) {
         // Errors are kept in the runtime's bounded recent-error list.
-        self.dispatch_events(events);
+        self.dispatch_events_at(events, depth);
     }
 
-    fn drain_commands(&mut self) -> Vec<Command> {
-        PluginRuntime::drain_commands(self)
+    fn drain_commands(&mut self) -> Vec<(Command, u32)> {
+        self.drain()
+            .into_iter()
+            .map(|queued| {
+                let depth = queued.depth;
+                (queued.into_command(), depth)
+            })
+            .collect()
+    }
+
+    fn begin_tick(&mut self, tick: u64) {
+        PluginRuntime::begin_tick(self, tick);
     }
 
     fn recent_errors(&self) -> Vec<String> {
@@ -35,6 +45,7 @@ pub fn for_cartridge(plugins: &[CartPlugin], options: PluginHostOptions) -> Opti
             pack_id: plugin.pack_id.clone(),
             source: plugin.source.clone(),
             granted_hooks: plugin.granted_hooks.clone(),
+            granted_mutations: plugin.granted_mutations.clone(),
         })
         .collect();
     let host = WasmPluginHost::new(specs.clone(), options);

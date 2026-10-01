@@ -53,6 +53,9 @@ use std::sync::Arc;
 /// A world snapshot, the world's size and the camera target (pixels).
 type WorldFrame = (WorldSnapshot, (f64, f64), (f64, f64));
 
+/// Longest plugin error a toast shows, in characters.
+const PLUGIN_ERROR_TOAST_CHARS: usize = 200;
+
 /// Where the player runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerMode {
@@ -1029,6 +1032,11 @@ impl Player {
         session.set_reduced_motion(self.settings.accessibility.reduced_motion);
         let graphics = GraphicsSource::from_state(&self.def.presentation, session.content(), session.state());
         for error in session.plugin_errors() {
+            // A toast is a glance, not a log: the full text is in the plugin errors list.
+            let error = match error.char_indices().nth(PLUGIN_ERROR_TOAST_CHARS) {
+                Some((end, _)) => format!("{}…", &error[..end]),
+                None => error,
+            };
             let message = self.ui.lang().format("toast.pluginError", &[&error]);
             self.game_ui.toasts.push(message, ToastKind::Error);
         }

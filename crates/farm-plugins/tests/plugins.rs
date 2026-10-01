@@ -513,6 +513,24 @@ fn an_infinite_loop_is_stopped_by_the_fuel_budget() {
 }
 
 #[test]
+fn a_plugin_running_its_whole_budget_fits_in_a_small_native_stack() {
+    // wasmi dispatches every wasm instruction with a tail call that LLVM turns into a jump
+    // (see the root Cargo.toml). A build setting that broke this would grow the native stack
+    // with each instruction, and a plugin using its whole 50 million budget would overflow it:
+    // an uncatchable crash of the game or the editor. Here it would crash this test instead.
+    let stack = 512 << 10;
+    let run = std::thread::Builder::new()
+        .stack_size(stack)
+        .spawn(|| {
+            let mut host =
+                common::host(vec![plugin("loop", "api.on('onDayStart', function () { while (true) {} })", &[])]);
+            kinds(&host.dispatch("onDayStart", DAY3)[0].errors)
+        })
+        .expect("thread starts");
+    assert_eq!(run.join().expect("no stack overflow"), [PluginErrorKind::Timeout]);
+}
+
+#[test]
 fn three_consecutive_overruns_disable_a_plugin_and_overruns_reset_its_state() {
     let mut host = common::host(vec![plugin(
         "flaky",
@@ -542,9 +560,10 @@ fn three_consecutive_overruns_disable_a_plugin_and_overruns_reset_its_state() {
 }
 
 #[test]
-fn a_success_between_overruns_resets_the_strike_count() {
+fn successes_between_overruns_do_not_wipe_strikes() {
+    // The TS host counted consecutive overruns only, so this plugin was never disabled.
     let mut host = host_with(
-        PluginHostOptions { fuel_per_call: 1_000_000, max_strikes: 2, ..PluginHostOptions::default() },
+        PluginHostOptions { fuel_per_call: 1_000_000, ..PluginHostOptions::default() },
         vec![plugin(
             "alternating",
             "api.on('onDayStart', function (p) { if (p.day % 2 === 0) { while (true) {} } return [{ type: 'message', text: 'odd' }]; });",
@@ -552,11 +571,182 @@ fn a_success_between_overruns_resets_the_strike_count() {
         )],
     );
     let even = r#"{"day":2,"season":"spring","year":1}"#;
-    for _ in 0..5 {
+    for _ in 0..2 {
         assert_eq!(kinds(&host.dispatch("onDayStart", even)[0].errors), [PluginErrorKind::Timeout]);
         assert_eq!(texts(&host.dispatch("onDayStart", DAY3)), "odd");
     }
+    assert_eq!(
+        kinds(&host.dispatch("onDayStart", even)[0].errors),
+        [PluginErrorKind::Timeout, PluginErrorKind::Disabled]
+    );
+    assert_eq!(host.disabled_plugins(), ["pack-a:alternating"]);
+}
+
+#[test]
+fn strikes_expire_after_the_strike_window_but_rebuilds_are_capped() {
+    // One overrun every 10 calls: with a window of 5 calls the strikes never add up, so the
+    // rebuild cap is what stops the plugin.
+    let mut host = host_with(
+        PluginHostOptions { fuel_per_call: 1_000_000, strike_window: 5, max_rebuilds: 3, ..PluginHostOptions::default() },
+        vec![plugin(
+            "rare",
+            "var calls = 0; api.on('onDayStart', function () { calls++; if (calls % 10 === 0) { while (true) {} } return []; });",
+            &[],
+        )],
+    );
+    let mut errors = Vec::new();
+    for _ in 0..60 {
+        for result in host.dispatch("onDayStart", DAY3) {
+            errors.extend(result.errors);
+        }
+    }
+    let messages: Vec<&str> = errors.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        [
+            "exceeded its fuel budget in onDayStart",
+            "exceeded its fuel budget in onDayStart",
+            "exceeded its fuel budget in onDayStart",
+            "exceeded its fuel budget in onDayStart",
+            "plugin pack-a:rare was restarted 3× after overruns — disabled",
+        ]
+    );
+    assert_eq!(host.disabled_plugins(), ["pack-a:rare"]);
+}
+
+#[test]
+fn a_rebuild_gets_only_twice_the_fuel_of_the_first_start() {
+    // The top level burns ~15M fuel once (a counter it keeps across rebuilds would need state
+    // the sandbox does not have), so rebuilds with 2× that still fit; a top level that only
+    // burns when rebuilt cannot stall the game for the whole init budget.
+    let mut host = host_with(
+        PluginHostOptions { fuel_per_call: 1_000_000, ..PluginHostOptions::default() },
+        vec![plugin(
+            "heavy",
+            "for (var i = 0; i < 20000; i++) {} api.on('onDayStart', function () { while (true) {} });",
+            &[],
+        )],
+    );
+    assert!(host.init_errors().is_empty(), "{:?}", host.init_errors());
+    let first = host.last_fuel_used("pack-a:heavy").expect("init measured");
+    assert_eq!(kinds(&host.dispatch("onDayStart", DAY3)[0].errors), [PluginErrorKind::Timeout]);
+    // The rebuild ran the same top level with the same fuel use.
+    assert_eq!(host.last_fuel_used("pack-a:heavy"), Some(first));
+}
+
+#[test]
+fn each_plugin_has_a_fuel_budget_per_window() {
+    let busy = "api.on('onDayStart', function () { for (var i = 0; i < 20000; i++) {} return [{ type: 'message', text: 'done' }]; })";
+    let options = PluginHostOptions { fuel_per_window: 40_000_000, ..PluginHostOptions::default() };
+    let mut host = host_with(options, vec![plugin("busy", busy, &[]), plugin("ok", OK_PLUGIN, &[])]);
+    let per_call = {
+        let results = host.dispatch("onDayStart", DAY3);
+        assert_eq!(texts(&results), "done|ok");
+        host.last_fuel_used("pack-a:busy").expect("measured")
+    };
+    assert!(per_call > 5_000_000 && per_call < 40_000_000, "{per_call}");
+    let mut answered = 1;
+    let mut errors = Vec::new();
+    for _ in 0..20 {
+        for result in host.dispatch("onDayStart", DAY3) {
+            if result.plugin_id == "pack-a:busy" {
+                answered += result.mutations.len();
+                errors.extend(result.errors);
+            }
+        }
+    }
+    // It answers until its window budget is spent, then is skipped (one error, one strike);
+    // the other plugin is unaffected.
+    assert_eq!(answered as u64, 40_000_000 / per_call + 1);
+    assert_eq!(kinds(&errors), [PluginErrorKind::Budget]);
+    assert!(errors[0].message.starts_with("used more than its fuel budget for this second"), "{}", errors[0].message);
+    assert_eq!(texts(&host.dispatch("onDayStart", DAY3)), "ok");
+    // A new window lets it answer again.
+    host.begin_window();
+    assert_eq!(texts(&host.dispatch("onDayStart", DAY3)), "done|ok");
     assert!(host.disabled_plugins().is_empty());
+}
+
+#[test]
+fn hosts_cap_plugin_count_and_startup_budget() {
+    let plugins: Vec<_> = (0..100).map(|i| plugin(&format!("p{i}"), OK_PLUGIN, &[])).collect();
+    let host = host_with(PluginHostOptions { max_plugins: 32, ..PluginHostOptions::default() }, plugins);
+    assert_eq!(host.disabled_plugins().len(), 68);
+    assert_eq!(host.init_errors().len(), 68);
+    assert_eq!(
+        host.init_errors()[0].message,
+        "plugin pack-a:p32 failed to initialize — disabled: the game has more than 32 plugins"
+    );
+
+    // Two slow starters use up a combined budget that would fit one and a half.
+    let slow = "for (var i = 0; i < 20000; i++) {} api.on('onDayStart', () => [{ type: 'message', text: 'up' }]);";
+    let one = host_with(PluginHostOptions::default(), vec![plugin("a", slow, &[])]);
+    let fuel = one.last_fuel_used("pack-a:a").expect("measured");
+    let mut host = host_with(
+        PluginHostOptions { init_fuel_total: fuel * 3 / 2, ..PluginHostOptions::default() },
+        vec![plugin("a", slow, &[]), plugin("b", slow, &[]), plugin("c", OK_PLUGIN, &[])],
+    );
+    let messages: Vec<&str> = host.init_errors().iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        [
+            "plugin pack-a:b failed to initialize — disabled: exceeded its fuel budget",
+            format!(
+                "plugin pack-a:c failed to initialize — disabled: the plugins' combined startup budget ({} fuel) is used up",
+                fuel * 3 / 2
+            )
+            .as_str(),
+        ]
+    );
+    assert_eq!(texts(&host.dispatch("onDayStart", DAY3)), "up");
+}
+
+#[test]
+fn huge_thrown_messages_and_results_stay_small_on_the_host() {
+    // The guest copies a thrown message once (that costs fuel), the host only its start.
+    let generous =
+        PluginHostOptions { fuel_per_call: 500_000_000, fuel_per_window: u64::MAX, ..PluginHostOptions::default() };
+    let mut host = host_with(generous, vec![
+        plugin(
+            "loud",
+            "var s = 'x'; for (var i = 0; i < 22; i++) s += s; api.on('onDayStart', () => { throw new Error(s); });",
+            &[],
+        ),
+        plugin(
+            "bulky",
+            "var y = 'y'.repeat(600000); api.on('onDayStart', () => [{ type: 'message', text: y }, { type: 'message', text: y }]);",
+            &[],
+        ),
+    ]);
+    let results = host.dispatch("onDayStart", DAY3);
+    let messages: Vec<&str> = results.iter().flat_map(|r| &r.errors).map(|e| e.message.as_str()).collect();
+    assert_eq!(messages.len(), 2);
+    // A 4 MB message: the host keeps 1 KB of it.
+    assert!(messages[0].starts_with("threw in onDayStart: xxxx") && messages[0].ends_with('…'), "{}", messages[0]);
+    assert!(messages[0].len() < farm_plugins::MAX_ERROR_MESSAGE_BYTES + 64);
+    assert_eq!(messages[1], "handler result is larger than 1048576 bytes");
+    assert!(host.disabled_plugins().is_empty());
+}
+
+#[test]
+fn a_plugin_cannot_create_unbounded_flags() {
+    let mut host = common::host(vec![plugin(
+        "hoarder",
+        "var n = 0; api.on('onDayStart', function () { var out = []; for (var i = 0; i < 64; i++) out.push({ type: 'setFlag', flag: 'f' + (n++), value: 1 }); return out; });",
+        &[],
+    )]);
+    let mut kept = 0;
+    let mut dropped = 0;
+    for _ in 0..100 {
+        // One call per budget window, as a once-a-second hook would be.
+        host.begin_window();
+        for result in host.dispatch("onDayStart", DAY3) {
+            kept += result.mutations.len();
+            dropped += result.errors.len();
+        }
+    }
+    assert_eq!(kept, farm_plugins::MAX_FLAG_KEYS_PER_PLUGIN);
+    assert_eq!(kept + dropped, 6400);
 }
 
 #[test]

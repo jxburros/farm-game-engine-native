@@ -19,6 +19,12 @@ serde_json.workspace = true
 # Cargo.toml). The guest runs from guest/farm_plugin_guest.wasm, checked in.
 wasmi = { version = "2.0.0", default-features = false, features = ["std", "stable", "validate", "auto-dispatch", "deterministic"] }
 
+[features]
+# wasmi's portable loop dispatch instead of its tail-call dispatch. Slower, but it never relies on
+# LLVM's sibling-call optimization: turn it on for builds that compile wasmi below opt-level 2,
+# with debug assertions, or with sanitizers (docs/PLUGINS.md, "Sandbox hardening").
+portable-dispatch = ["wasmi/portable-dispatch"]
+
 [dev-dependencies]
 sha2 = "0.10"
 

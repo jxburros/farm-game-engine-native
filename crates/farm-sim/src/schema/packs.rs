@@ -33,13 +33,18 @@ pub struct PackPermissions {
     /// Reserved: declarative UI panels. Packs cannot add game panels yet, so this grants
     /// nothing either way.
     pub ui_panels: bool,
+    /// Mutation capabilities the pack's plugins may use: `message`, `giveItem` (own items),
+    /// `giveItem:any`, `*`, … (`farm_plugins::MutationGrants`). `None`: the defaults, and the
+    /// plugins' answers to `onEffect` / `onCommand` are dropped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mutations: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
 impl Default for PackPermissions {
     fn default() -> Self {
-        Self { hooks: Vec::new(), content_inject: true, ui_panels: false, extra: Map::new() }
+        Self { hooks: Vec::new(), content_inject: true, ui_panels: false, mutations: None, extra: Map::new() }
     }
 }
 
