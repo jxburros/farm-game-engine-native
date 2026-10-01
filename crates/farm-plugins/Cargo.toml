@@ -21,6 +21,8 @@ wasmi = { version = "2.0.0", default-features = false, features = ["std", "stabl
 
 [dev-dependencies]
 sha2 = "0.10"
+# Reads the checked-in guest in tests (the version wasmi already uses).
+wasmparser = { version = "0.228", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
