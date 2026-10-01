@@ -13,7 +13,9 @@ use crate::schema::{
     FISHING_MINIGAME_ID,
 };
 use crate::world::world_movement;
-use crate::{animals, crafting, economy, energy, events, fishing, gathering, inventory, mines, quests, skills, social, tools};
+use crate::{
+    animals, crafting, economy, energy, events, fishing, gathering, inventory, mines, quests, skills, social, tools,
+};
 use indexmap::IndexMap;
 use serde_json::Value;
 
