@@ -208,7 +208,12 @@ without moving anything in the file:
    writes Skia's PNGs into the icon slots, updates the icon group entries
    (size, 32 bits, byte count), writes a fresh `VS_VERSIONINFO` (`VersionInfo`)
    into the version slot, shrinks each data entry's size, zeroes the rest of
-   the slot, and recomputes the PE checksum.
+   the slot, sets the optional header's `Subsystem` from console (3) to GUI
+   (2), and recomputes the PE checksum. The template is a console program, so
+   `--headless` and `--screenshot` print to a terminal; the exported game is a
+   GUI program, so double-clicking it opens no console window behind the game
+   (closing that window used to kill the game). Its error screen replaces the
+   console's messages (docs/PLAYER.md "Crash logs").
 3. **Clear failures.** A template without the slots, data larger than its slot
    (a very long title, say) or a file that isn't a PE gives one sentence in
    the report, never a broken executable.
@@ -225,7 +230,18 @@ a 56 KB program built by mingw's gcc and windres with the same layout and
 smaller slots (`build.sh` next to it rebuilds it), and read everything back.
 `wrestool`/`icotool`, `objdump -p` and Python's `pefile` read the patched files
 correctly, and pefile agrees with the checksum. CI exports a game on the Windows
-runner and checks its version info with PowerShell.
+runner and checks its version info and its GUI subsystem with PowerShell.
+
+### The C runtime
+
+`.cargo/config.toml` builds every Windows target with
+`-C target-feature=+crt-static`: the Visual C++ runtime is linked into
+`farm-player.exe` and `farm_ffi.dll`, so exported games and the editor's Play
+Mode work on a clean Windows install without the VC++ redistributable
+(`VCRUNTIME140.dll`). The CI runners have the redistributable installed, so CI
+checks the binaries' imports with `dumpbin /dependents` instead and fails on
+`VCRUNTIME`, `MSVCP` or `api-ms-win-crt-` DLLs. A `RUSTFLAGS` environment
+variable would replace the config's flags, so release builds don't set one.
 
 ## Export settings
 

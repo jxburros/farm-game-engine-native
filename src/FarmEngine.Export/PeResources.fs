@@ -21,6 +21,8 @@ type PeResource =
 /// A parsed PE image: just what patching resources needs.
 type PeImage =
     { ChecksumOffset: int
+      /// File offset of the optional header's Subsystem field (2 = GUI, 3 = console).
+      SubsystemOffset: int
       /// Size of the Authenticode signature table (0 when unsigned).
       SignatureSize: int
       Resources: PeResource list }
@@ -37,11 +39,17 @@ type PeIcon =
 /// "Windows icon and version info"). The player template is built with placeholder
 /// RT_GROUP_ICON/RT_ICON and RT_VERSION resources that reserve space (crates/farm-player/build.rs);
 /// patching writes new data into those bytes, shrinks each data entry to the new size, updates the
-/// icon group, and recomputes the PE checksum. Nothing moves, so no section or header changes.
+/// icon group, marks a console program as a GUI program, and recomputes the PE checksum. Nothing
+/// moves, so no section changes; the Subsystem word and the checksum are the only header fields
+/// written.
 module PeResources =
     let RT_ICON = 3
     let RT_GROUP_ICON = 14
     let RT_VERSION = 16
+    /// `IMAGE_SUBSYSTEM_WINDOWS_GUI`: Windows starts the program without a console window.
+    let SUBSYSTEM_GUI = 2
+    /// `IMAGE_SUBSYSTEM_WINDOWS_CUI`: a console program (what Rust builds by default).
+    let SUBSYSTEM_CONSOLE = 3
 
     type private Section =
         { VirtualAddress: int64
@@ -85,7 +93,11 @@ module PeResources =
                       VirtualAddress = int64 (Binary.u32 bytes (at + 12))
                       RawSize = int64 (Binary.u32 bytes (at + 16))
                       RawOffset = int64 (Binary.u32 bytes (at + 20)) } ]
-            let image resources = { ChecksumOffset = optional + 64; SignatureSize = signatureSize; Resources = resources }
+            let image resources =
+                { ChecksumOffset = optional + 64
+                  SubsystemOffset = optional + 68
+                  SignatureSize = signatureSize
+                  Resources = resources }
             if resourceRva = 0L then image []
             else
                 let section =
@@ -199,6 +211,10 @@ module PeResources =
                               Data = (match icon with Some r -> data bytes r | None -> [||]) } ]
                     Ok icons
 
+    /// The subsystem the executable asks Windows for (`SUBSYSTEM_GUI`, `SUBSYSTEM_CONSOLE`, …).
+    let subsystem (bytes: byte[]) : Result<int, string> =
+        read bytes |> Result.map (fun image -> Binary.u16 bytes image.SubsystemOffset)
+
     /// The raw VS_VERSIONINFO of the first version resource.
     let readVersion (bytes: byte[]) : Result<byte[], string> =
         match read bytes with
@@ -214,8 +230,11 @@ module PeResources =
         Binary.setU32 bytes (resource.EntryOffset + 4) (uint32 payload.Length)
 
     /// A copy of `template` with `icons` (square PNGs by edge length) written into the icon
-    /// slots of the same size and `version` as the version resource. Fails when the template
-    /// has no slot for something or the data is larger than the space reserved for it.
+    /// slots of the same size and `version` as the version resource. A console template becomes a
+    /// GUI program: double-clicking an exported game opens no console window (whose closing
+    /// would kill the game), while the template itself stays usable from a terminal
+    /// (`--headless`, `--screenshot`). Fails when the template has no slot for something or the
+    /// data is larger than the space reserved for it.
     let patch (icons: (int * byte[]) list) (version: byte[]) (template: byte[]) : Result<byte[], string> =
         match read template with
         | Error e -> Error e
@@ -271,5 +290,7 @@ module PeResources =
             match patchIcons () |> Result.bind patchVersion with
             | Error e -> Error e
             | Ok() ->
+                if Binary.u16 bytes image.SubsystemOffset = SUBSYSTEM_CONSOLE then
+                    Binary.setU16 bytes image.SubsystemOffset SUBSYSTEM_GUI
                 Binary.setU32 bytes image.ChecksumOffset (checksum bytes image.ChecksumOffset)
                 Ok bytes
