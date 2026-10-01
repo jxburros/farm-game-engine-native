@@ -1,7 +1,7 @@
 [
   {
     "name": "replay-three-days",
-    "description": "replay.test.ts THREE_DAYS on makeFarmProject (seed \"golden\"); final hash must equal the committed TS golden 6f884fd1bf6e2b5e.",
+    "description": "replay.test.ts THREE_DAYS on makeFarmProject (seed \"golden\"); the v9 recording ends at 9356330e045ae312 (the TypeScript golden in v8/replays ended at 6f884fd1bf6e2b5e).",
     "seed": "golden",
     "autoStartQuests": false
   },

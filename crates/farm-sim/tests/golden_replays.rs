@@ -21,6 +21,10 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "replays");
+
 fn golden_dir(relative: &str) -> PathBuf {
     [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect()
 }
@@ -46,7 +50,7 @@ fn fixture_names(folder: &str) -> Vec<String> {
 }
 
 fn recording() -> bool {
-    std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1")
+    RECORDER.enabled()
 }
 
 /// A value as the fixtures store it: its stable JSON, parsed (keys sorted, JS numbers).
@@ -151,8 +155,7 @@ fn check(name: &str) -> Result<(), String> {
     let path = golden_dir(&format!("replays/{name}.json"));
     if recording() {
         let text = serde_json::to_string(&actual).map_err(|e| e.to_string())? + "\n";
-        std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))?;
-        return Ok(());
+        return RECORDER.write(&path, text.as_bytes());
     }
     let recorded = golden(&format!("replays/{name}.json"));
     match first_difference(&recorded, &actual) {
@@ -212,4 +215,7 @@ fn replays_match_the_recorded_goldens() {
         names.len(),
         failures.join("\n\n")
     );
+    if recording() {
+        RECORDER.finish();
+    }
 }

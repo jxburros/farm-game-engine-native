@@ -15,6 +15,10 @@ use farm_sim::{hash_state, stable_json, state};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "content");
+
 fn golden_dir(relative: &str) -> PathBuf {
     [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect()
 }
@@ -152,13 +156,12 @@ fn record_content(name: &str, project_json: &Value) -> Result<Value, String> {
 }
 
 fn check_content_fixture(name: &str) -> Result<(), String> {
-    let recording = std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1");
-    if recording {
+    if RECORDER.enabled() {
         let source = golden(&format!("v8/content/{name}.json"));
         let fixture = record_content(name, &source["project"])?;
         let path = golden_dir(&format!("content/{name}.json"));
         let text = serde_json::to_string(&fixture).map_err(|e| e.to_string())? + "\n";
-        return std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()));
+        return RECORDER.write(&path, text.as_bytes());
     }
     let fixture = golden(&format!("content/{name}.json"));
     let actual = record_content(name, &fixture["project"])?;
@@ -222,6 +225,9 @@ fn every_v8_replay_project_still_loads() {
 #[test]
 fn content_assembly_matches_the_recorded_goldens() {
     check_all("v8/content", check_content_fixture);
+    if RECORDER.enabled() {
+        RECORDER.finish();
+    }
 }
 
 #[test]

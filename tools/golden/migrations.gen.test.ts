@@ -1,16 +1,20 @@
 /**
- * Generator for fixtures/projects/migrated/ — the TS
- * reference outputs the C# migration port (Migrations.cs, SaveMigrations.cs)
- * must reproduce byte-for-byte via StableJson.
+ * Generator for fixtures/projects/migrated/ — the TypeScript reference outputs
+ * (up to schema v8) that the native migrations (the F# project migrations, the
+ * Rust save migrations) reproduce byte-for-byte via stable JSON. Like the v8
+ * goldens, these files are frozen: the TypeScript engine is no longer the
+ * reference, and later schema steps are pinned by the native goldens instead.
  *
- * Usage (from a farm-game-engine checkout with node_modules):
+ * Usage, only to reproduce the files (from a farm-game-engine checkout with
+ * node_modules, at the commit fixtures/golden/SOURCE.txt records):
  *   cp <native>/tools/golden/migrations.gen.test.ts tests/unit/
- *   MIGRATIONS_OUT=<native>/fixtures/projects/migrated \
- *     npx vitest run tests/unit/migrations.gen.test.ts
+ *   MIGRATIONS_OUT=/tmp/migrated npx vitest run tests/unit/migrations.gen.test.ts
  *   rm tests/unit/migrations.gen.test.ts
+ *   diff -r /tmp/migrated <native>/fixtures/projects/migrated
  *
- * project-edge-v1.input.json is hand-authored and read from MIGRATIONS_OUT;
- * every other file there is (re)written. Without MIGRATIONS_OUT nothing runs.
+ * project-edge-v1.input.json is hand-authored and read from MIGRATIONS_OUT (copy
+ * it there first); every other file there is (re)written. Without
+ * MIGRATIONS_OUT nothing runs.
  */
 import { it } from 'vitest'
 import { readFileSync, writeFileSync } from 'node:fs'

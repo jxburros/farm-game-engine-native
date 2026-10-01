@@ -8,8 +8,9 @@
 //! replays on the current engine and compares, step by step.
 //!
 //! The summaries are built from the state's JSON (authoring units), so they do not depend on how
-//! the engine stores numbers. The files were recorded once, with `FARM_RECORD_V8_OUTCOMES=1`, by
-//! the v8 engine; never re-record them with a later engine.
+//! the engine stores numbers. The files were recorded once, by the v8 engine (farm-game-engine-native
+//! e09d1d0, with the recorder that commit had); they are never re-recorded, so this test has no
+//! record switch.
 
 use farm_sim::replay::{self, ReplayInput};
 use farm_sim::schema::GameProject;
@@ -244,44 +245,8 @@ fn play(name: &str) -> Vec<Map<String, Value>> {
     summaries
 }
 
-/// Stores the summaries as the first one in full, then per step only the parts that changed
+/// Reads the stored summaries: the first one in full, then per step only the parts that changed
 /// (tiles per tile, `null` for a tile that emptied).
-fn encode(summaries: &[Map<String, Value>]) -> Value {
-    let mut steps = Vec::new();
-    let mut previous: Option<&Map<String, Value>> = None;
-    for (index, summary) in summaries.iter().enumerate() {
-        let mut delta = Map::new();
-        delta.insert("step".to_owned(), json!(index));
-        for (key, value) in summary {
-            let before = previous.and_then(|p| p.get(key));
-            if before == Some(value) {
-                continue;
-            }
-            if key == "tiles" {
-                if let (Some(Value::Object(old)), Value::Object(new)) = (before, value) {
-                    let mut changes = Map::new();
-                    for (tile, content) in new {
-                        if old.get(tile) != Some(content) {
-                            changes.insert(tile.clone(), content.clone());
-                        }
-                    }
-                    for tile in old.keys() {
-                        if !new.contains_key(tile) {
-                            changes.insert(tile.clone(), Value::Null);
-                        }
-                    }
-                    delta.insert("tilesChanged".to_owned(), Value::Object(changes));
-                    continue;
-                }
-            }
-            delta.insert(key.clone(), value.clone());
-        }
-        steps.push(Value::Object(delta));
-        previous = Some(summary);
-    }
-    Value::Array(steps)
-}
-
 fn decode(encoded: &Value) -> Vec<Map<String, Value>> {
     let mut out: Vec<Map<String, Value>> = Vec::new();
     let mut current = Map::new();
@@ -342,17 +307,10 @@ fn differences(expected: &Map<String, Value>, actual: &Map<String, Value>) -> Ve
 
 #[test]
 fn replays_play_the_same_game_as_v8() {
-    let record = std::env::var("FARM_RECORD_V8_OUTCOMES").is_ok_and(|v| v == "1");
     let mut report = Vec::new();
     for name in replay_names() {
         let summaries = play(&name);
         let path = outcome_path(&name);
-        if record {
-            std::fs::create_dir_all(path.parent().expect("parent")).expect("create outcomes dir");
-            let text = serde_json::to_string(&encode(&summaries)).expect("encode");
-            std::fs::write(&path, text + "\n").expect("write outcomes");
-            continue;
-        }
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let expected = decode(&serde_json::from_str(&text).expect("outcomes parse"));
         if expected.len() != summaries.len() {
