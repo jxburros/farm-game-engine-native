@@ -30,11 +30,13 @@ public sealed class ExportGameTests
         {
             var folder = Directory.CreateDirectory(Path.Combine(root, target)).FullName;
             File.WriteAllBytes(Path.Combine(folder, executable), bytes);
-            File.WriteAllText(Path.Combine(folder, "THIRD-PARTY.txt"), "Third-party software\n");
+            var licenses = "Third-party software\n"u8.ToArray();
+            File.WriteAllBytes(Path.Combine(folder, "THIRD-PARTY.txt"), licenses);
             var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            var licensesSha = Convert.ToHexString(SHA256.HashData(licenses)).ToLowerInvariant();
             File.WriteAllText(
                 Path.Combine(folder, "template.json"),
-                $$"""{ "target": "{{target}}", "version": "{{GameExporter.EditorVersion}}", "sha256": "{{sha}}" }""");
+                $$"""{ "target": "{{target}}", "version": "{{GameExporter.EditorVersion}}", "sha256": "{{sha}}", "files": { "THIRD-PARTY.txt": "{{licensesSha}}" } }""");
         }
     }
 

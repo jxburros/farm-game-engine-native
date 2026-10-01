@@ -178,3 +178,70 @@ let ``export leaves generated mine floors out and carries crops and actions`` ()
         Assert.Equal<string list>(project.CustomCrops.Value |> List.map (fun c -> c.Id), pack.Content.Crops |> List.map (fun c -> c.Id))
         Assert.Contains(crop.Id, pack.Content.Crops |> List.map (fun c -> c.Id))
         Assert.Equal(project.Actions.Length, pack.Content.Actions.Length)
+
+let private art (id: string) (pixel: string) : CustomAsset =
+    { CustomAsset.Default with
+        Id = id
+        Name = id + ".png"
+        Type = CustomAssetTypes.Art
+        Width = Some 16.0
+        Height = Some 16.0
+        DataUrl = "data:image/png;base64," + pixel }
+
+[<Fact>]
+let ``exported packs carry the art their entries use, and installing adds it to the project`` () =
+    let source = starter ()
+    let frame = art "art-frame" "AAAA"
+    let sheet =
+        { art "art-sheet" "BBBB" with
+            Animations = Some [ { AnimationClip.Default with Name = "idle"; Frames = [ { ArtFrame.Default with AssetId = Some "art-frame"; Width = 16.0; Height = 16.0; Ticks = 6.0 } ] } ] }
+    let unrelated = art "art-other" "CCCC"
+    let item = { source.Items.[0] with Visual = Some { VisualRef.Default with AssetId = "art-sheet" } }
+    let source =
+        { source with
+            CustomAssets = [ unrelated; sheet; frame ]
+            Items = item :: List.tail source.Items }
+    let pack =
+        match PackExport.build source "Art Pack" [ "items", [ item.Id ] ] with
+        | Ok pack -> pack
+        | Error errors -> failwithf "%A" errors
+    // The bound image and the image its animation frames draw from; nothing else.
+    let carried = PackRules.packAssets pack |> Result.defaultWith (failwithf "%A")
+    Assert.Equal<string list>([ "art-sheet"; "art-frame" ], carried |> List.map (fun a -> a.Id))
+    // The file round-trips with its art.
+    match Json.parse (PackExport.toText pack) |> Result.mapError List.singleton |> Result.bind PackRules.validateContentPack with
+    | Ok back -> Assert.Equal(pack, back)
+    | Error errors -> failwithf "%A" errors
+    // A pack without art entries carries no `assets` key.
+    match PackExport.build source "plain" [ "recipes", source.Recipes |> List.map (fun r -> r.Id) ] with
+    | Ok plain -> Assert.DoesNotContain(plain.Extra, fun (key, _) -> key = PackRules.AssetsKey)
+    | Error errors -> failwithf "%A" errors
+
+    // Installing elsewhere adds the art (not a second copy in the stored pack); the project's
+    // own art under a pack id wins.
+    let target = { starter () with CustomAssets = [ art "art-frame" "ZZZZ" ] }
+    let installed = Document.run target (InstallPack pack)
+    Assert.Equal<string list>([ "art-frame"; "art-sheet" ], installed.CustomAssets |> List.map (fun a -> a.Id))
+    Assert.Equal("data:image/png;base64,ZZZZ", (installed.CustomAssets |> List.find (fun a -> a.Id = "art-frame")).DataUrl)
+    Assert.Empty(installed.ContentPacks.Head.Pack.Extra |> List.filter (fun (key, _) -> key = PackRules.AssetsKey))
+    Assert.Equal<string list>([ "art-frame" ], snd (PackMerge.mergeAssets target pack))
+    // Importing the pack's content into a project brings the art too, with a warning for the clash.
+    let imported, problems = PackMerge.applyToProject target pack
+    Assert.Contains("art-sheet", imported.CustomAssets |> List.map (fun a -> a.Id))
+    Assert.Contains(problems, fun p -> p.Message.Contains "art 'art-frame'")
+
+[<Fact>]
+let ``malformed pack art is refused`` () =
+    let raw (assets: Json) =
+        JObject
+            [ "manifest", JObject [ "id", JString "p"; "name", JString "P"; "version", JString "1.0.0" ]
+              "content", JObject []
+              PackRules.AssetsKey, assets ]
+    Assert.True(Result.isOk (PackRules.validateContentPack (raw (JArray []))))
+    Assert.True(Result.isError (PackRules.validateContentPack (raw (JString "nope"))))
+    let bad = SchemaJson.encodeCustomAsset { art "a" "AAAA" with DataUrl = "https://example.invalid/a.png" }
+    match PackRules.validateContentPack (raw (JArray [ bad ])) with
+    | Ok _ -> failwith "a remote image URL must be refused"
+    | Error errors -> Assert.Contains("assets.0.dataUrl", String.concat " " errors)
+    let noId = SchemaJson.encodeCustomAsset { art "" "AAAA" with Id = "" }
+    Assert.True(Result.isError (PackRules.validateContentPack (raw (JArray [ noId ]))))

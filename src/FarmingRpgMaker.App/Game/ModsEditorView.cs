@@ -128,6 +128,18 @@ public sealed class ModsEditorView : UserControl
             _review.Children.Add(Ui.Wrapped($"Overrides: {string.Join(", ", manifest.Overrides)}", "muted", "small"));
         var content = pack.Content;
         _review.Children.Add(Ui.Wrapped($"Content: {content.Items.Length} items, {content.Npcs.Length} NPCs, {content.Scenes.Length} scenes, {content.Recipes.Length} recipes, {content.Quests.Length} quests, {pack.Plugins.Length} plugins", "small"));
+        if (Mods.PackAssets(pack) is { Count: > 0 } assets)
+        {
+            var art = Ui.Wrapped($"Art: {assets.Count} image{(assets.Count == 1 ? "" : "s")}, added to this project's art when you install.", "small");
+            art.Name = "PackReviewArt";
+            _review.Children.Add(art);
+            if (_workspace.Current is { } current && Mods.PackAssetConflicts(current, pack) is { Count: > 0 } conflicts)
+            {
+                var clash = Ui.Wrapped($"This project already has different art named {string.Join(", ", conflicts)}; it keeps its own, so the pack's entries using those ids look different here.", "small");
+                clash.Name = "PackReviewArtConflicts";
+                _review.Children.Add(clash);
+            }
+        }
         foreach (var plugin in pack.Plugins)
         {
             _review.Children.Add(Ui.Text($"Plugin: {plugin.Name.OrNull() ?? plugin.Id} · hooks {string.Join(", ", plugin.Hooks)}", "section"));
@@ -150,11 +162,9 @@ public sealed class ModsEditorView : UserControl
         if (files.Count == 0) return;
         try
         {
-            await using var stream = await files[0].OpenReadAsync();
-            using var reader = new StreamReader(stream);
-            ReviewPackJson(await reader.ReadToEndAsync());
+            ReviewPackJson(await PickedFiles.ReadTextAsync(files[0], PickedFiles.MaxPackBytes, "content packs"));
         }
-        catch (IOException error)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             _message.Text = $"Could not open pack: {error.Message}";
         }
@@ -252,17 +262,22 @@ public sealed class ModsEditorView : UserControl
                 ShowOverwritePrompt = true,
             });
             if (file is null) return;
-            await using var stream = await file.OpenWriteAsync();
-            stream.SetLength(0);
-            await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
-            await writer.WriteAsync(result.Text);
-            _exportMessage.Text = $"Saved {file.Name}.";
+            await PickedFiles.WriteTextAsync(file, result.Text);
+            _exportMessage.Text = ExportedText(file.Name, result);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             _exportMessage.Text = $"Could not save the pack: {error.Message}";
         }
     }
+
+    /// <summary>"Saved my-pack.json with 2 images (the art its entries use)."</summary>
+    internal static string ExportedText(string fileName, PackExportResult result) => result.Assets.Count switch
+    {
+        0 => $"Saved {fileName}.",
+        1 => $"Saved {fileName} with 1 image (the art its entries use).",
+        var count => $"Saved {fileName} with {count} images (the art its entries use).",
+    };
 
     private void InstallReviewed()
     {

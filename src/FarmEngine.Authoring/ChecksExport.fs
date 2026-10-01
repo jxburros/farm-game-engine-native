@@ -6,13 +6,6 @@ open FarmEngine.Schemas
 /// Native export settings are additive to project schema v8, so the Problems pipeline validates
 /// them separately from the web-compatible Zod checks. No export binary is produced yet.
 module internal ChecksExport =
-    let private fileNameAllowed (name: string) =
-        let allowed c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c = '-' || c = '_'
-        let first c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-        let reserved = [ "CON"; "PRN"; "AUX"; "NUL" ] @ [ for prefix in [ "COM"; "LPT" ] do for n in 1..9 do yield prefix + string n ] |> Set.ofList
-        not (String.IsNullOrWhiteSpace name) && first name.[0] && (name |> Seq.forall allowed)
-        && not (reserved.Contains(name.ToUpperInvariant()))
-
     let private gameIdAllowed (id: string) =
         let validPart (part: string) =
             part.Length > 0 && (part.[0] >= 'a' && part.[0] <= 'z' || part.[0] >= '0' && part.[0] <= '9')
@@ -36,8 +29,13 @@ module internal ChecksExport =
             if settings.Title = Some "" then error "title" "title" "Export title must not be empty."
             if settings.Version = Some "" then error "version" "version" "Export version must not be empty."
             match settings.ExecutableName with
-            | Some name when not (fileNameAllowed name) ->
-                error "executableName" "executableName" "Executable name needs letters, numbers, hyphens or underscores and cannot be a reserved device name."
+            | Some name when not (Defaults.executableNameAllowed name) ->
+                error
+                    "executableName"
+                    "executableName"
+                    (sprintf
+                        "Executable name needs 1 to %d letters, numbers, hyphens or underscores and cannot be a reserved name (a device name such as CON, or licenses)."
+                        Defaults.MaxExecutableNameLength)
             | _ -> ()
             if settings.Window.Width < 320 || settings.Window.Width > 8192 || settings.Window.Height < 240 || settings.Window.Height > 8192 then
                 error "window" "window" "Window size must be between 320×240 and 8192×8192."

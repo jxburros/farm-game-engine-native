@@ -363,6 +363,7 @@ public sealed class ContentEditorView : UserControl
         _readouts.IsVisible = false;
         _summary.Child = null;
         _summary.IsVisible = false;
+        _contentForm?.ReleaseImages();
         _contentForm = null;
         _profit = null;
         _editing = null;

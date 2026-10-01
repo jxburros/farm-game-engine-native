@@ -498,6 +498,11 @@ type PackExportResult internal (pack: ContentPack option, errors: string list) =
     member _.Text: string = match pack with Some p -> PackExport.toText p | None -> ""
     /// The suggested file name (`{id}.json`).
     member _.FileName: string = match pack with Some p -> PackExport.fileName p | None -> ""
+    /// The art the pack carries for its entries (empty when they use none).
+    member _.Assets: IReadOnlyList<CustomAsset> =
+        match pack |> Option.map PackRules.packAssets with
+        | Some(Ok assets) -> assets |> Array.ofList :> IReadOnlyList<CustomAsset>
+        | _ -> [||] :> IReadOnlyList<CustomAsset>
 
 /// The Mods view's registry and "Export selection as pack" (`ModRegistry`, `PackExport`).
 [<AbstractClass; Sealed>]
@@ -512,6 +517,15 @@ type Mods =
     static member DefaultExportKeys: IReadOnlyList<string> = PackExport.defaultKeys |> Array.ofList :> IReadOnlyList<string>
     /// The pack id a name becomes.
     static member PackId(name: string) : string = PackExport.packId name
+    /// The art a pack carries (`assets`): it joins the project's art when the pack is installed.
+    static member PackAssets(pack: ContentPack) : IReadOnlyList<CustomAsset> =
+        match PackRules.packAssets pack with
+        | Ok assets -> assets |> Array.ofList :> IReadOnlyList<CustomAsset>
+        | Error _ -> [||] :> IReadOnlyList<CustomAsset>
+    /// Ids of the pack's art that the project already has with a different image; installing
+    /// keeps the project's.
+    static member PackAssetConflicts(project: GameProject, pack: ContentPack) : IReadOnlyList<string> =
+        snd (PackMerge.mergeAssets project pack) |> Array.ofList :> IReadOnlyList<string>
     /// A validated pack of the chosen entries: content key → ids.
     static member ExportPack(project: GameProject, name: string, selection: IReadOnlyDictionary<string, IReadOnlyList<string>>) : PackExportResult =
         let pairs = [ for pair in selection -> pair.Key, List.ofSeq pair.Value ]

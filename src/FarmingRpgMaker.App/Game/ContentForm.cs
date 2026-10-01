@@ -46,6 +46,8 @@ internal sealed class ContentForm
     private readonly Dictionary<string, IReadOnlyList<PickerOption>> _options = [];
     private Dictionary<string, Item>? _items;
     private VisualPreview? _art;
+    /// <summary>The bitmaps of the legacy image thumbnails on show, freed when the form rebuilds.</summary>
+    private readonly List<Bitmap> _thumbnails = [];
     private int _tab;
 
     public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report)
@@ -144,6 +146,7 @@ internal sealed class ContentForm
     private void Rebuild()
     {
         _root.Children.Clear();
+        ReleaseImages();
         _writers.Clear();
         _json.Clear();
         _options.Clear();
@@ -1037,7 +1040,17 @@ internal sealed class ContentForm
         return art.Render(_project, visual, 0, ArtSize);
     }
 
-    /// <summary>A legacy image field (an asset id or a data URL) with a thumbnail of what it holds.</summary>
+    /// <summary>Frees the thumbnail bitmaps (the form rebuilds, or the editor moves to another entry).</summary>
+    public void ReleaseImages()
+    {
+        foreach (var bitmap in _thumbnails) bitmap.Dispose();
+        _thumbnails.Clear();
+    }
+
+    /// <summary>
+    /// A legacy image field (an asset id or a data URL) with a thumbnail of what it holds. Typing
+    /// decodes again only when the image the text names changes, and the replaced bitmap is freed.
+    /// </summary>
     private Grid WithThumbnail(TextBox box, string path, string label)
     {
         var thumbnail = Accessible(new Border
@@ -1047,19 +1060,38 @@ internal sealed class ContentForm
             Height = 40,
             VerticalAlignment = VerticalAlignment.Center,
         }, $"{label} preview");
-        Show(thumbnail, Thumbnail(box.Text));
-        box.TextChanged += (_, _) => Show(thumbnail, Thumbnail(box.Text));
+        string? shownUrl = null;
+        void Update()
+        {
+            var url = ThumbnailUrl(box.Text);
+            if (url == shownUrl) return;
+            shownUrl = url;
+            var previous = (thumbnail.Child as Image)?.Source as Bitmap;
+            Show(thumbnail, Thumbnail(url));
+            if (previous is not null && _thumbnails.Remove(previous)) previous.Dispose();
+        }
+
+        Update();
+        box.TextChanged += (_, _) => Update();
         return Columns("*,Auto", box, thumbnail);
     }
 
-    /// <summary>The image of a <c>data:image/…;base64,</c> URL, or of the asset with that id; null when there is none or it does not decode.</summary>
-    private Image? Thumbnail(string? text)
+    /// <summary>The data URL a legacy image field names: the text itself, or the URL of the asset with that id ("" for none).</summary>
+    private string ThumbnailUrl(string? text)
     {
         var url = (text ?? "").Trim();
-        if (url.Length == 0) return null;
-        if (!url.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            url = _project.CustomAssets.FirstOrDefault(asset => asset.Id == url)?.DataUrl ?? "";
-        if (ArtBitmaps.Decode(url) is not { } bitmap) return null;
+        if (url.Length == 0 || url.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return url;
+        return _project.CustomAssets.FirstOrDefault(asset => asset.Id == url)?.DataUrl ?? "";
+    }
+
+    /// <summary>
+    /// The image of a <c>data:image/…;base64,</c> URL decoded at thumbnail size (2× the 40px frame),
+    /// or null when there is none, it does not decode, or it is over the art import limits.
+    /// </summary>
+    private Image? Thumbnail(string url)
+    {
+        if (url.Length == 0 || ArtBitmaps.Thumbnail(url, 80) is not { } bitmap) return null;
+        _thumbnails.Add(bitmap);
         var image = new Image { Source = bitmap, Stretch = Stretch.Uniform };
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.None);
         return image;

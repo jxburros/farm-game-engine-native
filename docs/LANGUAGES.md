@@ -498,7 +498,7 @@ Later items (native and web roadmaps):
 | Seed selection, fertilizer choice | Done: the `interactWith` command and the inventory's Hold button ([PLAYER.md](PLAYER.md#controls)) |
 | Richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
 | Audio-file import | C# import; F# embeds in the cartridge; Rust plays with kira (seasonal music crossfades, weather ambience layers) |
-| Zip/folder content packs with binary assets | F# pack loader + compiler |
+| Zip/folder content packs with binary assets | F# pack loader + compiler. JSON packs already carry their art: "Export selection as pack" embeds the images the entries use in the pack's `assets` (as data URLs), and installing a pack adds them to the project's art (`PackExport.build`, `PackMerge.mergeAssets`). |
 | JSON Schema for mod autocomplete | F# generates it from the authoring types |
 | Property-based determinism, economy and migration tests | Done: proptest (Rust), FsCheck (F#) |
 | Balancing lab (new) | F# `FarmEngine.Lab`: run thousands of seeds through `farm-ffi` in parallel; chart gold per day per crop or strategy; flag dominant crops |

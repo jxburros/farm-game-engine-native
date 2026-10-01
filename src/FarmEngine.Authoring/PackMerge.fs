@@ -209,12 +209,47 @@ module PackMerge =
           MutationChance = crop.MutationChance; YieldMin = crop.YieldMin
           YieldMax = crop.YieldMax; HarvestItemId = crop.HarvestItemId; CustomAsset = None; Extra = crop.Extra }
 
+    /// A pack's art (`PackRules.packAssets`) added to the project's custom assets: assets with an
+    /// id the project lacks are appended in pack order. An id the project already has keeps the
+    /// project's asset; the ids where the pack's asset differs are returned. Asset ids are not
+    /// namespaced, so the pack's definitions find their art under the ids they were exported with.
+    let mergeAssets (project: GameProject) (pack: ContentPack) : GameProject * string list =
+        match PackRules.packAssets pack with
+        | Error _
+        | Ok [] -> project, []
+        | Ok assets ->
+            let known = Dictionary<string, CustomAsset>()
+            for asset in project.CustomAssets do
+                if not (known.ContainsKey asset.Id) then known.[asset.Id] <- asset
+            let added = ResizeArray<CustomAsset>()
+            let conflicts = ResizeArray<string>()
+            for asset in assets do
+                match known.TryGetValue asset.Id with
+                | true, existing ->
+                    if (existing.DataUrl <> asset.DataUrl || existing.Animations <> asset.Animations || existing.Sheet <> asset.Sheet)
+                       && not (conflicts.Contains asset.Id) then
+                        conflicts.Add asset.Id
+                | _ ->
+                    known.[asset.Id] <- asset
+                    added.Add asset
+            let next = if added.Count = 0 then project else { project with CustomAssets = project.CustomAssets @ List.ofSeq added }
+            next, List.ofSeq conflicts
+
+    /// The warning for art a pack brings under an id the project already uses differently.
+    let assetConflict (pack: ContentPack) (assetId: string) : PackProblem =
+        problem pack.Manifest.Id "warning"
+            (sprintf "Pack '%s' brings art '%s', but the project already has different art with that id — keeping the project's"
+                pack.Manifest.Id assetId)
+
     /// Materialize a pack as editable project content. The Mods editor's ImportPack edit uses
-    /// this F# transform, including the pack's optional player-start inventory and location.
+    /// this F# transform, including the pack's optional player-start inventory and location and
+    /// its art (`mergeAssets`).
     let applyToProject (project: GameProject) (rawPack: ContentPack) : GameProject * PackProblem list =
         let problems = ResizeArray<PackProblem>()
         if contentBlocked rawPack problems then project, List.ofSeq problems
         else
+            let project, assetConflicts = mergeAssets project rawPack
+            for assetId in assetConflicts do problems.Add(assetConflict rawPack assetId)
             let pack = PackRules.namespacePack rawPack
             let content = pack.Content
             let overrides = HashSet<string>(pack.Manifest.Overrides)

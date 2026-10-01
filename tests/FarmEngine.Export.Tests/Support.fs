@@ -36,31 +36,55 @@ let starter () = ProjectCatalog.CreateInitialProject(0.0)
 
 let sha256 (bytes: byte[]) = Convert.ToHexString(SHA256.HashData bytes).ToLowerInvariant()
 
-/// Writes a template folder for `target` into `root`: the executable, template.json and licenses.
+/// The page files of the fake web template.
+let fakeWebFiles =
+    [ "farm_wasm.js", "export default async function init() {}\n"
+      "game.js", "import init from './farm_wasm.js';\n"
+      "index.html", "<title>{{TITLE}}</title><script type=module src=game.js></script>\n"
+      "style.css", "body { margin: 0; }\n" ]
+
+/// Writes template.json for the files in `folder`, as tools/player-templates/package.sh does:
+/// `sha256` for the executable, `files` for everything else.
+let writeManifest (folder: string) (target: ExportTarget) (version: string) =
+    let hash (path: string) = sha256 (File.ReadAllBytes path)
+    let files =
+        Directory.GetFiles folder
+        |> Array.map Path.GetFileName
+        |> Array.filter (fun name -> name <> target.TemplateExecutable && name <> "template.json")
+        |> Array.sort
+        |> Array.map (fun name -> sprintf "\"%s\": \"%s\"" name (hash (Path.Combine(folder, name))))
+    File.WriteAllText(
+        Path.Combine(folder, "template.json"),
+        sprintf
+            """{ "target": "%s", "version": "%s", "sha256": "%s", "files": { %s } }"""
+            target.Id
+            version
+            (hash (Path.Combine(folder, target.TemplateExecutable)))
+            (String.Join(", ", files))
+    )
+
+/// Writes a template folder for `target` into `root`: the executable, licenses, the web page
+/// files for the web, and template.json.
 let writeTemplate (root: string) (target: ExportTarget) (version: string) (executable: byte[]) =
     let folder = Path.Combine(root, target.Id)
     Directory.CreateDirectory folder |> ignore
     File.WriteAllBytes(Path.Combine(folder, target.TemplateExecutable), executable)
     File.WriteAllText(Path.Combine(folder, "THIRD-PARTY.txt"), "Third-party software\n\nMIT License\n")
-    File.WriteAllText(
-        Path.Combine(folder, "template.json"),
-        sprintf """{ "target": "%s", "version": "%s", "sha256": "%s" }""" target.Id version (sha256 executable)
-    )
+    if target = ExportTarget.Web then
+        for name, text in fakeWebFiles do
+            File.WriteAllText(Path.Combine(folder, name), text)
+    writeManifest folder target version
     folder
 
 /// A stand-in Linux player: a shell script.
 let fakeLinuxPlayer = Text.Encoding.UTF8.GetBytes "#!/bin/sh\necho fake player\n"
 
-/// Templates for both targets at `version`: the PE fixture (real placeholder resources) for
-/// Windows and a script for Linux.
+/// Templates for every target at `version`: the PE fixture (real placeholder resources) for
+/// Windows, a script for Linux, and stand-in page files for the web.
 let fakeTemplates (root: string) (version: string) =
     writeTemplate root ExportTarget.WindowsX64 version (File.ReadAllBytes(fixture "player-fixture.exe")) |> ignore
     writeTemplate root ExportTarget.LinuxX64 version fakeLinuxPlayer |> ignore
-    let web = writeTemplate root ExportTarget.Web version (Text.Encoding.UTF8.GetBytes "\000asm fake module")
-    File.WriteAllText(Path.Combine(web, "farm_wasm.js"), "export default async function init() {}\n")
-    File.WriteAllText(Path.Combine(web, "game.js"), "import init from './farm_wasm.js';\n")
-    File.WriteAllText(Path.Combine(web, "index.html"), "<title>{{TITLE}}</title><script type=module src=game.js></script>\n")
-    File.WriteAllText(Path.Combine(web, "style.css"), "body { margin: 0; }\n")
+    writeTemplate root ExportTarget.Web version (Text.Encoding.UTF8.GetBytes "\000asm fake module") |> ignore
     root
 
 let options (templates: string) (output: string) (targets: string list) : ExportOptions =

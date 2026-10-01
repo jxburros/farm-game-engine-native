@@ -82,9 +82,15 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
             return null;
         }
 
-        await using var stream = await files[0].OpenReadAsync().ConfigureAwait(true);
-        using var reader = new StreamReader(stream);
-        return (files[0].Name, await reader.ReadToEndAsync().ConfigureAwait(true));
+        try
+        {
+            return (files[0].Name, await PickedFiles.ReadTextAsync(files[0], PickedFiles.MaxProjectBytes, "project files").ConfigureAwait(true));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            await ShowErrorsAsync(shell, $"{files[0].Name} could not be imported", [error.Message]).ConfigureAwait(true);
+            return null;
+        }
     }
 
     public async Task<string?> SaveExportAsync(IShellHost shell, string suggestedFileName, string json)
@@ -107,10 +113,16 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
             return null;
         }
 
-        await using var stream = await file.OpenWriteAsync().ConfigureAwait(true);
-        stream.SetLength(0);
-        await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
-        await writer.WriteAsync(json).ConfigureAwait(true);
+        try
+        {
+            await PickedFiles.WriteTextAsync(file, json).ConfigureAwait(true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            await ShowErrorsAsync(shell, $"{file.Name} could not be saved", [error.Message]).ConfigureAwait(true);
+            return null;
+        }
+
         return file.Name;
     }
 

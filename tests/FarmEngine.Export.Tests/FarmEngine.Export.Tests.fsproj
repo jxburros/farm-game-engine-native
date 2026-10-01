@@ -14,6 +14,7 @@
     <Compile Include="TemplateTests.fs" />
     <Compile Include="AssetUsageTests.fs" />
     <Compile Include="ExporterTests.fs" />
+    <Compile Include="ExportSafetyTests.fs" />
     <Compile Include="EndToEndTests.fs" />
   </ItemGroup>
   <ItemGroup>

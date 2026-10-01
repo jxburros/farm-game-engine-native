@@ -16,8 +16,8 @@ namespace FarmingRpgMaker.App.Game;
 internal static partial class ArtImport
 {
     internal const int MaxBytes = 16 * 1024 * 1024;
-    private const int MaxSide = 8192;
-    private const int MaxPixels = 16 * 1024 * 1024;
+    internal const int MaxSide = 8192;
+    internal const int MaxPixels = 16 * 1024 * 1024;
     /// <summary>SVGs without a size of their own become this wide on their longest side.</summary>
     internal const int DefaultSvgSide = 512;
     private static readonly HashSet<string> RasterExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"];
