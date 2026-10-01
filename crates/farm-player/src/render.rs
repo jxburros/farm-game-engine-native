@@ -228,9 +228,56 @@ impl FrameRenderer {
     }
 }
 
+/// The screen a host shows when the game cannot go on (a failed load, an engine failure): a
+/// `title`, then `lines` wrapped to the frame, on a plain background. It needs nothing of the
+/// game, so it works when the player itself is gone. Exported games have no console, so this is
+/// where a player learns what happened and where the crash log is.
+pub fn error_screen(width: u32, height: u32, title: &str, lines: &[String]) -> Pixmap {
+    use farm_render::text;
+    use farm_render::FontId;
+    let (width, height) = (width.max(1), height.max(1));
+    let scale = ((width as f32 / 1280.0).min(height as f32 / 800.0)).clamp(0.6, 3.0);
+    let margin = 48.0 * scale;
+    let max_width = (width as f32 - margin * 2.0).max(40.0);
+    let (title_size, body_size) = (28.0 * scale, 16.0 * scale);
+    let mut list = DrawList::new();
+    let mut y = margin + text::font(FontId::Bold).ascent(title_size);
+    let title_color = Color::rgb(0xf6, 0xe7, 0xc8);
+    for line in text::wrap(FontId::Bold, title_size, title, max_width) {
+        list.text(line, margin, y, FontId::Bold, title_size, title_color);
+        y += text::font(FontId::Bold).line_height(title_size);
+    }
+    y += body_size;
+    let body_color = Color::rgb(0xe4, 0xdc, 0xd0);
+    let line_height = text::font(FontId::Regular).line_height(body_size);
+    for paragraph in lines {
+        for line in text::wrap(FontId::Regular, body_size, paragraph, max_width) {
+            list.text(line, margin, y, FontId::Regular, body_size, body_color);
+            y += line_height;
+        }
+        y += line_height * 0.5;
+    }
+    let mut pixmap = new_pixmap(width, height);
+    pixmap.fill(skia_color(Color::rgb(0x2a, 0x22, 0x1c)));
+    Rasterizer::new().render(&list, &ImageStore::default(), &mut pixmap.as_mut(), Transform::identity());
+    pixmap
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_error_screen_draws_its_text() {
+        let lines = vec!["The game stopped: boom".to_owned(), "Crash log: /tmp/crash-1-2.log".to_owned()];
+        let pixmap = error_screen(640, 400, "Something went wrong", &lines);
+        assert_eq!((pixmap.width(), pixmap.height()), (640, 400));
+        let background = pixmap.pixel(0, 0).unwrap();
+        let drawn = pixmap.pixels().iter().filter(|pixel| **pixel != background).count();
+        assert!(drawn > 500, "text was drawn ({drawn} pixels)");
+        // Tiny or empty frames do not panic.
+        assert_eq!(error_screen(0, 0, "", &[]).width(), 1);
+    }
 
     #[test]
     fn zoom_follows_the_frame_area() {

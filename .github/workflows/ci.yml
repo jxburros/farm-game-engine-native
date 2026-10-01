@@ -365,6 +365,20 @@ jobs:
           $info = (Get-Item publish/FarmingRpgMaker.exe).VersionInfo
           Write-Host "FarmingRpgMaker.exe $($info.ProductVersion) ($([math]::Round((Get-ChildItem publish -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB total)"
 
+      # .cargo/config.toml links the C runtime statically: runners have the VC++ redistributable,
+      # clean Windows installs don't.
+      - name: Check the Rust binaries need no VC++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          foreach ($file in 'publish/farm_ffi.dll', 'publish/players/windows-x64/farm-player.exe') {
+            $imports = & $dumpbin /nologo /dependents $file
+            Write-Host "$file`n$($imports -join "`n")"
+            if ($imports -match '(?i)vcruntime|msvcp|api-ms-win-crt-') { throw "$file needs the Visual C++ runtime" }
+          }
+
       # Patches the real template's icon and version resources, then runs the game.
       - name: Export a sample game and run it (windows-x64)
         shell: pwsh
@@ -378,6 +392,14 @@ jobs:
           Write-Host "$($info.ProductName) $($info.ProductVersion) / $($info.FileDescription) / $($info.OriginalFilename)"
           if ($info.ProductName -ne $title -or $info.FileDescription -ne $title) { throw "Version info was not written: '$($info.ProductName)'" }
           if ($info.OriginalFilename -ne "$($game.Name).exe") { throw "OriginalFilename is '$($info.OriginalFilename)'" }
+          # Exported games are GUI programs (no console window); the template stays a console one.
+          $subsystem = {
+            param($path)
+            $bytes = [IO.File]::ReadAllBytes($path)
+            [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 24 + 68)
+          }
+          if ((& $subsystem $exe) -ne 2) { throw "The exported game is not a GUI program (subsystem $(& $subsystem $exe))" }
+          if ((& $subsystem 'target/release/farm-player.exe') -ne 3) { throw "The player template is not a console program" }
           try {
             Add-Type -AssemblyName System.Drawing
             $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
@@ -385,12 +407,14 @@ jobs:
           } catch {
             Write-Host "::warning::Could not read the exported icon: $_"
           }
-          $exported = & $exe --headless --replay fixtures/golden/cartridges/twenty-ticks.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # A GUI program still writes to redirected output; wait for it explicitly.
+          $run = Start-Process -FilePath $exe -ArgumentList '--headless', '--replay', 'fixtures/golden/cartridges/twenty-ticks.json' -NoNewWindow -Wait -PassThru -RedirectStandardOutput exported.json
+          if ($run.ExitCode -ne 0) { throw "The exported game exited with $($run.ExitCode)" }
+          $exported = (Get-Content exported.json -Raw).Trim()
           $reference = & target/release/farm-player.exe --headless --cart fixtures/golden/cartridges/project-v8.cart --replay fixtures/golden/cartridges/twenty-ticks.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host $exported
-          if ("$exported" -ne "$reference") { throw "The exported game reported $exported, the template $reference" }
+          if ($exported -ne "$reference".Trim()) { throw "The exported game reported $exported, the template $reference" }
 
       - name: Upload test results
         if: failure()

@@ -7,7 +7,7 @@
 
 use farm_render::{
     apply_graphics, build_world, compute_camera, shell_snapshot, tiny_skia, GraphicsSource, SnapshotOptions,
-    WorldRenderer,
+    TileWindow, WorldRenderer,
 };
 use std::time::Instant;
 
@@ -36,8 +36,15 @@ fn play_viewport_frame_time() {
         let started = Instant::now();
         let px = padding + (2.0 + f64::from(frame % 40) * 0.25) * ts;
         let camera = compute_camera(px, padding + 6.0 * ts, world.0, world.1, view_width, view_height);
-        let options =
-            SnapshotOptions { tile_size: ts, padding, pixel_x: Some(px), pixel_y: None, camera: Some(camera) };
+        let window = TileWindow::for_camera(&camera, padding, ts, 2);
+        let options = SnapshotOptions {
+            tile_size: ts,
+            padding,
+            pixel_x: Some(px),
+            pixel_y: None,
+            camera: Some(camera),
+            tile_window: Some(window),
+        };
         let mut snapshot = shell_snapshot(&content, &state, &scene, &options);
         snapshot.tick = f64::from(frame);
         apply_graphics(&mut snapshot, &source, &scene, f64::from(frame), true);

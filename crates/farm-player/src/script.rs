@@ -64,7 +64,7 @@ impl InputScript {
                     events.push(InputEvent::PointerMove { x, y });
                     events.push(InputEvent::PointerDown { x, y, button: PointerButton::Primary });
                 }
-            } else if step.at + 1 == frame {
+            } else if step.at.saturating_add(1) == frame {
                 if let Some(key) = &step.press {
                     events.push(InputEvent::KeyUp { key: key.clone() });
                 }
@@ -121,5 +121,12 @@ mod tests {
         assert_eq!(script.events_at(5)[0], InputEvent::PointerUp { x: 10.0, y: 20.0, button: PointerButton::Primary });
         assert_eq!(script.events_at(5)[1], InputEvent::KeyDown { key: "d".into(), repeat: false });
         assert!(InputScript::parse(r#"{"steps":[{"at":1,"bogus":1}]}"#).is_err());
+    }
+
+    #[test]
+    fn the_last_frame_index_does_not_overflow() {
+        let script = InputScript::parse(r#"{"steps":[{"at":4294967295,"press":"enter"}]}"#).unwrap();
+        assert!(script.events_at(0).is_empty());
+        assert_eq!(script.events_at(u32::MAX), [InputEvent::KeyDown { key: "enter".into(), repeat: false }]);
     }
 }

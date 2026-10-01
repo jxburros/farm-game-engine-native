@@ -89,7 +89,9 @@ pub fn settings(
     }
     let mut action = None;
 
-    // Key capture for rebinding: the next raw key (Escape cancels).
+    // Key capture for rebinding: the next raw key. Escape cancels, and so does Back from a
+    // gamepad or the on-screen Menu button (the only navigation the player sends while it waits),
+    // so a gamepad-only player is never stuck here.
     if let Some(capturing) = screen.capture {
         if let Some(key) = ui.input().keys_pressed.first().cloned() {
             screen.capture = None;
@@ -99,6 +101,9 @@ pub fn settings(
                 settings.controls.rebind(capturing, &key);
                 action = Some(ShellAction::SettingsChanged);
             }
+        } else if ui.back_pressed() {
+            screen.capture = None;
+            action = Some(ShellAction::CancelCapture);
         }
     } else if ui.tab_delta() != 0 {
         let current = tabs.iter().position(|tab| *tab == screen.tab).unwrap_or(0) as i32;

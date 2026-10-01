@@ -60,6 +60,9 @@ let ``patching writes icons, version and checksum that read back`` () =
     let stored = BitConverter.ToUInt32(patched, image.ChecksumOffset)
     Assert.Equal(PeResources.checksum patched image.ChecksumOffset, stored)
     Assert.NotEqual(BitConverter.ToUInt32(original, image.ChecksumOffset), stored)
+    // The console template became a GUI program (no console window behind the game).
+    Assert.Equal(PeResources.SUBSYSTEM_CONSOLE, PeResources.subsystem original |> ok)
+    Assert.Equal(PeResources.SUBSYSTEM_GUI, PeResources.subsystem patched |> ok)
     // Capacities survive: patching the result again works and gives the same bytes.
     Assert.Equal<byte[]>(patched, PeResources.patch rendered versionBytes patched |> ok)
     // Nothing outside the resource data changed.
@@ -67,6 +70,7 @@ let ``patching writes icons, version and checksum that read back`` () =
     let inside (offset: int) =
         resources.Resources |> List.exists (fun r -> offset >= r.DataOffset && offset < r.DataOffset + r.Capacity || offset >= r.EntryOffset + 4 && offset < r.EntryOffset + 8)
         || (offset >= image.ChecksumOffset && offset < image.ChecksumOffset + 4)
+        || (offset >= image.SubsystemOffset && offset < image.SubsystemOffset + 2)
     for i in 0 .. original.Length - 1 do
         if original[i] <> patched[i] && not (inside i) then failwithf "byte %d changed outside the resources" i
 

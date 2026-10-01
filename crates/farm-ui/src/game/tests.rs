@@ -80,6 +80,36 @@ fn long_dialogue_text_wraps_inside_the_card() {
 }
 
 #[test]
+fn a_dialogue_taller_than_the_screen_scrolls_to_the_focused_option() {
+    let mut fixture = Fixture::starter();
+    fixture.size = (1280.0, 400.0);
+    let npc = fixture.ctx.content.npcs.iter_mut().find(|npc| npc.id == "npc-merchant").unwrap();
+    let dialogue = npc.dialogue.iter_mut().find(|dialogue| dialogue.id == "dialogue-merchant-greeting").unwrap();
+    dialogue.text = "word ".repeat(120);
+    let option = dialogue.options[0].clone();
+    dialogue.options = (0..6)
+        .map(|index| farm_sim::schema::DialogueOption { text: format!("Option {index}"), ..option.clone() })
+        .collect();
+    with_dialogue(&mut fixture, "npc-merchant", "dialogue-merchant-greeting");
+    fixture.idle();
+    let scroll = WidgetId::new("dialogue-scroll").with("dialogue-merchant-greeting");
+    let (offset, content, view) = fixture.ui.scroll_metrics(scroll).expect("the card scrolls");
+    assert!(content > view && view <= 400.0, "{content} in {view}");
+    assert_eq!(offset, 0.0);
+    // The last option starts out of view; moving the focus down to it scrolls it in.
+    let last = WidgetId::new("dialogue-option").with("dialogue-merchant-greeting").with(5usize);
+    for _ in 0..5 {
+        fixture.nav(&[NavAction::Down]);
+    }
+    fixture.idle();
+    let (offset, _, _) = fixture.ui.scroll_metrics(scroll).unwrap();
+    assert!(offset > 0.0, "scrolled to the focused option");
+    let rect = fixture.ui.last_rect(last).unwrap();
+    assert!(rect.y >= 0.0 && rect.bottom() <= 400.0, "{rect:?}");
+    assert_eq!(command(&fixture.nav(&[NavAction::Accept])), Some(&Command::ChooseDialogueOption { index: 5 }));
+}
+
+#[test]
 fn shop_buys_sells_and_repairs_through_commands() {
     let mut fixture = Fixture::starter();
     fixture.state.shop = Some(ShopSession { shop_id: "shop-general".into() });

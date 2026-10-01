@@ -53,7 +53,8 @@ pub fn art_assets(assets: &[CustomAsset]) -> Vec<ArtAsset> {
 pub struct NpcArt {
     pub scene_id: String,
     pub visual: Option<VisualRef>,
-    pub custom_image: Option<String>,
+    /// Shared, so refreshing the live state copies no `data:` URL.
+    pub custom_image: Option<Arc<str>>,
 }
 
 /// An animal instance for the art pass.
@@ -90,7 +91,8 @@ pub struct CropArt {
 pub struct GraphicsSource {
     pub assets: Vec<ArtAsset>,
     pub player_visual: Option<VisualRef>,
-    pub player_custom_image: Option<String>,
+    /// Shared with every frame's snapshot (no copy of a `data:` URL per frame).
+    pub player_custom_image: Option<Arc<str>>,
     /// `graphics.pixelArt` (true when the game has no graphics settings).
     pub pixel_art: bool,
     pub npcs: Vec<NpcArt>,
@@ -135,7 +137,7 @@ impl GraphicsSource {
         Self {
             assets: art_assets(assets),
             player_visual: player_visual.cloned(),
-            player_custom_image: player_custom_image.cloned(),
+            player_custom_image: player_custom_image.map(|url| Arc::from(url.as_str())),
             pixel_art: graphics.is_none_or(|graphics| graphics.pixel_art),
             npcs: Vec::new(),
             animal_species: Vec::new(),
@@ -181,7 +183,7 @@ impl GraphicsSource {
             .map(|npc| NpcArt {
                 scene_id: npc.scene_id.clone(),
                 visual: npc.visual.clone(),
-                custom_image: npc.custom_image.clone(),
+                custom_image: npc.custom_image.as_deref().map(Arc::from),
             })
             .collect();
         source.animal_species = definitions(project.animal_species.iter().map(|d| (&d.id, &d.visual)));
@@ -200,13 +202,50 @@ impl GraphicsSource {
             .map(|npc| NpcArt {
                 scene_id: state.npcs.get(&npc.id).map_or(&npc.scene_id, |live| &live.scene_id).clone(),
                 visual: npc.visual.clone(),
-                custom_image: npc.custom_image.clone(),
+                custom_image: npc.custom_image.as_deref().map(Arc::from),
             })
             .collect();
         self.node_types = definitions(content.node_types.iter().map(|d| (&d.id, &d.visual)));
         self.machine_types = definitions(content.machine_types.iter().map(|d| (&d.id, &d.visual)));
         self.animal_species = definitions(content.animal_species.iter().map(|d| (&d.id, &d.visual)));
         self.animals = animal_art(&state.animals);
+    }
+
+    /// [`GraphicsSource::set_live_state`] for the next frame of the same game (`content` is the
+    /// one given before): only what moves is refreshed, in place (NPC scenes, the animals), and
+    /// nothing is copied while it stays the same. A different number of NPCs or definitions
+    /// refreshes everything.
+    pub fn refresh_live_state(&mut self, content: &GameContent, state: &GameState) {
+        let same_shape = self.npcs.len() == content.npcs.len()
+            && self.node_types.len() == content.node_types.len()
+            && self.machine_types.len() == content.machine_types.len()
+            && self.animal_species.len() == content.animal_species.len();
+        if !same_shape {
+            self.set_live_state(content, state);
+            return;
+        }
+        for (art, npc) in self.npcs.iter_mut().zip(&content.npcs) {
+            let scene = state.npcs.get(&npc.id).map_or(&npc.scene_id, |live| &live.scene_id);
+            if art.scene_id != *scene {
+                art.scene_id.clone_from(scene);
+            }
+        }
+        self.animals.truncate(state.animals.len());
+        for (index, animal) in state.animals.iter().enumerate() {
+            match self.animals.get_mut(index) {
+                Some(art) => {
+                    if art.scene_id != animal.scene_id {
+                        art.scene_id.clone_from(&animal.scene_id);
+                    }
+                    if art.species_id != animal.species_id {
+                        art.species_id.clone_from(&animal.species_id);
+                    }
+                }
+                None => self
+                    .animals
+                    .push(AnimalArt { scene_id: animal.scene_id.clone(), species_id: animal.species_id.clone() }),
+            }
+        }
     }
 
     fn visual_of<'a>(list: &'a [DefinitionArt], id: Option<&str>) -> Option<&'a VisualRef> {
@@ -336,7 +375,7 @@ pub fn apply_graphics(snapshot: &mut WorldSnapshot, source: &GraphicsSource, sce
     let art = |visual: Option<&VisualRef>| resolve_visual(assets, visual, tick, "down", true);
 
     snapshot.pixel_art = Some(source.pixel_art);
-    snapshot.player.image_url = source.player_custom_image.as_deref().map(Arc::from);
+    snapshot.player.image_url = source.player_custom_image.clone();
     let player_visual = source.player_visual.clone().or_else(|| legacy(source.player_custom_image.as_deref()));
     snapshot.player.sprite = resolve_visual(assets, player_visual.as_ref(), tick, &snapshot.player.direction, moving);
 
@@ -350,9 +389,12 @@ pub fn apply_graphics(snapshot: &mut WorldSnapshot, source: &GraphicsSource, sce
         target.sprite = art(GraphicsSource::visual_of(&source.animal_species, Some(&animal.species_id)));
     }
 
+    let window = snapshot.tile_window;
     for (y, row) in scene.tiles.iter().enumerate() {
         let Some(targets) = snapshot.tiles.get_mut(y) else { continue };
-        for (tile, target) in row.iter().zip(targets.iter_mut()) {
+        // Only the tiles the snapshot built (stand-ins left of its window are never drawn).
+        let first = window.map_or(0, |window| usize::try_from(window.x0).unwrap_or(0));
+        for (tile, target) in row.iter().zip(targets.iter_mut()).skip(first) {
             let layer = |tile_type: Option<&str>, visual: Option<&VisualRef>| {
                 let fallback = tile_type.and_then(|tile_type| {
                     assets

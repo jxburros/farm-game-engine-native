@@ -61,7 +61,7 @@ fn measure(label: &str, player: &mut Player, width: u32, height: u32, walk: bool
 #[test]
 #[ignore = "timing; run in release with --ignored --nocapture"]
 fn frame_times() {
-    for (width, height) in [(1280, 800), (1920, 1080)] {
+    for (width, height) in [(1280, 800), (1920, 1080), (2560, 1600), (3840, 2160)] {
         let stores = Stores::new();
         let mut title = stores.standalone(&common::starter());
         measure("title screen", &mut title, width, height, false);

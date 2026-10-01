@@ -32,8 +32,8 @@ use farm_plugins::PluginHostOptions;
 use farm_render::graphics::{art_assets, ArtAsset};
 use farm_render::tiny_skia::Pixmap;
 use farm_render::{
-    apply_graphics, compute_camera, shell_snapshot, BuiltinArt, DrawList, GraphicsSource, SnapshotOptions, SnapshotPop,
-    WorldSnapshot,
+    apply_graphics, compute_camera, shell_snapshot_shared, BuiltinArt, DrawList, GraphicsSource, SharedUrls,
+    SnapshotOptions, SnapshotPop, TileWindow, WorldSnapshot,
 };
 use farm_runtime::host::{calendar_view, MinigameInput};
 use farm_runtime::panels::{self, PanelState};
@@ -192,6 +192,8 @@ struct GameDef {
 struct Game {
     session: PlaySession,
     graphics: GraphicsSource,
+    /// Image URLs shared from frame to frame.
+    urls: SharedUrls,
     /// The slot autosaves go to (0 in embedded mode: none).
     slot: u32,
     play_seconds: f64,
@@ -267,7 +269,8 @@ pub struct Player {
     renderer: FrameRenderer,
     ui_list: DrawList,
     world: Option<(WorldSnapshot, WorldView)>,
-    title_state: Option<GameState>,
+    /// The title screen's backdrop: the start of the game, its art and shared URLs (built once).
+    title_state: Option<(GameState, GraphicsSource, SharedUrls)>,
     sounds: Vec<SoundRequest>,
     requests: Vec<PlayerRequest>,
     poisoned: Option<String>,
@@ -413,6 +416,11 @@ impl Player {
                 let result = catch_unwind(AssertUnwindSafe(|| player.start_game(0)));
                 if let Err(panic) = result {
                     return Err(PlayerError::Engine(panic_message(&*panic)));
+                }
+                // The creator is playing: tell them about text the fonts would draw as boxes.
+                if let Some((place, missing)) = missing_glyph(&player.def.info.title, &player.def.content) {
+                    let message = player.ui.lang().format("toast.missingGlyph", &[&missing, &place]);
+                    player.game_ui.toasts.push(message, ToastKind::Error);
                 }
             }
         }
@@ -637,25 +645,30 @@ impl Player {
     // ── World ──────────────────────────────────────────────────────────
 
     /// The play snapshot of a state (interpolated player, pops, creator art), with the world's
-    /// size and the camera target in pixels.
+    /// size and the camera target in pixels. `view` (frame size, integer scaling) limits the
+    /// tiles to what that frame's camera shows; `None` builds the whole scene (thumbnails).
     fn snapshot_of(
         content: &GameContent,
-        graphics: &mut GraphicsSource,
-        session: &PlaySession,
+        game: &mut Game,
         pops: bool,
+        view: Option<(u32, u32, bool)>,
     ) -> Option<WorldFrame> {
+        let session = &game.session;
         let state = session.state();
         let scene = session.current_scene()?;
         let (ix, iy) = session.interpolated_player();
         let (px, py) = (PADDING + (ix - 0.5) * TILE_SIZE, PADDING + (iy - 0.5) * TILE_SIZE);
+        let target = (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0);
+        let world = session.world_size();
         let options = SnapshotOptions {
             tile_size: TILE_SIZE,
             padding: PADDING,
             pixel_x: Some(px),
             pixel_y: Some(py),
             camera: None,
+            tile_window: view.map(|(width, height, integer)| visible_tiles(width, height, integer, world, target)),
         };
-        let mut snapshot = shell_snapshot(content, state, scene, &options);
+        let mut snapshot = shell_snapshot_shared(content, state, scene, &options, &mut game.urls);
         if pops {
             let live = session.pops();
             if !live.is_empty() {
@@ -672,10 +685,10 @@ impl Player {
                 );
             }
         }
-        graphics.set_live_state(content, state);
+        game.graphics.refresh_live_state(content, state);
         let moving = state.player.move_intent.dx != 0 || state.player.move_intent.dy != 0;
-        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick as f64, moving);
-        Some((snapshot, session.world_size(), (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)))
+        apply_graphics(&mut snapshot, &game.graphics, scene, state.clock.tick as f64, moving);
+        Some((snapshot, world, target))
     }
 
     fn build_world(&mut self, width: u32, height: u32) {
@@ -684,7 +697,7 @@ impl Player {
         self.world = None;
         if let Some(game) = self.game.as_mut() {
             if let Some((snapshot, world, target)) =
-                Self::snapshot_of(&self.def.content, &mut game.graphics, &game.session, !reduced)
+                Self::snapshot_of(&self.def.content, game, !reduced, Some((width, height, integer)))
             {
                 self.world = Some((snapshot, world_view(width, height, integer, world, target)));
             }
@@ -692,9 +705,11 @@ impl Player {
         }
         // The title screen shows the start of the game behind the menu.
         if self.screens.first() == Some(&Screen::Title) {
-            let state = self
-                .title_state
-                .get_or_insert_with(|| state::create_game_state_from_start(&self.def.start, self.seed.as_deref()));
+            let (state, graphics, urls) = self.title_state.get_or_insert_with(|| {
+                let state = state::create_game_state_from_start(&self.def.start, self.seed.as_deref());
+                let graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, &state);
+                (state, graphics, SharedUrls::new())
+            });
             let Some(scene) = state
                 .world
                 .scenes
@@ -706,27 +721,24 @@ impl Player {
             };
             let (x, y) = (units::position_to_tiles(state.player.x), units::position_to_tiles(state.player.y));
             let (px, py) = (PADDING + (x - 0.5) * TILE_SIZE, PADDING + (y - 0.5) * TILE_SIZE);
+            let target = (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0);
+            let world = (
+                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
+                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
+            );
             let options = SnapshotOptions {
                 tile_size: TILE_SIZE,
                 padding: PADDING,
                 pixel_x: Some(px),
                 pixel_y: Some(py),
                 camera: None,
+                tile_window: Some(visible_tiles(width, height, integer, world, target)),
             };
-            let mut snapshot = shell_snapshot(&self.def.content, state, scene, &options);
+            let mut snapshot = shell_snapshot_shared(&self.def.content, state, scene, &options, urls);
             let tick = if reduced { 0.0 } else { (self.time * 20.0).floor() };
             snapshot.tick = tick;
-            let mut graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, state);
-            graphics.set_live_state(&self.def.content, state);
-            apply_graphics(&mut snapshot, &graphics, scene, tick, false);
-            let world = (
-                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
-                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
-            );
-            self.world = Some((
-                snapshot,
-                world_view(width, height, integer, world, (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)),
-            ));
+            apply_graphics(&mut snapshot, graphics, scene, tick, false);
+            self.world = Some((snapshot, world_view(width, height, integer, world, target)));
         }
     }
 
@@ -1088,7 +1100,7 @@ impl Player {
             let message = self.ui.lang().format("toast.pluginError", &[&error]);
             self.game_ui.toasts.push(message, ToastKind::Error);
         }
-        self.game = Some(Game { session, graphics, slot, play_seconds });
+        self.game = Some(Game { session, graphics, urls: SharedUrls::new(), slot, play_seconds });
         self.game_ui = GameUi { toasts: std::mem::take(&mut self.game_ui.toasts), ..GameUi::new() };
         self.screens.clear();
         self.drain_session_events();
@@ -1132,21 +1144,31 @@ impl Player {
         });
     }
 
+    /// What the slot screens show for a save's bytes.
+    fn slot_info_of(&self, bytes: &[u8]) -> SlotInfo {
+        match save_file::read_save_preview(bytes) {
+            Ok((_, preview)) => SlotInfo { preview: Some(preview), unreadable: false, thumbnail: None },
+            // JSON saves carry no preview: show what the state says.
+            Err(_) => match save_file::load_save_bytes(bytes, &self.def.target, &self.def.content) {
+                loaded if loaded.ok => SlotInfo {
+                    preview: loaded.state.as_ref().map(SavePreview::of_state),
+                    unreadable: false,
+                    thumbnail: None,
+                },
+                _ => SlotInfo { preview: None, unreadable: true, thumbnail: None },
+            },
+        }
+    }
+
     fn refresh_slots(&mut self) {
         self.slots = (1..=SLOT_COUNT)
-            .map(|slot| match self.saves.read(slot) {
-                None => SlotInfo::default(),
-                Some(bytes) => match save_file::read_save_preview(&bytes) {
-                    Ok((_, preview)) => SlotInfo { preview: Some(preview), unreadable: false, thumbnail: None },
-                    // JSON saves carry no preview: show what the state says.
-                    Err(_) => match save_file::load_save_bytes(&bytes, &self.def.target, &self.def.content) {
-                        loaded if loaded.ok => SlotInfo {
-                            preview: loaded.state.as_ref().map(SavePreview::of_state),
-                            unreadable: false,
-                            thumbnail: None,
-                        },
-                        _ => SlotInfo { preview: None, unreadable: true, thumbnail: None },
-                    },
+            .map(|slot| match self.saves.read(slot).map(|bytes| self.slot_info_of(&bytes)) {
+                Some(info) if !info.unreadable => info,
+                // A missing or damaged save shows its backup when that reads (loading falls back
+                // to it too).
+                main => match self.saves.read_backup(slot).map(|bytes| self.slot_info_of(&bytes)) {
+                    Some(backup) if !backup.unreadable => backup,
+                    _ => main.unwrap_or_default(),
                 },
             })
             .collect();
@@ -1155,29 +1177,49 @@ impl Player {
         }
     }
 
+    /// Loads save bytes: the state, the load warnings and the play time; an error message when
+    /// they do not load.
+    fn load_bytes(&self, bytes: &[u8]) -> Result<(GameState, Vec<String>, f64), String> {
+        let loaded = save_file::load_save_bytes(bytes, &self.def.target, &self.def.content);
+        match loaded.state.filter(|_| loaded.ok) {
+            Some(state) => {
+                let play_seconds = save_file::read_save_preview(bytes).map_or(0.0, |(_, preview)| preview.play_seconds);
+                Ok((state, loaded.warnings, play_seconds))
+            }
+            None if loaded.errors.is_empty() => Err(self.ui.lang().tr("toast.loadFailed").to_owned()),
+            None => Err(loaded.errors.join(" ")),
+        }
+    }
+
     fn load_slot(&mut self, slot: u32) {
-        let Some(bytes) = self.saves.read(slot) else {
-            let message = self.ui.lang().format("toast.slotEmpty", &[&slot]);
-            self.game_ui.toasts.push(message, ToastKind::Error);
-            return;
+        let main = self.saves.read(slot).map(|bytes| self.load_bytes(&bytes));
+        let (loaded, from_backup) = match main {
+            Some(Ok(loaded)) => (loaded, false),
+            // A missing or damaged save: the save before it, when the store kept one.
+            main => match self.saves.read_backup(slot).map(|bytes| self.load_bytes(&bytes)) {
+                Some(Ok(loaded)) => (loaded, true),
+                _ => {
+                    let message = match main {
+                        Some(Err(message)) => message,
+                        _ => self.ui.lang().format("toast.slotEmpty", &[&slot]),
+                    };
+                    self.game_ui.toasts.push(message, ToastKind::Error);
+                    return;
+                }
+            },
         };
-        let loaded = save_file::load_save_bytes(&bytes, &self.def.target, &self.def.content);
-        let Some(state) = loaded.state.filter(|_| loaded.ok) else {
-            let message = if loaded.errors.is_empty() {
-                self.ui.lang().tr("toast.loadFailed").to_owned()
-            } else {
-                loaded.errors.join(" ")
-            };
-            self.game_ui.toasts.push(message, ToastKind::Error);
-            return;
-        };
-        let play_seconds = save_file::read_save_preview(&bytes).map_or(0.0, |(_, preview)| preview.play_seconds);
+        let (state, warnings, play_seconds) = loaded;
         self.attach(PlaySession::new(self.def.content.clone(), state), slot, play_seconds);
-        for warning in loaded.warnings {
+        for warning in warnings {
             self.game_ui.toasts.push(warning, ToastKind::Info);
         }
-        let message = self.ui.lang().format("toast.loaded", &[&slot]);
-        self.game_ui.toasts.push(message, ToastKind::Info);
+        if from_backup {
+            let message = self.ui.lang().format("toast.loadedBackup", &[&slot]);
+            self.game_ui.toasts.push(message, ToastKind::Error);
+        } else {
+            let message = self.ui.lang().format("toast.loaded", &[&slot]);
+            self.game_ui.toasts.push(message, ToastKind::Info);
+        }
     }
 
     /// Writes the running game to `slot` (with a thumbnail of the scene).
@@ -1189,9 +1231,7 @@ impl Player {
         preview.farm_name = self.def.info.title.clone();
         preview.play_seconds = game.play_seconds.floor();
         preview.saved_at = (self.clock)();
-        if let Some((mut snapshot, world, target)) =
-            Self::snapshot_of(&self.def.content, &mut game.graphics, &game.session, false)
-        {
+        if let Some((mut snapshot, world, target)) = Self::snapshot_of(&self.def.content, game, false, None) {
             let (width, height) = (world.0.min(384.0), world.1.min(240.0));
             snapshot.camera = Some(compute_camera(target.0, target.1, world.0, world.1, width, height));
             preview.thumbnail_png = self.renderer.thumbnail(&snapshot, 192, 120, background);
@@ -1209,6 +1249,26 @@ impl Player {
     }
 
     // ── Host API ───────────────────────────────────────────────────────
+
+    /// The window's close button (or Alt+F4) was pressed: `true` when the host should close
+    /// now. While a game runs, the player asks first, like Quit in the pause menu ("progress
+    /// since the last save will be lost"), and answers `false`; confirming sends
+    /// [`PlayerRequest::Quit`]. Closing again while that question is up closes at once, and so
+    /// does closing from the title screen, a stopped player or one that cannot quit.
+    pub fn request_close(&mut self) -> bool {
+        if self.game.is_none() || self.poisoned.is_some() || !self.can_quit {
+            return true;
+        }
+        if self.screens.last() == Some(&Screen::Confirm(Confirmation::QuitGame)) {
+            return true;
+        }
+        if self.screens.is_empty() {
+            // Over the pause menu, so Cancel lands somewhere sensible while time stands still.
+            self.open_pause();
+        }
+        self.screens.push(Screen::Confirm(Confirmation::QuitGame));
+        false
+    }
 
     pub fn mode(&self) -> PlayerMode {
         self.mode
@@ -1339,6 +1399,11 @@ impl Player {
             .map(|rect| farm_render::Rect::new(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale))
     }
 
+    /// The widget with keyboard / gamepad focus (tests, accessibility hosts).
+    pub fn focused_widget(&self) -> Option<farm_ui::WidgetId> {
+        self.ui.focused()
+    }
+
     /// The UI draw list of the last frame (tests, other rasterizers).
     pub fn ui_draw_list(&self) -> &DrawList {
         &self.ui_list
@@ -1388,6 +1453,68 @@ impl Player {
         }
         report
     }
+}
+
+/// The tiles a frame of `width`×`height` shows of a `world` (pixels) whose camera follows
+/// `target`, and one more around: the frame renders the camera rounded out to whole pixels
+/// ([`FrameRenderer::draw_world`](crate::render::FrameRenderer::draw_world)).
+fn visible_tiles(width: u32, height: u32, integer: bool, world: (f64, f64), target: (f64, f64)) -> TileWindow {
+    let camera = world_view(width, height, integer, world, target).camera;
+    TileWindow::for_camera(&camera, PADDING, TILE_SIZE, 1)
+}
+
+/// Fields whose text the game shows (names, dialogue lines and options, quest and item text).
+const SHOWN_TEXT_KEYS: [&str; 6] = ["name", "text", "title", "description", "label", "message"];
+
+/// The first character of the game's shown text that the interface font has no glyph for, and
+/// where it is (`dialogues[2].options[0].text`). The embedded fonts cover Latin, Greek and
+/// Cyrillic; CJK, Arabic and other scripts would draw as boxes.
+pub fn missing_glyph(title: &str, content: &GameContent) -> Option<(String, char)> {
+    fn walk(value: &Value, path: &mut String, shown: bool) -> Option<(String, char)> {
+        match value {
+            Value::String(text) if shown => {
+                farm_render::text::font(farm_render::FontId::Regular).first_missing(text).map(|ch| (path.clone(), ch))
+            }
+            Value::Array(items) => items.iter().enumerate().find_map(|(index, item)| {
+                let length = path.len();
+                path.push_str(&format!("[{index}]"));
+                let found = walk(item, path, shown);
+                path.truncate(length);
+                found
+            }),
+            Value::Object(fields) => fields.iter().find_map(|(key, item)| {
+                let length = path.len();
+                path.push('.');
+                path.push_str(key);
+                let found = walk(item, path, SHOWN_TEXT_KEYS.contains(&key.as_str()));
+                path.truncate(length);
+                found
+            }),
+            _ => None,
+        }
+    }
+    let font = farm_render::text::font(farm_render::FontId::Regular);
+    if let Some(ch) = font.first_missing(title) {
+        return Some(("title".to_owned(), ch));
+    }
+    let sections = [
+        ("items", serde_json::to_value(&content.items)),
+        ("npcs", serde_json::to_value(&content.npcs)),
+        ("dialogues", serde_json::to_value(&content.dialogues)),
+        ("quests", serde_json::to_value(&content.quests)),
+        ("events", serde_json::to_value(&content.events)),
+        ("shops", serde_json::to_value(&content.shops)),
+        ("recipes", serde_json::to_value(&content.recipes)),
+        ("crops", serde_json::to_value(&content.crops)),
+        ("nodeTypes", serde_json::to_value(&content.node_types)),
+        ("machineTypes", serde_json::to_value(&content.machine_types)),
+        ("animalSpecies", serde_json::to_value(&content.animal_species)),
+        ("minigames", serde_json::to_value(&content.minigames)),
+    ];
+    sections.into_iter().find_map(|(name, value)| {
+        let mut path = name.to_owned();
+        walk(&value.ok()?, &mut path, false)
+    })
 }
 
 /// `top` (straight alpha) over an opaque colour.

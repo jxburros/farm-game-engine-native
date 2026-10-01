@@ -22,9 +22,11 @@ impl FixedTimestep {
         Self::default()
     }
 
-    /// Adds `delta_seconds` of frame time and returns the number of ticks to simulate.
+    /// Adds `delta_seconds` of frame time and returns the number of ticks to simulate. A
+    /// non-finite delta counts as no time (`f64::clamp` would let NaN through and poison the
+    /// accumulator for good).
     pub fn advance(&mut self, delta_seconds: f64) -> u32 {
-        let delta = delta_seconds.clamp(0.0, MAX_FRAME_SECONDS);
+        let delta = if delta_seconds.is_finite() { delta_seconds.clamp(0.0, MAX_FRAME_SECONDS) } else { 0.0 };
         self.accumulator += delta * 1000.0;
         let ticks = (self.accumulator / MS_PER_TICK).floor();
         self.accumulator -= ticks * MS_PER_TICK;
@@ -60,5 +62,15 @@ mod tests {
     fn long_frames_are_clamped() {
         let mut ts = FixedTimestep::new();
         assert_eq!(ts.advance(10.0), 5);
+    }
+
+    #[test]
+    fn non_finite_frames_count_as_no_time() {
+        let mut ts = FixedTimestep::new();
+        assert_eq!(ts.advance(f64::NAN), 0);
+        assert_eq!(ts.advance(f64::INFINITY), 0);
+        assert_eq!(ts.advance(f64::NEG_INFINITY), 0);
+        assert_eq!(ts.alpha(), 0.0);
+        assert_eq!(ts.advance(0.05), 1);
     }
 }

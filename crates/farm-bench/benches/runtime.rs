@@ -6,8 +6,8 @@
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use farm_bench::{
-    farm, gameplay_player, load_cartridge, npc_ticks, npc_town, render_frame, sample_cartridges, sleep,
-    start_cartridge, FarmSpec, SaveFixture,
+    farm, gameplay_player, large_map_player, load_cartridge, npc_ticks, npc_town, render_frame, sample_cartridges, sleep,
+    start_cartridge, FarmSpec, NewPlayer, SaveFixture,
 };
 use std::hint::black_box;
 use std::time::Duration;
@@ -63,10 +63,17 @@ fn cartridges(c: &mut Criterion) {
 fn frames(c: &mut Criterion) {
     let mut group = c.benchmark_group("frame");
     group.sample_size(60).measurement_time(Duration::from_secs(8));
-    for (width, height) in [(1280, 800), (1920, 1080)] {
-        let mut player = gameplay_player(width, height);
+    let frames: [(&str, u32, u32, NewPlayer); 5] = [
+        ("", 1280, 800, gameplay_player),
+        ("", 1920, 1080, gameplay_player),
+        ("", 2560, 1600, gameplay_player),
+        ("", 3840, 2160, gameplay_player),
+        (" 256x256 map", 1920, 1080, large_map_player),
+    ];
+    for (map, width, height, player) in frames {
+        let mut player = player(width, height);
         let mut frame = 30;
-        group.bench_function(format!("{width}x{height} cpu"), |b| {
+        group.bench_function(format!("{width}x{height}{map} cpu"), |b| {
             b.iter(|| {
                 render_frame(&mut player, frame, width, height);
                 frame += 1;

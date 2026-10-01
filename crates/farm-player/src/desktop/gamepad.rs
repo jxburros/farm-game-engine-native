@@ -53,9 +53,13 @@ impl Gamepads {
         Gilrs::new().ok().map(|gilrs| Self { gilrs })
     }
 
-    /// Events since the last poll.
-    pub fn poll(&mut self, out: &mut Vec<InputEvent>) {
+    /// Events since the last poll. Without window focus they are read and dropped: the game
+    /// ignores the pad while another window has it (focus loss already released everything).
+    pub fn poll(&mut self, out: &mut Vec<InputEvent>, focused: bool) {
         while let Some(event) = self.gilrs.next_event() {
+            if !focused {
+                continue;
+            }
             match event.event {
                 EventType::ButtonPressed(pressed, _) => {
                     if let Some(button) = button(pressed) {

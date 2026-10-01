@@ -12,8 +12,15 @@
 //! general pipeline; UI frames are mostly such shapes.
 //!
 //! Plain (unstroked) text under a scale-and-translate transform is drawn from cached glyph
-//! sprites: each glyph is rasterized once per font, device size, colour and quarter-pixel
-//! position, then blended in. UI text, redrawn every frame, costs a copy instead of a path fill.
+//! coverage masks: each glyph is rasterized once per font, device size and quarter-pixel
+//! position, and the colour is applied while blending, so text that fades (toasts, dialogs)
+//! reuses the same masks every frame. UI text, redrawn every frame, costs a blend instead of a
+//! path fill. The least recently used masks make room when the cache is full.
+//!
+//! Clips are boxes of whole device pixels. The fast paths (rectangles, rounded rectangles,
+//! sprites, glyphs, blurs) clip with the box; the full-surface mask tiny-skia's general path
+//! fills need is only built when one of those draws asks for it, and a new clip on the same
+//! surface only rewrites the rows of the old and new boxes.
 
 use crate::builtin_art::BuiltinArt;
 use crate::css_color::Color;
@@ -85,7 +92,7 @@ struct CropKey {
     y1: u32,
 }
 
-/// A glyph rasterized at one device size, colour and subpixel position.
+/// A glyph rasterized at one device size and subpixel position (any colour).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct SpriteKey {
     font: FontId,
@@ -94,14 +101,19 @@ struct SpriteKey {
     size: u32,
     x: u8,
     y: u8,
-    color: u32,
 }
 
-/// A premultiplied glyph image and where its top-left sits relative to the pen position.
+/// A glyph's coverage and where its top-left sits relative to the pen position.
 struct GlyphSprite {
     left: i32,
     top: i32,
-    pixmap: Pixmap,
+    coverage: Mask,
+}
+
+/// A cached glyph sprite (`None`: the glyph draws nothing) and the render it was last used in.
+struct SpriteEntry {
+    sprite: Option<GlyphSprite>,
+    used: u64,
 }
 
 #[derive(Default)]
@@ -110,7 +122,9 @@ struct Caches {
     tinted: BTreeMap<(ImageId, u32), Pixmap>,
     crops: BTreeMap<CropKey, Pixmap>,
     glyphs: BTreeMap<(FontId, u16), Option<Path>>,
-    sprites: BTreeMap<SpriteKey, Option<GlyphSprite>>,
+    sprites: BTreeMap<SpriteKey, SpriteEntry>,
+    /// Renders so far (the sprite cache's clock).
+    renders: u64,
 }
 
 #[derive(Default)]
@@ -119,9 +133,19 @@ struct ClipMask {
     mask: Option<Mask>,
 }
 
+/// Sets the coverage of the rows of `area` in `mask` to `value`.
+fn fill_mask_box(mask: &mut Mask, area: ClipBox, value: u8) {
+    let stride = mask.width() as usize;
+    let data = mask.data_mut();
+    for y in area.y0 as usize..area.y1 as usize {
+        data[y * stride + area.x0 as usize..y * stride + area.x1 as usize].fill(value);
+    }
+}
+
 impl ClipMask {
-    /// The mask for a clip; `Ok(None)` when nothing is clipped, `Err(())` when everything is.
-    fn get(&mut self, clip: Option<ClipBox>, width: u32, height: u32) -> Result<Option<&Mask>, ()> {
+    /// A clip inside a `width`×`height` surface: `Ok(None)` when nothing is clipped, `Err(())`
+    /// when everything is.
+    fn bounds(clip: Option<ClipBox>, width: u32, height: u32) -> Result<Option<ClipBox>, ()> {
         let Some(clip) = clip else { return Ok(None) };
         let clip = ClipBox {
             x0: clip.x0.clamp(0, width as i32),
@@ -135,22 +159,49 @@ impl ClipMask {
         if clip == (ClipBox { x0: 0, y0: 0, x1: width as i32, y1: height as i32 }) {
             return Ok(None);
         }
+        Ok(Some(clip))
+    }
+
+    /// The mask for a clip; `Ok(None)` when nothing is clipped, `Err(())` when everything is.
+    fn get(&mut self, clip: Option<ClipBox>, width: u32, height: u32) -> Result<Option<&Mask>, ()> {
+        let Some(clip) = Self::bounds(clip, width, height)? else { return Ok(None) };
         if self.key != Some((clip, width, height)) {
-            let mut mask = Mask::new(width, height).ok_or(())?;
-            let stride = width as usize;
-            let data = mask.data_mut();
-            for y in clip.y0 as usize..clip.y1 as usize {
-                data[y * stride + clip.x0 as usize..y * stride + clip.x1 as usize].fill(255);
+            match (self.mask.as_mut(), self.key) {
+                // The same surface: clear the old box and fill the new one, not the whole mask.
+                (Some(mask), Some((old, old_width, old_height))) if (old_width, old_height) == (width, height) => {
+                    fill_mask_box(mask, old, 0);
+                    fill_mask_box(mask, clip, 255);
+                }
+                _ => {
+                    let mut mask = Mask::new(width, height).ok_or(())?;
+                    fill_mask_box(&mut mask, clip, 255);
+                    self.mask = Some(mask);
+                }
             }
             self.key = Some((clip, width, height));
-            self.mask = Some(mask);
         }
         Ok(self.mask.as_ref())
     }
 }
 
+/// The clip of one draw command: its pixel box for the fast paths, and the surface-sized mask,
+/// built only when a general path fill asks for it ([`Clip::mask`]).
+struct Clip<'a> {
+    masks: &'a mut ClipMask,
+    clip: Option<ClipBox>,
+    width: u32,
+    height: u32,
+}
+
+impl Clip<'_> {
+    /// The coverage mask of the clip for tiny-skia's general fills (`None`: unclipped).
+    fn mask(&mut self) -> Option<&Mask> {
+        self.masks.get(self.clip, self.width, self.height).ok().flatten()
+    }
+}
+
 /// Executes draw lists. Keeps caches (blurred shapes, tinted sheets, cropped sprites, glyph
-/// outlines) between frames; reuse one per surface.
+/// outlines and coverage) between frames; reuse one per surface.
 #[derive(Default)]
 pub struct Rasterizer {
     caches: Caches,
@@ -351,10 +402,19 @@ impl Caches {
 }
 
 impl Caches {
-    /// The sprite of a glyph (rasterized on first use); `None` for empty glyphs.
+    /// The coverage of a glyph (rasterized on first use); `None` for empty glyphs. A full cache
+    /// drops its least recently used quarter first.
     fn sprite(&mut self, key: SpriteKey) -> Option<&GlyphSprite> {
+        let now = self.renders;
         if !self.sprites.contains_key(&key) {
-            limit(&mut self.sprites, MAX_GLYPH_SPRITES);
+            if self.sprites.len() >= MAX_GLYPH_SPRITES {
+                let mut ages: Vec<(u64, SpriteKey)> =
+                    self.sprites.iter().map(|(key, entry)| (entry.used, *key)).collect();
+                ages.sort();
+                for (_, old) in &ages[..ages.len() / 4] {
+                    self.sprites.remove(old);
+                }
+            }
             let path = self.glyph(key.font, ttf_parser::GlyphId(key.glyph)).cloned();
             let sprite = path.and_then(|path| {
                 let scale = key.size as f32 / 64.0 / text::font(key.font).units_per_em();
@@ -364,16 +424,16 @@ impl Caches {
                 let top = (bounds.top() * scale + dy).floor() as i32 - 1;
                 let right = (bounds.right() * scale + dx).ceil() as i32 + 1;
                 let bottom = (bounds.bottom() * scale + dy).ceil() as i32 + 1;
-                let mut pixmap = Pixmap::new((right - left).max(1) as u32, (bottom - top).max(1) as u32)?;
+                let mut coverage = Mask::new((right - left).max(1) as u32, (bottom - top).max(1) as u32)?;
                 let transform = Transform::from_row(scale, 0.0, 0.0, scale, dx - left as f32, dy - top as f32);
-                let color = key.color.to_be_bytes();
-                let paint = solid(Color::rgba(color[0], color[1], color[2], color[3]), true);
-                pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
-                Some(GlyphSprite { left, top, pixmap })
+                coverage.fill_path(&path, FillRule::Winding, true, transform);
+                Some(GlyphSprite { left, top, coverage })
             });
-            self.sprites.insert(key, sprite);
+            self.sprites.insert(key, SpriteEntry { sprite, used: now });
         }
-        self.sprites.get(&key).and_then(Option::as_ref)
+        let entry = self.sprites.get_mut(&key)?;
+        entry.used = now;
+        entry.sprite.as_ref()
     }
 }
 
@@ -555,6 +615,35 @@ fn blend_sprite(target: &mut PixmapMut<'_>, sprite: &Pixmap, x: i32, y: i32, cli
     }
 }
 
+/// Blends `color` through a glyph's coverage at (`x`, `y`) device pixels, inside `clip`.
+fn blend_coverage(target: &mut PixmapMut<'_>, coverage: &Mask, x: i32, y: i32, color: Color, clip: Option<ClipBox>) {
+    let (width, height) = (target.width() as i32, target.height() as i32);
+    let clip = clip.unwrap_or(ClipBox { x0: 0, y0: 0, x1: width, y1: height });
+    let x0 = x.max(clip.x0).max(0);
+    let y0 = y.max(clip.y0).max(0);
+    let x1 = (x + coverage.width() as i32).min(clip.x1).min(width);
+    let y1 = (y + coverage.height() as i32).min(clip.y1).min(height);
+    if x0 >= x1 || y0 >= y1 || color.a == 0 {
+        return;
+    }
+    let source_stride = coverage.width() as usize;
+    let target_stride = width as usize * 4;
+    let source = coverage.data();
+    let data = target.data_mut();
+    for row in y0..y1 {
+        let source_start = (row - y) as usize * source_stride + (x0 - x) as usize;
+        let target_start = row as usize * target_stride + x0 as usize * 4;
+        let count = (x1 - x0) as usize;
+        let source_row = &source[source_start..source_start + count];
+        let target_row = &mut data[target_start..target_start + count * 4];
+        for (out, &cover) in target_row.chunks_exact_mut(4).zip(source_row) {
+            if cover != 0 {
+                blend_pixel(out, premultiplied(color, u32::from(cover)));
+            }
+        }
+    }
+}
+
 /// Glyph outlines in font units with y pointing down.
 struct GlyphPath(PathBuilder);
 
@@ -590,6 +679,7 @@ impl Rasterizer {
     /// evicted or missing ids draw nothing.
     pub fn render(&mut self, list: &DrawList, images: &ImageStore, target: &mut PixmapMut<'_>, base: Transform) {
         let (width, height) = (target.width(), target.height());
+        self.caches.renders += 1;
         let mut state = State { transform: base, clip: None };
         let mut stack: Vec<State> = Vec::new();
         for command in &list.commands {
@@ -621,8 +711,12 @@ impl Rasterizer {
                     state.clip = Some(clip);
                 }
                 other => {
-                    let Ok(mask) = self.clip.get(state.clip, width, height) else { continue };
-                    draw(&mut self.caches, target, images, other, state.transform, mask, state.clip);
+                    // Everything clipped away: nothing to draw.
+                    if ClipMask::bounds(state.clip, width, height).is_err() {
+                        continue;
+                    }
+                    let mut clip = Clip { masks: &mut self.clip, clip: state.clip, width, height };
+                    draw(&mut self.caches, target, images, other, state.transform, &mut clip);
                 }
             }
         }
@@ -649,16 +743,15 @@ fn draw(
     images: &ImageStore,
     command: &DrawCmd,
     transform: Transform,
-    mask: Option<&Mask>,
-    clip: Option<ClipBox>,
+    clip: &mut Clip<'_>,
 ) {
     match command {
         DrawCmd::FillRect { rect, color, anti_alias } => {
             if !*anti_alias && is_scale_translate(transform) {
                 let (left, top, right, bottom) = map_rect(transform, rect);
-                fill_device_rect(target, (left, top, right, bottom), *color, clip);
+                fill_device_rect(target, (left, top, right, bottom), *color, clip.clip);
             } else if let Some(rect) = skia_rect(rect) {
-                target.fill_rect(rect, &solid(*color, *anti_alias), transform, mask);
+                target.fill_rect(rect, &solid(*color, *anti_alias), transform, clip.mask());
             }
         }
         DrawCmd::StrokeRect { rect, color, width } => {
@@ -668,61 +761,61 @@ fn draw(
                     &solid(*color, true),
                     &stroke(*width),
                     transform,
-                    mask,
+                    clip.mask(),
                 );
             }
         }
         DrawCmd::FillRoundRect { rect, radius, color } => {
             if is_scale_translate(transform) && (transform.sx - transform.sy).abs() <= 1e-6 * transform.sx {
                 let (left, top, right, bottom) = map_rect(transform, rect);
-                fill_device_round_rect(target, (left, top, right, bottom), radius * transform.sx, *color, clip);
+                fill_device_round_rect(target, (left, top, right, bottom), radius * transform.sx, *color, clip.clip);
             } else if let Some(path) = round_rect_path(rect, *radius) {
-                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, mask);
+                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, clip.mask());
             }
         }
         DrawCmd::StrokeRoundRect { rect, radius, color, width } => {
             if let Some(path) = round_rect_path(rect, *radius) {
-                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, mask);
+                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, clip.mask());
             }
         }
         DrawCmd::FillCircle { cx, cy, radius, color } => {
             if let Some(path) = PathBuilder::from_circle(*cx, *cy, *radius) {
-                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, mask);
+                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, clip.mask());
             }
         }
         DrawCmd::StrokeCircle { cx, cy, radius, color, width } => {
             if let Some(path) = PathBuilder::from_circle(*cx, *cy, *radius) {
-                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, mask);
+                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, clip.mask());
             }
         }
         DrawCmd::FillOval { rect, color } => {
             if let Some(path) = skia_rect(rect).and_then(PathBuilder::from_oval) {
-                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, mask);
+                target.fill_path(&path, &solid(*color, true), FillRule::Winding, transform, clip.mask());
             }
         }
         DrawCmd::BlurOval { rect, color, sigma } => {
-            draw_blur(caches, target, BlurShape::Oval, rect, *color, *sigma, transform, (mask, clip));
+            draw_blur(caches, target, BlurShape::Oval, rect, *color, *sigma, transform, clip);
         }
         DrawCmd::BlurRect { rect, color, sigma } => {
-            draw_blur(caches, target, BlurShape::Rect, rect, *color, *sigma, transform, (mask, clip));
+            draw_blur(caches, target, BlurShape::Rect, rect, *color, *sigma, transform, clip);
         }
         DrawCmd::Line { x0, y0, x1, y1, color, width } => {
             let mut pb = PathBuilder::new();
             pb.move_to(*x0, *y0);
             pb.line_to(*x1, *y1);
             if let Some(path) = pb.finish() {
-                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, mask);
+                target.stroke_path(&path, &solid(*color, true), &stroke(*width), transform, clip.mask());
             }
         }
         DrawCmd::Image { image, src, dst, opacity, sampling, tint } => {
             let paint = ImagePaint { opacity: *opacity, sampling: *sampling, tint: *tint };
-            draw_image(caches, target, images, *image, src, dst, paint, transform, (mask, clip));
+            draw_image(caches, target, images, *image, src, dst, paint, transform, clip);
         }
         DrawCmd::ModulateRect { rect, color } => {
             if let Some(rect) = skia_rect(rect) {
                 let mut paint = solid(*color, false);
                 paint.blend_mode = BlendMode::Modulate;
-                target.fill_rect(rect, &paint, transform, mask);
+                target.fill_rect(rect, &paint, transform, clip.mask());
             }
         }
         DrawCmd::Text { text, x, y, font, size, color, stroke, align } => {
@@ -736,7 +829,7 @@ fn draw(
                 outline: *stroke,
                 align: *align,
             };
-            draw_text(caches, target, &run, transform, (mask, clip));
+            draw_text(caches, target, &run, transform, clip);
         }
         DrawCmd::Save
         | DrawCmd::Restore
@@ -755,7 +848,7 @@ fn draw_blur(
     color: Color,
     sigma: f32,
     transform: Transform,
-    (mask, clip): (Option<&Mask>, Option<ClipBox>),
+    clip: &mut Clip<'_>,
 ) {
     let (sx, sy) = transform.get_scale();
     let device_sigma = sigma * (sx * sy).abs().sqrt();
@@ -773,7 +866,7 @@ fn draw_blur(
             BlurShape::Rect => skia_rect(rect).map(PathBuilder::from_rect),
         };
         if let Some(path) = path {
-            target.fill_path(&path, &solid(color, true), FillRule::Winding, transform, mask);
+            target.fill_path(&path, &solid(color, true), FillRule::Winding, transform, clip.mask());
         }
         return;
     }
@@ -808,7 +901,7 @@ fn draw_blur(
             None => return,
         },
     };
-    blend_sprite(target, pixmap, origin_x as i32, origin_y as i32, clip);
+    blend_sprite(target, pixmap, origin_x as i32, origin_y as i32, clip.clip);
 }
 
 /// How an image command paints.
@@ -829,7 +922,7 @@ fn draw_image(
     dst: &Rect,
     paint: ImagePaint,
     transform: Transform,
-    (mask, clip): (Option<&Mask>, Option<ClipBox>),
+    clip: &mut Clip<'_>,
 ) {
     let ImagePaint { opacity, sampling, tint } = paint;
     let Some(image) = images.image(id) else { return };
@@ -874,12 +967,12 @@ fn draw_image(
 
     if sampling == Sampling::Nearest {
         // Axis-aligned pixel art (the common case) picks its source pixels exactly like Skia.
-        if blit_nearest(target, full, src, dst, opacity, transform, clip) {
+        if blit_nearest(target, full, src, dst, opacity, transform, clip.clip) {
             return;
         }
         // Rotated or skewed transforms: let tiny-skia sample.
         let paint = pattern_paint(full, quality, opacity, pattern(0.0, 0.0));
-        target.fill_rect(dst_rect, &paint, transform, mask);
+        target.fill_rect(dst_rect, &paint, transform, clip.mask());
         return;
     }
 
@@ -901,7 +994,7 @@ fn draw_image(
         },
     };
     let paint = pattern_paint(cropped.as_ref(), quality, opacity, pattern(x0 as f32, y0 as f32));
-    target.fill_rect(dst_rect, &paint, transform, mask);
+    target.fill_rect(dst_rect, &paint, transform, clip.mask());
 }
 
 /// Skia's nearest-neighbour mapping along one axis of an axis-aligned image draw.
@@ -1082,7 +1175,7 @@ fn draw_text(
     target: &mut PixmapMut<'_>,
     run: &TextRun<'_>,
     transform: Transform,
-    (mask, clip): (Option<&Mask>, Option<ClipBox>),
+    clip: &mut Clip<'_>,
 ) {
     let TextRun { content, x, y, font: font_id, size, color, outline, align } = *run;
     if size.is_nan() || size <= 0.0 || content.is_empty() {
@@ -1116,11 +1209,10 @@ fn draw_text(
                 size: size_q,
                 x: sub_x.min(SUBPIXELS as u8 - 1),
                 y: sub_y.min(SUBPIXELS as u8 - 1),
-                color: color.to_u32(),
             };
             if let Some(sprite) = caches.sprite(key) {
                 let (left, top) = (column as i32 + sprite.left, row as i32 + sprite.top);
-                blend_sprite(target, &sprite.pixmap, left, top, clip);
+                blend_coverage(target, &sprite.coverage, left, top, color, clip.clip);
             }
         }
         return;
@@ -1135,8 +1227,8 @@ fn draw_text(
             let Some(path) = caches.glyph(font_id, glyph) else { continue };
             let glyph_transform = transform.pre_translate(start + offset, y).pre_scale(scale, scale);
             match &pass_stroke {
-                Some(stroke) => target.stroke_path(path, &paint, stroke, glyph_transform, mask),
-                None => target.fill_path(path, &paint, FillRule::Winding, glyph_transform, mask),
+                Some(stroke) => target.stroke_path(path, &paint, stroke, glyph_transform, clip.mask()),
+                None => target.fill_path(path, &paint, FillRule::Winding, glyph_transform, clip.mask()),
             }
         }
     }
@@ -1192,4 +1284,99 @@ pub fn render_to_pixmap(snapshot: &WorldSnapshot, scale: f32) -> Pixmap {
 /// PNG bytes of a pixmap (straight alpha). Empty only if encoding fails.
 pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     pixmap.encode_png().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(list: &mut DrawList, content: &str, color: Color) {
+        list.push(DrawCmd::Text {
+            text: content.into(),
+            x: 10.0,
+            y: 30.0,
+            font: FontId::Regular,
+            size: 16.0,
+            color,
+            stroke: None,
+            align: TextAlign::Left,
+        });
+    }
+
+    #[test]
+    fn fading_text_reuses_its_glyph_coverage() {
+        let mut rasterizer = Rasterizer::new();
+        let images = ImageStore::default();
+        let mut pixmap = Pixmap::new(200, 50).unwrap();
+        let mut sizes = Vec::new();
+        for alpha in [255u8, 200, 120, 40] {
+            let mut list = DrawList::new();
+            text(&mut list, "Saved", Color::rgba(20, 30, 40, alpha));
+            pixmap.fill(tiny_skia::Color::WHITE);
+            rasterizer.render(&list, &images, &mut pixmap.as_mut(), Transform::identity());
+            sizes.push(rasterizer.caches.sprites.len());
+        }
+        assert!(sizes.iter().all(|size| *size == sizes[0] && *size > 0), "{sizes:?}");
+        // The colour is applied while blending: faint text stays light on white.
+        let darkest = pixmap.pixels().iter().map(|p| p.red()).min().unwrap();
+        assert!(darkest > 120, "{darkest}");
+    }
+
+    #[test]
+    fn a_full_glyph_cache_drops_the_least_recently_used() {
+        let mut caches = Caches::default();
+        let key = |glyph: u16| SpriteKey { font: FontId::Regular, glyph, size: 16 * 64, x: 0, y: 0 };
+        for glyph in 0..MAX_GLYPH_SPRITES as u16 {
+            caches.sprites.insert(key(glyph), SpriteEntry { sprite: None, used: u64::from(glyph) });
+        }
+        // Glyph 0 is used again, so it is the newest; a new glyph makes room.
+        caches.renders = 1_000_000;
+        caches.sprite(key(0));
+        caches.sprite(key(60_000));
+        assert!(caches.sprites.len() <= MAX_GLYPH_SPRITES - MAX_GLYPH_SPRITES / 4 + 1);
+        assert!(caches.sprites.contains_key(&key(0)) && caches.sprites.contains_key(&key(60_000)));
+        assert!(!caches.sprites.contains_key(&key(1)), "the oldest went");
+        assert!(caches.sprites.contains_key(&key(MAX_GLYPH_SPRITES as u16 - 1)), "recent ones stay");
+    }
+
+    #[test]
+    fn fast_paths_clip_without_a_surface_mask() {
+        let mut rasterizer = Rasterizer::new();
+        let images = ImageStore::default();
+        let mut pixmap = Pixmap::new(100, 100).unwrap();
+        let mut list = DrawList::new();
+        list.save();
+        list.clip_rect(Rect::new(10.0, 10.0, 30.0, 30.0));
+        list.push(DrawCmd::FillRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: Color::rgb(255, 0, 0),
+            anti_alias: false,
+        });
+        list.fill_round_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 6.0, Color::rgb(0, 255, 0));
+        text(&mut list, "Hi", Color::BLACK);
+        list.restore();
+        rasterizer.render(&list, &images, &mut pixmap.as_mut(), Transform::identity());
+        assert!(rasterizer.clip.mask.is_none(), "no general fill: no mask");
+        assert_eq!(pixmap.pixel(5, 5).unwrap().alpha(), 0, "outside the clip");
+        assert_eq!(pixmap.pixel(36, 12).unwrap().green(), 255, "inside the clip");
+
+        // A general fill (a circle) builds the mask; the next clip on the same surface reuses it.
+        let mut list = DrawList::new();
+        list.save();
+        list.clip_rect(Rect::new(10.0, 10.0, 30.0, 30.0));
+        list.fill_circle(50.0, 50.0, 50.0, Color::rgb(0, 0, 255));
+        list.restore();
+        list.save();
+        list.clip_rect(Rect::new(60.0, 60.0, 20.0, 20.0));
+        list.fill_circle(50.0, 50.0, 50.0, Color::rgb(0, 0, 255));
+        list.restore();
+        let mut pixmap = Pixmap::new(100, 100).unwrap();
+        rasterizer.render(&list, &images, &mut pixmap.as_mut(), Transform::identity());
+        let mask = rasterizer.clip.mask.as_ref().unwrap();
+        let covered = mask.data().iter().filter(|value| **value == 255).count();
+        assert_eq!(covered, 20 * 20, "only the last clip's box is set");
+        assert_eq!(pixmap.pixel(20, 20).unwrap().blue(), 255);
+        assert_eq!(pixmap.pixel(70, 70).unwrap().blue(), 255);
+        assert_eq!(pixmap.pixel(45, 45).unwrap().alpha(), 0, "between the clips");
+    }
 }

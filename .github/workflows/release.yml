@@ -197,6 +197,18 @@ jobs:
           $info = (Get-Item players/windows-x64/farm-player.exe).VersionInfo
           if (-not "$($info.ProductName)".StartsWith('farm-player template')) { throw "farm-player.exe has no placeholder version info" }
 
+      # .cargo/config.toml links the C runtime statically, so exported games start on Windows
+      # installs without the VC++ redistributable (the runner has it, so only the imports tell).
+      - name: Check the template needs no VC++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          $imports = & $dumpbin /nologo /dependents players/windows-x64/farm-player.exe
+          Write-Host ($imports -join "`n")
+          if ($imports -match '(?i)vcruntime|msvcp|api-ms-win-crt-') { throw "farm-player.exe needs the Visual C++ runtime" }
+
       - name: Archive template
         shell: pwsh
         run: Compress-Archive -Path players/windows-x64 -DestinationPath player-windows-x64.zip
@@ -441,6 +453,18 @@ jobs:
           foreach ($file in 'players/windows-x64/farm-player.exe', 'players/windows-x64/template.json', 'players/linux-x64/farm-player', 'players/linux-x64/THIRD-PARTY.txt') {
             if (-not (Test-Path "publish/$file")) { throw "publish/$file is missing" }
           }
+
+      # The editor loads farm_ffi.dll for Play Mode, previews and sessions: it must not need the
+      # VC++ redistributable either (.cargo/config.toml).
+      - name: Check farm_ffi.dll needs no VC++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          $imports = & $dumpbin /nologo /dependents publish/farm_ffi.dll
+          Write-Host ($imports -join "`n")
+          if ($imports -match '(?i)vcruntime|msvcp|api-ms-win-crt-') { throw "farm_ffi.dll needs the Visual C++ runtime" }
 
       # The shipped Windows template, patched with a game's icon and version info, then
       # replayed; its report must equal the template's own run and the Linux template's.

@@ -1,0 +1,10 @@
+# Windows builds link the C runtime statically, so the player template (and every game exported
+# from it) and farm_ffi.dll start on a clean Windows install without the Visual C++
+# redistributable (VCRUNTIME140.dll). CI checks the imports with `dumpbin /dependents`
+# (.github/workflows/ci.yml and release.yml). A RUSTFLAGS environment variable replaces these
+# flags, so release builds must not set one.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
