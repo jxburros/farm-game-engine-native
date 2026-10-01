@@ -118,16 +118,35 @@ game version, cartridge hash), a preview the slot list reads without loading
 the game (farm name, day, season, year, money, play time, when it was saved and
 a thumbnail of the scene) and the zstd-compressed state. A save from another
 game is refused; one from a newer version loads with a warning; items the game
-no longer has go to quarantine. Files are written through a temporary file and
-a rename, so a crash never leaves half a save.
+no longer has go to quarantine.
+
+Files are written through a temporary file of the running copy of the game,
+flushed to the disk before a rename puts it in place (and, on Linux and macOS,
+the folder flushed after it), so a crash or power loss never leaves half a
+save. Before a slot is replaced, its previous save becomes `slot<N>.bak`: when
+a slot's save is missing or does not load, the slot list shows the backup and
+loading it says so. Temporary files that a crash left behind are removed at
+start-up.
 
 ## Crash logs
 
-A panic writes `crash-<time>.log` next to the saves and prints its path. The
-log has the player version, the game and its version, the cartridge hash, the
-slot, tick, day and scene, the state hash, the last 64 commands with their
-ticks and recent plugin errors. The simulation is deterministic, so the last
-save plus that command log replays the crash.
+A panic writes `crash-<time>-<pid>.log` next to the saves (in the temporary
+folder when there is no user folder) and prints its path. The log has the
+player version, the game and its version, the cartridge hash, the slot, tick,
+day and scene, the state hash, the last 64 commands with their ticks and
+recent plugin errors. The simulation is deterministic, so the last save plus
+that command log replays the crash.
+
+Logs are created as new files (never through an existing file or link), two
+crashes in the same second get separate logs, and only the newest ten are
+kept. The game report in a log is refreshed every second; a panic outside the
+frame (the audio thread, the window system) says how many frames old it is.
+
+When the game stops with an error, or its cartridge does not load, the window
+shows what happened and where the crash log is (an exported Windows game has
+no console), until it is closed or Esc or Enter is pressed. Closing the window
+while a game runs asks first, like Quit in the pause menu; closing again while
+that question is up closes at once.
 
 ## Headless replays
 

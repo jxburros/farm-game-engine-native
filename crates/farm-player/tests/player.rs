@@ -86,6 +86,69 @@ fn new_game_walk_sleep_autosave_quit_and_continue() {
 }
 
 #[test]
+fn closing_the_window_during_a_game_asks_first() {
+    let stores = Stores::new();
+    let mut title = stores.standalone(&common::starter());
+    assert!(title.request_close(), "nothing to lose on the title screen");
+
+    let mut player = new_game(&stores);
+    assert!(!player.request_close());
+    idle(&mut player, 2);
+    assert_eq!(player.screen(), ScreenKind::Confirm);
+    // Cancel (focused) goes back to the paused game.
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    // Asking again and confirming quits.
+    assert!(!player.request_close());
+    idle(&mut player, 2);
+    let rect = player.widget_rect(WidgetId::new("confirm-yes")).unwrap();
+    let (x, y) = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    let mut requests = Vec::new();
+    for events in [
+        vec![InputEvent::PointerMove { x, y }, InputEvent::PointerDown { x, y, button: Default::default() }],
+        vec![InputEvent::PointerUp { x, y, button: Default::default() }],
+        vec![],
+    ] {
+        requests.extend(player.step(FRAME, &events, SIZE.0, SIZE.1).unwrap().requests);
+    }
+    assert!(requests.contains(&PlayerRequest::Quit), "confirming sends Quit: {requests:?}");
+    // Closing twice while the question is up closes at once.
+    let mut other = new_game(&stores);
+    assert!(!other.request_close());
+    assert!(other.request_close());
+}
+
+#[test]
+fn a_damaged_save_falls_back_to_the_one_before() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    press(&mut player, "z");
+    let saved = saved_state(&stores, &player, 1);
+    assert_eq!(saved.clock.day, 2);
+    // The next save goes bad (a power loss mid-write on a careless file system).
+    let mut saves = stores.saves.clone();
+    farm_player::SaveStore::write(&mut saves, 1, b"FGSV\0garbage").unwrap();
+
+    // The slot still shows, and Continue loads the save before the damaged one, saying so.
+    let mut player = stores.standalone(&common::starter());
+    assert_eq!(player.slot_previews()[0].as_ref().map(|preview| preview.day), Some(2.0));
+    idle(&mut player, 1);
+    player.step(FRAME, &[key_down("enter")], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    assert_eq!(hash_state(player.state().unwrap()), hash_state(&saved));
+    assert!(player.toast_history().iter().any(|(text, kind)| text
+        == "Slot 1 was damaged, so its previous save was loaded."
+        && *kind == ToastKind::Error));
+
+    // Without a backup the slot shows as unreadable, as before.
+    let empty = Stores::new();
+    let mut saves = empty.saves.clone();
+    farm_player::SaveStore::write(&mut saves, 1, b"garbage").unwrap();
+    let player = empty.standalone(&common::starter());
+    assert!(player.slot_previews()[0].is_none());
+}
+
+#[test]
 fn save_slots_hold_previews_and_load_them() {
     let stores = Stores::new();
     let mut player = new_game(&stores);

@@ -1076,21 +1076,31 @@ impl Player {
         });
     }
 
+    /// What the slot screens show for a save's bytes.
+    fn slot_info_of(&self, bytes: &[u8]) -> SlotInfo {
+        match save_file::read_save_preview(bytes) {
+            Ok((_, preview)) => SlotInfo { preview: Some(preview), unreadable: false, thumbnail: None },
+            // JSON saves carry no preview: show what the state says.
+            Err(_) => match save_file::load_save_bytes(bytes, &self.def.target, &self.def.content) {
+                loaded if loaded.ok => SlotInfo {
+                    preview: loaded.state.as_ref().map(SavePreview::of_state),
+                    unreadable: false,
+                    thumbnail: None,
+                },
+                _ => SlotInfo { preview: None, unreadable: true, thumbnail: None },
+            },
+        }
+    }
+
     fn refresh_slots(&mut self) {
         self.slots = (1..=SLOT_COUNT)
-            .map(|slot| match self.saves.read(slot) {
-                None => SlotInfo::default(),
-                Some(bytes) => match save_file::read_save_preview(&bytes) {
-                    Ok((_, preview)) => SlotInfo { preview: Some(preview), unreadable: false, thumbnail: None },
-                    // JSON saves carry no preview: show what the state says.
-                    Err(_) => match save_file::load_save_bytes(&bytes, &self.def.target, &self.def.content) {
-                        loaded if loaded.ok => SlotInfo {
-                            preview: loaded.state.as_ref().map(SavePreview::of_state),
-                            unreadable: false,
-                            thumbnail: None,
-                        },
-                        _ => SlotInfo { preview: None, unreadable: true, thumbnail: None },
-                    },
+            .map(|slot| match self.saves.read(slot).map(|bytes| self.slot_info_of(&bytes)) {
+                Some(info) if !info.unreadable => info,
+                // A missing or damaged save shows its backup when that reads (loading falls back
+                // to it too).
+                main => match self.saves.read_backup(slot).map(|bytes| self.slot_info_of(&bytes)) {
+                    Some(backup) if !backup.unreadable => backup,
+                    _ => main.unwrap_or_default(),
                 },
             })
             .collect();
@@ -1099,29 +1109,49 @@ impl Player {
         }
     }
 
+    /// Loads save bytes: the state, the load warnings and the play time; an error message when
+    /// they do not load.
+    fn load_bytes(&self, bytes: &[u8]) -> Result<(GameState, Vec<String>, f64), String> {
+        let loaded = save_file::load_save_bytes(bytes, &self.def.target, &self.def.content);
+        match loaded.state.filter(|_| loaded.ok) {
+            Some(state) => {
+                let play_seconds = save_file::read_save_preview(bytes).map_or(0.0, |(_, preview)| preview.play_seconds);
+                Ok((state, loaded.warnings, play_seconds))
+            }
+            None if loaded.errors.is_empty() => Err(self.ui.lang().tr("toast.loadFailed").to_owned()),
+            None => Err(loaded.errors.join(" ")),
+        }
+    }
+
     fn load_slot(&mut self, slot: u32) {
-        let Some(bytes) = self.saves.read(slot) else {
-            let message = self.ui.lang().format("toast.slotEmpty", &[&slot]);
-            self.game_ui.toasts.push(message, ToastKind::Error);
-            return;
+        let main = self.saves.read(slot).map(|bytes| self.load_bytes(&bytes));
+        let (loaded, from_backup) = match main {
+            Some(Ok(loaded)) => (loaded, false),
+            // A missing or damaged save: the save before it, when the store kept one.
+            main => match self.saves.read_backup(slot).map(|bytes| self.load_bytes(&bytes)) {
+                Some(Ok(loaded)) => (loaded, true),
+                _ => {
+                    let message = match main {
+                        Some(Err(message)) => message,
+                        _ => self.ui.lang().format("toast.slotEmpty", &[&slot]),
+                    };
+                    self.game_ui.toasts.push(message, ToastKind::Error);
+                    return;
+                }
+            },
         };
-        let loaded = save_file::load_save_bytes(&bytes, &self.def.target, &self.def.content);
-        let Some(state) = loaded.state.filter(|_| loaded.ok) else {
-            let message = if loaded.errors.is_empty() {
-                self.ui.lang().tr("toast.loadFailed").to_owned()
-            } else {
-                loaded.errors.join(" ")
-            };
-            self.game_ui.toasts.push(message, ToastKind::Error);
-            return;
-        };
-        let play_seconds = save_file::read_save_preview(&bytes).map_or(0.0, |(_, preview)| preview.play_seconds);
+        let (state, warnings, play_seconds) = loaded;
         self.attach(PlaySession::new(self.def.content.clone(), state), slot, play_seconds);
-        for warning in loaded.warnings {
+        for warning in warnings {
             self.game_ui.toasts.push(warning, ToastKind::Info);
         }
-        let message = self.ui.lang().format("toast.loaded", &[&slot]);
-        self.game_ui.toasts.push(message, ToastKind::Info);
+        if from_backup {
+            let message = self.ui.lang().format("toast.loadedBackup", &[&slot]);
+            self.game_ui.toasts.push(message, ToastKind::Error);
+        } else {
+            let message = self.ui.lang().format("toast.loaded", &[&slot]);
+            self.game_ui.toasts.push(message, ToastKind::Info);
+        }
     }
 
     /// Writes the running game to `slot` (with a thumbnail of the scene).
@@ -1153,6 +1183,26 @@ impl Player {
     }
 
     // ── Host API ───────────────────────────────────────────────────────
+
+    /// The window's close button (or Alt+F4) was pressed: `true` when the host should close
+    /// now. While a game runs, the player asks first, like Quit in the pause menu ("progress
+    /// since the last save will be lost"), and answers `false`; confirming sends
+    /// [`PlayerRequest::Quit`]. Closing again while that question is up closes at once, and so
+    /// does closing from the title screen, a stopped player or one that cannot quit.
+    pub fn request_close(&mut self) -> bool {
+        if self.game.is_none() || self.poisoned.is_some() || !self.can_quit {
+            return true;
+        }
+        if self.screens.last() == Some(&Screen::Confirm(Confirmation::QuitGame)) {
+            return true;
+        }
+        if self.screens.is_empty() {
+            // Over the pause menu, so Cancel lands somewhere sensible while time stands still.
+            self.open_pause();
+        }
+        self.screens.push(Screen::Confirm(Confirmation::QuitGame));
+        false
+    }
 
     pub fn mode(&self) -> PlayerMode {
         self.mode
