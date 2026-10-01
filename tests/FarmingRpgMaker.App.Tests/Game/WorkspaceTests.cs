@@ -244,6 +244,14 @@ public sealed class WorkspaceTests
         Assert.NotEqual(farmId, barnId);
         Assert.Equal("Barn", host.Workspace.Current!.Scenes.First(s => s.Id == barnId).Name);
 
+        // A greenhouse or interior keeps the weather out.
+        var indoor = FindByName<CheckBox>(host.Window, "SceneIndoor");
+        Assert.False(indoor.IsChecked);
+        indoor.IsChecked = true;
+        Assert.True(host.Workspace.Current!.Scenes.First(s => s.Id == barnId).Indoor.OrNullable() == true);
+        indoor.IsChecked = false;
+        Assert.Null(host.Workspace.Current!.Scenes.First(s => s.Id == barnId).Indoor.OrNullable());
+
         FindByName<TextBox>(host.Window, "SceneName").Text = "Big Barn";
         Press("RenameSceneButton");
         FindByName<TextBox>(host.Window, "SceneWidth").Text = "10";

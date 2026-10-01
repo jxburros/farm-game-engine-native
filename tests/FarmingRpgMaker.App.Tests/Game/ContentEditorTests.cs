@@ -119,6 +119,27 @@ public sealed class ContentEditorTests
     }
 
     [AvaloniaFact]
+    public void SettingsEditorRefusesADayThatEndsBeforeItStarts_AndTurnsThePauseOff()
+    {
+        using var host = new GameTestHost();
+        FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 3;
+        Pump();
+        var before = host.Workspace.Current;
+        Assert.True(FindByName<CheckBox>(host.Window, "Setting_PauseInModals").IsChecked);
+        FindByName<TextBox>(host.Window, "Setting_DayStartMinute").Text = "1560";
+        FindByName<TextBox>(host.Window, "Setting_DayEndMinute").Text = "1500";
+        Press(host, "SaveSettingsButton");
+        Assert.StartsWith("Could not save: The day must end at least 60 minutes after it starts", FindByName<TextBlock>(host.Window, "SettingsMessage").Text);
+        Assert.Same(before, host.Workspace.Current);
+
+        FindByName<TextBox>(host.Window, "Setting_DayStartMinute").Text = "360";
+        FindByName<CheckBox>(host.Window, "Setting_PauseInModals").IsChecked = false;
+        Press(host, "SaveSettingsButton");
+        Assert.True(host.Workspace.Current!.Settings.Time.PauseInModals.OrNullable() == false);
+        Assert.Equal(1500, host.Workspace.Current.Settings.Time.DayEndMinute);
+    }
+
+    [AvaloniaFact]
     public void ModsEditorReviewsInstallsDisablesAndRemovesPackWithUndo()
     {
         using var host = new GameTestHost();

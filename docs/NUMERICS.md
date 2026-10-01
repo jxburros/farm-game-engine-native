@@ -103,7 +103,9 @@ its output is used:
 v9 replaces FNV-1a over stable JSON with **xxh3-64 over the canonical binary
 encoding** of the state: a serde serializer in `farm_sim::hash` that writes
 integers little-endian, booleans as one byte, floats (only free-form JSON
-values such as flags carry them) as their IEEE-754 bits, strings and
+values such as flags carry them) as their IEEE-754 bits, except that a whole
+float within ±(2⁵³−1) is written as the integer it equals (stable JSON writes
+`1.0` as `1`, which reads back as an integer), strings and
 sequences with a `u32` length prefix, options as a tag byte, struct fields
 behind a presence byte (so a skipped optional field and a present value never
 collide) and enum variants as their index. Map entries are **sorted by their
