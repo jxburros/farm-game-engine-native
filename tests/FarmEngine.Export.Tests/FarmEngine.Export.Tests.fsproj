@@ -15,6 +15,7 @@
     <Compile Include="AssetUsageTests.fs" />
     <Compile Include="ExporterTests.fs" />
     <Compile Include="EndToEndTests.fs" />
+    <Compile Include="CliTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/pe/player-fixture.exe" Link="Fixtures/player-fixture.exe" CopyToOutputDirectory="PreserveNewest" />
@@ -32,5 +33,6 @@
     <ProjectReference Include="../../src/FarmEngine.Export/FarmEngine.Export.fsproj" />
     <ProjectReference Include="../../src/FarmEngine.Authoring/FarmEngine.Authoring.fsproj" />
     <ProjectReference Include="../../src/FarmEngine.Authoring.Net/FarmEngine.Authoring.Net.fsproj" />
+    <ProjectReference Include="../../src/FarmEngine.Cli/FarmEngine.Cli.fsproj" />
   </ItemGroup>
 </Project>
