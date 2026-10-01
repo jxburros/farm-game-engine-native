@@ -288,3 +288,35 @@ let ``placed machines, scene lists, player quests and recipe skills are checked`
     let unlock = { RecipeUnlock.Default with Skill = Some({ RecipeSkillRequirement.Default with Skill = "juggling"; Level = 1.0 }) }
     let recipe = { (Defaults.newRecipe project) with Unlock = Some unlock }
     Assert.EndsWith(".unlock.skill.skill", (has "recipe.unknownSkill" (project |> apply (UpsertRecipe recipe))).Path)
+
+[<Fact>]
+let ``crops without a harvest item and repeatable dialogue rewards are reported`` () =
+    let project = starter ()
+    let crop = { (Defaults.newCrop project) with Id = "glowberry"; Name = "Glowberry" }
+    let planted = project |> apply (UpsertCrop crop)
+    lacks "crop.noHarvestItem" planted
+    let noProduce = planted |> apply (RemoveItem "crop-glowberry")
+    let missing = has "crop.noHarvestItem" noProduce
+    Assert.True missing.IsWarning
+    Assert.EndsWith(".harvestItemId", missing.Path)
+    // Naming another item fixes it; naming a missing one is an error.
+    let named = { crop with HarvestItemId = Some "material-fiber" }
+    lacks "crop.noHarvestItem" (noProduce |> apply (UpsertCrop named))
+    Assert.True (has "crop.noHarvestItem" (noProduce |> apply (UpsertCrop { crop with HarvestItemId = Some "ghost" }))).IsError
+
+    let farmer = npc project "npc-farmer"
+    let greeting = farmer.Dialogue.[0]
+    let gift = { DialogueOption.Default with Text = "Gift me"; GiveMoney = Some 25.0; Once = Some false }
+    let generous = project |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ gift ] })
+    let warning = has "dialogue.repeatableReward" generous
+    Assert.Equal(sprintf "npcs[0].dialogue[0].options[%d].once" greeting.Options.Length, warning.Path)
+    for guarded in [ { gift with Once = Some true }; { gift with Once = None; HiddenIfFlag = Some "gifted" }; { gift with TakeMoney = Some 5.0 } ] do
+        lacks "dialogue.repeatableReward" (project |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ guarded ] }))
+
+[<Fact>]
+let ``quest experience names a known skill`` () =
+    let project = starter ()
+    let quest = project.Quests.[0]
+    let odd = { quest with Rewards = { quest.Rewards with Experience = Some 10.0; Skill = Some "cooking" } }
+    Assert.EndsWith(".rewards.skill", (has "quest.unknownSkill" (project |> apply (UpsertQuest odd))).Path)
+    lacks "quest.unknownSkill" (project |> apply (UpsertQuest { odd with Rewards = { odd.Rewards with Skill = Some "mining" } }))

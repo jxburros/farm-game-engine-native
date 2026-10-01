@@ -89,7 +89,26 @@ module internal ChecksContent =
                     if not (context.SeasonIds.Contains season) then
                         sink.Warning("crop.unknownSeason", sprintf "%s.seasons[%d]" path k, sprintf "Crop \"%s\" grows in \"%s\", which is not in the calendar" crop.Name season, target))
                 if not (seedsFor.Contains crop.Id) then
-                    sink.Warning("crop.noSeedItem", path, sprintf "Crop \"%s\" has no seed item, so nobody can plant it" crop.Name, target))
+                    sink.Warning("crop.noSeedItem", path, sprintf "Crop \"%s\" has no seed item, so nobody can plant it" crop.Name, target)
+                // farm_sim::farming::crops::harvest_item: harvestItemId, else crop-<id> (or
+                // pack:crop-<local> for a pack crop).
+                match crop.HarvestItemId with
+                | Some id when id.Length > 0 ->
+                    if not (context.ItemIds.Contains id) then
+                        sink.Error("crop.noHarvestItem", path + ".harvestItemId", sprintf "Crop \"%s\" is harvested as missing item \"%s\"" crop.Name id, target)
+                | _ ->
+                    let fallback = sprintf "crop-%s" crop.Id
+                    let packed =
+                        match crop.Id.Split([| ':' |], 2) with
+                        | [| pack; local |] when pack.Length > 0 && local.Length > 0 -> Some(sprintf "%s:crop-%s" pack local)
+                        | _ -> None
+                    if not (context.ItemIds.Contains fallback || packed |> Option.exists context.ItemIds.Contains) then
+                        sink.Warning(
+                            "crop.noHarvestItem",
+                            path + ".harvestItemId",
+                            sprintf "Crop \"%s\" has no harvest item (no \"%s\" and no harvest item set), so harvesting it gives nothing" crop.Name fallback,
+                            target
+                        ))
 
     let private quests (context: Context) (sink: Sink) =
         context.Project.Quests
@@ -107,6 +126,10 @@ module internal ChecksContent =
                 |> Seq.iteri (fun k id ->
                     if id = quest.Id then
                         sink.Error("quest.prerequisiteSelf", sprintf "%s.prerequisites[%d]" path k, sprintf "Quest \"%s\" requires itself" quest.Name, target))
+            match quest.Rewards.Skill with
+            | Some skill when skill.Length > 0 && not (SaveSchema.SkillNames |> List.contains skill) ->
+                sink.Warning("quest.unknownSkill", path + ".rewards.skill", sprintf "Quest \"%s\" gives experience to unknown skill \"%s\"" quest.Name skill, target)
+            | _ -> ()
             match quest.AvailableFromDay, quest.AvailableToDay with
             | Some fromDay, Some toDay when fromDay > toDay ->
                 sink.Warning("quest.availableWindow", path + ".availableFromDay", sprintf "Quest \"%s\" is available from day %g until day %g, which never happens" quest.Name fromDay toDay, target)

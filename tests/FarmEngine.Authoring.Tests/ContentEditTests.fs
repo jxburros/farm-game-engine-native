@@ -237,3 +237,56 @@ let ``duplicated actions, minigames and crops get fresh ids and stay valid`` () 
     let project = project |> apply (UpsertCrop cropCopy)
     Assert.True(project.Items |> List.exists (fun i -> i.Id = sprintf "seed-%s" cropCopy.Id))
     Assert.True((errors project).IsEmpty, describe (errors project))
+
+[<Fact>]
+let ``reward options become once-only when their reward is set`` () =
+    let project = starter ()
+    let greeting = (npc project "npc-farmer").Dialogue.[0]
+    let plain = { DialogueOption.Default with Text = "Hello" }
+    let added = project |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ plain ] })
+    let option (p: GameProject) = (p.Dialogues |> List.find (fun d -> d.Id = greeting.Id)).Options |> List.last
+    Assert.Equal(None, (option added).Once)
+    let rewarded = added |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ { plain with GiveMoney = Some 25.0 } ] })
+    Assert.Equal(Some true, (option rewarded).Once)
+    Assert.Equal(Some true, ((npc rewarded "npc-farmer").Dialogue.[0].Options |> List.last).Once)
+    // An explicit choice stays.
+    let repeatable = rewarded |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ { plain with GiveMoney = Some 25.0; Once = Some false } ] })
+    Assert.Equal(Some false, (option repeatable).Once)
+    // Through the NPC form too.
+    let farmer = npc project "npc-farmer"
+    let viaNpc = { farmer with Dialogue = [ { greeting with Options = greeting.Options @ [ { plain with GiveItem = Some "gift-flower" } ] } ] }
+    Assert.Equal(Some true, ((npc (project |> apply (UpsertNpc viaNpc)) "npc-farmer").Dialogue.[0].Options |> List.last).Once)
+
+[<Fact>]
+let ``item edits keep a tool's durability in the starting inventory`` () =
+    let project = starter ()
+    let hoe = project.Items |> List.find (fun i -> i.Id = "tool-hoe")
+    let worn = project.Player.Inventory |> List.map (fun s -> if s.Item.Id = "tool-hoe" then { s with Item = { s.Item with Durability = Some 40.0 } } else s)
+    let project = { project with Player = { project.Player with Inventory = worn } }
+    let renamed = project |> apply (UpsertItem { hoe with Name = "Old Hoe"; MaxDurability = Some 30.0 })
+    let slot = renamed.Player.Inventory |> List.find (fun s -> s.Item.Id = "tool-hoe")
+    Assert.Equal("Old Hoe", slot.Item.Name)
+    Assert.Equal(Some 30.0, slot.Item.Durability)
+
+[<Fact>]
+let ``a max stack of 0 does not cap the starting inventory`` () =
+    let project = starter ()
+    let wood = { (project.Items |> List.find (fun i -> i.Id = "material-wood")) with MaxStack = 0.0 }
+    let project = project |> apply (UpsertItem wood)
+    let once = project |> apply (AddToInventory "material-wood")
+    let twice = once |> apply (AddToInventory "material-wood")
+    let woodSlots (p: GameProject) = p.Player.Inventory |> List.filter (fun s -> s.Item.Id = "material-wood")
+    Assert.Equal(1, (woodSlots twice).Length)
+    Assert.Equal(2.0, (woodSlots twice).Head.Quantity)
+
+[<Fact>]
+let ``pack starting items stack to their cap and stop at the slot limit`` () =
+    let rules = InventoryRules.add
+    let seed = { Item.Default with Id = "seed"; Stackable = true; MaxStack = 10.0 }
+    let held = [ ({ Item = seed; Quantity = 4.0; Quality = None } : InventorySlot) ]
+    let merged, rejected = rules seed 25.0 3.0 held
+    Assert.Equal<float list>([ 10.0; 10.0; 9.0 ], merged |> List.map (fun s -> s.Quantity))
+    Assert.Equal(0.0, rejected)
+    let full, lost = rules seed 25.0 2.0 held
+    Assert.Equal<float list>([ 10.0; 10.0 ], full |> List.map (fun s -> s.Quantity))
+    Assert.Equal(9.0, lost)

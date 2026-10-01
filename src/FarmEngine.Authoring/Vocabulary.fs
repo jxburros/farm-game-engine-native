@@ -147,6 +147,9 @@ module Vocabulary =
     let defaultOutcome (kind: string) : EventOutcome = Defaults.defaultOutcome kind
 
     /// QuestEditor: the target fields each objective type shows. Other target fields stay hidden.
+    /// A craft objective names the item made: the engine counts every output of a hand craft and
+    /// of goods collected from a machine, by quantity (a recipe id still counts one per hand
+    /// craft, for older content).
     let objectiveTargets (kind: string) : string list =
         match kind with
         | QuestObjectiveTypes.Collect

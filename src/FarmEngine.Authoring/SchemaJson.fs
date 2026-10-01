@@ -381,6 +381,7 @@ module SchemaJson =
         let mutable vMutationChance = None
         let mutable vYieldMin = 0.0
         let mutable vYieldMax = 0.0
+        let mutable vHarvestItemId = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
             match key with
@@ -400,8 +401,9 @@ module SchemaJson =
             | "mutationChance" -> vMutationChance <- Decode.optional Decode.number (key :: path) value
             | "yieldMin" -> vYieldMin <- Decode.number (key :: path) value
             | "yieldMax" -> vYieldMax <- Decode.number (key :: path) value
+            | "harvestItemId" -> vHarvestItemId <- Decode.optional Decode.string (key :: path) value
             | _ -> extra.Add((key, value))
-        { Id = vId; Name = vName; Visual = vVisual; SeedCost = vSeedCost; BaseHarvestValue = vBaseHarvestValue; GrowthTime = vGrowthTime; GrowthDays = vGrowthDays; Stages = vStages; Seasons = vSeasons; RegrowthTime = vRegrowthTime; RegrowthDays = vRegrowthDays; CanRegrow = vCanRegrow; MultiTile = vMultiTile; MutationChance = vMutationChance; YieldMin = vYieldMin; YieldMax = vYieldMax; Extra = List.ofSeq extra }
+        { Id = vId; Name = vName; Visual = vVisual; SeedCost = vSeedCost; BaseHarvestValue = vBaseHarvestValue; GrowthTime = vGrowthTime; GrowthDays = vGrowthDays; Stages = vStages; Seasons = vSeasons; RegrowthTime = vRegrowthTime; RegrowthDays = vRegrowthDays; CanRegrow = vCanRegrow; MultiTile = vMultiTile; MutationChance = vMutationChance; YieldMin = vYieldMin; YieldMax = vYieldMax; HarvestItemId = vHarvestItemId; Extra = List.ofSeq extra }
 
     and encodeCropDefinition (value: CropDefinition) : Json =
         JObject(
@@ -434,6 +436,9 @@ module SchemaJson =
                 | None -> ()
                 yield "yieldMin", JNumber value.YieldMin
                 yield "yieldMax", JNumber value.YieldMax
+                match value.HarvestItemId with
+                | Some v -> yield "harvestItemId", JString v
+                | None -> ()
                 yield! value.Extra
             ]
         )
@@ -527,6 +532,7 @@ module SchemaJson =
         let mutable vMutationChance = None
         let mutable vYieldMin = 0.0
         let mutable vYieldMax = 0.0
+        let mutable vHarvestItemId = None
         let mutable vCustomAsset = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
@@ -547,9 +553,10 @@ module SchemaJson =
             | "mutationChance" -> vMutationChance <- Decode.optional Decode.number (key :: path) value
             | "yieldMin" -> vYieldMin <- Decode.number (key :: path) value
             | "yieldMax" -> vYieldMax <- Decode.number (key :: path) value
+            | "harvestItemId" -> vHarvestItemId <- Decode.optional Decode.string (key :: path) value
             | "customAsset" -> vCustomAsset <- Decode.optional Decode.string (key :: path) value
             | _ -> extra.Add((key, value))
-        { Id = vId; Name = vName; Visual = vVisual; SeedCost = vSeedCost; BaseHarvestValue = vBaseHarvestValue; GrowthTime = vGrowthTime; GrowthDays = vGrowthDays; Stages = vStages; Seasons = vSeasons; RegrowthTime = vRegrowthTime; RegrowthDays = vRegrowthDays; CanRegrow = vCanRegrow; MultiTile = vMultiTile; MutationChance = vMutationChance; YieldMin = vYieldMin; YieldMax = vYieldMax; CustomAsset = vCustomAsset; Extra = List.ofSeq extra }
+        { Id = vId; Name = vName; Visual = vVisual; SeedCost = vSeedCost; BaseHarvestValue = vBaseHarvestValue; GrowthTime = vGrowthTime; GrowthDays = vGrowthDays; Stages = vStages; Seasons = vSeasons; RegrowthTime = vRegrowthTime; RegrowthDays = vRegrowthDays; CanRegrow = vCanRegrow; MultiTile = vMultiTile; MutationChance = vMutationChance; YieldMin = vYieldMin; YieldMax = vYieldMax; HarvestItemId = vHarvestItemId; CustomAsset = vCustomAsset; Extra = List.ofSeq extra }
 
     and encodeCustomCropDefinition (value: CustomCropDefinition) : Json =
         JObject(
@@ -582,6 +589,9 @@ module SchemaJson =
                 | None -> ()
                 yield "yieldMin", JNumber value.YieldMin
                 yield "yieldMax", JNumber value.YieldMax
+                match value.HarvestItemId with
+                | Some v -> yield "harvestItemId", JString v
+                | None -> ()
                 match value.CustomAsset with
                 | Some v -> yield "customAsset", JString v
                 | None -> ()
@@ -625,6 +635,8 @@ module SchemaJson =
         let mutable vTakeMoney = None
         let mutable vGiveMoney = None
         let mutable vEventFlag = None
+        let mutable vOnce = None
+        let mutable vHiddenIfFlag = None
         let mutable vRequiresItem = None
         let mutable vRequiresFlag = None
         let mutable vOpenShopId = None
@@ -641,6 +653,8 @@ module SchemaJson =
             | "takeMoney" -> vTakeMoney <- Decode.optional Decode.number (key :: path) value
             | "giveMoney" -> vGiveMoney <- Decode.optional Decode.number (key :: path) value
             | "eventFlag" -> vEventFlag <- Decode.optional Decode.string (key :: path) value
+            | "once" -> vOnce <- Decode.optional Decode.boolean (key :: path) value
+            | "hiddenIfFlag" -> vHiddenIfFlag <- Decode.optional Decode.string (key :: path) value
             | "requiresItem" -> vRequiresItem <- Decode.optional Decode.string (key :: path) value
             | "requiresFlag" -> vRequiresFlag <- Decode.optional Decode.string (key :: path) value
             | "openShopId" -> vOpenShopId <- Decode.optional Decode.string (key :: path) value
@@ -648,7 +662,7 @@ module SchemaJson =
             | "requiresFriendship" -> vRequiresFriendship <- Decode.optional Decode.number (key :: path) value
             | "actionId" -> vActionId <- Decode.optional Decode.string (key :: path) value
             | _ -> extra.Add((key, value))
-        { Text = vText; NextDialogueId = vNextDialogueId; GiveItem = vGiveItem; GiveItemQuantity = vGiveItemQuantity; TakeMoney = vTakeMoney; GiveMoney = vGiveMoney; EventFlag = vEventFlag; RequiresItem = vRequiresItem; RequiresFlag = vRequiresFlag; OpenShopId = vOpenShopId; OfferQuestId = vOfferQuestId; RequiresFriendship = vRequiresFriendship; ActionId = vActionId; Extra = List.ofSeq extra }
+        { Text = vText; NextDialogueId = vNextDialogueId; GiveItem = vGiveItem; GiveItemQuantity = vGiveItemQuantity; TakeMoney = vTakeMoney; GiveMoney = vGiveMoney; EventFlag = vEventFlag; Once = vOnce; HiddenIfFlag = vHiddenIfFlag; RequiresItem = vRequiresItem; RequiresFlag = vRequiresFlag; OpenShopId = vOpenShopId; OfferQuestId = vOfferQuestId; RequiresFriendship = vRequiresFriendship; ActionId = vActionId; Extra = List.ofSeq extra }
 
     and encodeDialogueOption (value: DialogueOption) : Json =
         JObject(
@@ -671,6 +685,12 @@ module SchemaJson =
                 | None -> ()
                 match value.EventFlag with
                 | Some v -> yield "eventFlag", JString v
+                | None -> ()
+                match value.Once with
+                | Some v -> yield "once", JBool v
+                | None -> ()
+                match value.HiddenIfFlag with
+                | Some v -> yield "hiddenIfFlag", JString v
                 | None -> ()
                 match value.RequiresItem with
                 | Some v -> yield "requiresItem", JString v
@@ -1519,18 +1539,23 @@ module SchemaJson =
         let members = Decode.object path json
         let mutable vItem = Item.Default
         let mutable vQuantity = 0.0
+        let mutable vQuality = None
         for (key, value) in members do
             match key with
             | "item" -> vItem <- decodeItem (key :: path) value
             | "quantity" -> vQuantity <- Decode.number (key :: path) value
+            | "quality" -> vQuality <- Decode.optional Decode.string (key :: path) value
             | _ -> ()
-        { Item = vItem; Quantity = vQuantity }
+        { Item = vItem; Quantity = vQuantity; Quality = vQuality }
 
     and encodeInventorySlot (value: InventorySlot) : Json =
         JObject(
             [
                 yield "item", encodeItem value.Item
                 yield "quantity", JNumber value.Quantity
+                match value.Quality with
+                | Some v -> yield "quality", JString v
+                | None -> ()
             ]
         )
 
@@ -2610,14 +2635,16 @@ module SchemaJson =
         let mutable vMoney = None
         let mutable vItems = None
         let mutable vExperience = None
+        let mutable vSkill = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
             match key with
             | "money" -> vMoney <- Decode.optional Decode.number (key :: path) value
             | "items" -> vItems <- Decode.optional (Decode.list decodeQuestRewardItem) (key :: path) value
             | "experience" -> vExperience <- Decode.optional Decode.number (key :: path) value
+            | "skill" -> vSkill <- Decode.optional Decode.string (key :: path) value
             | _ -> extra.Add((key, value))
-        { Money = vMoney; Items = vItems; Experience = vExperience; Extra = List.ofSeq extra }
+        { Money = vMoney; Items = vItems; Experience = vExperience; Skill = vSkill; Extra = List.ofSeq extra }
 
     and encodeQuestRewards (value: QuestRewards) : Json =
         JObject(
@@ -2630,6 +2657,9 @@ module SchemaJson =
                 | None -> ()
                 match value.Experience with
                 | Some v -> yield "experience", JNumber v
+                | None -> ()
+                match value.Skill with
+                | Some v -> yield "skill", JString v
                 | None -> ()
                 yield! value.Extra
             ]

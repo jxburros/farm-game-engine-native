@@ -3,6 +3,44 @@ namespace FarmEngine.Authoring
 open System.Collections.Generic
 open FarmEngine.Schemas
 
+/// The engine's inventory stacking rules (`farm_sim::inventory`), for the inventories the editor
+/// writes: a slot holds one item at one quality and at most the item's `maxStack` units (0 means
+/// no cap), and adds stop at `maxInventorySize` slots.
+module InventoryRules =
+    /// The most units of `item` one slot holds (`maxStack`; 0 or less is no cap).
+    let stackCap (item: Item) = if item.MaxStack <= 0.0 then infinity else item.MaxStack
+
+    /// Adds `quantity` of `item` (normal quality) in one pass: tops up the item's slots to the
+    /// cap, then opens new slots of at most one cap while there is room. Returns the inventory
+    /// and the units that did not fit.
+    let add (item: Item) (quantity: float) (maxSlots: float) (inventory: InventorySlot list) : InventorySlot list * float =
+        let cap = stackCap item
+        let mutable remaining = max 0.0 quantity
+        let topped =
+            inventory
+            |> List.map (fun slot ->
+                if remaining > 0.0 && slot.Item.Id = item.Id && slot.Quality.IsNone && slot.Quantity < cap then
+                    let take = min (cap - slot.Quantity) remaining
+                    remaining <- remaining - take
+                    { slot with Quantity = slot.Quantity + take }
+                else slot)
+        let added = ResizeArray<InventorySlot>()
+        while remaining > 0.0 && float (topped.Length + added.Count) < maxSlots do
+            let take = min cap remaining
+            added.Add({ Item = item; Quantity = take; Quality = None })
+            remaining <- remaining - take
+        topped @ List.ofSeq added, remaining
+
+    /// A held (or dropped) copy of an item brought up to date with its `current` definition,
+    /// keeping the instance data the copy carries: a tool's durability stays, clamped to the new
+    /// maximum (`farm_sim::inventory::refresh_item`).
+    let refresh (saved: Item) (current: Item) : Item =
+        let durability =
+            match saved.Durability, current.MaxDurability with
+            | Some durability, Some maximum -> Some(min durability maximum)
+            | _ -> current.Durability
+        { current with Durability = durability }
+
 /// Authoring-side load order, conflict-aware composition, localization and project import.
 module PackMerge =
     let private problem id severity message = { PackId = id; Severity = severity; Message = message }
@@ -149,7 +187,7 @@ module PackMerge =
           RegrowthTime = crop.RegrowthTime; RegrowthDays = crop.RegrowthDays
           CanRegrow = crop.CanRegrow; MultiTile = crop.MultiTile
           MutationChance = crop.MutationChance; YieldMin = crop.YieldMin
-          YieldMax = crop.YieldMax; CustomAsset = None; Extra = crop.Extra }
+          YieldMax = crop.YieldMax; HarvestItemId = crop.HarvestItemId; CustomAsset = None; Extra = crop.Extra }
 
     /// Materialize a pack as editable project content. The Mods editor's ImportPack edit uses
     /// this F# transform, including the pack's optional player-start inventory and location.
@@ -187,14 +225,22 @@ module PackMerge =
             // JavaScript Map(entries): later duplicate ids win inventory resolution.
             let byItemId = Dictionary<string, Item>()
             for item in next.Items do byItemId.[item.Id] <- item
-            let added =
-                [ for slot in start.Inventory do
-                      match byItemId.TryGetValue slot.ItemId with
-                      | true, item -> yield ({ Item = item; Quantity = slot.Quantity } : InventorySlot)
-                      | _ -> problems.Add(problem pack.Manifest.Id "error" (sprintf "playerStart references unknown item '%s'" slot.ItemId)) ]
+            // Merged like any other add (farm_sim::packs::apply_pack_to_project): stacks fill to
+            // maxStack and the slot limit holds.
+            let mutable inventory = next.Player.Inventory
+            for slot in start.Inventory do
+                match byItemId.TryGetValue slot.ItemId with
+                | true, item ->
+                    let merged, rejected = InventoryRules.add item slot.Quantity next.Player.MaxInventorySize inventory
+                    inventory <- merged
+                    if rejected > 0.0 then
+                        problems.Add(
+                            problem pack.Manifest.Id "warning"
+                                (sprintf "playerStart: %g of %g× '%s' don't fit in the starting inventory (%g slots)" rejected slot.Quantity slot.ItemId next.Player.MaxInventorySize))
+                | _ -> problems.Add(problem pack.Manifest.Id "error" (sprintf "playerStart references unknown item '%s'" slot.ItemId))
             let player =
                 { next.Player with
-                    Inventory = next.Player.Inventory @ added
+                    Inventory = inventory
                     Money = defaultArg start.Money next.Player.Money
                     SceneId = defaultArg start.SceneId next.Player.SceneId
                     X = defaultArg start.X next.Player.X

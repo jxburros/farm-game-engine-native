@@ -128,7 +128,7 @@ let private makeProject () : GameProject =
         |> mapTile 3 2 (fun t -> AuthoringTiles.SetTileLayer(t, "soil"))
         |> mapTile 4 4 (fun t -> AuthoringTiles.SetTileLayer(t, "wall"))
     let items = Builtin.items ()
-    let slot id quantity : InventorySlot = { Item = (items |> List.find (fun i -> i.Id = id)); Quantity = quantity }
+    let slot id quantity : InventorySlot = { Item = (items |> List.find (fun i -> i.Id = id)); Quantity = quantity; Quality = None }
     let dialogue : Dialogue list =
         [ { Dialogue.Default with
               Id = "dlg-1"; NpcId = "npc-test"; Text = "Hello!"
