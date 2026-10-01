@@ -6,8 +6,8 @@
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use farm_bench::{
-    farm, gameplay_player, large_map_player, load_cartridge, npc_ticks, npc_town, render_frame, sample_cartridges, sleep,
-    start_cartridge, FarmSpec, NewPlayer, SaveFixture,
+    farm, gameplay_player, large_map_player, load_cartridge, npc_ticks, npc_town, render_frame, sample_cartridges,
+    sleep, start_cartridge, FarmSpec, NewPlayer, SaveFixture,
 };
 use std::hint::black_box;
 use std::time::Duration;
