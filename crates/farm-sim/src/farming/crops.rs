@@ -337,8 +337,8 @@ pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Cr
     }
 }
 
-/// Bounds come from `tiles.length` and `tiles[0].length` like the TS; a ragged grid panics on
-/// the row index exactly where the TS reads `undefined.type` (and the C# throws).
+/// Every tile of the footprint must exist: a tile a ragged grid lacks (the TS read
+/// `undefined.type` and threw) makes the footprint unplaceable.
 pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32, height: u32) -> bool {
     for dy in 0..i64::from(height) {
         for dx in 0..i64::from(width) {
@@ -347,10 +347,9 @@ pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32
             let (Ok(row), Ok(column)) = (usize::try_from(check_y), usize::try_from(check_x)) else {
                 return false;
             };
-            if row >= tiles.len() || column >= tiles[0].len() {
+            let Some(tile) = tiles.get(row).and_then(|tiles| tiles.get(column)) else {
                 return false;
-            }
-            let tile = &tiles[row][column];
+            };
             if tile.r#type != tile_types::SOIL || tile.crop.is_some() {
                 return false;
             }
@@ -893,10 +892,11 @@ mod characterization_tests {
     }
 
     #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn quirk_bounds_use_the_first_row_length_so_ragged_grids_throw() {
+    fn ragged_grids_refuse_the_footprint_instead_of_panicking() {
+        // The TS threw here (it took the width from the first row).
         let soil = || Tile { r#type: "soil".to_owned(), ..Tile::default() };
         let ragged = vec![vec![soil(), soil()], vec![soil()]];
-        can_place_multi_tile_crop(&ragged, 0, 0, 2, 2);
+        assert!(!can_place_multi_tile_crop(&ragged, 0, 0, 2, 2));
+        assert!(can_place_multi_tile_crop(&ragged, 0, 0, 1, 2));
     }
 }

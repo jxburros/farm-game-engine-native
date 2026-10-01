@@ -9,44 +9,48 @@
 
 use crate::engine_types::EngineContext;
 use crate::rng::Rng;
-use crate::schema::{GameState, GridPoint, NodeTypeDefinition, Npc, NpcScheduleEntry, NpcState};
+use crate::schema::{GameState, GridPoint, Npc, NpcScheduleEntry, NpcState};
 use crate::units;
 use crate::weather;
 use crate::world::pathfinding::{self, PathPoint, Walkability};
 use crate::world::world_movement;
-use indexmap::{IndexMap, IndexSet};
 
 const WANDER_PERIOD_MINUTES: u32 = 3;
 
 const DIRECTIONS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 
 /// C# `MakeWalkability`: runs `f` with the walkability of `scene_id` for `npc_id` (other NPCs in
-/// the scene and the player's tile block); `None` when the scene is missing. The node map is
-/// built once per [`advance_npcs`] call and passed in, since it never changes during one.
+/// the scene and the player's tile block, as do placed machines like they block the player);
+/// `None` when the scene is missing.
 fn with_walkability<R>(
+    ctx: &EngineContext,
     state: &GameState,
-    node_types: &IndexMap<String, NodeTypeDefinition>,
     npc_id: &str,
     scene_id: &str,
     f: impl FnOnce(&Walkability<'_>) -> R,
 ) -> Option<R> {
     let scene = state.world.scenes.iter().find(|s| s.id == scene_id)?;
-    let mut blocked: IndexSet<String> = IndexSet::new();
+    let mut blocked: Vec<PathPoint> = Vec::new();
     // Other NPCs in the scene block.
     for (other_id, other) in &state.npcs {
         if other_id != npc_id && other.scene_id == scene_id {
-            // An NPC standing between tiles blocks no tile key (v8 wrote "2.5,3").
+            // An NPC standing between tiles blocks no tile (v8 wrote the key "2.5,3").
             if other.x % units::TILE == 0 && other.y % units::TILE == 0 {
-                blocked.insert(format!("{},{}", units::tile_of(other.x), units::tile_of(other.y)));
+                blocked.push(PathPoint { x: units::tile_of(other.x), y: units::tile_of(other.y) });
             }
         }
     }
     // The player blocks too (fractional position → occupied tile).
     if state.player.scene_id == scene_id {
         let player = world_movement::player_tile(state);
-        blocked.insert(format!("{},{}", player.x, player.y));
+        blocked.push(PathPoint { x: player.x, y: player.y });
     }
-    Some(f(&Walkability { scene, node_types: Some(node_types), blocked: Some(&blocked) }))
+    Some(f(&Walkability {
+        scene,
+        node_types: &ctx.content.node_types,
+        machine_types: &ctx.content.machine_types,
+        blocked: &blocked,
+    }))
 }
 
 fn player_is_adjacent(state: &GameState, npc: &NpcState) -> bool {
@@ -77,17 +81,11 @@ fn active_schedule_entry(def: &Npc, time_minutes: u32) -> Option<&NpcScheduleEnt
 }
 
 /// JS comparator result → sign (NaN compares equal, as in Array.prototype.sort).
-fn step_along_path(
-    state: &GameState,
-    node_types: &IndexMap<String, NodeTypeDefinition>,
-    npc_id: &str,
-    npc: &NpcState,
-) -> NpcState {
+fn step_along_path(ctx: &EngineContext, state: &GameState, npc_id: &str, npc: &NpcState) -> NpcState {
     let Some(next) = npc.path.as_ref().and_then(|path| path.first()) else {
         return npc.clone();
     };
-    let walkable =
-        with_walkability(state, node_types, npc_id, &npc.scene_id, |w| pathfinding::is_walkable(w, next.x, next.y));
+    let walkable = with_walkability(ctx, state, npc_id, &npc.scene_id, |w| pathfinding::is_walkable(w, next.x, next.y));
     if walkable != Some(true) {
         // Blocked: drop the path; it will be recomputed next minute.
         return NpcState { path: None, ..npc.clone() };
@@ -131,7 +129,6 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
 
     // Storms keep scheduled NPCs home (M4b).
     let stay_inside = weather::current_weather(ctx, state).is_some_and(|w| w.npcs_stay_inside);
-    let node_types = world_movement::by_id(&ctx.content.node_types, |def| def.id.as_str());
 
     for def in movers {
         let Some(mut npc) = state.npcs.get(&def.id).cloned() else {
@@ -158,13 +155,13 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
 
             if npc.x != units::tiles(target.x) || npc.y != units::tiles(target.y) {
                 if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
-                    let path = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
+                    let path = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
                         pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: target.x, y: target.y })
                     })
                     .flatten();
                     npc.path = to_grid_path(path);
                 }
-                let stepped = step_along_path(state, &node_types, &def.id, &npc);
+                let stepped = step_along_path(ctx, state, &def.id, &npc);
                 state.npcs.insert(def.id.clone(), stepped);
                 continue;
             }
@@ -186,13 +183,13 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
                     continue;
                 }
                 if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
-                    let path = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
+                    let path = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
                         pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: waypoint.x, y: waypoint.y })
                     })
                     .flatten();
                     npc.path = to_grid_path(path);
                 }
-                let stepped = step_along_path(state, &node_types, &def.id, &npc);
+                let stepped = step_along_path(ctx, state, &def.id, &npc);
                 state.npcs.insert(def.id.clone(), stepped);
                 continue;
             }
@@ -211,7 +208,7 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
             if (i64::from(nx) - i64::from(def.x)).abs() > radius || (i64::from(ny) - i64::from(def.y)).abs() > radius {
                 continue;
             }
-            let walkable = with_walkability(state, &node_types, &def.id, &npc.scene_id, |w| {
+            let walkable = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
                 pathfinding::is_walkable(w, units::tile_of(nx), units::tile_of(ny))
             });
             if walkable == Some(true) {

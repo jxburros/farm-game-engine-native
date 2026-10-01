@@ -34,6 +34,35 @@ pub struct PerformActionResult {
 /// Actions may perform actions; cap the chain so cycles terminate.
 const MAX_ACTION_DEPTH: u32 = 4;
 
+/// The most actions one top-level call (a command, a dialogue option, an event, a minigame tier,
+/// a plugin mutation) may run in all. The depth cap alone bounds a chain, not its breadth: an
+/// action that performs itself twelve times would run 22,621 times within four levels.
+pub const MAX_ACTION_RUNS: u32 = 256;
+
+/// What the action chain of one top-level call has used up.
+#[derive(Debug, Default)]
+struct ActionBudget {
+    runs: u32,
+    /// The "limit reached" warning was given (once per call).
+    warned: bool,
+}
+
+impl ActionBudget {
+    /// The warning creators see when a chain is cut short (once per top-level call).
+    fn limit_reached(&mut self, action_id: &str) -> Effects {
+        if self.warned {
+            return Vec::new();
+        }
+        self.warned = true;
+        vec![Effect::message(
+            message_levels::ERROR,
+            format!(
+                "Action chain limit reached at '{action_id}': actions may perform actions {MAX_ACTION_DEPTH} levels deep and {MAX_ACTION_RUNS} times in all."
+            ),
+        )]
+    }
+}
+
 const QUEST_STATUS_NOT_STARTED: &str = "not-started";
 
 /// TS `x || y` on a string: an empty (or missing) string is falsy.
@@ -121,7 +150,13 @@ pub fn flag_value<'a>(state: &'a GameState, name: &str) -> Option<&'a Value> {
     state.flags.get(name)
 }
 
-fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome, depth: u32) -> Effects {
+fn apply_outcome(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    outcome: &EventOutcome,
+    depth: u32,
+    budget: &mut ActionBudget,
+) -> Effects {
     match outcome.r#type.as_str() {
         "message" => match non_empty(outcome.message.as_deref()) {
             Some(message) => vec![Effect::message(message_levels::INFO, message)],
@@ -292,14 +327,16 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
         "warpPlayer" => {
             let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
             let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
-            if !state.world.scenes.iter().any(|s| s.id == scene_id) {
+            // A scene of an enabled content pack joins the world on first visit.
+            if world_movement::ensure_scene(ctx, state, scene_id).is_none() {
                 return vec![];
             }
-            // Warp targets are authored as tile coordinates; land on the center.
-            state.player.scene_id = scene_id.to_owned();
-            state.player.x = units::tile_center(x);
-            state.player.y = units::tile_center(y);
-            vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x, y }]
+            // Warp targets are authored as tile coordinates; land on the center, or on the
+            // nearest walkable tile when the target is outside the scene or blocked.
+            let (landed, landing_effects) = world_movement::land_player(ctx, state, scene_id, x, y);
+            let mut effects = vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x: landed.x, y: landed.y }];
+            effects.extend(landing_effects);
+            effects
         }
 
         "startDialogue" => {
@@ -334,7 +371,7 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
 
         "performAction" => {
             let Some(action_id) = non_empty(outcome.action_id.as_deref()) else { return vec![] };
-            perform_action_internal(ctx, state, action_id, depth + 1)
+            perform_action_detailed(ctx, state, action_id, depth + 1, budget).effects
         }
 
         "startMinigame" => {
@@ -361,23 +398,32 @@ fn apply_outcome(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutc
 }
 
 /// Apply a sequence of outcomes (the shared executor behind events, custom actions, minigame
-/// result tiers and plugin mutations).
+/// result tiers and plugin mutations). A top-level call: the actions its outcomes perform share
+/// one [`MAX_ACTION_RUNS`] budget.
 pub fn apply_outcomes(ctx: &EngineContext, state: &mut GameState, outcomes: &[EventOutcome], depth: u32) -> Effects {
+    apply_outcomes_within(ctx, state, outcomes, depth, &mut ActionBudget::default())
+}
+
+fn apply_outcomes_within(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    outcomes: &[EventOutcome],
+    depth: u32,
+    budget: &mut ActionBudget,
+) -> Effects {
     let mut effects = Vec::new();
     for outcome in outcomes {
-        effects.extend(apply_outcome(ctx, state, outcome, depth));
+        effects.extend(apply_outcome(ctx, state, outcome, depth, budget));
     }
     effects
 }
 
 /// Run a creator-defined action (extensibility layer): check its conditions, spend energy, apply
-/// its outcomes, and notify plugins via `onAction`.
+/// its outcomes, and notify plugins via `onAction`. The actions it performs in turn run at most
+/// [`MAX_ACTION_DEPTH`] levels deep and [`MAX_ACTION_RUNS`] times in all; a chain cut short says
+/// so with an error message.
 pub fn perform_action(ctx: &EngineContext, state: &mut GameState, action_id: &str) -> PerformActionResult {
-    perform_action_detailed(ctx, state, action_id, 0)
-}
-
-fn perform_action_internal(ctx: &EngineContext, state: &mut GameState, action_id: &str, depth: u32) -> Effects {
-    perform_action_detailed(ctx, state, action_id, depth).effects
+    perform_action_detailed(ctx, state, action_id, 0, &mut ActionBudget::default())
 }
 
 fn perform_action_detailed(
@@ -385,9 +431,10 @@ fn perform_action_detailed(
     state: &mut GameState,
     action_id: &str,
     depth: u32,
+    budget: &mut ActionBudget,
 ) -> PerformActionResult {
-    if depth > MAX_ACTION_DEPTH {
-        return PerformActionResult { effects: vec![], ran: false };
+    if depth > MAX_ACTION_DEPTH || budget.runs >= MAX_ACTION_RUNS {
+        return PerformActionResult { effects: budget.limit_reached(action_id), ran: false };
     }
     let Some(action) = ctx.content.actions.iter().find(|def| def.id == action_id) else {
         return PerformActionResult {
@@ -408,6 +455,7 @@ fn perform_action_detailed(
         }
     }
 
+    budget.runs += 1;
     let mut effects = Vec::new();
 
     if action.energy_cost > 0 {
@@ -418,7 +466,7 @@ fn perform_action_detailed(
         }
     }
 
-    effects.extend(apply_outcomes(ctx, state, &action.outcomes, depth));
+    effects.extend(apply_outcomes_within(ctx, state, &action.outcomes, depth, budget));
 
     ctx.emit(HookEvent::Action(ActionHookPayload { action_id: action.id.clone() }));
     PerformActionResult { effects, ran: true }
@@ -443,10 +491,7 @@ pub fn start_minigame_session(
 }
 
 pub fn fire_event(ctx: &EngineContext, state: &mut GameState, event: &GameEvent) -> Effects {
-    let mut effects = Vec::new();
-    for outcome in &event.outcomes {
-        effects.extend(apply_outcome(ctx, state, outcome, 0));
-    }
+    let effects = apply_outcomes(ctx, state, &event.outcomes, 0);
     if !event.repeatable {
         state.flags.insert(event_fired_flag(&event.id), Value::Bool(true));
     }
@@ -461,7 +506,26 @@ pub fn evaluate_events(
     trigger: &str,
     pos: Option<EventPosition>,
 ) -> Effects {
+    evaluate_events_detailed(ctx, state, trigger, pos).effects
+}
+
+/// What [`evaluate_events_detailed`] did.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct EvaluateEventsResult {
+    pub effects: Effects,
+    /// At least one event fired (TS: `evaluateEvents` returned a new state).
+    pub fired: bool,
+}
+
+/// [`evaluate_events`], also saying whether any event fired.
+pub fn evaluate_events_detailed(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    trigger: &str,
+    pos: Option<EventPosition>,
+) -> EvaluateEventsResult {
     let mut effects = Vec::new();
+    let mut fired = false;
 
     for event in &ctx.content.events {
         if !event.active || event.trigger != trigger {
@@ -478,7 +542,8 @@ pub fn evaluate_events(
         }
 
         effects.extend(fire_event(ctx, state, event));
+        fired = true;
     }
 
-    effects
+    EvaluateEventsResult { effects, fired }
 }

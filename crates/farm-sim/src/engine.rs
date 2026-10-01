@@ -3,7 +3,7 @@
 
 use crate::commands::Command;
 use crate::effects::{message_levels, Effect};
-use crate::engine_types::{Effects, EngineContext};
+use crate::engine_types::{CommandRules, Effects, EngineContext};
 use crate::farming::farming_actions;
 use crate::game_time::SleepOptions;
 use crate::hooks::{CommandHookPayload, HookEvent, RelationshipChangeHookPayload};
@@ -20,6 +20,11 @@ use crate::{
 pub const TICKS_PER_SECOND: u32 = units::TICKS_PER_SECOND;
 
 pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Command) -> Effects {
+    if ctx.rules == CommandRules::Player {
+        if let Some(refused) = refusal(ctx, state, command) {
+            return refused;
+        }
+    }
     ctx.emit(HookEvent::Command(CommandHookPayload { command_type: command.type_name().to_owned() }));
     match command {
         Command::SetMoveIntent { dx, dy } => {
@@ -46,6 +51,7 @@ pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Comma
         Command::Craft { recipe_id } => crafting::handle_craft(ctx, state, recipe_id),
         Command::PlaceMachine { machine_type_id } => crafting::handle_place_machine(ctx, state, machine_type_id),
         Command::MachineLoad { recipe_id } => crafting::handle_machine_load(ctx, state, recipe_id),
+        Command::PickUpMachine => crafting::handle_pick_up_machine(ctx, state),
         Command::GiveGift { item_id } => social::handle_give_gift(ctx, state, item_id),
         Command::DescendMine { floor } => mines::descend_mine(ctx, state, *floor),
         Command::ExitMine => mines::exit_mine(ctx, state),
@@ -55,6 +61,40 @@ pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Comma
         Command::ResolveMinigame { score } => extensibility::handle_resolve_minigame(ctx, state, *score),
         Command::CancelMinigame => extensibility::handle_cancel_minigame(state),
         Command::PluginMutation { plugin_id, mutation } => apply_plugin_mutation(ctx, state, plugin_id, mutation),
+    }
+}
+
+/// Why `command` does not apply now under [`CommandRules::Player`] (`None` when it does): the
+/// refusal's effects, often none. Nothing else of the command happens, not even its `onCommand`
+/// hook.
+fn refusal(ctx: &EngineContext, state: &GameState, command: &Command) -> Option<Effects> {
+    // While a modal is open only its own commands apply (the player UI sends nothing else); the
+    // held intent is stored but movement stays frozen, and plugin mutations are content.
+    let dialogue = state.dialogue.is_some();
+    let shop = state.shop.is_some();
+    let minigame = state.minigame.is_some();
+    if dialogue || shop || minigame {
+        let allowed = match command {
+            Command::SetMoveIntent { .. } | Command::PluginMutation { .. } => true,
+            Command::ChooseDialogueOption { .. } | Command::CloseDialogue => dialogue,
+            Command::BuyItem { .. } | Command::SellItem { .. } | Command::RepairTool { .. } | Command::CloseShop => {
+                shop
+            }
+            Command::ResolveMinigame { .. } | Command::CancelMinigame => minigame,
+            _ => false,
+        };
+        if !allowed {
+            return Some(Vec::new());
+        }
+    }
+    match command {
+        Command::DescendMine { floor } => mines::descend_refusal(ctx, state, *floor),
+        Command::ExitMine => mines::exit_refusal(state),
+        Command::OpenShop { shop_id } => economy::open_shop_refusal(ctx, state, shop_id),
+        // Minigames open from actions, items, tools and plugins, which decide what they are
+        // for; opening one on demand would hand out its rewards for any score.
+        Command::StartMinigame { .. } => Some(vec![Effect::message(message_levels::INFO, "Nothing to play here.")]),
+        _ => None,
     }
 }
 

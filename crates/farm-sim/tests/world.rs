@@ -27,7 +27,7 @@ use farm_sim::world::world_movement::{
     PLAYER_HALF_WIDTH,
 };
 use farm_sim::{content_builtin, hash_state, state, EngineContext, GameState};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 
 /// A position in tiles, for comparing with authoring numbers.
 fn t(position: i32) -> f64 {
@@ -217,7 +217,7 @@ fn p(x: i32, y: i32) -> PathPoint {
 }
 
 fn walkability(scene: &farm_sim::schema::Scene) -> Walkability<'_> {
-    Walkability { scene, node_types: None, blocked: None }
+    Walkability { scene, node_types: &[], machine_types: &[], blocked: &[] }
 }
 
 // --- tiles ---
@@ -394,10 +394,8 @@ fn same_tile_is_an_empty_path_and_blocked_tiles_are_avoided() {
     let scene = tiles::create_empty_scene("s", "S", 3, 3);
     assert_eq!(find_path(&walkability(&scene), p(1, 1), p(1, 1)), Some(Vec::new()));
 
-    let mut blocked = IndexSet::new();
-    blocked.insert("1,0".to_owned());
-    blocked.insert("1,1".to_owned());
-    let w = Walkability { scene: &scene, node_types: None, blocked: Some(&blocked) };
+    let blocked = [p(1, 0), p(1, 1)];
+    let w = Walkability { scene: &scene, node_types: &[], machine_types: &[], blocked: &blocked };
     assert!(!is_walkable(&w, 1, 0));
     assert!(!is_walkable(&w, -1, 0));
     assert!(!is_walkable(&w, 0, 3));
@@ -416,12 +414,9 @@ fn gathering_nodes_block_unless_their_type_says_otherwise() {
     // Depleted nodes never block.
     assert!(is_walkable(&walkability(&scene), 2, 0));
 
-    let mut node_types = IndexMap::new();
-    node_types.insert(
-        "weeds".to_owned(),
-        NodeTypeDefinition { id: "weeds".to_owned(), blocks_movement: false, ..NodeTypeDefinition::default() },
-    );
-    let w = Walkability { scene: &scene, node_types: Some(&node_types), blocked: None };
+    let node_types =
+        [NodeTypeDefinition { id: "weeds".to_owned(), blocks_movement: false, ..NodeTypeDefinition::default() }];
+    let w = Walkability { scene: &scene, node_types: &node_types, machine_types: &[], blocked: &[] };
     assert!(is_walkable(&w, 1, 0));
 }
 
@@ -468,17 +463,17 @@ fn player_tile_and_facing_target_floor_the_box_center() {
 fn can_move_to_checks_bounds_walls_machines_and_npcs() {
     let (_, state) = make_engine("collision");
     let scene = &state.world.scenes[0];
-    assert!(!can_move_to(scene, 4, 4, &state.npcs, None, None, None), "wall");
-    assert!(!can_move_to(scene, -1, 0, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 6, 0, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 0, 6, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 1, 1, &state.npcs, None, None, None), "npc");
-    assert!(can_move_to(scene, 1, 1, &state.npcs, Some("npc-test"), None, None), "excluded npc");
-    assert!(can_move_to(scene, 0, 0, &state.npcs, None, None, None));
+    assert!(!can_move_to(scene, 4, 4, &state.npcs, None, &[], &[]), "wall");
+    assert!(!can_move_to(scene, -1, 0, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 6, 0, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 0, 6, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 1, 1, &state.npcs, None, &[], &[]), "npc");
+    assert!(can_move_to(scene, 1, 1, &state.npcs, Some("npc-test"), &[], &[]), "excluded npc");
+    assert!(can_move_to(scene, 0, 0, &state.npcs, None, &[], &[]));
 
     let mut with_machine = scene.clone();
     with_machine.tiles[0][0].machine = Some(TileMachine { type_id: "furnace".to_owned(), ..TileMachine::default() });
-    assert!(!can_move_to(&with_machine, 0, 0, &state.npcs, None, None, None), "unknown machine types block");
+    assert!(!can_move_to(&with_machine, 0, 0, &state.npcs, None, &[], &[]), "unknown machine types block");
 }
 
 // --- discrete moves (EngineTests movement) ---

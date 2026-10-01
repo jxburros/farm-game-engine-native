@@ -659,13 +659,19 @@ pub mod exact {
 
 // ─── Integer helpers for game logic ─────────────────────────────────────────────────────────
 
-/// `numerator / denominator` rounded half away from zero (`denominator > 0`).
+/// `numerator / denominator` rounded half away from zero (`denominator > 0`). Computed in 128
+/// bits: content and plugin amounts reach the ends of the `i64` range, where adding the half
+/// would overflow.
 pub const fn div_round(numerator: i64, denominator: i64) -> i64 {
+    let (numerator, denominator) = (numerator as i128, denominator as i128);
     let half = denominator / 2;
-    if numerator >= 0 {
-        (numerator + half) / denominator
+    let quotient = if numerator >= 0 { (numerator + half) / denominator } else { (numerator - half) / denominator };
+    if quotient > i64::MAX as i128 {
+        i64::MAX
+    } else if quotient < i64::MIN as i128 {
+        i64::MIN
     } else {
-        (numerator - half) / denominator
+        quotient as i64
     }
 }
 

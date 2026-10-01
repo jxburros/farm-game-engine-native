@@ -251,8 +251,13 @@ fn timing_minigame() -> MinigameDef {
     }
 }
 
+/// Opens a minigame the way a host can (the `startMinigame` command itself is refused under the
+/// player's rules; see `the_start_minigame_command_is_refused_under_player_rules`).
 fn start_minigame(id: &str) -> Command {
-    Command::StartMinigame { minigame_id: id.to_owned() }
+    Command::PluginMutation {
+        plugin_id: "test".to_owned(),
+        mutation: PluginMutation::StartMinigame { minigame_id: id.to_owned() },
+    }
 }
 
 #[test]

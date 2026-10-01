@@ -13,6 +13,7 @@ use crate::schema::{
 use crate::start::StartState;
 use crate::text;
 use crate::units;
+use crate::world::tiles;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -110,7 +111,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
     let flags: IndexMap<String, Value> =
         start.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect();
 
-    let state = GameState {
+    let mut state = GameState {
         meta: GameStateMeta {
             save_version: CURRENT_SAVE_VERSION,
             engine_seed: engine_seed.clone(),
@@ -159,10 +160,27 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
         rng: start.rng_state.clone().unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
     };
 
+    // Grids that don't match their scene's size (a hand-edited project, an import) are fixed
+    // before the simulation reads them.
+    normalize_world(&mut state);
+
     // Items from missing/disabled packs are quarantined, not dropped; they come back when the
     // pack does.
     let enabled_packs: IndexSet<String> = start.packs.iter().map(|pack| pack.id.clone()).collect();
     packs::reconcile_pack_items(state, &enabled_packs)
+}
+
+/// Make every scene grid of the world match its scene's size (see
+/// [`tiles::normalize_scene_grid`]). Returns the ids of the scenes that changed. New games and
+/// loaded saves pass through here, so the simulation never meets a ragged grid.
+pub fn normalize_world(state: &mut GameState) -> Vec<String> {
+    let mut changed = Vec::new();
+    for scene in &mut state.world.scenes {
+        if tiles::normalize_scene_grid(scene) {
+            changed.push(scene.id.clone());
+        }
+    }
+    changed
 }
 
 /// Write a running GameState back into the project (persistence bridge — keeps the single
