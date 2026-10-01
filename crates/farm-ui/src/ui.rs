@@ -188,6 +188,8 @@ pub struct Ui {
     readable_font: bool,
     time: f64,
     tints: Vec<(Color, Color)>,
+    /// Physical pixels at the bottom the host covers (on-screen touch controls).
+    bottom_inset: f32,
 }
 
 impl Default for Ui {
@@ -229,6 +231,7 @@ impl Ui {
             readable_font: false,
             time: 0.0,
             tints: Vec::new(),
+            bottom_inset: 0.0,
         }
     }
 
@@ -472,6 +475,20 @@ impl Ui {
     /// The screen in logical units.
     pub fn screen(&self) -> Rect {
         Rect::new(0.0, 0.0, self.size.0, self.size.1)
+    }
+
+    /// The bottom strip of the frame, in physical pixels, the host draws its own controls over
+    /// (the web demo's touch buttons). Kept for later frames; at most half the screen counts.
+    pub fn set_bottom_inset(&mut self, physical: f32) {
+        self.bottom_inset = if physical.is_finite() { physical.max(0.0) } else { 0.0 };
+    }
+
+    /// The screen minus the host's bottom inset, in logical units: where the HUD's bottom row,
+    /// panels and the dialogue box sit, so on-screen controls never cover them.
+    pub fn safe_area(&self) -> Rect {
+        let screen = self.screen();
+        let inset = (self.bottom_inset / self.scale).min(screen.height / 2.0);
+        Rect::new(screen.x, screen.y, screen.width, screen.height - inset)
     }
 
     pub fn scale(&self) -> f32 {

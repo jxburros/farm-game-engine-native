@@ -50,7 +50,13 @@ module ExportTarget =
     let all = [ ExportTarget.WindowsX64; ExportTarget.LinuxX64; ExportTarget.Web ]
 
     /// The files a web template holds besides the module and its manifest.
-    let webFiles = [ "farm_wasm.js"; "game.js"; "index.html" ]
+    let webFiles = [ "farm_wasm.js"; "game.js"; "index.html"; "style.css" ]
+
+    /// The web demo page's Content-Security-Policy (tools/wasm/web-template/index.html carries
+    /// the same): same-origin scripts, styles, images and fetches, WebAssembly compilation, and
+    /// nothing inline. Export adds it to a template page that lacks one.
+    let webContentSecurityPolicy =
+        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'"
 
     let tryParse (id: string) : ExportTarget option = all |> List.tryFind (fun t -> t.Id = id)
 

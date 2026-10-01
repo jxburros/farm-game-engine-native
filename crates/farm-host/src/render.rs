@@ -12,12 +12,18 @@ use farm_render::{apply_graphics, editor_snapshot, GraphicsSource, SnapshotCamer
 use farm_sim::schema::{GameContent, GameProject};
 use serde::Deserialize;
 
-/// Largest image a request may produce, in pixels.
-const MAX_PIXELS: u64 = 64 * 1024 * 1024;
+/// Largest image a request may produce, in pixels: 256 MB of RGBA natively, 64 MB on the web,
+/// where a module has little memory and a failed allocation aborts instead of throwing.
+const MAX_PIXELS: u64 = if cfg!(target_arch = "wasm32") { 16 * 1024 * 1024 } else { 64 * 1024 * 1024 };
 /// Largest accepted scale factor.
 const MAX_SCALE: f64 = 16.0;
 /// Largest side of a visual preview.
 const MAX_VISUAL_SIZE: f64 = 1024.0;
+/// Largest scene side, in tiles, a request may describe.
+const MAX_TILES: i32 = 4096;
+/// Largest tile size and padding, in world pixels.
+const MAX_TILE_SIZE: f64 = 1024.0;
+const MAX_PADDING: f64 = 4096.0;
 
 fn default_tile_size() -> f64 {
     28.0
@@ -136,6 +142,47 @@ fn check_scale(scale: f64) -> Result<f32, String> {
     }
 }
 
+/// `value` when it is finite and within `min..=max` (`what` names it in the error).
+fn check_range(what: &str, value: f64, min: f64, max: f64) -> Result<f64, String> {
+    if value.is_finite() && (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(format!("{what} must be in [{min}, {max}], got {value}."))
+    }
+}
+
+/// The tile layout of a request: a tile size of at least one pixel (a zero size would make a huge
+/// scene fit a 1×1 image while every tile is still drawn) and a sane padding.
+fn check_layout(tile_size: f64, padding: f64) -> Result<(), String> {
+    check_range("Tile size", tile_size, 1.0, MAX_TILE_SIZE)?;
+    check_range("Padding", padding, 0.0, MAX_PADDING)?;
+    Ok(())
+}
+
+fn check_camera(camera: Option<&SnapshotCamera>) -> Result<(), String> {
+    let Some(camera) = camera else { return Ok(()) };
+    let finite = [camera.x, camera.y, camera.width, camera.height].iter().all(|value| value.is_finite());
+    if !finite || camera.width <= 0.0 || camera.height <= 0.0 {
+        return Err("The camera needs a finite position and a positive size.".to_owned());
+    }
+    Ok(())
+}
+
+/// Refuses snapshots whose drawing would not be bounded by the image they produce.
+fn check_snapshot(snapshot: &WorldSnapshot) -> Result<(), String> {
+    if !(0..=MAX_TILES).contains(&snapshot.width) || !(0..=MAX_TILES).contains(&snapshot.height) {
+        return Err(format!(
+            "A snapshot must be at most {MAX_TILES}×{MAX_TILES} tiles, got {}×{}.",
+            snapshot.width, snapshot.height
+        ));
+    }
+    check_layout(snapshot.tile_size, snapshot.padding)?;
+    if let Some(gap) = snapshot.tile_gap {
+        check_range("Tile gap", gap, 0.0, snapshot.tile_size)?;
+    }
+    check_camera(snapshot.camera.as_ref())
+}
+
 /// Device size of a snapshot's viewport at `scale`, refusing oversized requests.
 fn pixel_size(snapshot: &WorldSnapshot, scale: f32) -> Result<(u32, u32), String> {
     let (width, height) = snapshot.pixel_size(f64::from(scale));
@@ -151,6 +198,7 @@ fn render(
     scale: f64,
 ) -> Result<farm_render::tiny_skia::Pixmap, String> {
     let scale = check_scale(scale)?;
+    check_snapshot(snapshot)?;
     let (width, height) = pixel_size(snapshot, scale)?;
     let list = renderer.draw_list(snapshot);
     Ok(renderer.rasterizer.render_to_pixmap(&list, &renderer.images, width, height, scale))
@@ -169,6 +217,7 @@ pub fn render_json(request: &[u8]) -> Result<RenderOutput, String> {
     let request: RenderRequest = serde_json::from_slice(request).map_err(|e| format!("render request: {e}"))?;
     match request {
         RenderRequest::EditorSnapshot { project, scene_id, tile_size, padding } => {
+            check_layout(tile_size, padding)?;
             let content = farm_sim::create_content_from_project(&project);
             let graphics = GraphicsSource::from_project(&project);
             let snapshot = decorated_editor_snapshot(&project, &content, &graphics, &scene_id, tile_size, padding)?;
@@ -231,6 +280,8 @@ impl HostPreview {
     /// RGBA8.
     pub fn render(&mut self, request: &[u8]) -> Result<Rgba, String> {
         let request: PreviewRequest = serde_json::from_slice(request).map_err(|e| format!("preview request: {e}"))?;
+        check_layout(request.tile_size, request.padding)?;
+        check_camera(request.camera.as_ref())?;
         let mut snapshot = decorated_editor_snapshot(
             &self.project,
             &self.content,
@@ -296,5 +347,80 @@ impl HostPreview {
         let pixels = (side * f64::from(scale)).ceil() as u32;
         let pixmap = self.renderer.rasterizer.render_to_pixmap(&list, &self.renderer.images, pixels, pixels, scale);
         Ok(rgba(pixmap))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rasterize(snapshot: &str) -> Result<RenderOutput, String> {
+        render_json(format!(r#"{{"type":"rasterize","snapshot":{snapshot}}}"#).as_bytes())
+    }
+
+    /// A 2×2 snapshot without tiles, with `fields` overriding its defaults.
+    fn snapshot(fields: &str) -> String {
+        let mut snapshot: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"width":2,"height":2,"tileSize":28,"padding":12,"gridOverlay":true}"#).unwrap();
+        let fields: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&format!("{{{fields}}}")).unwrap();
+        snapshot.extend(fields);
+        serde_json::Value::Object(snapshot).to_string()
+    }
+
+    #[test]
+    fn rasterize_refuses_layouts_that_do_not_bound_the_work() {
+        assert!(matches!(rasterize(&snapshot("")), Ok(RenderOutput::Png(_))));
+        // tileSize 0 made a 100000×100000 scene fit a 1×1 image while every grid cell was still
+        // drawn (10^10 draw commands).
+        let huge = snapshot(r#""width":100000,"height":100000,"tileSize":0,"padding":0,"tileGap":0"#);
+        assert!(rasterize(&huge).unwrap_err().contains("at most"));
+        for (fields, error) in [
+            (r#""tileSize":0"#, "Tile size"),
+            (r#""tileSize":-28"#, "Tile size"),
+            (r#""tileSize":5000"#, "Tile size"),
+            (r#""padding":-1"#, "Padding"),
+            (r#""tileGap":-1"#, "Tile gap"),
+            (r#""tileGap":100"#, "Tile gap"),
+            (r#""width":-1"#, "at most"),
+            (r#""height":5000"#, "at most"),
+            (r#""camera":{"x":0,"y":0,"width":0,"height":10}"#, "camera"),
+        ] {
+            let result = rasterize(&snapshot(fields));
+            assert!(result.as_ref().is_err_and(|e| e.contains(error)), "{fields}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn the_grid_overlay_follows_the_tiles_not_the_declared_size() {
+        // 4096×4096 tiles declared, none sent.
+        let snapshot: WorldSnapshot =
+            serde_json::from_str(&snapshot(r#""width":4096,"height":4096,"tileSize":1,"padding":0"#)).unwrap();
+        let list = WorldRenderer::new().draw_list(&snapshot);
+        assert!(list.len() < 64, "{} draw commands", list.len());
+    }
+
+    #[test]
+    fn previews_refuse_bad_layouts() {
+        let path: std::path::PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", "content", "starter-farm.json"]
+                .iter()
+                .collect();
+        let fixture: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let project = &fixture["project"];
+        let scene = project["player"]["sceneId"].as_str().unwrap();
+        let mut preview = HostPreview::new(project.to_string().as_bytes()).unwrap();
+        assert!(preview.render(format!(r#"{{"sceneId":"{scene}"}}"#).as_bytes()).unwrap().width > 0);
+        for fields in [
+            r#""tileSize":0"#,
+            r#""tileSize":-28"#,
+            r#""padding":-12"#,
+            r#""camera":{"x":0,"y":0,"width":-5,"height":10}"#,
+        ] {
+            let request = format!(r#"{{"sceneId":"{scene}",{fields}}}"#);
+            assert!(preview.render(request.as_bytes()).is_err(), "{fields}");
+        }
+        let request = format!(r#"{{"type":"editorSnapshot","project":{project},"sceneId":"{scene}","tileSize":0}}"#);
+        assert!(render_json(request.as_bytes()).unwrap_err().contains("Tile size"));
     }
 }

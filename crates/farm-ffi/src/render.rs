@@ -246,7 +246,8 @@ mod tests {
             ("{not json", "render request"),
             (r#"{"type":"nope"}"#, "render request"),
             (r#"{"type":"rasterize","snapshot":{},"scale":0}"#, "Scale must be"),
-            (r#"{"type":"rasterize","snapshot":{"width":100000,"height":100000,"tileSize":32}}"#, "too large"),
+            (r#"{"type":"rasterize","snapshot":{"width":4000,"height":4000,"tileSize":32}}"#, "too large"),
+            (r#"{"type":"rasterize","snapshot":{"width":100000,"height":100000,"tileSize":0}}"#, "at most"),
         ] {
             let (result, message) = render_json(request);
             assert_eq!(result, FeResult::InvalidArgument, "{request}");

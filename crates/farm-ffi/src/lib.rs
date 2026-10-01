@@ -105,9 +105,11 @@ pub unsafe extern "C" fn fe_bytes_free(bytes: FeBytes) {
     }
 }
 
-/// FNV-1a state hash (two 32-bit lanes, hex) of `len` UTF-8 bytes at `text`, written to `out`
-/// as 16 ASCII characters (no terminator). Lets .NET check that both sides agree on the hash
-/// primitive before any state crosses the boundary.
+/// The v8 text hash (FNV-1a over UTF-16, two 32-bit lanes, hex) of `len` UTF-8 bytes at `text`,
+/// written to `out` as 16 ASCII characters (no terminator). Since v9 it is not the state hash:
+/// `fe_session_hash`/`fe_player_hash` are xxh3-64 over the state's canonical binary encoding
+/// (docs/NUMERICS.md), so hashing a state's JSON with this never matches them. Kept for the F#
+/// tests' v8 text hashes and as a cheap check that the library loads.
 ///
 /// # Safety
 /// `text` must point to `len` readable bytes of valid UTF-8; `out` must be a valid pointer.

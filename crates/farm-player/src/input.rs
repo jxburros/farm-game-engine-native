@@ -186,6 +186,8 @@ pub struct InputRouter {
     pointer: Option<(f32, f32)>,
     pointer_down: bool,
     device: InputDevice,
+    /// The host shows on-screen touch controls: pointers are fingers.
+    touch_controls: bool,
     accept_held: u32,
     time: f64,
 }
@@ -228,6 +230,23 @@ impl InputRouter {
     /// The device used last.
     pub fn device(&self) -> InputDevice {
         self.device
+    }
+
+    /// Whether the host shows on-screen touch controls. While it does, pointers count as
+    /// [`InputDevice::Touch`] (no key hints); showing them switches to touch at once.
+    pub fn set_touch_controls(&mut self, shown: bool) {
+        if shown && !self.touch_controls {
+            self.device = InputDevice::Touch;
+        }
+        self.touch_controls = shown;
+    }
+
+    fn pointer_device(&self) -> InputDevice {
+        if self.touch_controls {
+            InputDevice::Touch
+        } else {
+            InputDevice::Mouse
+        }
     }
 
     fn press(&mut self, canonical: &str, out: &mut FrameInput) {
@@ -339,11 +358,11 @@ impl InputRouter {
                 InputEvent::Text { .. } => {}
                 InputEvent::PointerMove { x, y } => {
                     self.pointer = Some((*x, *y));
-                    self.device = InputDevice::Mouse;
+                    self.device = self.pointer_device();
                 }
                 InputEvent::PointerDown { x, y, button } => {
                     self.pointer = Some((*x, *y));
-                    self.device = InputDevice::Mouse;
+                    self.device = self.pointer_device();
                     if *button == PointerButton::Primary {
                         self.pointer_down = true;
                         out.ui.pointer_pressed = true;
@@ -375,8 +394,8 @@ impl InputRouter {
                     self.axes.insert(*axis, value);
                 }
                 InputEvent::Action { action, pressed } => {
-                    // Touch controls sit on a pointer screen: hints follow the pointer.
-                    self.device = InputDevice::Mouse;
+                    // On-screen controls are touch controls: no key hints.
+                    self.device = InputDevice::Touch;
                     self.action(*action, *pressed, capture, &mut out);
                 }
                 InputEvent::FocusLost => {
@@ -656,7 +675,7 @@ mod tests {
         assert_eq!(frame.game, vec![GameKey::Down("w".into()), GameKey::Down("e".into())]);
         assert_eq!(frame.ui.nav, [NavAction::Up, NavAction::Accept]);
         assert!(frame.accept_pressed && frame.ui.accept_held);
-        assert_eq!(frame.ui.device, InputDevice::Mouse);
+        assert_eq!(frame.ui.device, InputDevice::Touch, "touch controls name no keys");
         // A second press of a held control changes nothing; held moves repeat in menus.
         let frame = router.frame(&[action(BindAction::MoveUp, true)], 0.5, &bindings, false);
         assert!(frame.game.is_empty());
@@ -679,5 +698,23 @@ mod tests {
         assert_eq!(frame.game.len(), 2);
         let frame = router.frame(&[action(BindAction::Sleep, false)], 0.016, &bindings, false);
         assert!(frame.game.is_empty());
+    }
+
+    #[test]
+    fn pointers_are_fingers_while_touch_controls_show() {
+        let mut router = InputRouter::new();
+        let bindings = Bindings::default();
+        let tap = InputEvent::PointerDown { x: 4.0, y: 4.0, button: PointerButton::Primary };
+        assert_eq!(router.frame(std::slice::from_ref(&tap), 0.016, &bindings, false).ui.device, InputDevice::Mouse);
+        // Showing the controls switches at once, before any touch.
+        router.set_touch_controls(true);
+        assert_eq!(router.frame(&[], 0.016, &bindings, false).ui.device, InputDevice::Touch);
+        assert_eq!(router.frame(std::slice::from_ref(&tap), 0.016, &bindings, false).ui.device, InputDevice::Touch);
+        // A keyboard still takes over (a tablet with a keyboard), and hiding the controls
+        // gives pointers back to the mouse.
+        let key = InputEvent::KeyDown { key: "w".into(), repeat: false };
+        assert_eq!(router.frame(&[key], 0.016, &bindings, false).ui.device, InputDevice::Keyboard);
+        router.set_touch_controls(false);
+        assert_eq!(router.frame(&[tap], 0.016, &bindings, false).ui.device, InputDevice::Mouse);
     }
 }

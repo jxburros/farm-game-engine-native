@@ -1,6 +1,6 @@
 //! `Session`: a headless game for tools, tests and replays (mirrors `fe_session_*`).
 
-use crate::{alive, bytes_arg, host_error, json_arg};
+use crate::{bytes_arg, enter, host_error, json_arg};
 use farm_host::{Guarded, HostSession};
 use wasm_bindgen::prelude::*;
 
@@ -23,15 +23,15 @@ impl WasmSession {
         seed: Option<String>,
         #[wasm_bindgen(js_name = autoStartQuests)] auto_start_quests: Option<bool>,
     ) -> Result<WasmSession, JsValue> {
-        alive()?;
         let game = bytes_arg(&game)?;
+        let _call = enter()?;
         let session = farm_host::catch(|| HostSession::new(&game, seed.as_deref(), auto_start_quests.unwrap_or(false)))
             .map_err(host_error)?;
         Ok(WasmSession { session: Guarded::new(session) })
     }
 
     fn run<R>(&mut self, body: impl FnOnce(&mut HostSession) -> Result<R, String>) -> Result<R, JsValue> {
-        alive()?;
+        let _call = enter()?;
         self.session.run(body).map_err(host_error)
     }
 

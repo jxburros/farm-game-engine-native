@@ -87,7 +87,9 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
     let menu_height = entries.len() as f32 * (button_height + gap) - gap;
     let detail_height = if view.continue_detail.is_some() { ui.line_height(12.5) + 10.0 } else { 0.0 };
     let footer_room = 48.0;
-    let top = (y + 28.0).max((screen.height - menu_height - detail_height - footer_room) * 0.62);
+    // Above the host's on-screen controls.
+    let safe = ui.safe_area();
+    let top = (y + 28.0).max((safe.height - menu_height - detail_height - footer_room) * 0.62);
     let mut action = None;
     let default = if view.can_continue { "Continue" } else { "New Game" };
     for (index, (name, key, icon, entry, enabled)) in entries.into_iter().enumerate() {
@@ -108,7 +110,7 @@ pub fn title(ui: &mut Ui, view: &TitleView) -> Option<ShellAction> {
     }
 
     if view.show_made_with {
-        let rect = Rect::new(0.0, screen.bottom() - 30.0, screen.width, 20.0);
+        let rect = Rect::new(0.0, safe.bottom() - 30.0, screen.width, 20.0);
         let text = ui.tr("hud.madeWith");
         ui.label(rect, text, 12.0, FontId::Regular, fade(colors.text, 0.6), Align::Center);
     }

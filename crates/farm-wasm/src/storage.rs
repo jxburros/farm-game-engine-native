@@ -77,6 +77,33 @@ impl WebStorage {
     /// Replaces everything with a storage document. A malformed document changes nothing.
     /// Returns the settings TOML it carried, if any.
     pub fn import_json(&self, text: &str) -> Result<Option<String>, String> {
+        let document = StoredDocument::parse(text)?;
+        let settings = document.settings.clone();
+        self.commit(document);
+        Ok(settings)
+    }
+
+    /// Replaces everything with a parsed document (bumps the revision).
+    pub fn commit(&self, document: StoredDocument) {
+        let mut data = self.lock();
+        data.slots = document.slots;
+        data.settings = document.settings;
+        data.revision += 1;
+    }
+}
+
+/// A storage document that parsed: slots checked and decoded, nothing stored yet. Validate the
+/// settings, then [`WebStorage::commit`] it, so a bad document changes nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredDocument {
+    slots: BTreeMap<u32, Vec<u8>>,
+    /// The settings TOML, not yet parsed.
+    pub settings: Option<String>,
+}
+
+impl StoredDocument {
+    /// Parses a storage document (see the module docs).
+    pub fn parse(text: &str) -> Result<Self, String> {
         let document: StorageDocument = serde_json::from_str(text).map_err(|e| format!("storage JSON: {e}"))?;
         if document.version > STORAGE_VERSION {
             return Err(format!(
@@ -93,11 +120,7 @@ impl WebStorage {
             let bytes = BASE64.decode(encoded).map_err(|e| format!("storage: slot {number} is not base64: {e}"))?;
             slots.insert(number, bytes);
         }
-        let mut data = self.lock();
-        data.slots = slots;
-        data.settings.clone_from(&document.settings);
-        data.revision += 1;
-        Ok(document.settings)
+        Ok(Self { slots, settings: document.settings })
     }
 }
 

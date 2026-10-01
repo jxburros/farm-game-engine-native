@@ -76,8 +76,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     let options_height: f32 = option_heights.iter().sum::<f32>() + 8.0 * (option_heights.len() - 1) as f32;
     let height = 20.0 + header_height + 18.0 + options_height + 20.0;
     let bottom_margin = 24.0 + (screen.height * 0.04).min(40.0);
-    let card =
-        Rect::new((screen.width - width) / 2.0, (screen.bottom() - bottom_margin - height).max(12.0), width, height);
+    // Above the host's on-screen controls.
+    let bottom = ui.safe_area().bottom();
+    let card = Rect::new((screen.width - width) / 2.0, (bottom - bottom_margin - height).max(12.0), width, height);
     ui.panel(card, colors.panel, colors.panel_border, 12.0, true);
     ui.blocker(card);
 
@@ -118,11 +119,11 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     let x = card.x + 20.0;
     if options.is_empty() {
         let rect = Rect::new(x, y, option_width, option_heights[0]);
-        let button = Button::new(ui.tr("dialogue.goodbye"))
-            .kind(ButtonKind::Option)
-            .keycap("Esc")
-            .size(OPTION_SIZE)
-            .default_focus();
+        let mut button =
+            Button::new(ui.tr("dialogue.goodbye")).kind(ButtonKind::Option).size(OPTION_SIZE).default_focus();
+        if ui.device() != crate::input::InputDevice::Touch {
+            button = button.keycap("Esc");
+        }
         if ui.button(WidgetId::new("dialogue-goodbye"), rect, button) {
             actions.push(GameAction::Command(Command::CloseDialogue));
         }

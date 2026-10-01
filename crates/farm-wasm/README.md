@@ -26,7 +26,7 @@ Sizes (0.2.0): 9.9 MB after wasm-bindgen, 8.5 MB after `wasm-opt -O3`, 3.0 MB gz
 ## Loading
 
 ```ts
-import init, { Player, Session, Preview, hashText, sfxSamples } from "./farm_wasm.js";
+import init, { Player, Session, Preview, hashState, sfxSamples } from "./farm_wasm.js";
 
 await init();                                  // fetches farm_wasm_bg.wasm next to the module
 // or: await init({ module_or_path: url });   Node: initSync({ module: bytes })
@@ -38,8 +38,9 @@ Every call is synchronous and runs on the calling thread. A frame of the starter
 
 Arguments documented as JSON take either a JavaScript value or its JSON text. JSON results
 (`stateJson`, `apply`, `queryJson`, …) are strings, exactly the bytes farm-ffi returns, so
-hashes can be checked (`hashText(player.stateJson()) === player.hash()`); `JSON.parse` them as
-needed. Games are project JSON (text, object or UTF-8 bytes, already migrated to the current
+hashes can be checked (`hashState(player.stateJson()) === player.hash()`); `JSON.parse` them as
+needed. A value `JSON.stringify` cannot turn into JSON (a function, a symbol) throws a
+`FarmError` of kind `"invalid"` like malformed JSON does. Games are project JSON (text, object or UTF-8 bytes, already migrated to the current
 schema) or compiled cartridge bytes (`Uint8Array`/`ArrayBuffer`).
 
 ## `Player`
@@ -53,7 +54,8 @@ const ctx = canvas.getContext("2d")!;
 let pixels: Uint8ClampedArray | undefined;
 
 function tick(dt: number, events: InputEvent[]) {
-  const frame = player.frame({ dt, events, width: canvas.width, height: canvas.height }, pixels);
+  const density = canvas.width / canvas.getBoundingClientRect().width;   // devicePixelRatio
+  const frame = player.frame({ dt, events, width: canvas.width, height: canvas.height, density }, pixels);
   if (frame.pixels) {
     pixels = frame.pixels;                     // reused next frame while the size holds
     ctx.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
@@ -66,7 +68,7 @@ function tick(dt: number, events: InputEvent[]) {
 | Member | Mirrors | |
 |---|---|---|
 | `new Player(game, options?)` | `fe_player_new` | `mode: "embedded"` (default; Play Mode: straight into the game, no title screen or save slots) or `"standalone"` (web demo: title screen, save slots, autosave each morning). `reducedMotion`/`uiScale` override the stored settings. `storage`: see below. |
-| `frame(request, reuse?)` | `fe_player_frame` | `request` is `{dt, events, width, height, render?}`. Returns `{width, height, pixels, info, storageChanged}`: `pixels` is a `width × height × 4` `Uint8ClampedArray` for `ImageData` (frames are opaque, so their premultiplied RGBA is also straight RGBA), `null` with `render: false`; `info` is `{sounds: [{cue, gain}], requests, screen, modal}`. Pass the previous `pixels` as `reuse` to draw into it instead of allocating. |
+| `frame(request, reuse?)` | `fe_player_frame` | `request` is `{dt, events, width, height, render?, density?, touchControls?, insetBottom?}`: `density` is frame pixels per CSS pixel (the interface is laid out in CSS pixels, so pass `devicePixelRatio` times any downscale), `touchControls` says the page shows on-screen controls (prompts then name no keys and the key hint row is left out), `insetBottom` is how many frame pixels at the bottom they cover (the HUD's bottom row, panels and the dialogue box stay above). Returns `{width, height, pixels, info, storageChanged}`: `pixels` is a `width × height × 4` `Uint8ClampedArray` for `ImageData` (frames are opaque, so their premultiplied RGBA is also straight RGBA), `null` with `render: false`; `info` is `{sounds: [{cue, gain}], requests, screen, modal}`. Pass the previous `pixels` as `reuse` to draw into it instead of allocating. |
 | `debug(action)` | `fe_player_debug` | Debug-drawer actions: `{type: "addMoney", amount}`, `fullEnergy`, `addMinutes`, `setSeason`, `giveFirst`, `teleport`, `setFlag`, `skipDay`. |
 | `commands(commands)` | `fe_player_commands` | Engine commands, as if the player did them. |
 | `stateJson()`, `hash()` | `fe_player_state_json`, `fe_player_hash` | The live state (stable JSON) and its hash. |
@@ -102,8 +104,15 @@ The document is `{"version": 1, "settings": "<toml>" | null, "slots": {"1": "<ba
 `storageChanged` turns true on the frame after a save, an autosave, a deleted slot or a settings
 change, and `exportStorage()` acknowledges it. `importStorage(doc)` replaces the slots and
 settings of a running player (the title screen's slot list updates at once); a malformed
-document throws and changes nothing. IndexedDB works the same way (store the string). Saves of
-another game are refused on load, as on the desktop.
+document, or one whose settings TOML does not parse, throws and changes nothing (import it again
+with `settings: null` to keep its saves). IndexedDB works the same way (store the string). Saves
+of another game are refused on load, as on the desktop.
+
+`localStorage` writes can fail (the origin's quota is shared, on itch.io by every game on the
+same host): catch them and tell the player, because the game's own "Saved" toast cannot know.
+The web demo page (`tools/wasm/web-template/game.js`) shows a notice until a later write works,
+and keeps a stored document it cannot read under `<key>:unreadable` before anything overwrites
+it.
 
 ### Sound
 
@@ -156,8 +165,8 @@ A headless game (tools, tests, replays); mirrors `fe_session_*`.
 | `setScripted(scripted)` | `true`: commands apply wherever the player stands (scripts, the goldens). By default they apply only where a player could give them: no `descendMine` away from the mine, no `openShop` without facing the merchant, only the open dialogue's, shop's or minigame's own commands while one is open. |
 | `save()`, `loadSave(save)` | A JSON save of the state; loading migrates old saves and quarantines unknown items, and returns `{warnings, quarantined, restored, fromVersion, migrated}`. |
 
-The smoke test replays every TypeScript golden in `fixtures/golden/replays` through a
-scripted `Session` and checks each step's hash and effects.
+The smoke test replays every golden in `fixtures/golden/replays` (recorded from the Rust
+engine) through a scripted `Session` and checks each step's hash and effects.
 
 ## `Preview` and `renderJson`
 
@@ -173,15 +182,23 @@ Edit Mode's map and the art studio's previews; mirror `fe_preview_*` and `fe_ren
 
 ## Functions
 
-`hashText(text)` (the FNV-1a state hash), `sfxCues()`, `sfxSamples(cue, sampleRate)`,
-`version()`, `lastPanic()`. `start()` installs the panic hook; `init` calls it.
+- `hashState(state)`: the state hash (16 hex digits) of a `GameState` given as JSON text or an
+  object, so `hashState(x.stateJson()) === x.hash()` for a `Player` or a `Session`. Since v9 the
+  state hash is xxh3-64 over the state's canonical binary encoding (docs/NUMERICS.md), not a hash
+  of its JSON text.
+- `hashText(text)`: the v8 text hash (FNV-1a over UTF-16, two 32-bit lanes). It no longer
+  matches any state hash (`hashText(stateJson()) !== hash()`); it stays for tools that compare
+  v8-era text hashes.
+- `sfxCues()`, `sfxSamples(cue, sampleRate)`, `version()`, `lastPanic()`. `start()` installs the
+  panic hook; `init` calls it.
 
 ## Errors and panics
 
 Failures throw a JavaScript `Error` named `FarmError` with a `kind`:
 
 - `"invalid"`: bad input or a refused request (a frame without a size, malformed JSON, a save
-  of another game). The object stays usable.
+  of another game, a render request with a zero tile size or an image over 16 Mpx). The object
+  stays usable.
 - `"poisoned"`: the engine failed during a frame ("The game stopped: …"), or an earlier call
   did. The object refuses every later call; drop it (the editor ends the playtest).
 - `"panic"`: reserved for hosts that can catch panics (never thrown on the web, see below).
@@ -194,3 +211,9 @@ records it. From then on **every** call on **any** object throws a `FarmError` o
 `"poisoned"` carrying that message (`lastPanic()` returns it), because the module's memory may be
 half-updated; calls on the object that panicked may instead throw wasm-bindgen's "recursive use
 of an object" error. Load a fresh module instance to continue.
+
+Running out of memory aborts the same way but without running the panic hook. Each engine call
+marks itself as running and clears the mark when it returns, so the next call after such a trap
+finds the mark and throws `"poisoned"` too (`lastPanic()` stays `undefined`). Treat any
+`WebAssembly.RuntimeError` as the end of the module instance. Frames and render requests are
+capped at 16 Mpx on the web (64 Mpx natively) to keep allocations well inside a module's memory.

@@ -422,8 +422,11 @@ impl<'a, 'l> Builder<'a, 'l> {
         // Edit Mode grid overlay.
         if snapshot.grid_overlay {
             let color = parse("#ffffff10");
-            for y in y_start..=y_end {
-                for x in x_start..=x_end {
+            // Only over tiles the snapshot has: `width`/`height` alone must not set the work.
+            let rows = i32::try_from(snapshot.tiles.len()).unwrap_or(i32::MAX);
+            let columns = i32::try_from(snapshot.tiles.iter().map(Vec::len).max().unwrap_or(0)).unwrap_or(i32::MAX);
+            for y in y_start..=y_end.min(rows - 1) {
+                for x in x_start..=x_end.min(columns - 1) {
                     let rect = rect(padding + (f64::from(x) * pitch), padding + (f64::from(y) * pitch), ts, ts);
                     self.push(DrawCmd::StrokeRect { rect, color, width: 0.5 });
                 }

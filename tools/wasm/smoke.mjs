@@ -6,15 +6,21 @@
 // - a Player renders frames of fixtures/projects/project-v8.json and takes input (keys and the
 //   touch controls' actions);
 // - a standalone Player autosaves into its in-memory storage, and a new Player continues from
-//   the exported storage with the same state hash;
+//   the exported storage with the same state hash; a stored document with bad settings changes
+//   nothing;
+// - the web demo's surfaces (a touch phone at density 3, a 1366×768 laptop) lay out in CSS
+//   pixels; FARM_WASM_SCREENSHOTS=<dir> writes their frames as PNGs;
 // - pack plugins run in the player (QuickJS in wasmi, inside WebAssembly);
-// - Session replays of the goldens in fixtures/golden/replays reproduce every step's
-//   state hash and effects, the final state and the final project;
-// - Preview, renderJson, hashText and the sound cues answer.
+// - Session replays of the goldens in fixtures/golden/replays (recorded from the Rust engine)
+//   reproduce every step's state hash and effects, the final state and the final project;
+// - Preview, renderJson (and its request checks), hashState, hashText and the sound cues answer.
+//
+// tools/wasm/game-page.mjs tests the web demo page's own script against the same build.
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { deflateSync } from "node:zlib";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -33,6 +39,43 @@ function stable(value) {
     return `{${keys.map((key) => `${JSON.stringify(key)}:${stable(value[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+/** Writes an opaque RGBA frame as a PNG (FARM_WASM_SCREENSHOTS). */
+function writePng(file, { width, height, pixels }) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes) => {
+    let c = 0xffffffff;
+    for (const byte of bytes) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8); // 8-bit RGBA
+  const rows = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) Buffer.from(pixels.buffer, pixels.byteOffset + y * width * 4, width * 4).copy(rows, y * (width * 4 + 1) + 1);
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, png);
+  console.log(`     wrote ${file}`);
 }
 
 let failures = 0;
@@ -104,7 +147,14 @@ await test("a player renders project-v8.json and takes input", () => {
   // Bad input throws a FarmError and keeps the player.
   assert.throws(() => player.frame({ dt: 0, width: 0, height: 10 }), { name: "FarmError", kind: "invalid" });
   assert.throws(() => player.debug("{oops"), { name: "FarmError", kind: "invalid" });
+  // Values JSON.stringify turns into undefined are refused, not thrown past Rust (which left the
+  // object borrowed: every later call failed with "recursive use of an object").
+  assert.throws(() => player.debug(() => 0), { name: "FarmError", kind: "invalid" });
+  assert.throws(() => player.commands(Symbol("x")), { name: "FarmError", kind: "invalid" });
+  assert.throws(() => player.queryJson({ toJSON: () => undefined }), { name: "FarmError", kind: "invalid" });
+  assert.throws(() => farm.renderJson(() => 0), { name: "FarmError", kind: "invalid" });
   frame(player);
+  assert.match(player.hash(), /^[0-9a-f]{16}$/);
 
   // 1280×800 frame time.
   const started = performance.now();
@@ -159,6 +209,71 @@ await test("standalone saves live in exported storage", () => {
   assert.equal(empty.exportStorage(), storage);
   assert.throws(() => empty.importStorage({ slots: { 7: "AAAA" } }), { kind: "invalid" });
   for (const p of [player, again, empty]) p.free();
+});
+
+await test("a stored document with bad settings changes nothing", () => {
+  const project = JSON.stringify(json("golden", "content", "starter-farm.json").project);
+  const first = new farm.Player(project, { mode: "standalone", seed: "wasm-import" });
+  frame(first);
+  press(first, "enter"); // New Game in slot 1
+  first.commands([{ type: "sleep" }]);
+  for (let i = 0; i < 3; i++) frame(first);
+  const saved = JSON.parse(first.exportStorage());
+  assert.deepEqual(Object.keys(saved.slots), ["1"]);
+
+  const player = new farm.Player(project, { mode: "standalone", seed: "wasm-import" });
+  frame(player);
+  player.importStorage(saved);
+  const before = player.exportStorage();
+  // Valid slots, settings that do not parse: refused before anything is replaced (the slots
+  // used to be swapped in first, under a slot list that still said they were empty).
+  const bad = { version: 1, settings: "[audio\nmaster = ", slots: { 2: saved.slots["1"] } };
+  assert.throws(() => player.importStorage(bad), { kind: "invalid", message: /stored settings/ });
+  assert.equal(player.exportStorage(), before, "nothing changed");
+  assert.equal(frame(player).storageChanged, false);
+  // New Game takes the first free slot, slot 2, and slot 1 keeps its save.
+  const newGame = JSON.parse(player.queryJson({ type: "widgetRect", path: ["title", "New Game"] }));
+  const at = { x: newGame.x + newGame.width / 2, y: newGame.y + newGame.height / 2 };
+  frame(player, [{ type: "pointerMove", ...at }, { type: "pointerDown", ...at }]);
+  frame(player, [{ type: "pointerUp", ...at }]);
+  assert.equal(frame(player).info.screen, "playing");
+  player.commands([{ type: "sleep" }]);
+  for (let i = 0; i < 3; i++) frame(player);
+  const after = JSON.parse(player.exportStorage());
+  assert.deepEqual(Object.keys(after.slots), ["1", "2"]);
+  assert.equal(after.slots["1"], saved.slots["1"]);
+  for (const p of [first, player]) p.free();
+});
+
+await test("the web demo's surfaces: a touch phone at density 3 and a 1366×768 laptop", () => {
+  const project = JSON.stringify(json("golden", "content", "starter-farm.json").project);
+  const shots = process.env.FARM_WASM_SCREENSHOTS;
+  // 390×844 CSS pixels at devicePixelRatio 3, 176 CSS pixels of touch controls.
+  const phone = { width: 1170, height: 2532, density: 3, touchControls: true, insetBottom: 528 };
+  const laptop = { width: 1366, height: 768 };
+  for (const [name, surface] of [["phone-390x844", phone], ["laptop-1366x768", laptop]]) {
+    const player = new farm.Player(project, { mode: "standalone", seed: "wasm-surface" });
+    const step = (events = [], render = false) => player.frame({ dt: FRAME, events, ...surface, render });
+    step();
+    // New Game: the touch controls' A button on the phone, Enter on the laptop.
+    if (surface.touchControls) {
+      step([{ type: "action", action: "interact", pressed: true }]);
+      step([{ type: "action", action: "interact", pressed: false }]);
+    } else {
+      step([{ type: "keyDown", key: "enter" }]);
+      step([{ type: "keyUp", key: "enter" }]);
+    }
+    for (let i = 0; i < 3; i++) step();
+    const result = step([], true);
+    assert.equal(result.info.screen, "playing");
+    assert.deepEqual([result.width, result.height], [surface.width, surface.height]);
+    const menu = JSON.parse(player.queryJson({ type: "widgetRect", path: ["hud", "menu"] }));
+    assert.ok(menu.x + menu.width <= surface.width, `the toolbar fits: ${JSON.stringify(menu)}`);
+    const density = surface.density ?? 1;
+    assert.ok(menu.height / density >= 20, `toolbar buttons keep their CSS size: ${JSON.stringify(menu)}`);
+    if (shots) writePng(path.join(shots, `${name}.png`), result);
+    player.free();
+  }
 });
 
 await test("pack plugins run in the player", () => {
@@ -231,6 +346,28 @@ await test("previews, render requests, hashes and sounds", () => {
   const png = farm.renderJson({ type: "rasterize", snapshot: JSON.parse(snapshot), scale: 1 });
   assert.ok(png instanceof Uint8Array);
   assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+
+  // Render requests whose work the image size would not bound are refused.
+  const huge = { width: 100000, height: 100000, tileSize: 0, tileGap: 0, gridOverlay: true };
+  assert.throws(() => farm.renderJson({ type: "rasterize", snapshot: huge }), { kind: "invalid", message: /at most/ });
+  assert.throws(
+    () => farm.renderJson({ type: "rasterize", snapshot: { ...JSON.parse(snapshot), tileSize: 0 } }),
+    { kind: "invalid", message: /Tile size/ },
+  );
+  assert.throws(() => new farm.Preview(project).render({ sceneId: project.player.sceneId, tileSize: -1 }), { kind: "invalid" });
+
+  // The state hash of a state as JSON (since v9 xxh3 over the binary state, not a text hash).
+  const session = new farm.Session(project);
+  session.tick(40);
+  assert.equal(farm.hashState(session.stateJson()), session.hash());
+  assert.equal(farm.hashState(JSON.parse(session.stateJson())), session.hash());
+  assert.notEqual(farm.hashText(session.stateJson()), session.hash(), "hashText is the v8 text hash");
+  assert.throws(() => farm.hashState("{oops"), { kind: "invalid" });
+  session.free();
+  const player = new farm.Player(project, { seed: "wasm-hash" });
+  frame(player);
+  assert.equal(farm.hashState(player.stateJson()), player.hash());
+  player.free();
 
   assert.equal(farm.hashText("{}"), "5465b8257807bf56");
   assert.ok(farm.sfxCues().includes("coin"));

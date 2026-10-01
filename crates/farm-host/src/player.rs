@@ -8,14 +8,15 @@
 
 use crate::view_json;
 use farm_player::{
-    DebugAction, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind, SoundRequest,
+    DebugAction, HostView, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind, SoundRequest,
 };
 use farm_sim::schema::GameProject;
 use farm_sim::{stable_json, Command};
 use serde::{Deserialize, Serialize};
 
-/// Largest frame a host may request, in pixels.
-pub const MAX_PIXELS: u64 = 64 * 1024 * 1024;
+/// Largest frame a host may request, in pixels (16 Mpx on the web, where a module has little
+/// memory and a failed allocation aborts instead of throwing).
+pub const MAX_PIXELS: u64 = if cfg!(target_arch = "wasm32") { 16 * 1024 * 1024 } else { 64 * 1024 * 1024 };
 
 /// Options for a new player: `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?, "locale"?}`.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -59,6 +60,21 @@ pub struct FrameRequest {
     /// False steps the game without drawing (`Player::step`).
     #[serde(default = "yes")]
     pub render: bool,
+    /// Frame pixels per CSS pixel (`devicePixelRatio`, times any downscale the page applies):
+    /// the interface keeps its size on dense screens. Default 1.
+    #[serde(default = "one")]
+    pub density: f32,
+    /// The page shows on-screen touch controls: prompts name no keys.
+    #[serde(default)]
+    pub touch_controls: bool,
+    /// Frame pixels at the bottom the page covers with its controls (the HUD, panels and the
+    /// dialogue box stay above them).
+    #[serde(default)]
+    pub inset_bottom: f32,
+}
+
+fn one() -> f32 {
+    1.0
 }
 
 impl FrameRequest {
@@ -231,6 +247,11 @@ impl HostPlayer {
             return Err(format!("The requested frame is too large ({}×{}).", request.width, request.height));
         }
         let dt = if request.dt.is_finite() { request.dt.clamp(0.0, 0.25) } else { 0.0 };
+        self.player.set_host_view(HostView {
+            density: request.density,
+            touch_controls: request.touch_controls,
+            inset_bottom: request.inset_bottom,
+        });
         let (sounds, requests, size) = if request.render {
             let output =
                 self.player.frame(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
