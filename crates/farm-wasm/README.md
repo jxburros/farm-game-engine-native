@@ -152,11 +152,12 @@ A headless game (tools, tests, replays); mirrors `fe_session_*`.
 | `projectJson()` | The project with the state written back (throws for a cartridge). |
 | `skipDay()` | The overnight pass without a bed (the debug drawer). |
 | `hookEvents()` | Drains the hook events since the last call (`[{hook, payload}]`). |
-| `setState(state)` | Replaces the state, taken as it is. |
+| `setState(state)` | Replaces the state, taken as it is (tile grids that don't match their scene's size are fixed). |
+| `setScripted(scripted)` | `true`: commands apply wherever the player stands (scripts, the goldens). By default they apply only where a player could give them: no `descendMine` away from the mine, no `openShop` without facing the merchant, only the open dialogue's, shop's or minigame's own commands while one is open. |
 | `save()`, `loadSave(save)` | A JSON save of the state; loading migrates old saves and quarantines unknown items, and returns `{warnings, quarantined, restored, fromVersion, migrated}`. |
 
 The smoke test replays every TypeScript golden in `fixtures/golden/replays` through a
-`Session` and checks each step's hash and effects.
+scripted `Session` and checks each step's hash and effects.
 
 ## `Preview` and `renderJson`
 

@@ -7,6 +7,7 @@ use crate::schema::{
     is_engine_compatible, ContentPack, CropDefinition, CustomCropDefinition, GameContent, GameProject, GameState,
     InventorySlot, Item, PackContent, PackInstallation, SavePackRef, ENGINE_VERSION,
 };
+use crate::world::tiles;
 use indexmap::{IndexMap, IndexSet};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -562,7 +563,17 @@ pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation
 
     let mut content = base.clone();
     for raw_pack in &packs {
-        let pack = namespace_pack(raw_pack);
+        let mut pack = namespace_pack(raw_pack);
+        // A pack's scenes join the world when the player first enters them: fix their grids
+        // here, before anything reads them.
+        for scene in &mut pack.content.scenes {
+            if tiles::normalize_scene_grid(scene) {
+                problems.push(PackProblem::warning(
+                    &pack.manifest.id,
+                    format!("scene '{}' has a tile grid that doesn't match its size; it was fixed", scene.id),
+                ));
+            }
+        }
         merge_pack(
             &pack,
             &mut content.crops,

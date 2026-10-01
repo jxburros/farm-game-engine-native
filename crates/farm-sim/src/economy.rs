@@ -8,8 +8,9 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
 use crate::quests;
-use crate::schema::{GameState, Item, ShopDefinition, ShopSession};
+use crate::schema::{DialogueOption, GameState, Item, ShopDefinition, ShopSession};
 use crate::units;
+use crate::world::world_movement;
 
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
     ctx.content.shops.iter().find(|shop| shop.id == shop_id)
@@ -23,6 +24,33 @@ pub fn handle_open_shop(ctx: &EngineContext, state: &mut GameState, shop_id: &st
     state.shop = Some(ShopSession { shop_id: shop_id.to_owned() });
     state.dialogue = None;
     Vec::new()
+}
+
+/// The `openShop` command under [`crate::CommandRules::Player`]: the player must face an NPC
+/// whose dialogue opens that shop (`None` when they do). Dialogue options open shops on their
+/// own; the command is for hosts and scripts that skip the conversation.
+pub fn open_shop_refusal(ctx: &EngineContext, state: &GameState, shop_id: &str) -> Option<Effects> {
+    let facing = world_movement::facing_target(state);
+    let opens_shop = |options: &[DialogueOption]| options.iter().any(|o| o.open_shop_id.as_deref() == Some(shop_id));
+    let is_merchant = |npc_id: &str| {
+        ctx.content
+            .npcs
+            .iter()
+            .filter(|def| def.id == npc_id)
+            .any(|def| def.dialogue.iter().any(|d| opens_shop(&d.options)))
+            || ctx.content.dialogues.iter().any(|d| d.npc_id == npc_id && opens_shop(&d.options))
+    };
+    let merchant_faced = state.npcs.iter().any(|(npc_id, npc)| {
+        npc.scene_id == state.player.scene_id
+            && npc.x == units::tiles(facing.x)
+            && npc.y == units::tiles(facing.y)
+            && is_merchant(npc_id)
+    });
+    if merchant_faced {
+        None
+    } else {
+        Some(vec![Effect::message(message_levels::INFO, "Talk to the shopkeeper to shop.")])
+    }
 }
 
 pub fn handle_close_shop(state: &mut GameState) -> Effects {

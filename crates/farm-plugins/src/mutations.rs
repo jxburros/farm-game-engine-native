@@ -13,6 +13,9 @@ use farm_sim::schema::PluginMutation;
 use farm_sim::units;
 use serde_json::{Map, Value};
 
+/// The largest tile coordinate a warp may name: the last tile of the largest scene.
+const MAX_TILE: f64 = (farm_sim::schema::MAX_SCENE_SIZE - 1) as f64;
+
 /// Validate a handler's return value. A non-array yields nothing; each entry is parsed with
 /// [`parse_mutation`], and invalid ones are dropped with an error
 /// `mutation [{index}] dropped: {reason}`.
@@ -81,9 +84,11 @@ pub fn parse_mutation(entry: &Value) -> Result<PluginMutation, String> {
         }
         "startQuest" => PluginMutation::StartQuest { quest_id: fields.string("questId") },
         "warpPlayer" => {
+            // A tile of the largest scene there can be (the engine also lands a warp outside the
+            // scene, or on a blocked tile, on the nearest walkable one).
             let scene_id = fields.string("sceneId");
-            let x = fields.int("x", 0.0, f64::INFINITY) as i32;
-            PluginMutation::WarpPlayer { scene_id, x, y: fields.int("y", 0.0, f64::INFINITY) as i32 }
+            let x = fields.int("x", 0.0, MAX_TILE) as i32;
+            PluginMutation::WarpPlayer { scene_id, x, y: fields.int("y", 0.0, MAX_TILE) as i32 }
         }
         "startDialogue" => {
             let npc_id = fields.string("npcId");
@@ -255,8 +260,10 @@ mod tests {
         assert_eq!(parsed, PluginMutation::GiveItem { item_id: "seed-wheat".to_owned(), quantity: 2 });
         let parsed = parse_mutation(&json!({"type":"startDialogue","npcId":"n"})).unwrap();
         assert_eq!(parsed, PluginMutation::StartDialogue { npc_id: "n".to_owned(), dialogue_id: None });
-        let parsed = parse_mutation(&json!({"type":"warpPlayer","sceneId":"s","x":1e6,"y":0})).unwrap();
-        assert_eq!(parsed, PluginMutation::WarpPlayer { scene_id: "s".to_owned(), x: 1_000_000, y: 0 });
+        let parsed = parse_mutation(&json!({"type":"warpPlayer","sceneId":"s","x":255,"y":0})).unwrap();
+        assert_eq!(parsed, PluginMutation::WarpPlayer { scene_id: "s".to_owned(), x: 255, y: 0 });
+        // Warps stay within the largest scene.
+        assert_eq!(reason(json!({"type":"warpPlayer","sceneId":"s","x":1e6,"y":0})), "warpPlayer: x: must be <= 255");
     }
 
     #[test]

@@ -24,6 +24,24 @@ use std::cell::RefCell;
 /// The effects a step produced, in order (host-facing: toasts, sounds, camera snaps).
 pub type Effects = Vec<Effect>;
 
+/// Which commands apply in which situations. Rust decides what a player may do
+/// (docs/LANGUAGES.md): replays, the FFI and web sessions and any future lockstep play feed
+/// commands straight to the engine, so the player UI's own restraint is not enough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CommandRules {
+    /// What a player can do (every host's default). While a dialogue, shop or minigame is open
+    /// only its own commands apply (and `setMoveIntent` and plugin mutations). `descendMine`
+    /// works on a mine floor or beside the mine entrance, down to the floor after the deepest
+    /// elevator checkpoint or the current floor; `exitMine` only on a mine floor; `openShop` only
+    /// facing an NPC whose dialogue opens that shop; `startMinigame` is refused (minigames open
+    /// from actions, items, tools and plugins).
+    #[default]
+    Player,
+    /// Scripts and tests: every command applies wherever the player stands, as in the reference
+    /// engines. The golden replays are input logs scripted this way.
+    Scripted,
+}
+
 /// EngineContext bundles immutable content with the hook bus (state.ts). GameContent never
 /// changes during play. The bus sits in a `RefCell` so handlers can emit through a shared
 /// `&EngineContext` while holding references into `content` (single-threaded by design).
@@ -31,15 +49,22 @@ pub type Effects = Vec<Effect>;
 pub struct EngineContext {
     pub content: GameContent,
     pub hooks: Option<RefCell<HookBus>>,
+    /// Which commands apply when (see [`CommandRules`]).
+    pub rules: CommandRules,
 }
 
 impl EngineContext {
     pub fn new(content: GameContent) -> Self {
-        Self { content, hooks: None }
+        Self { content, hooks: None, rules: CommandRules::Player }
     }
 
     pub fn with_hooks(content: GameContent, hooks: HookBus) -> Self {
-        Self { content, hooks: Some(RefCell::new(hooks)) }
+        Self { content, hooks: Some(RefCell::new(hooks)), rules: CommandRules::Player }
+    }
+
+    /// This context under other [`CommandRules`].
+    pub fn with_rules(self, rules: CommandRules) -> Self {
+        Self { rules, ..self }
     }
 
     /// `ctx.Hooks?.Emit(...)`: records the event when a bus is attached.

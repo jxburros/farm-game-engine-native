@@ -56,6 +56,9 @@ pub enum Command {
     PlaceMachine { machine_type_id: String },
     #[serde(rename = "machineLoad")]
     MachineLoad { recipe_id: String },
+    /// Pick the idle machine on the facing tile back up (its item returns to the inventory).
+    #[serde(rename = "pickUpMachine")]
+    PickUpMachine,
     #[serde(rename = "giveGift")]
     GiveGift { item_id: String },
     #[serde(rename = "descendMine")]
@@ -105,6 +108,7 @@ impl Command {
             Self::Craft { .. } => "craft",
             Self::PlaceMachine { .. } => "placeMachine",
             Self::MachineLoad { .. } => "machineLoad",
+            Self::PickUpMachine => "pickUpMachine",
             Self::GiveGift { .. } => "giveGift",
             Self::DescendMine { .. } => "descendMine",
             Self::ExitMine => "exitMine",

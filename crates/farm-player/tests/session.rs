@@ -101,13 +101,22 @@ fn timing_bar() -> MinigameDef {
     MinigameDef { id: "mg-test".into(), name: "Test".into(), kind: "timing-bar".into(), ..MinigameDef::default() }
 }
 
+/// Opens a minigame as a plugin can (the `startMinigame` command is refused under the player's
+/// rules: minigames open from actions, items, tools and plugins).
+fn open_minigame(id: &str) -> Command {
+    Command::PluginMutation {
+        plugin_id: "test".into(),
+        mutation: PluginMutation::StartMinigame { minigame_id: id.into() },
+    }
+}
+
 #[test]
 fn minigames_mount_and_report_their_score_once() {
     let mut project = starter();
     project.minigames = vec![timing_bar()];
     let mut session = session_for(&project);
     session.set_cosmetic_seed(7);
-    session.run_command(&Command::StartMinigame { minigame_id: "mg-test".into() });
+    session.run_command(&open_minigame("mg-test"));
     assert!(session.minigame_view().is_some(), "mounted");
     assert!(session.engine_modal_open());
     frames(&mut session, 5);
@@ -125,7 +134,7 @@ fn escape_cancels_a_minigame() {
     let mut project = starter();
     project.minigames = vec![timing_bar()];
     let mut session = session_for(&project);
-    session.run_command(&Command::StartMinigame { minigame_id: "mg-test".into() });
+    session.run_command(&open_minigame("mg-test"));
     session.key_down("escape");
     session.update(FRAME, false);
     assert!(session.state().minigame.is_none());

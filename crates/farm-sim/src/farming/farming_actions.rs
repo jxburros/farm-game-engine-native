@@ -43,7 +43,7 @@ fn facing_tile(state: &GameState) -> Option<FacingTileResult> {
         height: scene.height,
         x,
         y,
-        tile: scene.tiles[y as usize][x as usize].clone(),
+        tile: scene.tile(x, y)?.clone(),
     })
 }
 
@@ -142,7 +142,9 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
         let day = state.clock.day;
         let direction = state.player.direction.clone();
         for (spot_x, spot_y) in aoe_targets(&target, &direction, tier) {
-            water_tile(&mut state.world.scenes[index].tiles[spot_y as usize][spot_x as usize], day);
+            if let Some(tile) = state.world.scenes[index].tile_mut(spot_x, spot_y) {
+                water_tile(tile, day);
+            }
         }
         return finish(ctx, state, tool, energy_cost, vec![Effect::message(message_levels::SUCCESS, "Watered!")]);
     }
@@ -155,7 +157,9 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
         };
         let direction = state.player.direction.clone();
         for (spot_x, spot_y) in aoe_targets(&target, &direction, tier) {
-            let spot_tile = &mut state.world.scenes[index].tiles[spot_y as usize][spot_x as usize];
+            let Some(spot_tile) = state.world.scenes[index].tile_mut(spot_x, spot_y) else {
+                continue;
+            };
             if (spot_tile.background == tile_types::GRASS || spot_tile.background == tile_types::FLOOR)
                 && spot_tile.node.is_none()
             {
@@ -175,7 +179,9 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
                 let Some(index) = scene_index(state, &target.scene_id) else {
                     return Vec::new();
                 };
-                state.world.scenes[index].tiles[target.y as usize][target.x as usize].crop = None;
+                if let Some(tile) = state.world.scenes[index].tile_mut(target.x, target.y) {
+                    tile.crop = None;
+                }
                 return finish(
                     ctx,
                     state,
@@ -222,15 +228,13 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let target_x = facing.x;
     let target_y = facing.y;
 
-    // Authored interact-events take priority over built-in interactions (M3).
-    // JS `eventResult.state !== state` is a reference comparison; with in-place updates the
-    // closest reading is "did the state change" (a fired event that leaves every value as it was
-    // is indistinguishable from no event here).
-    let before = state.clone();
-    let event_effects =
-        events::evaluate_events(ctx, state, "interact", Some(EventPosition { x: target_x, y: target_y }));
-    if *state != before || !event_effects.is_empty() {
-        return event_effects;
+    // Authored interact-events take priority over built-in interactions (M3). JS compared the
+    // state before and after (`eventResult.state !== state`), which differs exactly when an
+    // event fired.
+    let events =
+        events::evaluate_events_detailed(ctx, state, "interact", Some(EventPosition { x: target_x, y: target_y }));
+    if events.fired || !events.effects.is_empty() {
+        return events.effects;
     }
 
     // NPC dialogue next (uses live NPC positions from state)
@@ -278,15 +282,10 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
         && target.x == mine_config.entrance_x.unwrap_or(-1)
         && target.y == mine_config.entrance_y.unwrap_or(-1)
     {
-        // floor(deepest / every) × every; JS divides by zero into NaN, and max(1, NaN) is NaN.
-        let checkpoint = state
-            .mine
-            .deepest_floor
-            .checked_div(mine_config.elevator_every)
-            .map_or(0, |elevators| elevators * mine_config.elevator_every);
-        return mines::descend_mine(ctx, state, checkpoint.max(1));
+        let floor = mines::elevator_floor(mine_config, state);
+        return mines::descend_mine(ctx, state, floor);
     }
-    if mines::is_mine_scene(&state.player.scene_id) && target.x == 1 && target.y == 1 {
+    if mines::is_mine_floor(state, &state.player.scene_id) && (target.x, target.y) == mines::FLOOR_ENTRY {
         return mines::exit_mine(ctx, state);
     }
 
@@ -313,8 +312,7 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
     let Some(scene) = world_movement::find_scene(state, scene_id) else {
         return Vec::new();
     };
-    let tile = &scene.tiles[y as usize][x as usize];
-    let Some(crop) = tile.crop.clone() else {
+    let Some(crop) = scene.tile(x, y).and_then(|tile| tile.crop.clone()) else {
         return Vec::new();
     };
     if crop.withered == Some(true) {
@@ -351,7 +349,9 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
     let Some(index) = scene_index(state, scene_id) else {
         return Vec::new();
     };
-    let tile = &mut state.world.scenes[index].tiles[y as usize][x as usize];
+    let Some(tile) = state.world.scenes[index].tile_mut(x, y) else {
+        return Vec::new();
+    };
     if definition.can_regrow {
         let growth_days = crops::crop_growth_days(definition);
         let regrowth = crops::crop_regrowth_days(definition);
@@ -455,29 +455,32 @@ fn plant_seed(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32
 
     let new_crop = crops::create_planted_crop(&crop_type, state.clock.day, used_fertilizer);
     let multi_tile_id = format!("{}-{}-{}-{}", crop_type, state.clock.tick, x, y);
-    let tiles = &mut state.world.scenes[index].tiles;
+    let scene = &mut state.world.scenes[index];
 
     if let Some(multi_tile) = &definition.multi_tile {
         for crop_dy in 0..multi_tile.height {
             for crop_dx in 0..multi_tile.width {
                 // The placement check above kept every covered tile inside the scene.
-                let ty = y as usize + crop_dy as usize;
-                let tx = x as usize + crop_dx as usize;
-                tiles[ty][tx].crop = Some(Crop {
-                    is_multi_tile_root: Some(crop_dy == 0 && crop_dx == 0),
-                    multi_tile_id: Some(multi_tile_id.clone()),
-                    ..new_crop.clone()
-                });
+                let tx = x.saturating_add(i32::try_from(crop_dx).unwrap_or(i32::MAX));
+                let ty = y.saturating_add(i32::try_from(crop_dy).unwrap_or(i32::MAX));
+                if let Some(tile) = scene.tile_mut(tx, ty) {
+                    tile.crop = Some(Crop {
+                        is_multi_tile_root: Some(crop_dy == 0 && crop_dx == 0),
+                        multi_tile_id: Some(multi_tile_id.clone()),
+                        ..new_crop.clone()
+                    });
+                }
             }
         }
-    } else {
-        tiles[y as usize][x as usize].crop = Some(new_crop);
+    } else if let Some(tile) = scene.tile_mut(x, y) {
+        tile.crop = Some(new_crop);
     }
 
     if used_fertilizer {
-        let tile = &mut tiles[y as usize][x as usize];
-        tile.soil_fertility = 100;
-        tile.soil_state = Some(soil_states::FERTILIZED.to_owned());
+        if let Some(tile) = scene.tile_mut(x, y) {
+            tile.soil_fertility = 100;
+            tile.soil_state = Some(soil_states::FERTILIZED.to_owned());
+        }
     }
 
     state.player.inventory = inventory;

@@ -57,7 +57,7 @@ pub mod world;
 pub use commands::Command;
 pub use effects::Effect;
 pub use engine::{advance_tick, apply_command};
-pub use engine_types::{Effects, EngineContext, StepOutput};
+pub use engine_types::{CommandRules, Effects, EngineContext, StepOutput};
 pub use hash::{hash_state, hash_text, stable_stringify};
 pub use hooks::{HookBus, HookEvent};
 pub use rng::{Rng, RngState};

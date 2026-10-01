@@ -15,7 +15,7 @@ without the switch):
                    (inputs: v8/saves, plus a current v5 and a future v6 save)
 
 Last recorded (stamped by the recorders):
-  replays: committed in 55b0662 (recorded before the recorders stamped)
+  replays: re-recorded when the calendar and world-hardening branches were merged
   content: committed in f2c2a08 (recorded before the recorders stamped)
   rng.json: committed in f2c2a08 (recorded before the recorders stamped)
   hash.json: committed in f2c2a08 (recorded before the recorders stamped)

@@ -205,6 +205,8 @@ const EN: &[(&str, &str)] = &[
     ("crafting.craft", "Craft"),
     ("crafting.placeMachine", "Place machine (on the tile you face)"),
     ("crafting.place", "Place"),
+    ("crafting.pickUp", "Pick up"),
+    ("crafting.pickUpHint", "Take it back into your inventory to place it somewhere else."),
     // Shop.
     ("shop.buy", "Buy"),
     ("shop.sell", "Sell"),
@@ -423,6 +425,8 @@ const ES: &[(&str, &str)] = &[
     ("crafting.craft", "Fabricar"),
     ("crafting.placeMachine", "Colocar m\u{e1}quina (en la casilla de enfrente)"),
     ("crafting.place", "Colocar"),
+    ("crafting.pickUp", "Recoger"),
+    ("crafting.pickUpHint", "Vuelve a tu inventario para colocarla en otro sitio."),
     ("shop.buy", "Comprar"),
     ("shop.sell", "Vender"),
     ("shop.repair", "Reparar"),

@@ -283,11 +283,20 @@ fn pack_plugins_run_in_the_player() {
     );
 }
 
+/// Opens a minigame as a plugin can (the `startMinigame` command is refused under the player's
+/// rules: minigames open from actions, items, tools and plugins).
+fn open_minigame(id: &str) -> Command {
+    Command::PluginMutation {
+        plugin_id: "test".into(),
+        mutation: farm_sim::schema::PluginMutation::StartMinigame { minigame_id: id.into() },
+    }
+}
+
 #[test]
 fn a_minigame_plays_through_the_overlay() {
     let stores = Stores::new();
     let mut player = new_game(&stores);
-    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    player.run_command(&open_minigame("fishing")).unwrap();
     idle(&mut player, 2);
     assert!(player.session().unwrap().minigame_view().is_some());
     assert!(player.widget_rect(WidgetId::new("minigame-primary")).is_some());
@@ -298,7 +307,7 @@ fn a_minigame_plays_through_the_overlay() {
     assert_eq!(resolved, 1);
 
     // Give up from the overlay.
-    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    player.run_command(&open_minigame("fishing")).unwrap();
     idle(&mut player, 2);
     click(&mut player, WidgetId::new("minigame-give-up"));
     assert!(player.state().unwrap().minigame.is_none());

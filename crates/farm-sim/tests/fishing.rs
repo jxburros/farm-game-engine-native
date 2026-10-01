@@ -55,8 +55,16 @@ fn casts_resolve_deterministically_through_the_seeded_rng() {
     let mut a = state.clone();
     let mut b = state.clone();
     for _ in 0..10 {
-        farm_sim::engine::apply_command(&ctx, &mut a, &farm_sim::Command::UseTool { tool: "fishing-rod".to_owned() });
-        farm_sim::engine::apply_command(&ctx, &mut b, &farm_sim::Command::UseTool { tool: "fishing-rod".to_owned() });
+        for game in [&mut a, &mut b] {
+            let cast = farm_sim::Command::UseTool { tool: "fishing-rod".to_owned() };
+            farm_sim::engine::apply_command(&ctx, game, &cast);
+            // The starter farm declares the fishing minigame: a cast opens it, and nothing else
+            // applies until it resolves.
+            if game.minigame.is_some() {
+                let score = farm_sim::Command::ResolveMinigame { score: units::chance(0.9) };
+                farm_sim::engine::apply_command(&ctx, game, &score);
+            }
+        }
     }
     assert_eq!(a.player.inventory, b.player.inventory);
     // Ten casts with the default table should land SOMETHING (fish or junk).

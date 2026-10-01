@@ -4,7 +4,7 @@
 //! Tile layer rules — extracted from src/lib/game-helpers.ts, behavior-identical
 //! (characterization-tested).
 
-use crate::schema::{Scene, Tile, VisualRef};
+use crate::schema::{Scene, Tile, VisualRef, MAX_SCENE_SIZE};
 use indexmap::IndexSet;
 use std::collections::VecDeque;
 
@@ -81,6 +81,36 @@ pub fn create_empty_scene(id: &str, name: &str, width: i32, height: i32) -> Scen
     }
 }
 
+/// Make a scene's grid match its size, so every tile inside `width × height` exists: the size is
+/// clamped to `1..=MAX_SCENE_SIZE`, rows and columns beyond it are cut, and missing ones are
+/// filled with grass. Returns whether anything changed. Runs wherever a world enters the engine
+/// (new games, loaded saves, pack scenes): a hand-edited project, an import or a pack can carry a
+/// grid of another size, and the simulation would otherwise read tiles that are not there.
+pub fn normalize_scene_grid(scene: &mut Scene) -> bool {
+    let width = scene.width.clamp(1, MAX_SCENE_SIZE);
+    let height = scene.height.clamp(1, MAX_SCENE_SIZE);
+    let mut changed = width != scene.width || height != scene.height;
+    scene.width = width;
+    scene.height = height;
+    let (columns, rows) = (width as usize, height as usize);
+    if scene.tiles.len() != rows {
+        changed = true;
+        scene.tiles.truncate(rows);
+    }
+    for (y, row) in scene.tiles.iter_mut().enumerate() {
+        if row.len() != columns {
+            changed = true;
+            row.truncate(columns);
+            let start = row.len();
+            row.extend((start..columns).map(|x| create_empty_tile(x as i32, y as i32, "grass")));
+        }
+    }
+    for y in scene.tiles.len()..rows {
+        scene.tiles.push((0..columns).map(|x| create_empty_tile(x as i32, y as i32, "grass")).collect());
+    }
+    changed
+}
+
 /// Clone a scene's tile grid (rows and tiles) for immutable updates.
 pub fn clone_tiles(tiles: &[Vec<Tile>]) -> Vec<Vec<Tile>> {
     tiles.to_vec()
@@ -89,6 +119,11 @@ pub fn clone_tiles(tiles: &[Vec<Tile>]) -> Vec<Vec<Tile>> {
 /// TS `tiles[0]?.length ?? 0`.
 fn row_width(tiles: &[Vec<Tile>]) -> i64 {
     tiles.first().map_or(0, |row| row.len() as i64)
+}
+
+/// `tiles[y][x]` when the grid has that tile (rows may be ragged).
+fn tile_in(tiles: &[Vec<Tile>], x: i64, y: i64) -> Option<&Tile> {
+    tiles.get(usize::try_from(y).ok()?)?.get(usize::try_from(x).ok()?)
 }
 
 /// TS `` `${x},${y}` `` (the flood-fill `seen` key).
@@ -118,11 +153,12 @@ pub fn paint_rect(
     let (min_y, max_y) = clamped_range(y1, y2, tiles.len() as i64);
     for y in min_y..=max_y {
         for x in min_x..=max_x {
-            let row = &mut next[y as usize];
-            let mut painted = set_tile_layer(&row[x as usize], tile_type, visual);
+            // A ragged row (shorter than the first) has no tile here.
+            let Some(tile) = next.get_mut(y as usize).and_then(|row| row.get_mut(x as usize)) else { continue };
+            let mut painted = set_tile_layer(tile, tile_type, visual);
             painted.crop = None;
             painted.node = None;
-            row[x as usize] = painted;
+            *tile = painted;
         }
     }
     next
@@ -143,7 +179,9 @@ pub fn flood_fill(
     if start_y < 0 || start_y >= height || start_x < 0 || start_x >= width {
         return tiles.to_vec();
     }
-    let source_type = tiles[start_y as usize][start_x as usize].r#type.clone();
+    let Some(source_type) = tile_in(tiles, start_x, start_y).map(|tile| tile.r#type.clone()) else {
+        return tiles.to_vec();
+    };
     if source_type == tile_type && visual.is_none() {
         return tiles.to_vec();
     }
@@ -155,13 +193,14 @@ pub fn flood_fill(
     seen.insert(key(start_x, start_y));
     const DIRS: [(i64, i64); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
     while let Some((x, y)) = queue.pop_front() {
-        if next[y as usize][x as usize].r#type != source_type {
+        let Some(tile) = next.get_mut(y as usize).and_then(|row| row.get_mut(x as usize)) else { continue };
+        if tile.r#type != source_type {
             continue;
         }
-        let mut filled = set_tile_layer(&next[y as usize][x as usize], tile_type, visual);
+        let mut filled = set_tile_layer(tile, tile_type, visual);
         filled.crop = None;
         filled.node = None;
-        next[y as usize][x as usize] = filled;
+        *tile = filled;
         for (dx, dy) in DIRS {
             let nx = x + dx;
             let ny = y + dy;
@@ -169,7 +208,7 @@ pub fn flood_fill(
             if nx < 0 || nx >= width || ny < 0 || ny >= height || seen.contains(&neighbor_key) {
                 continue;
             }
-            if next[ny as usize][nx as usize].r#type != source_type {
+            if tile_in(&next, nx, ny).is_none_or(|tile| tile.r#type != source_type) {
                 continue;
             }
             seen.insert(neighbor_key);
@@ -186,7 +225,7 @@ pub fn copy_tile_region(tiles: &[Vec<Tile>], x1: i32, y1: i32, x2: i32, y2: i32)
     let mut region = Vec::new();
     for y in min_y..=max_y {
         // `JsonDefaults.DeepClone(tile)`: a Rust clone is already deep.
-        region.push((min_x..=max_x).map(|x| tiles[y as usize][x as usize].clone()).collect());
+        region.push((min_x..=max_x).filter_map(|x| tile_in(tiles, x, y).cloned()).collect());
     }
     region
 }
@@ -203,10 +242,11 @@ pub fn paste_tile_region(tiles: &[Vec<Tile>], region: &[Vec<Tile>], x: i32, y: i
             if tx < 0 || tx >= width || ty < 0 || ty >= height {
                 continue;
             }
+            let Some(tile) = next.get_mut(ty as usize).and_then(|row| row.get_mut(tx as usize)) else { continue };
             let mut pasted = source.clone();
             pasted.x = tx as i32;
             pasted.y = ty as i32;
-            next[ty as usize][tx as usize] = pasted;
+            *tile = pasted;
         }
     }
     next

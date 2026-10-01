@@ -14,7 +14,7 @@
 
 use farm_sim::replay::{self, ReplayInput};
 use farm_sim::schema::GameProject;
-use farm_sim::{quests, stable_json, state, EngineContext};
+use farm_sim::{quests, stable_json, state, CommandRules, EngineContext};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -233,7 +233,8 @@ fn play(name: &str) -> Vec<Map<String, Value>> {
     // `time.pauseInModals` (on unless a project turns it off) it stops; v8 projects never set
     // it, so they are compared with it off.
     project.settings.time.pause_in_modals = Some(false);
-    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    // v8 had no command preconditions: the replays open shops and descend the mine from anywhere.
+    let ctx = EngineContext::new(state::create_content_from_project(&project)).with_rules(CommandRules::Scripted);
     let mut game_state = state::create_game_state(&project, fixture["seed"].as_str());
     if fixture["autoStartQuests"].as_bool() == Some(true) {
         quests::auto_start_quests(&ctx, &mut game_state);
@@ -242,7 +243,12 @@ fn play(name: &str) -> Vec<Map<String, Value>> {
     let mut summaries = vec![summarize(&to_json(&game_state), &json!([]))];
     for step in fixture["steps"].as_array().expect("steps") {
         let input: ReplayInput = serde_json::from_value(step["input"].clone()).expect("input parses");
-        let result = replay::run_replay(&ctx, &mut game_state, std::slice::from_ref(&input));
+        let mut result = replay::run_replay(&ctx, &mut game_state, std::slice::from_ref(&input));
+        // Intended divergence: v9 says when it cuts an action chain short (the depth cap or the
+        // run budget); v8 stopped silently.
+        result.effects.retain(|effect| {
+            !matches!(effect, farm_sim::Effect::Message { text, .. } if text.starts_with("Action chain limit reached"))
+        });
         let effects: Value = serde_json::from_str(&stable_json::stringify(&result.effects)).expect("effects");
         summaries.push(summarize(&to_json(&game_state), &effects));
     }

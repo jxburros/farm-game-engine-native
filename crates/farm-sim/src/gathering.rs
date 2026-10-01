@@ -46,8 +46,7 @@ pub fn strike_node(
     let Some(scene_index) = state.world.scenes.iter().position(|scene| scene.id == scene_id) else {
         return NodeStrikeOutcome::default();
     };
-    let tile = &state.world.scenes[scene_index].tiles[y as usize][x as usize];
-    let Some(node) = tile.node.clone() else {
+    let Some(node) = state.world.scenes[scene_index].tile(x, y).and_then(|tile| tile.node.clone()) else {
         return NodeStrikeOutcome::default();
     };
     if node.remaining_health <= 0 {
@@ -88,8 +87,9 @@ pub fn strike_node(
     let mut added_drops: Vec<GatherDrop> = Vec::new();
 
     if remaining > 0 {
-        state.world.scenes[scene_index].tiles[y as usize][x as usize].node =
-            Some(TileNode { remaining_health: remaining, ..node.clone() });
+        if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
+            tile.node = Some(TileNode { remaining_health: remaining, ..node.clone() });
+        }
         effects.push(Effect::message(
             message_levels::INFO,
             format!("{}: {}/{}", definition.name, remaining, definition.health),
@@ -133,16 +133,18 @@ pub fn strike_node(
         state.player.inventory = inventory;
 
         let depleted_on_day = state.clock.day;
-        let tile = &mut state.world.scenes[scene_index].tiles[y as usize][x as usize];
-        if definition.respawn_after().is_some() {
-            tile.node = Some(TileNode {
-                type_id: node.type_id.clone(),
-                remaining_health: 0,
-                depleted_on_day: Some(depleted_on_day),
-                ..TileNode::default()
-            });
-        } else {
-            tile.node = None;
+        // The tile exists: the node was read from it above.
+        if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
+            if definition.respawn_after().is_some() {
+                tile.node = Some(TileNode {
+                    type_id: node.type_id.clone(),
+                    remaining_health: 0,
+                    depleted_on_day: Some(depleted_on_day),
+                    ..TileNode::default()
+                });
+            } else {
+                tile.node = None;
+            }
         }
 
         effects.push(Effect::message(

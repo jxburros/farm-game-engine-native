@@ -29,6 +29,15 @@
     world. A save without a random state gets a new one, and a save/load round
     trip no longer changes which NPC you talk to or the state hash.
 
+- **A world that can't be broken from outside.** Doors and warps land on the
+  nearest walkable tile, tile grids that don't match their scene are repaired
+  when a game or save loads, action chains stop after 256 actions, mine floors
+  are at most 256 tiles a side, fast players no longer pass through walls, and
+  a full inventory no longer swallows a door. Players can pick machines back
+  up, and machines stay off doors and the mine entrance. Commands apply only
+  where a player could give them (hosts and scripts can opt out), and scenes
+  of enabled content packs join the world. Problems reports the grids, loops,
+  blocked landings and sizes the game would have to fix.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:

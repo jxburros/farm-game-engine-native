@@ -15,6 +15,9 @@ public sealed class SettingsEditorView : UserControl
     private sealed record SeasonRow(TextBox Id, TextBox Name, TextBox Days, Control Control);
     private sealed record FestivalRow(TextBox Id, TextBox Name, TextBox SeasonId, TextBox Day, Control Control);
 
+    /// <summary>The fastest player speed the form accepts, in tiles a second.</summary>
+    private const double MaxPlayerSpeed = 15;
+
     private readonly ProjectWorkspace _workspace;
     private readonly StackPanel _seasons = new() { Spacing = 5 };
     private readonly StackPanel _festivals = new() { Spacing = 5 };
@@ -538,6 +541,9 @@ public sealed class SettingsEditorView : UserControl
             // An end at or before the start collapsed the player on every tick.
             if (!SettingsSchema.validTime(settings.Time))
                 throw new FormatException($"The day must end at least {SettingsSchema.MinDayWindowMinutes} minutes after it starts and by minute {SettingsSchema.MaxDayEndMinute}, and the clock can run at most {SettingsSchema.MaxMinutesPerRealSecond} minutes per second.");
+            // Faster than this the player is hard to control (Problems warns about it too).
+            if (settings.Movement.PlayerSpeed > MaxPlayerSpeed)
+                throw new FormatException($"Player speed can be at most {MaxPlayerSpeed} tiles a second.");
             _workspace.Apply(Edits.Batch("Project settings", [Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
             _message.Text = "Settings saved.";
         }

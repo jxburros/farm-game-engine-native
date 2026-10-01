@@ -1,6 +1,6 @@
 //! Crafting (web CraftingDialog, C# `PlayOverlays.Crafting`): load recipes into the machine the
-//! player faces, hand recipes by category with the engine's availability and blocked reasons,
-//! and machine placement on the faced tile.
+//! player faces (or pick it back up), hand recipes by category with the engine's availability
+//! and blocked reasons, and machine placement on the faced tile.
 
 use super::{held, item_name, right_aligned, row, GameAction, GameView};
 use crate::format::num;
@@ -115,6 +115,30 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
                 }
                 y += height + ROW_GAP;
             }
+        }
+        // An idle machine can be taken back into the inventory.
+        if machine.processing.is_none() && machine.output.as_ref().is_none_or(|output| output.is_empty()) {
+            let button = Button::new(lang.tr("crafting.pickUp")).size(12.5);
+            let width = ui.button_width(&button);
+            let hint = lang.tr("crafting.pickUpHint");
+            let text_width = area.width - 20.0 - width - 10.0;
+            let height = (ui.paragraph_height(hint, 12.5, FontId::Regular, text_width) + 16.0).max(small + 16.0);
+            let (content_rect, buttons) = row(ui, area, y, height, width);
+            ui.paragraph(
+                content_rect.x,
+                content_rect.y,
+                content_rect.width,
+                hint,
+                12.5,
+                FontId::Regular,
+                colors.muted,
+                TextAlign::Left,
+            );
+            let rect = right_aligned(buttons, &[width], small, 6.0)[0];
+            if ui.button(WidgetId::new("craft-pick-up"), rect, button) {
+                actions.push(GameAction::Command(Command::PickUpMachine));
+            }
+            y += height + ROW_GAP;
         }
         y += 6.0;
     }

@@ -85,7 +85,9 @@ entry's art, and forms preview the art they point to:
   recipe's category groups it in the game's crafting menu, and the editor
   shows its profit per craft and per hour of machine time. The built-in node
   types (trees, rocks, weeds, mine rocks and ore) are listed and can be
-  customized like crops.
+  customized like crops. Players can pick an idle machine back up from the
+  crafting menu; doors, door arrivals and the mine entrance stay clear of
+  machines.
 - **Animal species** and **Fish tables**: what animals produce, and which fish
   bite in each scene and season.
 - **Actions** and **Minigames**: an action is a named bundle of effects (give
@@ -126,7 +128,9 @@ change it in the game's **Settings → Accessibility → Language**.
 Install **content packs** from their JSON file: the editor shows what a pack
 adds, overrides and needs before **Install reviewed pack**. Installed packs
 can be turned on and off, reordered, removed, or imported into the project as
-ordinary content.
+ordinary content. A pack's scenes join the game world the first time a door
+or a warp leads there; pack ids are namespaced (`my-pack:cave`) but scene
+references inside a pack are not, so a pack names its own scenes in full.
 
 ### Art
 

@@ -186,6 +186,7 @@
     "json": "77d86687446cfccd",
     "stable": "f2ed67b1aa6d85f8",
     "problems": [
+      "warning|action.cycle|actions[3].outcomes|Action \"Loop\" ends up performing itself again; the game stops such a chain after 4 levels or 256 actions|action",
       "warning|minigame.noTiers|minigames[1].resultTiers|Minigame \"Empty\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "d2b8c911412fdeab",
@@ -2207,10 +2208,11 @@
     "json": "f32056ae2c5fe96f",
     "stable": "5fb62b171cc68a97",
     "problems": [
+      "error|duplicate.scene|scenes[1].id|Duplicate scene id \"scene-farm\"|scene",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "e4e1bbf2cbfb4f2c",
-    "cartridge": "012c87d163b2015d",
+    "cartridge": "throws InvalidOperationException: scenes[1].id: Duplicate scene id \"scene-farm\"",
     "gameOk": true,
     "gameErrors": [],
     "game": "5fb62b171cc68a97"
@@ -2223,10 +2225,11 @@
     "json": "627fcebb0503ee14",
     "stable": "d009a063ffb3b376",
     "problems": [
+      "error|scene.gridRows|scenes[0].tiles|Scene \"Farm\" is 12 tiles high but its map has 11 rows|scene",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "44289152970ecfab",
-    "cartridge": "566640bd92658fd6",
+    "cartridge": "throws InvalidOperationException: scenes[0].tiles: Scene \"Farm\" is 12 tiles high but its map has 11 rows",
     "gameOk": true,
     "gameErrors": [],
     "game": "d009a063ffb3b376"
@@ -2239,10 +2242,11 @@
     "json": "f48e4eb752a9584c",
     "stable": "026803e4c080f48e",
     "problems": [
+      "error|scene.gridWidth|scenes[0].tiles[4]|Scene \"Farm\" is 16 tiles wide but row 4 of its map has 15 tiles|scene",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "509be5a72518f78f",
-    "cartridge": "aed74a3598bbf047",
+    "cartridge": "throws InvalidOperationException: scenes[0].tiles[4]: Scene \"Farm\" is 16 tiles wide but row 4 of its map has 15 tiles",
     "gameOk": true,
     "gameErrors": [],
     "game": "026803e4c080f48e"

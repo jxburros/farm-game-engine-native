@@ -154,13 +154,15 @@ impl Rng {
     }
 
     /// Pick an index from integer weights: `(u × total) >> 32`, then walk the weights. `None`
-    /// for an empty or all-zero table (no draw).
+    /// for an empty or all-zero table (no draw). The product is taken in 128 bits: content
+    /// weights are `u32`s each, so their sum can pass 2³² and the product 2⁶⁴.
     pub fn weighted(&mut self, weights: &[u32]) -> Option<usize> {
         let total: u64 = weights.iter().map(|w| u64::from(*w)).sum();
         if total == 0 {
             return None;
         }
-        let mut roll = (u64::from(self.next_u32()) * total) >> 32;
+        // `u < 2³²`, so the shifted product is below `total` and fits a u64.
+        let mut roll = ((u128::from(self.next_u32()) * u128::from(total)) >> 32) as u64;
         for (i, w) in weights.iter().enumerate() {
             let w = u64::from(*w);
             if roll < w {

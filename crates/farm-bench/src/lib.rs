@@ -11,7 +11,10 @@
 //! - **cart load**: every cartridge in `fixtures/golden/cartridges`, parsed, and started as a new
 //!   game in the player;
 //! - **frame**: a gameplay frame of the starter farm at 1280×800 and 1920×1080, composed by the
-//!   CPU rasterizer.
+//!   CPU rasterizer;
+//! - **npcs**: 1,000 ticks of the starter farm grown to 64×64 with 20 NPCs walking to a
+//!   schedule target, once reachable and once walled off (every path search fails and explores
+//!   the whole farm, every game minute).
 //!
 //! Two front ends share them: `cargo bench -p farm-bench` (criterion, `benches/runtime.rs`) and
 //! the `farm-bench` binary, which times each scenario a fixed number of times and, with
@@ -24,7 +27,9 @@ use farm_cart::save_file::{self, LoadedSave, SavePreview, SaveTarget};
 use farm_cart::LoadedCartridge;
 use farm_player::{InputEvent, Player, PlayerOptions};
 use farm_sim::farming::crops;
-use farm_sim::schema::{soil_states, tile_types, MachineProcessing, Scene, Tile, TileMachine};
+use farm_sim::schema::{
+    soil_states, tile_types, MachineProcessing, Npc, NpcScheduleEntry, NpcState, Scene, Tile, TileMachine,
+};
 use farm_sim::{stable_json, Command, EngineContext, GameContent, GameProject, GameState};
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
@@ -53,6 +58,10 @@ pub mod budgets {
     /// is for the wgpu renderer on an integrated GPU; until that exists, the CPU path is held
     /// to one 60 Hz frame.
     pub const CPU_FRAME: f64 = 1000.0 / 60.0;
+    /// 1,000 ticks (50 seconds of play) with 20 NPCs on schedules, 64×64 farm, reachable or
+    /// walled-off target. A walled-off target once took 5 s (every NPC searched the whole farm
+    /// every game minute); about 10 ms reachable and 2 ms walled off when this was written.
+    pub const NPC_TICKS: f64 = 25.0;
 }
 
 /// The repository root (the fixtures live under it).
@@ -113,6 +122,60 @@ pub fn farm(spec: FarmSpec) -> Farm {
     let scene = state.world.scenes.iter_mut().find(|scene| scene.id == scene_id).expect("the player's scene exists");
     grow_scene(scene, &ctx.content, spec);
     Farm { project, ctx, state }
+}
+
+/// How many NPCs walk in [`npc_town`].
+pub const NPC_COUNT: i32 = 20;
+
+/// The schedule target of [`npc_town`]'s NPCs.
+pub const NPC_TARGET: (i32, i32) = (56, 56);
+
+/// The starter farm grown to 64×64 grass with [`NPC_COUNT`] NPCs along the top that walk to
+/// [`NPC_TARGET`] from the first minute. `walled` rings the target with walls, so every path
+/// search fails after exploring the whole farm.
+pub fn npc_town(walled: bool) -> Farm {
+    let mut farm = farm(FarmSpec { size: 64, crop_field: 0, machines: 0 });
+    let scene_id = farm.state.player.scene_id.clone();
+    if walled {
+        let scene = farm.state.world.scenes.iter_mut().find(|scene| scene.id == scene_id).expect("the farm");
+        let (tx, ty) = NPC_TARGET;
+        for (x, y) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
+            let tile = scene.tile_mut(tx + x, ty + y).expect("inside the farm");
+            tile.collision = true;
+            tile.r#type = tile_types::WALL.to_owned();
+        }
+    }
+    let content = &mut farm.ctx.content;
+    content.npcs.clear();
+    farm.state.npcs.clear();
+    for i in 0..NPC_COUNT {
+        let (x, y) = (farm_sim::units::tiles(2 + 3 * i % 60), farm_sim::units::tiles(2 + i / 20));
+        content.npcs.push(Npc {
+            id: format!("npc-{i}"),
+            name: format!("Walker {i}"),
+            x,
+            y,
+            scene_id: scene_id.clone(),
+            can_move: true,
+            schedule: Some(vec![NpcScheduleEntry {
+                minute: 0,
+                scene_id: scene_id.clone(),
+                x: NPC_TARGET.0,
+                y: NPC_TARGET.1,
+                ..NpcScheduleEntry::default()
+            }]),
+            ..Npc::default()
+        });
+        farm.state
+            .npcs
+            .insert(format!("npc-{i}"), NpcState { x, y, scene_id: scene_id.clone(), ..NpcState::default() });
+    }
+    farm
+}
+
+/// [`npc_town`]'s run: 1,000 ticks.
+pub fn npc_ticks(ctx: &EngineContext, state: &mut GameState) -> farm_sim::Effects {
+    farm_sim::advance_tick(ctx, state, 1_000)
 }
 
 /// Crops that grow in the starting season (spring) of the starter farm.
@@ -446,6 +509,21 @@ pub fn scenarios(scale: f64) -> Vec<Scenario> {
             sample(runs, || (), |()| start_cartridge(&bytes))
         }));
     }
+    for (name, walled) in
+        [("npcs/20 walking, 64x64, 1000 ticks", false), ("npcs/20 walled off, 64x64, 1000 ticks", true)]
+    {
+        all.push(Scenario::new(name, Some(budgets::NPC_TICKS), runs(10), move |runs| {
+            let town = npc_town(walled);
+            sample(
+                runs,
+                || town.state.clone(),
+                |mut state| {
+                    npc_ticks(&town.ctx, &mut state);
+                    state
+                },
+            )
+        }));
+    }
     for (width, height) in [(1280, 800), (1920, 1080)] {
         all.push(Scenario::new(
             format!("frame/{width}x{height} cpu"),
@@ -499,6 +577,14 @@ mod tests {
         assert!(carts.iter().any(|(name, _)| name == "project-v8"));
         for (_, bytes) in &carts {
             start_cartridge(bytes);
+        }
+
+        for walled in [false, true] {
+            let mut town = npc_town(walled);
+            let start = town.state.npcs["npc-0"].clone();
+            npc_ticks(&town.ctx, &mut town.state);
+            let moved = town.state.npcs["npc-0"] != start;
+            assert_eq!(moved, !walled, "walkers walk, walled-off walkers stay");
         }
 
         assert!(!scenarios(1.0).is_empty());

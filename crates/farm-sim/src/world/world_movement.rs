@@ -8,14 +8,15 @@
 //! Positions are integers in 1/8192 tile ([`units::TILE`]); speed is 1/8192 tile per tick
 //! (docs/NUMERICS.md).
 
-use crate::effects::Effect;
+use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events::{self, EventPosition};
 use crate::inventory::{self, AddItemOptions};
 use crate::mines;
 use crate::quests;
-use crate::schema::{GameState, MachineTypeDefinition, MoveIntent, NodeTypeDefinition, NpcState, Scene, Tile};
+use crate::schema::{GameState, MachineTypeDefinition, MoveIntent, NodeTypeDefinition, NpcState, Scene};
 use crate::units;
+use crate::world::{pathfinding, tiles};
 use indexmap::IndexMap;
 
 /// Half-extents of the player's collision box, in position units (0.3 tile, rounded to the
@@ -100,37 +101,21 @@ pub fn direction_from_intent(intent: &MoveIntent, current: &str) -> String {
 }
 
 /// Collision check against tiles, gathering nodes, machines and NPC occupancy, for the tile
-/// `(x, y)`.
+/// `(x, y)`. Outside the scene (or where a malformed grid has no tile) is blocked.
 pub fn can_move_to(
     scene: &Scene,
     x: i32,
     y: i32,
     npcs: &IndexMap<String, NpcState>,
     exclude_npc_id: Option<&str>,
-    node_types: Option<&IndexMap<String, NodeTypeDefinition>>,
-    machine_types: Option<&IndexMap<String, MachineTypeDefinition>>,
+    node_types: &[NodeTypeDefinition],
+    machine_types: &[MachineTypeDefinition],
 ) -> bool {
-    if x < 0 || x >= scene.width || y < 0 || y >= scene.height {
+    let Some(tile) = scene.tile(x, y) else {
         return false;
-    }
-    let tile = &scene.tiles[y as usize][x as usize];
-    if tile.collision {
+    };
+    if pathfinding::tile_blocks(tile, node_types, machine_types) {
         return false;
-    }
-    if let Some(node) = &tile.node {
-        if node.remaining_health > 0 {
-            let definition = node_types.and_then(|types| types.get(&node.type_id));
-            // Unknown node types block by default (safe fallback).
-            if definition.is_none_or(|def| def.blocks_movement) {
-                return false;
-            }
-        }
-    }
-    if let Some(machine) = &tile.machine {
-        let definition = machine_types.and_then(|types| types.get(&machine.type_id));
-        if definition.is_none_or(|def| def.blocks_movement) {
-            return false;
-        }
     }
     // Iterates in insertion order (Object.entries); order doesn't affect the result.
     for (npc_id, npc) in npcs {
@@ -142,6 +127,76 @@ pub fn can_move_to(
         }
     }
     true
+}
+
+/// Where a warp or door into `scene` at tile `(x, y)` lands the player: the tile itself when it
+/// is inside the scene and walkable, otherwise the nearest walkable tile (Manhattan rings around
+/// the destination clamped into the scene, scanned top to bottom, left before right). `None`
+/// when the scene has no walkable tile at all. NPCs are ignored: they move on.
+///
+/// Destinations are authored (and plugins pick them at run time), and a scene can be resized
+/// after its doors were placed: landing outside the grid or inside a wall would leave the player
+/// unable to move (a soft-lock that a save then keeps).
+pub fn landing_tile(ctx: &EngineContext, scene: &Scene, x: i32, y: i32) -> Option<TilePoint> {
+    let open = |tx: i32, ty: i32| {
+        scene
+            .tile(tx, ty)
+            .is_some_and(|tile| !pathfinding::tile_blocks(tile, &ctx.content.node_types, &ctx.content.machine_types))
+    };
+    if open(x, y) {
+        return Some(TilePoint { x, y });
+    }
+    if scene.width <= 0 || scene.height <= 0 {
+        return None;
+    }
+    let cx = x.clamp(0, scene.width - 1);
+    let cy = y.clamp(0, scene.height - 1);
+    let max_radius = scene.width.saturating_add(scene.height);
+    for radius in 0..=max_radius {
+        for dy in -radius..=radius {
+            let rest = radius - dy.abs();
+            let (tx, ty) = (cx.saturating_sub(rest), cy.saturating_add(dy));
+            if open(tx, ty) {
+                return Some(TilePoint { x: tx, y: ty });
+            }
+            if rest != 0 && open(cx.saturating_add(rest), ty) {
+                return Some(TilePoint { x: cx.saturating_add(rest), y: ty });
+            }
+        }
+    }
+    None
+}
+
+/// Puts the player on tile `(x, y)` of `scene_id` (an existing scene of the world), or on the
+/// nearest walkable tile when that one is outside the scene or blocked (see [`landing_tile`]).
+/// Returns the tile landed on and, when it moved, a message naming the authored destination.
+pub fn land_player(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32, y: i32) -> (TilePoint, Effects) {
+    let wanted = TilePoint { x, y };
+    let (landed, effects) = match find_scene(state, scene_id) {
+        None => (wanted, Vec::new()),
+        Some(scene) => match landing_tile(ctx, scene, x, y) {
+            Some(tile) if tile == wanted => (tile, Vec::new()),
+            Some(tile) => (
+                tile,
+                vec![Effect::message(
+                    message_levels::ERROR,
+                    format!(
+                        "({x},{y}) in {} can't be stood on; landed on ({},{}) instead.",
+                        scene.name, tile.x, tile.y
+                    ),
+                )],
+            ),
+            // Nowhere walkable (the scene is all wall): stay inside it at least.
+            None => (
+                TilePoint { x: x.clamp(0, scene.width.max(1) - 1), y: y.clamp(0, scene.height.max(1) - 1) },
+                Vec::new(),
+            ),
+        },
+    };
+    state.player.scene_id = scene_id.to_owned();
+    state.player.x = units::tile_center(landed.x);
+    state.player.y = units::tile_center(landed.y);
+    (landed, effects)
 }
 
 pub fn find_scene<'a>(state: &'a GameState, scene_id: &str) -> Option<&'a Scene> {
@@ -165,27 +220,51 @@ pub fn by_id<T: Clone>(defs: &[T], id: impl Fn(&T) -> &str) -> IndexMap<String, 
 struct CollisionContext<'a> {
     scene: &'a Scene,
     npcs: &'a IndexMap<String, NpcState>,
-    node_types: IndexMap<String, NodeTypeDefinition>,
-    machine_types: IndexMap<String, MachineTypeDefinition>,
+    node_types: &'a [NodeTypeDefinition],
+    machine_types: &'a [MachineTypeDefinition],
 }
 
-fn make_collision_context<'a>(ctx: &EngineContext, state: &'a GameState, scene: &'a Scene) -> CollisionContext<'a> {
+fn make_collision_context<'a>(ctx: &'a EngineContext, state: &'a GameState, scene: &'a Scene) -> CollisionContext<'a> {
     CollisionContext {
         scene,
         npcs: &state.npcs,
-        node_types: by_id(&ctx.content.node_types, |def| def.id.as_str()),
-        machine_types: by_id(&ctx.content.machine_types, |def| def.id.as_str()),
+        node_types: &ctx.content.node_types,
+        machine_types: &ctx.content.machine_types,
     }
 }
 
 fn blocked_tile(c: &CollisionContext<'_>, x: i32, y: i32) -> bool {
-    !can_move_to(c.scene, x, y, c.npcs, None, Some(&c.node_types), Some(&c.machine_types))
+    !can_move_to(c.scene, x, y, c.npcs, None, c.node_types, c.machine_types)
 }
 
-/// Move the box center along one axis, clamping against the first blocked tile column/row the
-/// leading edge would enter. Axis-separated resolution gives natural wall sliding. Step sizes
-/// stay well under one tile (speed/tick ≈ 0.2), so single-cell checks cannot tunnel.
+/// The longest step [`move_axis_step`] takes at once: under half a tile, so checking the one
+/// cell the leading edge enters cannot skip a cell.
+const MAX_AXIS_STEP: i32 = units::TILE / 2 - 1;
+
+/// Move the box center along one axis by `delta`, in steps of at most [`MAX_AXIS_STEP`] so a
+/// fast player (a large `playerSpeed`) cannot tunnel through a one-tile wall. Ordinary speeds
+/// (about 0.2 tile per tick) take a single step.
 fn move_axis(c: &CollisionContext<'_>, x: i32, y: i32, delta: i32, axis_x: bool) -> i32 {
+    let mut position = if axis_x { x } else { y };
+    let mut remaining = delta;
+    while remaining != 0 {
+        let step = remaining.clamp(-MAX_AXIS_STEP, MAX_AXIS_STEP);
+        let (sx, sy) = if axis_x { (position, y) } else { (x, position) };
+        let next = move_axis_step(c, sx, sy, step, axis_x);
+        if next != position.saturating_add(step) {
+            // Stopped against a wall (or at the end of the coordinate range).
+            return next;
+        }
+        remaining -= step;
+        position = next;
+    }
+    position
+}
+
+/// One step of [`move_axis`], clamping against the first blocked tile column/row the leading
+/// edge would enter. Axis-separated resolution gives natural wall sliding. `delta` is shorter
+/// than half a tile, so the single-cell check cannot tunnel.
+fn move_axis_step(c: &CollisionContext<'_>, x: i32, y: i32, delta: i32, axis_x: bool) -> i32 {
     if delta == 0 {
         return if axis_x { x } else { y };
     }
@@ -195,14 +274,15 @@ fn move_axis(c: &CollisionContext<'_>, x: i32, y: i32, delta: i32, axis_x: bool)
     let from = if axis_x { x } else { y };
     let mut next = from.saturating_add(delta);
 
-    let cross_start = units::tile_of(cross - cross_half + COLLISION_EPSILON);
-    let cross_end = units::tile_of(cross + cross_half - COLLISION_EPSILON);
+    // Saturating throughout: a save or a plugin can put the position anywhere in the i32 range.
+    let cross_start = units::tile_of(cross.saturating_sub(cross_half).saturating_add(COLLISION_EPSILON));
+    let cross_end = units::tile_of(cross.saturating_add(cross_half).saturating_sub(COLLISION_EPSILON));
     let leading_edge = if delta > 0 { next.saturating_add(along_half) } else { next.saturating_sub(along_half) };
     let leading_cell = units::tile_of(leading_edge);
     let current_leading_cell = units::tile_of(if delta > 0 {
-        from + along_half - COLLISION_EPSILON
+        from.saturating_add(along_half).saturating_sub(COLLISION_EPSILON)
     } else {
-        from - along_half + COLLISION_EPSILON
+        from.saturating_sub(along_half).saturating_add(COLLISION_EPSILON)
     });
 
     if leading_cell != current_leading_cell {
@@ -211,9 +291,11 @@ fn move_axis(c: &CollisionContext<'_>, x: i32, y: i32, delta: i32, axis_x: bool)
             let ty = if axis_x { cc } else { leading_cell };
             if blocked_tile(c, tx, ty) {
                 next = if delta > 0 {
-                    units::tiles(leading_cell) - along_half - COLLISION_EPSILON
+                    units::tiles(leading_cell).saturating_sub(along_half).saturating_sub(COLLISION_EPSILON)
                 } else {
-                    units::tiles(leading_cell + 1) + along_half + COLLISION_EPSILON
+                    units::tiles(leading_cell.saturating_add(1))
+                        .saturating_add(along_half)
+                        .saturating_add(COLLISION_EPSILON)
                 };
                 break;
             }
@@ -228,19 +310,50 @@ struct SettleResult {
     aborted: bool,
 }
 
+/// What a pickup the inventory has no room for does to the step that found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FullInventory {
+    /// The whole step is refused and the state is left exactly as it was (grid steps: the
+    /// player never entered the tile).
+    AbortStep,
+    /// The item stays on the ground and everything else the tile does still happens (free
+    /// movement: the player is on the tile, and standing there never settles it again).
+    LeaveItem,
+}
+
+/// The world's index of `scene_id`, adding the scene from the content first when the world does
+/// not have it yet: a scene of an enabled content pack (packs add scenes to the content only), or
+/// a project scene added after a save was made. The added scene's grid is normalized.
+pub fn ensure_scene(ctx: &EngineContext, state: &mut GameState, scene_id: &str) -> Option<usize> {
+    if let Some(index) = find_scene_index(state, scene_id) {
+        return Some(index);
+    }
+    let mut scene = ctx.content.scenes.iter().find(|scene| scene.id == scene_id)?.clone();
+    tiles::normalize_scene_grid(&mut scene);
+    state.world.scenes.push(scene);
+    Some(state.world.scenes.len() - 1)
+}
+
+/// Whether `scene_id` is in the world or can be added to it by [`ensure_scene`].
+pub fn scene_exists(ctx: &EngineContext, state: &GameState, scene_id: &str) -> bool {
+    find_scene(state, scene_id).is_some() || ctx.content.scenes.iter().any(|scene| scene.id == scene_id)
+}
+
 /// Everything that happens when the player's occupied TILE changes: unlocked transitions fire,
 /// ground items are picked up, quests progress, revealed mine ladders descend, and
 /// enter-triggered events evaluate at the final position. Shared by grid steps (`move` command)
 /// and free movement.
 ///
 /// `entered_scene_index` is the C# `enteredScene` (a scene of `state.world.scenes`). The state
-/// is only touched once the pickup is known to fit: an abort leaves it exactly as it was.
+/// is only touched once the pickup is known to fit, or (`LeaveItem`) known not to happen: an
+/// abort leaves it exactly as it was.
 fn settle_tile_entry(
     ctx: &EngineContext,
     state: &mut GameState,
     entered_scene_index: usize,
     tile_x: i32,
     tile_y: i32,
+    full_inventory: FullInventory,
 ) -> SettleResult {
     let mut effects: Effects = Vec::new();
     let mut picked_up_item_id: Option<String> = None;
@@ -252,13 +365,12 @@ fn settle_tile_entry(
         .transitions
         .iter()
         .find(|t| t.from_x == tile_x && t.from_y == tile_y && t.locked != Some(true))
-        .and_then(|t| {
-            find_scene(state, &t.to_scene_id).map(|target| (t.to_scene_id.clone(), t.to_x, t.to_y, target.name.clone()))
-        });
+        .filter(|t| scene_exists(ctx, state, &t.to_scene_id))
+        .map(|t| (t.to_scene_id.clone(), t.to_x, t.to_y));
 
     // Item pickup checks the tile stepped onto in the ORIGINAL scene
     // (historical behavior, even if a transition just fired).
-    let ground_item = tile_at(entered_scene, tile_x, tile_y).and_then(|tile| tile.item.clone());
+    let ground_item = entered_scene.tile(tile_x, tile_y).and_then(|tile| tile.item.clone());
     let picked_up_inventory = match &ground_item {
         Some(item) => {
             let result = inventory::add_item(
@@ -268,22 +380,29 @@ fn settle_tile_entry(
                 state.player.max_inventory_size,
                 Some(AddItemOptions { require_stackable_for_merge: Some(true) }),
             );
-            if !result.added {
+            if result.added {
+                Some(result.inventory)
+            } else if full_inventory == FullInventory::AbortStep {
                 return SettleResult { effects: vec![Effect::message("error", "Inventory is full!")], aborted: true };
+            } else {
+                effects.push(Effect::message("error", "Inventory is full!"));
+                None
             }
-            Some(result.inventory)
         }
         None => None,
     };
+    let entered_scene_id = entered_scene.id.clone();
 
     // Everything decided: apply.
-    if let Some((to_scene_id, to_x, to_y, target_name)) = transition {
-        state.player.scene_id = to_scene_id.clone();
-        state.player.x = units::tile_center(to_x);
-        state.player.y = units::tile_center(to_y);
-        changed_scene = true;
-        effects.push(Effect::SceneChanged { scene_id: to_scene_id, x: to_x, y: to_y });
-        effects.push(Effect::message("success", format!("Entered {target_name}")));
+    if let Some((to_scene_id, to_x, to_y)) = transition {
+        if let Some(target_index) = ensure_scene(ctx, state, &to_scene_id) {
+            let target_name = state.world.scenes[target_index].name.clone();
+            let (landed, landing_effects) = land_player(ctx, state, &to_scene_id, to_x, to_y);
+            changed_scene = true;
+            effects.push(Effect::SceneChanged { scene_id: to_scene_id, x: landed.x, y: landed.y });
+            effects.push(Effect::message("success", format!("Entered {target_name}")));
+            effects.extend(landing_effects);
+        }
     }
 
     if let (Some(item), Some(next_inventory)) = (ground_item, picked_up_inventory) {
@@ -291,9 +410,10 @@ fn settle_tile_entry(
         picked_up_item_id = Some(item.id.clone());
         effects.push(Effect::message("success", format!("Picked up {}", item.name)));
 
-        let entered_scene_id = state.world.scenes[entered_scene_index].id.clone();
-        if let Some(scene_index) = find_scene_index(state, &entered_scene_id) {
-            state.world.scenes[scene_index].tiles[tile_y as usize][tile_x as usize].item = None;
+        if let Some(tile) = find_scene_index(state, &entered_scene_id)
+            .and_then(|index| state.world.scenes[index].tile_mut(tile_x, tile_y))
+        {
+            tile.item = None;
         }
     }
 
@@ -310,9 +430,9 @@ fn settle_tile_entry(
     // Mine ladders (M4): stepping onto a revealed ladder descends a floor.
     let final_tile = player_tile(state);
     let landed_on_ladder = find_scene(state, &state.player.scene_id)
-        .and_then(|landed_scene| tile_at(landed_scene, final_tile.x, final_tile.y))
+        .and_then(|landed_scene| landed_scene.tile(final_tile.x, final_tile.y))
         .is_some_and(|landed_tile| landed_tile.ladder_down == Some(true));
-    if landed_on_ladder && mines::is_mine_scene(&state.player.scene_id) {
+    if landed_on_ladder && mines::is_mine_floor(state, &state.player.scene_id) {
         let to_floor = state.mine.current_floor.saturating_add(1);
         effects.extend(mines::descend_mine(ctx, state, to_floor));
         return SettleResult { effects, aborted: false };
@@ -329,12 +449,6 @@ fn settle_tile_entry(
     SettleResult { effects, aborted: false }
 }
 
-/// TS `scene.tiles[y]?.[x]`.
-fn tile_at(scene: &Scene, x: i32, y: i32) -> Option<&Tile> {
-    let row = scene.tiles.get(usize::try_from(y).ok()?)?;
-    row.get(usize::try_from(x).ok()?)
-}
-
 /// Discrete one-tile step (the legacy `move` command; still the primitive for scripted movement
 /// and tests). Historical semantics preserved exactly: the facing direction updates even on a
 /// blocked move, and a pickup into a full inventory aborts the whole move (including the
@@ -349,17 +463,14 @@ pub fn handle_move(ctx: &EngineContext, state: &mut GameState, dir: &str) -> Eff
     let new_x = from.x + dx;
     let new_y = from.y + dy;
 
-    let node_types = by_id(&ctx.content.node_types, |def| def.id.as_str());
-    let machine_types = by_id(&ctx.content.machine_types, |def| def.id.as_str());
-
     if !can_move_to(
         &state.world.scenes[scene_index],
         new_x,
         new_y,
         &state.npcs,
         None,
-        Some(&node_types),
-        Some(&machine_types),
+        &ctx.content.node_types,
+        &ctx.content.machine_types,
     ) {
         state.player.direction = dir.to_owned();
         return Vec::new();
@@ -373,7 +484,7 @@ pub fn handle_move(ctx: &EngineContext, state: &mut GameState, dir: &str) -> Eff
     state.player.y = units::tile_center(new_y);
     let mut effects: Effects = vec![Effect::PlayerMoved { x: new_x, y: new_y }];
 
-    let settled = settle_tile_entry(ctx, state, scene_index, new_x, new_y);
+    let settled = settle_tile_entry(ctx, state, scene_index, new_x, new_y, FullInventory::AbortStep);
     if settled.aborted {
         // Full-inventory pickup aborts the whole move, direction change included.
         state.player.direction = previous.0;
@@ -432,9 +543,9 @@ pub fn integrate_movement(ctx: &EngineContext, state: &mut GameState) -> Effects
     let tile_y = units::tile_of(ny);
     if tile_x != prev_tile.x || tile_y != prev_tile.y {
         effects.push(Effect::PlayerMoved { x: tile_x, y: tile_y });
-        let settled = settle_tile_entry(ctx, state, scene_index, tile_x, tile_y);
-        // Aborted (full inventory): the item stays on the ground; movement itself stands. Either
-        // way the settle effects follow the move.
+        // A full inventory leaves the item on the ground; the move itself stands, and so do the
+        // door, the ladder and the enter events of the tile.
+        let settled = settle_tile_entry(ctx, state, scene_index, tile_x, tile_y, FullInventory::LeaveItem);
         effects.extend(settled.effects);
     }
     effects

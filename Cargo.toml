@@ -54,6 +54,12 @@ codegen-units = 1
 lto = "thin"
 debug = 1
 
+# The simulation does its arithmetic on numbers from content, plugins and saves. It saturates
+# where a value can run off the end of its type; anything missed panics in release too (the
+# hosts catch the panic and stop the session) instead of wrapping silently into a wrong state.
+[profile.release.package.farm-sim]
+overflow-checks = true
+
 [profile.dev]
 opt-level = 1
 

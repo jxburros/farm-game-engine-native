@@ -207,10 +207,12 @@ module TileRules =
         let effective = effectiveType cleared
         if cleared.Type = effective then cleared else { cleared with Type = effective }
 
-    /// Cells of the inclusive rectangle (x0,y0)-(x1,y1) clamped to the scene, row-major.
+    /// Cells of the inclusive rectangle (x0,y0)-(x1,y1) clamped to the scene, row-major. The
+    /// width is the widest row's, so a ragged grid (whose rows `Proj.mapCells` checks one by one)
+    /// is painted wherever it has tiles, not only as wide as its first row.
     let rectCells (scene: Scene) (x0: int) (y0: int) (x1: int) (y1: int) : (int * int) list =
         let height = scene.Tiles.Length
-        let width = if height = 0 then 0 else scene.Tiles.Head.Length
+        let width = scene.Tiles |> List.fold (fun widest row -> max widest row.Length) 0
         let minX = max 0 (min x0 x1)
         let maxX = min (width - 1) (max x0 x1)
         let minY = max 0 (min y0 y1)

@@ -14,7 +14,7 @@
 
 use farm_sim::replay::ReplayInput;
 use farm_sim::schema::GameProject;
-use farm_sim::{engine, hash, quests, stable_json, state, EngineContext};
+use farm_sim::{engine, hash, quests, stable_json, state, CommandRules, EngineContext};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::panic::{self, AssertUnwindSafe};
@@ -64,7 +64,8 @@ fn play(source: &Value) -> Result<Value, String> {
         serde_json::from_value(source["project"].clone()).map_err(|e| format!("project does not parse: {e}"))?;
     let content = state::create_content_from_project(&project);
     let content_hash = hash::hash_state(&content);
-    let ctx = EngineContext::new(content);
+    // The replays script commands wherever the player stands (as the reference engines allowed).
+    let ctx = EngineContext::new(content).with_rules(CommandRules::Scripted);
 
     let seed = source["seed"].as_str();
     let mut game = state::create_game_state(&project, seed);
