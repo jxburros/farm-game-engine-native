@@ -23,14 +23,7 @@ module ContentCompiler =
             else
                 crops @ [ crop.Id, definition ])
 
-    let private validSettings (s: ProjectSettings) =
-        not (Double.IsNaN s.Movement.PlayerSpeed) && s.Movement.PlayerSpeed > 0.0
-        && s.MaxEnergy > 0.0 && s.CollapseEnergyFraction >= 0.0 && s.CollapseEnergyFraction <= 1.0
-        && s.CollapseMoneyPenalty >= 0.0
-        && integer s.Time.DayStartMinute && integer s.Time.DayEndMinute && s.Time.MinutesPerRealSecond > 0.0
-        && (s.Calendar.Seasons |> List.forall (fun season -> integer season.Days && season.Days > 0.0))
-        && (s.Calendar.Festivals |> List.forall (fun festival -> integer festival.Day && festival.Day > 0.0))
-        && (s.SkillLevelCurve |> List.forall (Double.IsNaN >> not))
+    let private validDays (days: float) = integer days && days > 0.0
 
     let private validWeather (weather: WeatherConfig) =
         (weather.Types |> List.forall (fun t -> t.CropDamageChance >= 0.0 && t.CropDamageChance <= 1.0))
@@ -46,9 +39,26 @@ module ContentCompiler =
         let builtIn = Builtin.nodeTypes () @ Builtin.mineNodeTypes () |> List.filter (fun d -> not (ids.Contains d.Id))
         builtIn @ project.NodeTypes
 
-    /// The project's settings, or the defaults when they would not load.
+    /// The project's settings with each invalid part replaced by its default (an invalid day
+    /// window or clock rate takes the default time settings) and calendar seasons and festivals
+    /// with no valid day count dropped (Rust `state::resolve_settings`). Replacing every setting
+    /// when one was invalid lost a whole calendar to one festival on day 0; Problems reports
+    /// each replaced value as an error.
     let settings (project: GameProject) =
-        if validSettings project.Settings then project.Settings else SettingsSchema.DefaultProjectSettings
+        let s = project.Settings
+        let defaults = SettingsSchema.DefaultProjectSettings
+        { s with
+            Movement = if not (Double.IsNaN s.Movement.PlayerSpeed) && s.Movement.PlayerSpeed > 0.0 then s.Movement else defaults.Movement
+            MaxEnergy = if s.MaxEnergy > 0.0 then s.MaxEnergy else defaults.MaxEnergy
+            CollapseEnergyFraction =
+                if s.CollapseEnergyFraction >= 0.0 && s.CollapseEnergyFraction <= 1.0 then s.CollapseEnergyFraction else defaults.CollapseEnergyFraction
+            CollapseMoneyPenalty = if s.CollapseMoneyPenalty >= 0.0 then s.CollapseMoneyPenalty else defaults.CollapseMoneyPenalty
+            Time = if SettingsSchema.validTime s.Time then s.Time else defaults.Time
+            Calendar =
+                { s.Calendar with
+                    Seasons = s.Calendar.Seasons |> List.filter (fun season -> validDays season.Days)
+                    Festivals = s.Calendar.Festivals |> List.filter (fun festival -> validDays festival.Day) }
+            SkillLevelCurve = if s.SkillLevelCurve |> List.exists Double.IsNaN then defaults.SkillLevelCurve else s.SkillLevelCurve }
 
     /// The project's weather, or the default weather when it would not load.
     let weather (project: GameProject) =

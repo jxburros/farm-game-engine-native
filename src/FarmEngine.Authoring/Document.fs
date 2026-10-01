@@ -43,6 +43,7 @@ module Document =
         | AddScene scene -> EditScenes.addScene scene project
         | RemoveScene sceneId -> EditScenes.removeScene sceneId project
         | RenameScene(sceneId, name) -> EditScenes.renameScene sceneId name project
+        | SetSceneIndoor(sceneId, indoor) -> EditScenes.setSceneIndoor sceneId indoor project
         | ResizeScene(sceneId, width, height) -> EditScenes.resizeScene sceneId width height project
         | DuplicateScene(sceneId, newSceneId) -> EditScenes.duplicateScene sceneId newSceneId project
         | SetTransition(sceneId, transition) -> EditScenes.setTransition sceneId transition project

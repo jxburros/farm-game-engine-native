@@ -117,7 +117,8 @@ module SchemaChecks =
                 match y.MinYear, y.MaxYear with
                 | Some minYear, Some maxYear when minYear > maxYear -> lint cp "minYear is greater than maxYear"
                 | _ -> []
-            | EventCondition.TimeOfDay t -> if t.MinMinute > t.MaxMinute then lint cp "minMinute is greater than maxMinute" else []
+            // A start after the end wraps past midnight (22:00–2:00), as the engine reads it.
+            | EventCondition.TimeOfDay _ -> []
             | EventCondition.QuestStatus q -> nonEmpty (cp + ".questId") q.QuestId @ oneOf (cp + ".status") q.Status QuestStatuses.All
             | EventCondition.Friendship f -> nonEmpty (cp + ".npcId") f.NpcId
             | EventCondition.FestivalId f -> nonEmpty (cp + ".festivalId") f.FestivalId
@@ -280,8 +281,21 @@ module SchemaChecks =
           yield! nonNegative "settings.collapseMoneyPenalty" s.CollapseMoneyPenalty
           yield! positive "settings.movement.playerSpeed" s.Movement.PlayerSpeed
           yield! integer "settings.time.dayStartMinute" s.Time.DayStartMinute
+          yield! nonNegative "settings.time.dayStartMinute" s.Time.DayStartMinute
           yield! integer "settings.time.dayEndMinute" s.Time.DayEndMinute
+          // An end at or before the start collapsed the player on every tick (#24).
+          if s.Time.DayEndMinute - s.Time.DayStartMinute < SettingsSchema.MinDayWindowMinutes then
+              yield!
+                  parse
+                      "settings.time.dayEndMinute"
+                      $"The day must end at least {num SettingsSchema.MinDayWindowMinutes} minutes after it starts ({num s.Time.DayStartMinute})"
+          // The clock counts micro-minutes in 32 bits: a later end never comes.
+          if s.Time.DayEndMinute > SettingsSchema.MaxDayEndMinute then
+              yield! parse "settings.time.dayEndMinute" $"Number must be less than or equal to {num SettingsSchema.MaxDayEndMinute}"
           yield! positive "settings.time.minutesPerRealSecond" s.Time.MinutesPerRealSecond
+          if s.Time.MinutesPerRealSecond > SettingsSchema.MaxMinutesPerRealSecond then
+              yield!
+                  parse "settings.time.minutesPerRealSecond" $"Number must be less than or equal to {num SettingsSchema.MaxMinutesPerRealSecond}"
           yield!
               each s.Calendar.Seasons (fun c season ->
                   nonEmpty $"settings.calendar.seasons.{c}.id" season.Id

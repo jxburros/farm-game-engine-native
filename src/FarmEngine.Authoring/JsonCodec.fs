@@ -64,6 +64,14 @@ module Decode =
     /// Any JSON value, kept as is.
     let json (_: Path) (json: Json) : Json = json
 
+    /// A flag value: `boolean | number | string`.
+    let flagValue (path: Path) (json: Json) : Json =
+        match json with
+        | JBool _
+        | JNumber _
+        | JString _ -> json
+        | _ -> expected "boolean, number or string" path json
+
     /// An optional or nullable field: `null` is absent.
     let optional (decode: Path -> Json -> 'T) (path: Path) (json: Json) : 'T option =
         match json with

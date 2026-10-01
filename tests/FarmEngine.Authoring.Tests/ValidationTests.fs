@@ -80,8 +80,10 @@ let ``validateProject reports constraint violations`` () =
     for prefix in [ "scenes.0.tiles.0:"; "events.0.id:"; "events.0.conditions.1:" ] do
         Assert.False(startsWith prefix errors, prefix)
     let lint = SchemaChecks.lintProject broken
-    for prefix in [ "scenes.0.tiles.0:"; "events.0.id:"; "events.0.conditions.1:" ] do
+    for prefix in [ "scenes.0.tiles.0:"; "events.0.id:" ] do
         Assert.True(startsWith prefix lint, prefix)
+    // 800–300 is a time of day range that wraps past midnight, as the engine reads it.
+    Assert.False(startsWith "events.0.conditions.1:" lint)
     Assert.False(startsWith "mode:" lint)
 
 /// Shapes the web editor produces and zod accepts (no refinements exist for them) must load

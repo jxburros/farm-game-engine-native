@@ -31,6 +31,7 @@ public sealed class SettingsEditorView : UserControl
     private readonly TextBox _dayStart = new() { Name = "Setting_DayStartMinute" };
     private readonly TextBox _dayEnd = new() { Name = "Setting_DayEndMinute" };
     private readonly TextBox _minutesPerSecond = new() { Name = "Setting_MinutesPerRealSecond" };
+    private readonly CheckBox _pauseInModals = new() { Name = "Setting_PauseInModals", Content = "Pause the clock in dialogue, shops, minigames and menus" };
     private readonly StackPanel _skillLevels = new() { Name = "SkillLevels", Spacing = 5 };
     private readonly List<TextBox> _skillLevelBoxes = [];
     private readonly CheckBox _energy = new() { Name = "Setting_EnergyEnabled", Content = "Energy enabled" };
@@ -89,6 +90,7 @@ public sealed class SettingsEditorView : UserControl
         Field(form, "Day start minute", _dayStart);
         Field(form, "Day end minute", _dayEnd);
         Field(form, "Game minutes per real second", _minutesPerSecond);
+        form.Children.Add(_pauseInModals);
         form.Children.Add(Ui.Text("SEASONS", "section"));
         form.Children.Add(_seasons);
         var addSeason = Ui.Button("Add season", AddSeason, "tool");
@@ -325,6 +327,7 @@ public sealed class SettingsEditorView : UserControl
         _dayStart.Text = Number(settings.Time.DayStartMinute);
         _dayEnd.Text = Number(settings.Time.DayEndMinute);
         _minutesPerSecond.Text = Number(settings.Time.MinutesPerRealSecond);
+        _pauseInModals.IsChecked = settings.Time.PauseInModals.OrNullable() != false;
         ShowSkillLevels(settings.SkillLevelCurve.Select(Number).ToList());
         _energy.IsChecked = settings.EnergyEnabled;
         _skills.IsChecked = settings.SkillsEnabled;
@@ -522,7 +525,9 @@ public sealed class SettingsEditorView : UserControl
                 .WithCollapseMoneyPenalty(Parse(_collapsePenalty))
                 .WithSkillLevelCurve(curve)
                 .WithMovement(project.Settings.Movement.WithPlayerSpeed(Parse(_speed)))
-                .WithTime(project.Settings.Time.WithDayStartMinute(Parse(_dayStart)).WithDayEndMinute(Parse(_dayEnd)).WithMinutesPerRealSecond(Parse(_minutesPerSecond)))
+                .WithTime(project.Settings.Time.WithDayStartMinute(Parse(_dayStart)).WithDayEndMinute(Parse(_dayEnd)).WithMinutesPerRealSecond(Parse(_minutesPerSecond))
+                    // Absent means on: unchecking writes false, checking clears an explicit false.
+                    .WithPauseInModals(_pauseInModals.IsChecked == true ? (project.Settings.Time.PauseInModals.OrNullable() is null ? null : true) : false))
                 .WithCalendar(project.Settings.Calendar.WithSeasons(seasons).WithFestivals(festivals));
             var name = _name.Text?.Trim() ?? "";
             var version = _version.Text?.Trim() ?? "";
@@ -530,6 +535,9 @@ public sealed class SettingsEditorView : UserControl
                 || settings.CollapseEnergyFraction < 0 || settings.CollapseEnergyFraction > 1 || settings.CollapseMoneyPenalty < 0
                 || settings.Time.DayStartMinute != Math.Floor(settings.Time.DayStartMinute) || settings.Time.DayEndMinute != Math.Floor(settings.Time.DayEndMinute))
                 throw new FormatException("Name, version, energy, speed and time rate must have valid positive values.");
+            // An end at or before the start collapsed the player on every tick.
+            if (!SettingsSchema.validTime(settings.Time))
+                throw new FormatException($"The day must end at least {SettingsSchema.MinDayWindowMinutes} minutes after it starts and by minute {SettingsSchema.MaxDayEndMinute}, and the clock can run at most {SettingsSchema.MaxMinutesPerRealSecond} minutes per second.");
             _workspace.Apply(Edits.Batch("Project settings", [Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
             _message.Text = "Settings saved.";
         }

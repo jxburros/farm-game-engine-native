@@ -266,10 +266,10 @@ let private lintCases =
           [ addEvent
                 """{"type":"hasItem","itemId":"","quantity":1},{"type":"inventorySpace","itemId":"","quantity":1},{"type":"flag","flag":"","value":true},{"type":"questStatus","questId":"","status":"active"},{"type":"friendship","npcId":"","min":1},{"type":"festivalId","festivalId":""}"""
                 "" ]
+      // The time of day range (800–300) wraps past midnight: not a problem.
       case "ranges inverted"
           [ Lint "events.0.conditions.0: minDay is greater than maxDay"
-            Lint "events.0.conditions.1: minYear is greater than maxYear"
-            Lint "events.0.conditions.2: minMinute is greater than maxMinute" ]
+            Lint "events.0.conditions.1: minYear is greater than maxYear" ]
           [ addEvent
                 """{"type":"dayRange","minDay":20,"maxDay":3},{"type":"yearRange","minYear":3,"maxYear":1},{"type":"timeOfDay","minMinute":800,"maxMinute":300},{"type":"season","seasons":["winter"]},{"type":"weather","weatherIds":["rain"]}"""
                 "" ]

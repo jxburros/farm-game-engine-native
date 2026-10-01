@@ -584,7 +584,9 @@ and GameProject =
         Dialogues: Dialogue list
         Quests: Quest list
         Player: Player
-        EventFlags: (string * bool) list
+        /// Flags a new game starts with: `boolean | number | string` (plugins store numbers and
+        /// strings, and Keep changes writes them back as they are).
+        EventFlags: (string * Json) list
         StartSceneId: string
         /// One of `EditorModes`.
         Mode: string
@@ -602,6 +604,10 @@ and GameProject =
         GamePanels: (GamePanel list) option
         CurrentSeason: string
         CurrentDay: float
+        /// 1-based day within `CurrentSeason` (mirrors GameState.clock.dayOfSeason). Absent when
+        /// `CurrentDay` already lands on it in a calendar that starts on day 1 of the first
+        /// season. int, positive.
+        CurrentDayOfSeason: float option
         /// Minute-of-day of the game clock (v4+).
         CurrentTimeMinutes: float
         /// int.
@@ -633,13 +639,16 @@ and GameProject =
         MineDeepestFloor: float option
         /// Items whose owning pack is missing/disabled (mirrors GameState.quarantinedItems).
         QuarantinedItems: (InventorySlot list) option
+        /// The rest of a kept playtest's state (Rust `KeptState`: tick, open dialogue, shop or
+        /// minigame, today's shop purchases, NPC walks, mine floor). Only the engine reads it.
+        KeptState: Json option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `GameProject` with every field at its schema default.
     static member Default : GameProject =
-        { SchemaVersion = 0.0; Id = ""; Name = ""; Version = ""; Scenes = []; Npcs = []; Items = []; Events = []; Dialogues = []; Quests = []; Player = Player.Default; EventFlags = []; StartSceneId = ""; Mode = ""; SelectedTileType = ""; SelectedTileVisual = None; SelectedNpcId = None; SelectedItemId = None; CurrentTime = 0.0; CustomAssets = []; CustomCrops = None; PlayerCustomImage = None; PlayerVisual = None; Graphics = None; GamePanels = None; CurrentSeason = ""; CurrentDay = 0.0; CurrentTimeMinutes = 0.0; CurrentYear = 0.0; GameStartTime = 0.0; Shops = []; NodeTypes = []; Settings = ProjectSettings.Default; Recipes = []; MachineTypes = []; Weather = WeatherConfig.Default; AnimalSpecies = []; Animals = []; FishTables = []; Mine = MineConfig.Default; Actions = []; Minigames = []; ContentPacks = []; Export = None; RngState = None; CurrentWeatherId = None; SocialState = None; MineDeepestFloor = None; QuarantinedItems = None; Extra = [] }
+        { SchemaVersion = 0.0; Id = ""; Name = ""; Version = ""; Scenes = []; Npcs = []; Items = []; Events = []; Dialogues = []; Quests = []; Player = Player.Default; EventFlags = []; StartSceneId = ""; Mode = ""; SelectedTileType = ""; SelectedTileVisual = None; SelectedNpcId = None; SelectedItemId = None; CurrentTime = 0.0; CustomAssets = []; CustomCrops = None; PlayerCustomImage = None; PlayerVisual = None; Graphics = None; GamePanels = None; CurrentSeason = ""; CurrentDay = 0.0; CurrentDayOfSeason = None; CurrentTimeMinutes = 0.0; CurrentYear = 0.0; GameStartTime = 0.0; Shops = []; NodeTypes = []; Settings = ProjectSettings.Default; Recipes = []; MachineTypes = []; Weather = WeatherConfig.Default; AnimalSpecies = []; Animals = []; FishTables = []; Mine = MineConfig.Default; Actions = []; Minigames = []; ContentPacks = []; Export = None; RngState = None; CurrentWeatherId = None; SocialState = None; MineDeepestFloor = None; QuarantinedItems = None; KeptState = None; Extra = [] }
 
 and GiftTastes =
     {
@@ -1324,13 +1333,16 @@ and Scene =
         Transitions: SceneTransition list
         Npcs: string list
         Events: string list
+        /// Indoor scenes (greenhouses, interiors, mine floors) keep the weather out: rain does not
+        /// water their soil and storms do not damage their crops. Absent means outdoor.
+        Indoor: bool option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `Scene` with every field at its schema default.
     static member Default : Scene =
-        { Id = ""; Name = ""; Width = 0.0; Height = 0.0; Tiles = []; Transitions = []; Npcs = []; Events = []; Extra = [] }
+        { Id = ""; Name = ""; Width = 0.0; Height = 0.0; Tiles = []; Transitions = []; Npcs = []; Events = []; Indoor = None; Extra = [] }
 
 and SceneTransition =
     {
@@ -1503,13 +1515,16 @@ and TimeConfig =
         DayStartMinute: float
         /// Minute-of-day the player collapses if still awake (26:00 = 2am). int.
         DayEndMinute: float
-        /// In-game minutes that pass per real-time second. positive.
+        /// In-game minutes that pass per real-time second. positive, at most 1440.
         MinutesPerRealSecond: float
+        /// Whether the clock stops while a dialogue, shop, minigame or menu is open. Absent
+        /// means on; v8 ran the clock on.
+        PauseInModals: bool option
     }
 
     /// A `TimeConfig` with every field at its schema default.
     static member Default : TimeConfig =
-        { DayStartMinute = 360.0; DayEndMinute = 1560.0; MinutesPerRealSecond = 1.0 }
+        { DayStartMinute = 360.0; DayEndMinute = 1560.0; MinutesPerRealSecond = 1.0; PauseInModals = None }
 
 and VisualRef =
     {

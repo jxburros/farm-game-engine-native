@@ -63,6 +63,8 @@ type Edit =
     /// SceneManager `deleteScene`: refused (no-op) for the last scene and for the start scene.
     | RemoveScene of sceneId: string
     | RenameScene of sceneId: string * name: string
+    /// Whether the scene keeps the weather out (rain, storms): greenhouses, interiors.
+    | SetSceneIndoor of sceneId: string * indoor: bool
     /// SceneManager `applyResize`: the overlap keeps its tiles, new tiles are grass.
     | ResizeScene of sceneId: string * width: int * height: int
     /// SceneManager `duplicateScene`: a deep copy with a new id, "(Copy)" name and no NPC list.

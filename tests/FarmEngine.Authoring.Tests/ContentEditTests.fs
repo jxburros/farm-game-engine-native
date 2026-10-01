@@ -118,7 +118,7 @@ let ``removing a quest scrubs prerequisites, offers and outcomes`` () =
 let ``removing an event clears its fired flag and scene lists`` () =
     let project = starter ()
     let event = Defaults.newEvent project
-    let flags = project.EventFlags @ [ EventsSchema.EventFiredFlag event.Id, true ]
+    let flags = project.EventFlags @ [ EventsSchema.EventFiredFlag event.Id, JBool true ]
     let project = project |> apply (UpsertEvent event)
     let project = { project with EventFlags = flags }
     let removed = project |> apply (RemoveEvent event.Id)
