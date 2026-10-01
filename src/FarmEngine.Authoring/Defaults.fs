@@ -40,12 +40,44 @@ module Defaults =
                 if taken.Contains candidate then go (n + 1) else candidate
             go 2
 
+    /// The longest executable name export accepts. Archive and folder names repeat it
+    /// (`X/X.desktop` in a ustar tar holds at most 100 bytes per name).
+    [<Literal>]
+    let MaxExecutableNameLength = 64
+
+    /// Names an exported game's executable cannot have, compared case-insensitively: Windows
+    /// device names, and `licenses` (the folder next to every exported game's executable).
+    let private reservedExecutableNames =
+        [ "CON"; "PRN"; "AUX"; "NUL"; "LICENSES" ]
+        @ [ for prefix in [ "COM"; "LPT" ] do
+                for n in 1..9 -> prefix + string n ]
+        |> Set.ofList
+
+    /// An executable name export can use: 1 to 64 letters, digits, hyphens or underscores,
+    /// starting with a letter or digit, and not a reserved name (a device name or `licenses`).
+    let executableNameAllowed (name: string) : bool =
+        let allowed c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c = '-' || c = '_'
+        let first c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+        not (String.IsNullOrEmpty name)
+        && name.Length <= MaxExecutableNameLength
+        && first name.[0]
+        && (name |> Seq.forall allowed)
+        && not (reservedExecutableNames.Contains(name.ToUpperInvariant()))
+
+    /// The executable name a title becomes when the creator sets none: its slug cut to
+    /// `MaxExecutableNameLength`, with `-game` added to a reserved name ("Con" → `con-game`).
+    /// Always passes `executableNameAllowed`.
+    let defaultExecutableName (title: string) : string =
+        let slug = slugId title Seq.empty "game"
+        let slug = if slug.Length > MaxExecutableNameLength then slug.Substring(0, MaxExecutableNameLength).TrimEnd('-') else slug
+        if executableNameAllowed slug then slug else slug + "-game"
+
     /// Create the export identity once when a creator enables desktop export. The persisted
     /// game id uses the project id, so later edits to the display name cannot move saves.
     let newExportSettings (project: GameProject) : ExportSettings =
         { ExportSettings.Default with
             GameId = "local." + slugId project.Id Seq.empty "game"
-            ExecutableName = Some(slugId project.Name Seq.empty "game") }
+            ExecutableName = Some(defaultExecutableName project.Name) }
 
     /// ProjectManager "Duplicate": the name the copy gets.
     let copyName (name: string) : string =

@@ -4,7 +4,9 @@
 #   <out>/<target>/farm-player[.exe]   the player built for <target>
 #                                      (web: farm_wasm_bg.wasm, farm_wasm.js from tools/wasm/build.sh,
 #                                      and index.html, style.css, game.js from tools/wasm/web-template)
-#   <out>/<target>/template.json       { "target", "version", "sha256" }
+#   <out>/<target>/template.json       { "target", "version", "sha256", "files" }: sha256 is the
+#                                      player's (for web, the module's) hash, and "files" maps
+#                                      every other file to its hash; export checks them all
 #   <out>/<target>/THIRD-PARTY.txt     tools/player-licenses/THIRD-PARTY.txt
 #
 # The editor refuses a template whose version differs from its own, so <version> must be the
@@ -46,7 +48,12 @@ else
 fi
 cp "$root/tools/player-licenses/THIRD-PARTY.txt" "$folder/THIRD-PARTY.txt"
 sha="$(sha256sum "$folder/$name" | cut -d' ' -f1)"
-printf '{ "target": "%s", "version": "%s", "sha256": "%s" }\n' "$target" "$version" "$sha" > "$folder/template.json"
+files=""
+for path in $(find "$folder" -maxdepth 1 -type f ! -name "$name" | LC_ALL=C sort); do
+  hash="$(sha256sum "$path" | cut -d' ' -f1)"
+  files="$files${files:+, }\"$(basename "$path")\": \"$hash\""
+done
+printf '{ "target": "%s", "version": "%s", "sha256": "%s", "files": { %s } }\n' "$target" "$version" "$sha" "$files" > "$folder/template.json"
 echo "Staged $folder:"
 ls -l "$folder"
 cat "$folder/template.json"

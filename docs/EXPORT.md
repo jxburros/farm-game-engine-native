@@ -95,7 +95,20 @@ dist/
 
 Export refuses to write into a game folder that holds files it wouldn't
 write (a creator's notes, say), so a mistyped output folder loses nothing.
-Exporting again over its own earlier output replaces it.
+Files a file manager leaves behind (`.DS_Store`, `Thumbs.db`, `desktop.ini`,
+KDE's `.directory`) don't count. Exporting again over its own earlier output
+replaces it.
+
+Each target is written atomically: the folder and the archive are written
+under hidden temporary names next to where they go (`.WillowCreek.export-…`),
+then renamed into place, the old folder moved aside first. A failure part-way
+(a full disk, the game still running with its executable locked) or a
+cancelled export leaves the previous export as it was. Export never writes
+through a link: a symbolic link (or junction) in the game folder, as the
+target folder or where the archive goes fails that target, so a link planted
+in a shared output folder can't redirect a write. A failure of any kind fails
+only its own target, with a sentence in the report; `Exporter.run` never
+throws, and `farmc export` prints the report.
 
 Windows:
 
@@ -184,9 +197,13 @@ players/windows-x64/template.json     players/linux-x64/template.json
 players/windows-x64/THIRD-PARTY.txt   players/linux-x64/THIRD-PARTY.txt
 ```
 
-`template.json` is `{ "target": "linux-x64", "version": "0.2.0", "sha256": "…" }`.
-Export refuses a template for another target, another editor version, or with
-an executable that doesn't match the checksum. A missing template fails that
+`template.json` is `{ "target": "linux-x64", "version": "0.2.0", "sha256": "…",
+"files": { "THIRD-PARTY.txt": "…" } }`: `sha256` is the executable's (for the
+web, the module's) and `files` has every other file export uses (the license
+notices, and for the web `index.html`, `game.js`, `style.css` and
+`farm_wasm.js`). Export refuses a template for another target, another editor
+version, or with any file that doesn't match its checksum or has none. It reads
+each file once and writes those checked bytes. A missing template fails that
 target only; the other targets still export.
 
 Export looks in `--templates` (farmc) or `ProjectCommandHandler.PlayerTemplatesFolder`
@@ -196,9 +213,8 @@ the Steam Runtime "sniper" SDK container, the web one with
 `tools/wasm/build.sh`), ships them in the app's `players/` folder through
 `-p:FarmPlayerTemplatesDir`, and attaches them to the release as
 `player-windows-x64.zip`, `player-linux-x64.tar.gz` and `player-web.tar.gz`
-(`tools/player-templates/package.sh` stages them; the web template's checksum
-covers `farm_wasm_bg.wasm`, and its page files come from
-`tools/wasm/web-template`). Development builds get the
+(`tools/player-templates/package.sh` stages them and hashes every file; the
+web template's page files come from `tools/wasm/web-template`). Development builds get the
 host template from the `FarmPlayerTemplates` target in
 `src/FarmEngine.Export/FarmEngine.Export.fsproj`, which runs
 `cargo build -p farm-player` and writes `template.json` with the build's
@@ -220,7 +236,10 @@ without moving anything in the file:
    room for any 8-bit RGBA PNG of that size. That reserves about 281 KB.
 2. **Patch in place.** `PeResources` (F#) parses the PE headers and the
    `.rsrc` tree (type → name → language → data entry). The room for each
-   resource is the gap to the next resource structure or the section end. It
+   resource is the gap to the next resource structure or the end of the
+   resource section (and of the file). Resource data outside the resource
+   section, or a directory table reached twice, makes the template unusable,
+   so patching only ever rewrites bytes of the resource section. It
    writes Skia's PNGs into the icon slots, updates the icon group entries
    (size, 32 bits, byte count), writes a fresh `VS_VERSIONINFO` (`VersionInfo`)
    into the version slot, shrinks each data entry's size, zeroes the rest of
@@ -233,6 +252,11 @@ without moving anything in the file:
 3. **Clear failures.** A template without the slots, data larger than its slot
    (a very long title, say) or a file that isn't a PE gives one sentence in
    the report, never a broken executable.
+4. **Signed templates.** Changing the executable breaks an Authenticode
+   signature, and Windows treats an invalid signature worse than none, so a
+   signed template's certificate table is cut off the end of the file and its
+   Security directory cleared before the checksum is computed. The report says
+   so; sign the exported game again if it needs a signature.
 
 The version info has `ProductName` and `FileDescription` (the title; Task
 Manager shows the description), `FileVersion`/`ProductVersion` (the version
@@ -271,7 +295,7 @@ F# Problems pipeline validates the block and blocks export on errors.
 | Field | Example | Notes |
 |---|---|---|
 | `title` | `Willow Creek Farm` | Window title and title screen. Defaults to the project name. |
-| `executableName` | `WillowCreek` | Must be a valid file name on every target. |
+| `executableName` | `WillowCreek` | 1–64 letters, digits, `-` or `_`, starting with a letter or digit; not a device name (`CON`, `COM1`, …) or `licenses`. Without one, export uses the title's slug (cut to 64 characters, `-game` added to a reserved name). |
 | `version` | `1.2.0` | Shown on the title screen, written to the exe's version info, and stored in saves. |
 | `gameId` | `com.example.willowcreek` | Names the save folder. It is generated once and **never** changes, even when the game is renamed. |
 | `author`, `company` | | Version info and credits. |

@@ -50,12 +50,32 @@ module Icons =
         use data = image.Encode(SKEncodedImageFormat.Png, 100)
         data.ToArray()
 
-    /// The icon at every size in `sizes`, from PNG (or any format Skia decodes) bytes.
+    /// The largest side an icon image may have (the art import limit).
+    let MaxSide = 8192
+
+    /// The most pixels an icon image may have (the art import limit: 16 megapixels).
+    let MaxPixels = 16L * 1024L * 1024L
+
+    /// The icon at every size in `sizes`, from PNG (or any format Skia decodes) bytes. The size
+    /// in the image header is checked against the art import limits before anything is decoded,
+    /// so a small file claiming a huge image (a decompression bomb) is refused cheaply.
     let render (png: byte[]) : Result<(int * byte[]) list, string> =
         use data = SKData.CreateCopy png
         use codec = SKCodec.Create data
         match codec with
         | null -> Error "The icon image could not be decoded."
+        | codec when
+            codec.Info.Width > MaxSide
+            || codec.Info.Height > MaxSide
+            || int64 codec.Info.Width * int64 codec.Info.Height > MaxPixels
+            ->
+            Error(
+                sprintf
+                    "The icon image is %d×%d pixels; use images up to %d pixels per side and 16 megapixels in total."
+                    codec.Info.Width
+                    codec.Info.Height
+                    MaxSide
+            )
         | codec ->
             use source = SKBitmap.Decode codec
             match source with
