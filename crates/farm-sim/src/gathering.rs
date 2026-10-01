@@ -18,7 +18,7 @@ pub struct NodeStrikeOutcome {
 }
 
 pub fn node_type_by_id<'a>(ctx: &'a EngineContext, type_id: &str) -> Option<&'a NodeTypeDefinition> {
-    ctx.content.node_types.iter().find(|def| def.id == type_id)
+    ctx.node_type(type_id)
 }
 
 pub fn is_node_active(tile: &Tile) -> bool {
@@ -118,7 +118,7 @@ pub fn strike_node(
         let mut inventory = state.player.inventory.clone();
         let mut received: Vec<String> = Vec::new();
         for drop in &drops {
-            let Some(item) = ctx.content.items.iter().find(|i| i.id == drop.item_id) else {
+            let Some(item) = ctx.item(&drop.item_id) else {
                 continue;
             };
             let result = inventory::add_item(&inventory, item, drop.quantity, state.player.max_inventory_size, None);

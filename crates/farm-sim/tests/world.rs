@@ -217,7 +217,7 @@ fn p(x: i32, y: i32) -> PathPoint {
 }
 
 fn walkability(scene: &farm_sim::schema::Scene) -> Walkability<'_> {
-    Walkability { scene, node_types: &[], machine_types: &[], blocked: &[] }
+    Walkability { scene, node_types: &[], machine_types: &[], blocked: &[], index: None }
 }
 
 // --- tiles ---
@@ -395,7 +395,7 @@ fn same_tile_is_an_empty_path_and_blocked_tiles_are_avoided() {
     assert_eq!(find_path(&walkability(&scene), p(1, 1), p(1, 1)), Some(Vec::new()));
 
     let blocked = [p(1, 0), p(1, 1)];
-    let w = Walkability { scene: &scene, node_types: &[], machine_types: &[], blocked: &blocked };
+    let w = Walkability { scene: &scene, node_types: &[], machine_types: &[], blocked: &blocked, index: None };
     assert!(!is_walkable(&w, 1, 0));
     assert!(!is_walkable(&w, -1, 0));
     assert!(!is_walkable(&w, 0, 3));
@@ -416,7 +416,7 @@ fn gathering_nodes_block_unless_their_type_says_otherwise() {
 
     let node_types =
         [NodeTypeDefinition { id: "weeds".to_owned(), blocks_movement: false, ..NodeTypeDefinition::default() }];
-    let w = Walkability { scene: &scene, node_types: &node_types, machine_types: &[], blocked: &[] };
+    let w = Walkability { scene: &scene, node_types: &node_types, machine_types: &[], blocked: &[], index: None };
     assert!(is_walkable(&w, 1, 0));
 }
 

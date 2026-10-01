@@ -120,7 +120,7 @@ fn place_rock(
         return;
     };
     let node_type_id = &rock.node_type_id;
-    let Some(node_def) = ctx.content.node_types.iter().find(|def| def.id == *node_type_id) else {
+    let Some(node_def) = ctx.node_type(node_type_id) else {
         return;
     };
     if let Some(tile) = scene.tile_mut(x, y) {

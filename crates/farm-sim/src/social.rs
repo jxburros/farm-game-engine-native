@@ -87,7 +87,7 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
         return vec![Effect::message(message_levels::INFO, "No one to give that to.")];
     };
 
-    let Some(npc_def) = ctx.content.npcs.iter().find(|npc| npc.id == npc_entry_id) else {
+    let Some(npc_def) = ctx.npc(&npc_entry_id) else {
         return Vec::new();
     };
 

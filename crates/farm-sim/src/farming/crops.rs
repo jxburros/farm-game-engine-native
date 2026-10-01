@@ -216,12 +216,12 @@ pub fn calculate_harvest_value(
         return Some(0);
     };
     // Unknown keys read `undefined` in JS: the value is NaN, shown as "NaN" (here `None`).
-    let quality_multiplier = content_builtin::quality_multipliers().get(quality).copied()?;
+    let quality_multiplier = content_builtin::quality_multiplier(quality)?;
     let mutation_key = match mutation {
         Some(mutation) if !mutation.is_empty() => mutation,
         _ => "none",
     };
-    let mutation_multiplier = content_builtin::mutation_multipliers().get(mutation_key).copied()?;
+    let mutation_multiplier = content_builtin::mutation_multiplier(mutation_key)?;
     let value = i128::from(definition.base_harvest_value)
         * i128::from(quality_multiplier)
         * i128::from(mutation_multiplier)

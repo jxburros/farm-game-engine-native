@@ -71,7 +71,7 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
         && rng.chance(table.junk_chance)
         && table.junk_item_id.as_deref().is_some_and(|id| !id.is_empty())
     {
-        let junk = ctx.content.items.iter().find(|i| Some(i.id.as_str()) == table.junk_item_id.as_deref());
+        let junk = table.junk_item_id.as_deref().and_then(|id| ctx.item(id));
         state.rng = rng.state;
         if let Some(junk) = junk {
             let added = inventory::add_item(&state.player.inventory, junk, 1, state.player.max_inventory_size, None);
@@ -103,7 +103,7 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
     }
 
     state.rng = rng.state;
-    let fish = ctx.content.items.iter().find(|i| i.id == entry.item_id);
+    let fish = ctx.item(&entry.item_id);
     if let Some(fish) = fish {
         let added = inventory::add_item(&state.player.inventory, fish, 1, state.player.max_inventory_size, None);
         if added.added {

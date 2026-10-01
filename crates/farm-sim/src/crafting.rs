@@ -46,7 +46,7 @@ pub fn absolute_minute(state: &GameState) -> i64 {
 }
 
 pub fn recipe_by_id<'a>(ctx: &'a EngineContext, recipe_id: &str) -> Option<&'a RecipeDefinition> {
-    ctx.content.recipes.iter().find(|recipe| recipe.id == recipe_id)
+    ctx.recipe(recipe_id)
 }
 
 pub fn is_recipe_unlocked(ctx: &EngineContext, state: &GameState, recipe: &RecipeDefinition) -> bool {
@@ -98,7 +98,7 @@ pub fn nearby_station_categories(ctx: &EngineContext, state: &GameState) -> Inde
     for y in player.y - 1..=player.y + 1 {
         for x in player.x - 1..=player.x + 1 {
             if let Some(machine) = scene.tile(x, y).and_then(|tile| tile.machine.as_ref()) {
-                let machine_type = ctx.content.machine_types.iter().find(|r#type| r#type.id == machine.type_id);
+                let machine_type = ctx.machine_type(&machine.type_id);
                 for category in machine_type.map(|r#type| r#type.station_categories.as_slice()).unwrap_or(&[]) {
                     categories.insert(category.clone());
                 }
@@ -175,7 +175,7 @@ fn grant_outputs(
     let mut inventory = inventory.to_vec();
     let mut effects = Vec::new();
     for output in outputs {
-        let Some(item) = ctx.content.items.iter().find(|i| i.id == output.item_id) else {
+        let Some(item) = ctx.item(&output.item_id) else {
             continue;
         };
         let result = inventory::add_item(&inventory, item, output.quantity, max_inventory_size, None);
@@ -243,7 +243,7 @@ pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str)
 
 /// Place a machine (consumes its item) on the facing tile.
 pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_type_id: &str) -> Effects {
-    let Some(machine_type) = ctx.content.machine_types.iter().find(|r#type| r#type.id == machine_type_id) else {
+    let Some(machine_type) = ctx.machine_type(machine_type_id) else {
         return vec![Effect::message(message_levels::ERROR, "Unknown machine.")];
     };
 
@@ -338,13 +338,12 @@ pub fn handle_pick_up_machine(ctx: &EngineContext, state: &mut GameState) -> Eff
     }
 
     let scene_id = scene.id.clone();
-    let machine_type = ctx.content.machine_types.iter().find(|r#type| r#type.id == machine.type_id);
+    let machine_type = ctx.machine_type(&machine.type_id);
     let name = machine_type.map_or("Machine", |r#type| r#type.name.as_str()).to_owned();
     // The item it was placed from comes back; a machine of a removed type, or one placed
     // without an item, is just taken away.
-    let item = machine_type
-        .and_then(|r#type| non_empty(r#type.item_id.as_deref()))
-        .and_then(|item_id| ctx.content.items.iter().find(|item| item.id == item_id));
+    let item =
+        machine_type.and_then(|r#type| non_empty(r#type.item_id.as_deref())).and_then(|item_id| ctx.item(item_id));
     if let Some(item) = item {
         let result = inventory::add_item(&state.player.inventory, item, 1, state.player.max_inventory_size, None);
         if !result.added {

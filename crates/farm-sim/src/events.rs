@@ -9,7 +9,7 @@ use crate::farming::farming_actions;
 use crate::hooks::{ActionHookPayload, HookEvent, RelationshipChangeHookPayload};
 use crate::schema::{
     event_fired_flag, DialogueState, EventCondition, EventOutcome, GameEvent, GameState, MinigameSession,
-    NpcSocialState, NpcState, MAX_FRIENDSHIP,
+    NpcSocialState, NpcState, OutcomeKind, MAX_FRIENDSHIP,
 };
 use crate::text;
 use crate::units;
@@ -66,12 +66,12 @@ impl ActionBudget {
 
 const QUEST_STATUS_NOT_STARTED: &str = "not-started";
 
-/// TS `x || y` on a string: an empty (or missing) string is falsy.
 /// An outcome `amount` (thousandths) as a whole number: gold or friendship points.
 fn whole(amount: i64) -> i64 {
     units::div_round(amount, i64::from(units::MILLI_ONE))
 }
 
+/// TS `x || y` on a string: an empty (or missing) string is falsy.
 fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|text| !text.is_empty())
 }
@@ -103,7 +103,7 @@ pub fn condition_met(
             held >= u64::from(*quantity)
         }
         EventCondition::InventorySpace { item_id, quantity } => {
-            let item = ctx.content.items.iter().find(|i| i.id == *item_id);
+            let item = ctx.item(item_id);
             item.is_some_and(|item| {
                 inventory::add_item(&state.player.inventory, item, *quantity, state.player.max_inventory_size, None)
                     .added
@@ -165,6 +165,8 @@ pub fn flag_value<'a>(state: &'a GameState, name: &str) -> Option<&'a Value> {
     state.flags.get(name)
 }
 
+/// Run one outcome. Outcomes fail soft: a missing field, an unknown reference or an unknown
+/// `type` does nothing.
 fn apply_outcome(
     ctx: &EngineContext,
     state: &mut GameState,
@@ -172,232 +174,224 @@ fn apply_outcome(
     depth: u32,
     budget: &mut ActionBudget,
 ) -> Effects {
-    match outcome.r#type.as_str() {
-        "message" => match non_empty(outcome.message.as_deref()) {
+    let Some(kind) = outcome.kind() else { return vec![] };
+    match kind {
+        OutcomeKind::Message => match non_empty(outcome.message.as_deref()) {
             Some(message) => vec![Effect::message(message_levels::INFO, message)],
             None => vec![],
         },
-
-        "modifyFriendship" => {
-            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
-            if !ctx.content.npcs.iter().any(|n| n.id == npc_id) {
-                return vec![];
-            }
-            let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
-                friendship: 0,
-                gifts_today: 0,
-                last_gift_day: None,
-            });
-            // Friendship is whole points: the amount rounds.
-            let delta = whole(outcome.amount.unwrap_or(0));
-            let friendship = (i64::from(current.friendship) + delta).clamp(0, i64::from(MAX_FRIENDSHIP)) as i32;
-            ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload {
-                npc_id: npc_id.to_owned(),
-                friendship,
-            }));
-            state.social.insert(npc_id.to_owned(), NpcSocialState { friendship, ..current });
-            vec![]
-        }
-        "modifyEnergy" => {
-            // Thousandths of a point: the energy unit. Out-of-range amounts saturate.
-            let amount = outcome.amount.unwrap_or(0).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-            if !ctx.content.settings.energy_enabled {
-                return vec![];
-            }
-            if amount < 0 {
-                return energy::spend_energy(ctx, state, amount.saturating_neg()).effects;
-            }
-            state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(amount));
-            vec![]
-        }
-        "waterArea" => {
-            // The watering can's rule on every tile of the square around the player (grid
-            // positions, bounded to the area), so fertilized soil stays fertilized, withered
-            // crops stay dry and a multi-tile crop is watered whole.
-            let radius = i64::from(outcome.radius.unwrap_or(1).min(10));
-            let center = world_movement::player_tile(state);
-            let (cx, cy) = (i64::from(center.x), i64::from(center.y));
-            let scene_id = state.player.scene_id.clone();
-            if let Some(index) = state.world.scenes.iter().position(|scene| scene.id == scene_id) {
-                for y in (cy - radius).max(0)..=cy + radius {
-                    for x in (cx - radius).max(0)..=cx + radius {
-                        farming_actions::water_at(ctx, state, index, x as usize, y as usize);
-                    }
-                }
-            }
-            vec![Effect::message(message_levels::SUCCESS, "The surrounding soil is watered.")]
-        }
-        "giveItem" => {
-            let item = outcome.item_id.as_deref().and_then(|id| ctx.content.items.iter().find(|i| i.id == id));
-            let Some(item) = item else { return vec![] };
-            let quantity = outcome.item_quantity.unwrap_or(1);
-            let result =
-                inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
-            if !result.added {
-                return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
-            }
-            state.player.inventory = result.inventory;
-            let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
-            vec![Effect::message(message_levels::SUCCESS, format!("Received {}{suffix}", item.name))]
-        }
-
-        "takeItem" => {
+        OutcomeKind::ModifyFriendship => outcome_modify_friendship(ctx, state, outcome),
+        OutcomeKind::ModifyEnergy => outcome_modify_energy(ctx, state, outcome),
+        OutcomeKind::WaterArea => outcome_water_area(ctx, state, outcome),
+        OutcomeKind::GiveItem => outcome_give_item(ctx, state, outcome),
+        OutcomeKind::TakeItem => {
             let Some(item_id) = non_empty(outcome.item_id.as_deref()) else { return vec![] };
             state.player.inventory =
                 inventory::remove_item(&state.player.inventory, item_id, outcome.item_quantity.unwrap_or(1));
             vec![]
         }
-
-        "giveMoney" => {
-            // Money is whole gold: the amount rounds.
-            let amount = whole(outcome.amount.unwrap_or(0));
-            if amount <= 0 {
-                return vec![];
-            }
-            state.player.money = state.player.money.saturating_add(amount);
-            vec![Effect::message(message_levels::SUCCESS, format!("Received ${amount}"))]
-        }
-
-        "takeMoney" => {
-            let amount = whole(outcome.amount.unwrap_or(0)).min(state.player.money);
-            if amount <= 0 {
-                return vec![];
-            }
-            state.player.money -= amount;
-            vec![Effect::message(message_levels::INFO, format!("Paid ${amount}"))]
-        }
-
-        "setFlag" => {
+        OutcomeKind::GiveMoney => outcome_give_money(state, outcome),
+        OutcomeKind::TakeMoney => outcome_take_money(state, outcome),
+        OutcomeKind::SetFlag | OutcomeKind::ClearFlag => {
             let Some(flag_name) = non_empty(outcome.flag_name.as_deref()) else { return vec![] };
-            state.flags.insert(flag_name.to_owned(), Value::Bool(true));
+            state.flags.insert(flag_name.to_owned(), Value::Bool(kind == OutcomeKind::SetFlag));
             vec![]
         }
-
-        "clearFlag" => {
-            let Some(flag_name) = non_empty(outcome.flag_name.as_deref()) else { return vec![] };
-            state.flags.insert(flag_name.to_owned(), Value::Bool(false));
-            vec![]
-        }
-
-        "startQuest" => {
+        OutcomeKind::StartQuest => {
             let Some(quest_id) = non_empty(outcome.quest_id.as_deref()) else { return vec![] };
             quests::start_quest_by_id(ctx, state, quest_id)
         }
-
-        "completeQuest" => {
+        OutcomeKind::CompleteQuest => {
             let Some(quest_id) = non_empty(outcome.quest_id.as_deref()) else { return vec![] };
             quests::complete_quest_by_id(ctx, state, quest_id)
         }
-
-        "spawnNPC" => {
+        OutcomeKind::SpawnNpc => outcome_spawn_npc(ctx, state, outcome),
+        OutcomeKind::RemoveNpc => {
             let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
-            let Some(npc_def) = ctx.content.npcs.iter().find(|n| n.id == npc_id) else { return vec![] };
-            let npc_state = NpcState {
-                x: outcome.x.map_or(npc_def.x, units::tiles),
-                y: outcome.y.map_or(npc_def.y, units::tiles),
-                scene_id: outcome.scene_id.clone().unwrap_or_else(|| npc_def.scene_id.clone()),
-                path: None,
-                patrol_index: None,
-            };
-            state.npcs.insert(npc_id.to_owned(), npc_state);
-            vec![]
-        }
-
-        "removeNPC" => {
-            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
-            if !state.npcs.contains_key(npc_id) {
-                return vec![];
-            }
             state.npcs.shift_remove(npc_id);
             vec![]
         }
-
-        "changeTile" => {
-            let (Some(tile_x), Some(tile_y)) = (outcome.tile_x, outcome.tile_y) else { return vec![] };
-            let Some(new_tile_type) = non_empty(outcome.new_tile_type.as_deref()) else { return vec![] };
-            let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
-            let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
-            let scene = &mut state.world.scenes[scene_index];
-            if tile_y < 0 || tile_y >= scene.height || tile_x < 0 || tile_x >= scene.width {
-                return vec![];
-            }
-            if let Some(tile) = scene.tiles.get_mut(tile_y as usize).and_then(|row| row.get_mut(tile_x as usize)) {
-                *tile = tiles::set_tile_layer(tile, new_tile_type, None);
-            }
-            vec![]
+        OutcomeKind::ChangeTile => outcome_change_tile(state, outcome),
+        OutcomeKind::WarpPlayer => outcome_warp_player(ctx, state, outcome),
+        OutcomeKind::StartDialogue => outcome_start_dialogue(ctx, state, outcome),
+        OutcomeKind::LockTransition | OutcomeKind::UnlockTransition => {
+            outcome_lock_transition(state, outcome, kind == OutcomeKind::LockTransition)
         }
-
-        "warpPlayer" => {
-            let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
-            let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
-            // A scene of an enabled content pack joins the world on first visit.
-            if world_movement::ensure_scene(ctx, state, scene_id).is_none() {
-                return vec![];
-            }
-            // Warp targets are authored as tile coordinates; land on the center, or on the
-            // nearest walkable tile when the target is outside the scene or blocked.
-            let (landed, landing_effects) = world_movement::land_player(ctx, state, scene_id, x, y);
-            let mut effects = vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x: landed.x, y: landed.y }];
-            effects.extend(landing_effects);
-            effects
-        }
-
-        "startDialogue" => {
-            let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
-            let npc_def = ctx.content.npcs.iter().find(|n| n.id == npc_id);
-            let dialogue_id = outcome
-                .dialogue_id
-                .clone()
-                .or_else(|| npc_def.and_then(|npc| npc.dialogue.first()).map(|dialogue| dialogue.id.clone()));
-            let Some(dialogue_id) = dialogue_id.filter(|id| !id.is_empty()) else { return vec![] };
-            state.dialogue = Some(DialogueState { npc_id: npc_id.to_owned(), dialogue_id });
-            vec![]
-        }
-
-        "lockTransition" | "unlockTransition" => {
-            let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
-            let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
-            let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
-            let locked = outcome.r#type == "lockTransition";
-            for transition in &mut state.world.scenes[scene_index].transitions {
-                if transition.from_x == x && transition.from_y == y {
-                    transition.locked = Some(locked);
-                }
-            }
-            vec![]
-        }
-
-        "playSound" => match non_empty(outcome.sound_id.as_deref()) {
+        OutcomeKind::PlaySound => match non_empty(outcome.sound_id.as_deref()) {
             Some(sound_id) => vec![Effect::Sound { id: sound_id.to_owned() }],
             None => vec![],
         },
-
-        "performAction" => {
+        OutcomeKind::PerformAction => {
             let Some(action_id) = non_empty(outcome.action_id.as_deref()) else { return vec![] };
             perform_action_detailed(ctx, state, action_id, depth + 1, budget).effects
         }
-
-        "startMinigame" => {
+        OutcomeKind::StartMinigame => {
             let Some(minigame_id) = non_empty(outcome.minigame_id.as_deref()) else { return vec![] };
             start_minigame_session(ctx, state, minigame_id, None)
         }
-
-        "unlockScene" => {
-            // Legacy outcome (pre-v5): unlock every transition that leads to the named scene. It
-            // was authorable in the editor but a runtime no-op.
-            let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
-            for scene in &mut state.world.scenes {
-                for transition in &mut scene.transitions {
-                    if transition.to_scene_id == scene_id && transition.locked == Some(true) {
-                        transition.locked = Some(false);
-                    }
-                }
-            }
-            vec![]
-        }
-
-        _ => vec![],
+        OutcomeKind::UnlockScene => outcome_unlock_scene(state, outcome),
     }
+}
+
+fn outcome_modify_friendship(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+    if ctx.npc(npc_id).is_none() {
+        return vec![];
+    }
+    let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
+        friendship: 0,
+        gifts_today: 0,
+        last_gift_day: None,
+    });
+    // Friendship is whole points: the amount rounds.
+    let delta = whole(outcome.amount.unwrap_or(0));
+    let friendship = (i64::from(current.friendship) + delta).clamp(0, i64::from(MAX_FRIENDSHIP)) as i32;
+    ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload { npc_id: npc_id.to_owned(), friendship }));
+    state.social.insert(npc_id.to_owned(), NpcSocialState { friendship, ..current });
+    vec![]
+}
+
+fn outcome_modify_energy(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    // Thousandths of a point: the energy unit. Out-of-range amounts saturate.
+    let amount = outcome.amount.unwrap_or(0).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    if !ctx.content.settings.energy_enabled {
+        return vec![];
+    }
+    if amount < 0 {
+        return energy::spend_energy(ctx, state, amount.saturating_neg()).effects;
+    }
+    state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(amount));
+    vec![]
+}
+
+/// The watering can's rule on every tile of the square around the player (grid positions,
+/// bounded to the area), so fertilized soil stays fertilized, withered crops stay dry and a
+/// multi-tile crop is watered whole.
+fn outcome_water_area(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let radius = i64::from(outcome.radius.unwrap_or(1).min(10));
+    let center = world_movement::player_tile(state);
+    let (cx, cy) = (i64::from(center.x), i64::from(center.y));
+    let scene_id = state.player.scene_id.clone();
+    if let Some(index) = state.world.scenes.iter().position(|scene| scene.id == scene_id) {
+        for y in (cy - radius).max(0)..=cy + radius {
+            for x in (cx - radius).max(0)..=cx + radius {
+                farming_actions::water_at(ctx, state, index, x as usize, y as usize);
+            }
+        }
+    }
+    vec![Effect::message(message_levels::SUCCESS, "The surrounding soil is watered.")]
+}
+
+fn outcome_give_item(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(item) = outcome.item_id.as_deref().and_then(|id| ctx.item(id)) else { return vec![] };
+    let quantity = outcome.item_quantity.unwrap_or(1);
+    let result = inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
+    if !result.added {
+        return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+    }
+    state.player.inventory = result.inventory;
+    let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
+    vec![Effect::message(message_levels::SUCCESS, format!("Received {}{suffix}", item.name))]
+}
+
+fn outcome_give_money(state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    // Money is whole gold: the amount rounds.
+    let amount = whole(outcome.amount.unwrap_or(0));
+    if amount <= 0 {
+        return vec![];
+    }
+    state.player.money = state.player.money.saturating_add(amount);
+    vec![Effect::message(message_levels::SUCCESS, format!("Received ${amount}"))]
+}
+
+fn outcome_take_money(state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let amount = whole(outcome.amount.unwrap_or(0)).min(state.player.money);
+    if amount <= 0 {
+        return vec![];
+    }
+    state.player.money -= amount;
+    vec![Effect::message(message_levels::INFO, format!("Paid ${amount}"))]
+}
+
+fn outcome_spawn_npc(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+    let Some(npc_def) = ctx.npc(npc_id) else { return vec![] };
+    let npc_state = NpcState {
+        x: outcome.x.map_or(npc_def.x, units::tiles),
+        y: outcome.y.map_or(npc_def.y, units::tiles),
+        scene_id: outcome.scene_id.clone().unwrap_or_else(|| npc_def.scene_id.clone()),
+        path: None,
+        patrol_index: None,
+    };
+    state.npcs.insert(npc_id.to_owned(), npc_state);
+    vec![]
+}
+
+fn outcome_change_tile(state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let (Some(tile_x), Some(tile_y)) = (outcome.tile_x, outcome.tile_y) else { return vec![] };
+    let Some(new_tile_type) = non_empty(outcome.new_tile_type.as_deref()) else { return vec![] };
+    let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
+    let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
+    let scene = &mut state.world.scenes[scene_index];
+    if tile_y < 0 || tile_y >= scene.height || tile_x < 0 || tile_x >= scene.width {
+        return vec![];
+    }
+    if let Some(tile) = scene.tiles.get_mut(tile_y as usize).and_then(|row| row.get_mut(tile_x as usize)) {
+        *tile = tiles::set_tile_layer(tile, new_tile_type, None);
+    }
+    vec![]
+}
+
+fn outcome_warp_player(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
+    let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
+    // A scene of an enabled content pack joins the world on first visit.
+    if world_movement::ensure_scene(ctx, state, scene_id).is_none() {
+        return vec![];
+    }
+    // Warp targets are authored as tile coordinates; land on the center, or on the nearest
+    // walkable tile when the target is outside the scene or blocked.
+    let (landed, landing_effects) = world_movement::land_player(ctx, state, scene_id, x, y);
+    let mut effects = vec![Effect::SceneChanged { scene_id: scene_id.to_owned(), x: landed.x, y: landed.y }];
+    effects.extend(landing_effects);
+    effects
+}
+
+fn outcome_start_dialogue(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(npc_id) = non_empty(outcome.npc_id.as_deref()) else { return vec![] };
+    let dialogue_id = outcome
+        .dialogue_id
+        .clone()
+        .or_else(|| ctx.npc(npc_id).and_then(|npc| npc.dialogue.first()).map(|dialogue| dialogue.id.clone()));
+    let Some(dialogue_id) = dialogue_id.filter(|id| !id.is_empty()) else { return vec![] };
+    state.dialogue = Some(DialogueState { npc_id: npc_id.to_owned(), dialogue_id });
+    vec![]
+}
+
+fn outcome_lock_transition(state: &mut GameState, outcome: &EventOutcome, locked: bool) -> Effects {
+    let scene_id = non_empty(outcome.scene_id.as_deref()).unwrap_or(&state.player.scene_id).to_owned();
+    let Some(scene_index) = state.world.scenes.iter().position(|s| s.id == scene_id) else { return vec![] };
+    let (Some(x), Some(y)) = (outcome.x, outcome.y) else { return vec![] };
+    for transition in &mut state.world.scenes[scene_index].transitions {
+        if transition.from_x == x && transition.from_y == y {
+            transition.locked = Some(locked);
+        }
+    }
+    vec![]
+}
+
+/// Legacy outcome (pre-v5): unlock every transition that leads to the named scene. It was
+/// authorable in the editor but a runtime no-op.
+fn outcome_unlock_scene(state: &mut GameState, outcome: &EventOutcome) -> Effects {
+    let Some(scene_id) = non_empty(outcome.scene_id.as_deref()) else { return vec![] };
+    for scene in &mut state.world.scenes {
+        for transition in &mut scene.transitions {
+            if transition.to_scene_id == scene_id && transition.locked == Some(true) {
+                transition.locked = Some(false);
+            }
+        }
+    }
+    vec![]
 }
 
 /// Apply a sequence of outcomes (the shared executor behind events, custom actions, minigame
@@ -439,7 +433,7 @@ fn perform_action_detailed(
     if depth > MAX_ACTION_DEPTH || budget.runs >= MAX_ACTION_RUNS {
         return PerformActionResult { effects: budget.limit_reached(action_id), ran: false };
     }
-    let Some(action) = ctx.content.actions.iter().find(|def| def.id == action_id) else {
+    let Some(action) = ctx.action(action_id) else {
         return PerformActionResult {
             effects: vec![Effect::message(message_levels::ERROR, format!("Unknown action '{action_id}'"))],
             ran: false,
@@ -482,7 +476,7 @@ pub fn start_minigame_session(
     minigame_id: &str,
     context: Option<&IndexMap<String, Value>>,
 ) -> Effects {
-    if !ctx.content.minigames.iter().any(|def| def.id == minigame_id) {
+    if ctx.minigame(minigame_id).is_none() {
         return vec![Effect::message(message_levels::ERROR, format!("Unknown minigame '{minigame_id}'"))];
     }
     if state.minigame.is_some() {

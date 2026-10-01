@@ -8,7 +8,7 @@ use crate::farming::farming_actions;
 use crate::game_time::SleepOptions;
 use crate::hooks::{CommandHookPayload, HookEvent, RelationshipChangeHookPayload};
 use crate::npcs::npc_movement;
-use crate::schema::{EventOutcome, GameState, MoveIntent, NpcSocialState, PluginMutation, MAX_FRIENDSHIP};
+use crate::schema::{EventOutcome, GameState, MoveIntent, NpcSocialState, OutcomeKind, PluginMutation, MAX_FRIENDSHIP};
 use crate::units;
 use crate::world::world_movement;
 use crate::{
@@ -109,14 +109,14 @@ fn refusal(ctx: &EngineContext, state: &GameState, command: &Command) -> Option<
     }
 }
 
-/// Apply a plugin-declared mutation (M5). Plugins run sandboxed and return these instead of
-/// mutating state; each is validated by the schema layer before it becomes a command, and unknown
-/// references fail soft here.
 /// A whole-gold plugin amount as an outcome `amount` (thousandths).
 fn money_amount(gold: i64) -> i64 {
     gold.saturating_mul(i64::from(units::MILLI_ONE))
 }
 
+/// Apply a plugin-declared mutation (M5). Plugins run sandboxed and return these instead of
+/// mutating state; each is validated by the schema layer before it becomes a command, and unknown
+/// references fail soft here.
 fn apply_plugin_mutation(
     ctx: &EngineContext,
     state: &mut GameState,
@@ -125,10 +125,13 @@ fn apply_plugin_mutation(
 ) -> Effects {
     let plugin_error =
         |text: String| vec![Effect::message(message_levels::ERROR, format!("Plugin {plugin_id}: {text}"))];
+    // Mutations sharing the event-outcome executor (identical semantics to the equivalent
+    // event/action outcome, including soft failure).
+    let run_outcome = |state: &mut GameState, outcome: EventOutcome| events::apply_outcomes(ctx, state, &[outcome], 0);
 
     match mutation {
         PluginMutation::GiveItem { item_id, quantity } => {
-            let Some(item) = ctx.content.items.iter().find(|entry| entry.id == *item_id) else {
+            let Some(item) = ctx.item(item_id) else {
                 return plugin_error(format!("unknown item '{item_id}'"));
             };
             let result =
@@ -153,117 +156,88 @@ fn apply_plugin_mutation(
             vec![]
         }
 
-        // Mutations sharing the event-outcome executor (identical semantics to the equivalent
-        // event/action outcome, including soft failure).
-        PluginMutation::TakeItem { item_id, quantity } => events::apply_outcomes(
-            ctx,
+        PluginMutation::TakeItem { item_id, quantity } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "takeItem".to_owned(),
+            EventOutcome {
                 item_id: Some(item_id.clone()),
                 item_quantity: Some(*quantity),
-                ..EventOutcome::default()
-            }],
-            0,
+                ..EventOutcome::of(OutcomeKind::TakeItem)
+            },
         ),
-        PluginMutation::GiveMoney { amount } => events::apply_outcomes(
-            ctx,
+        PluginMutation::GiveMoney { amount } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "giveMoney".to_owned(),
-                amount: Some(money_amount(*amount)),
-                ..EventOutcome::default()
-            }],
-            0,
+            EventOutcome { amount: Some(money_amount(*amount)), ..EventOutcome::of(OutcomeKind::GiveMoney) },
         ),
-        PluginMutation::TakeMoney { amount } => events::apply_outcomes(
-            ctx,
+        PluginMutation::TakeMoney { amount } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "takeMoney".to_owned(),
-                amount: Some(money_amount(*amount)),
-                ..EventOutcome::default()
-            }],
-            0,
+            EventOutcome { amount: Some(money_amount(*amount)), ..EventOutcome::of(OutcomeKind::TakeMoney) },
         ),
-        PluginMutation::StartQuest { quest_id } => events::apply_outcomes(
-            ctx,
+        PluginMutation::StartQuest { quest_id } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "startQuest".to_owned(),
-                quest_id: Some(quest_id.clone()),
-                ..EventOutcome::default()
-            }],
-            0,
+            EventOutcome { quest_id: Some(quest_id.clone()), ..EventOutcome::of(OutcomeKind::StartQuest) },
         ),
-        PluginMutation::WarpPlayer { scene_id, x, y } => events::apply_outcomes(
-            ctx,
+        PluginMutation::WarpPlayer { scene_id, x, y } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "warpPlayer".to_owned(),
+            EventOutcome {
                 scene_id: Some(scene_id.clone()),
                 x: Some(*x),
                 y: Some(*y),
-                ..EventOutcome::default()
-            }],
-            0,
+                ..EventOutcome::of(OutcomeKind::WarpPlayer)
+            },
         ),
-        PluginMutation::StartDialogue { npc_id, dialogue_id } => events::apply_outcomes(
-            ctx,
+        PluginMutation::StartDialogue { npc_id, dialogue_id } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "startDialogue".to_owned(),
+            EventOutcome {
                 npc_id: Some(npc_id.clone()),
                 dialogue_id: dialogue_id.clone(),
-                ..EventOutcome::default()
-            }],
-            0,
+                ..EventOutcome::of(OutcomeKind::StartDialogue)
+            },
         ),
-        PluginMutation::PlaySound { sound_id } => events::apply_outcomes(
-            ctx,
+        PluginMutation::PlaySound { sound_id } => run_outcome(
             state,
-            &[EventOutcome {
-                r#type: "playSound".to_owned(),
-                sound_id: Some(sound_id.clone()),
-                ..EventOutcome::default()
-            }],
-            0,
+            EventOutcome { sound_id: Some(sound_id.clone()), ..EventOutcome::of(OutcomeKind::PlaySound) },
         ),
 
         PluginMutation::ModifyFriendship { npc_id, delta } => {
-            if !ctx.content.npcs.iter().any(|npc| npc.id == *npc_id) {
+            if ctx.npc(npc_id).is_none() {
                 return plugin_error(format!("unknown NPC '{npc_id}'"));
             }
-            let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
-                friendship: 0,
-                gifts_today: 0,
-                last_gift_day: None,
-            });
-            let friendship = current.friendship.saturating_add(*delta).clamp(0, MAX_FRIENDSHIP);
-            state.social.insert(npc_id.clone(), NpcSocialState { friendship, ..current });
-            ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload {
-                npc_id: npc_id.clone(),
-                friendship,
-            }));
-            vec![]
+            plugin_modify_friendship(ctx, state, npc_id, *delta)
         }
 
         PluginMutation::GrantXp { skill, amount } => skills::grant_xp(ctx, state, skill, *amount),
 
-        PluginMutation::ModifyEnergy { delta } => {
-            if !ctx.content.settings.energy_enabled || *delta == 0 {
-                return vec![];
-            }
-            if *delta < 0 {
-                return energy::spend_energy(ctx, state, delta.saturating_neg()).effects;
-            }
-            state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(*delta));
-            vec![]
-        }
+        PluginMutation::ModifyEnergy { delta } => plugin_modify_energy(ctx, state, *delta),
 
         PluginMutation::PerformAction { action_id } => events::perform_action(ctx, state, action_id).effects,
         PluginMutation::StartMinigame { minigame_id } => extensibility::handle_start_minigame(ctx, state, minigame_id),
     }
+}
+
+/// `modifyFriendship` from a plugin: whole points, clamped to the friendship range.
+fn plugin_modify_friendship(ctx: &EngineContext, state: &mut GameState, npc_id: &str, delta: i32) -> Effects {
+    let current = state.social.get(npc_id).cloned().unwrap_or(NpcSocialState {
+        friendship: 0,
+        gifts_today: 0,
+        last_gift_day: None,
+    });
+    let friendship = current.friendship.saturating_add(delta).clamp(0, MAX_FRIENDSHIP);
+    state.social.insert(npc_id.to_owned(), NpcSocialState { friendship, ..current });
+    ctx.emit(HookEvent::RelationshipChange(RelationshipChangeHookPayload { npc_id: npc_id.to_owned(), friendship }));
+    vec![]
+}
+
+/// `modifyEnergy` from a plugin: a loss spends energy (and can collapse the player), a gain
+/// refills up to the maximum. Nothing happens with energy off.
+fn plugin_modify_energy(ctx: &EngineContext, state: &mut GameState, delta: i32) -> Effects {
+    if !ctx.content.settings.energy_enabled || delta == 0 {
+        return vec![];
+    }
+    if delta < 0 {
+        return energy::spend_energy(ctx, state, delta.saturating_neg()).effects;
+    }
+    state.player.energy = state.player.max_energy.min(state.player.energy.saturating_add(delta));
+    vec![]
 }
 
 /// Advance simulation time by whole ticks. The game clock accrues in-game minutes; passing the

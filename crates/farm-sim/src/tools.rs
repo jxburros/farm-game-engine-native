@@ -14,7 +14,7 @@ pub fn get_tool_definition(tool_type: &str) -> ToolDefinition {
 
 /// TS `TOOL_DEFINITIONS[toolType]`; unknown types yield `undefined` (`None`) like TS.
 pub fn try_get_tool_definition(tool_type: &str) -> Option<ToolDefinition> {
-    content_builtin::tool_definitions().get(tool_type).cloned()
+    content_builtin::tool_definition_of(tool_type)
 }
 
 /// JS truthiness of an optional string: `undefined` and `""` are falsy.

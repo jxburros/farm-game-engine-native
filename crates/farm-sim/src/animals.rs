@@ -15,7 +15,7 @@ use crate::schema::{AnimalSpeciesDefinition, AnimalState, GameState};
 use crate::units;
 
 pub fn species_by_id<'a>(ctx: &'a EngineContext, species_id: &str) -> Option<&'a AnimalSpeciesDefinition> {
-    ctx.content.animal_species.iter().find(|species| species.id == species_id)
+    ctx.animal_species(species_id)
 }
 
 /// The animal standing on tile `(x, y)` (animal positions are tile-aligned).
@@ -64,7 +64,7 @@ pub fn handle_animal_interaction(ctx: &EngineContext, state: &mut GameState, ani
 
     // 2. Collect a ready product
     if animal.product_ready {
-        let product = ctx.content.items.iter().find(|item| item.id == species.product_item_id);
+        let product = ctx.item(&species.product_item_id);
         if let Some(product) = product {
             let added = inventory::add_item(&state.player.inventory, product, 1, state.player.max_inventory_size, None);
             if !added.added {

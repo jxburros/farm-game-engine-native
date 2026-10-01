@@ -198,6 +198,102 @@ pub mod event_outcome_types {
     ];
 }
 
+/// The outcome types as an enum: [`event_outcome_types`] typed, so the engine dispatches on a
+/// variant instead of comparing strings. The authored `type` stays a string in
+/// [`EventOutcome`] (an unknown type round-trips and is reported by the authoring checks, then
+/// does nothing at run time); [`EventOutcome::kind`] parses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutcomeKind {
+    Message,
+    ModifyFriendship,
+    ModifyEnergy,
+    WaterArea,
+    GiveItem,
+    TakeItem,
+    GiveMoney,
+    TakeMoney,
+    SetFlag,
+    ClearFlag,
+    StartQuest,
+    CompleteQuest,
+    SpawnNpc,
+    RemoveNpc,
+    ChangeTile,
+    WarpPlayer,
+    StartDialogue,
+    LockTransition,
+    UnlockTransition,
+    PlaySound,
+    PerformAction,
+    StartMinigame,
+    UnlockScene,
+}
+
+impl OutcomeKind {
+    /// Every kind, in [`event_outcome_types::ALL`] order.
+    pub const ALL: [OutcomeKind; 23] = [
+        Self::Message,
+        Self::ModifyFriendship,
+        Self::ModifyEnergy,
+        Self::WaterArea,
+        Self::GiveItem,
+        Self::TakeItem,
+        Self::GiveMoney,
+        Self::TakeMoney,
+        Self::SetFlag,
+        Self::ClearFlag,
+        Self::StartQuest,
+        Self::CompleteQuest,
+        Self::SpawnNpc,
+        Self::RemoveNpc,
+        Self::ChangeTile,
+        Self::WarpPlayer,
+        Self::StartDialogue,
+        Self::LockTransition,
+        Self::UnlockTransition,
+        Self::PlaySound,
+        Self::PerformAction,
+        Self::StartMinigame,
+        Self::UnlockScene,
+    ];
+
+    /// The authored `type` literal (one of [`event_outcome_types`]).
+    pub fn name(self) -> &'static str {
+        use event_outcome_types as t;
+        match self {
+            Self::Message => t::MESSAGE,
+            Self::ModifyFriendship => t::MODIFY_FRIENDSHIP,
+            Self::ModifyEnergy => t::MODIFY_ENERGY,
+            Self::WaterArea => t::WATER_AREA,
+            Self::GiveItem => t::GIVE_ITEM,
+            Self::TakeItem => t::TAKE_ITEM,
+            Self::GiveMoney => t::GIVE_MONEY,
+            Self::TakeMoney => t::TAKE_MONEY,
+            Self::SetFlag => t::SET_FLAG,
+            Self::ClearFlag => t::CLEAR_FLAG,
+            Self::StartQuest => t::START_QUEST,
+            Self::CompleteQuest => t::COMPLETE_QUEST,
+            Self::SpawnNpc => t::SPAWN_NPC,
+            Self::RemoveNpc => t::REMOVE_NPC,
+            Self::ChangeTile => t::CHANGE_TILE,
+            Self::WarpPlayer => t::WARP_PLAYER,
+            Self::StartDialogue => t::START_DIALOGUE,
+            Self::LockTransition => t::LOCK_TRANSITION,
+            Self::UnlockTransition => t::UNLOCK_TRANSITION,
+            Self::PlaySound => t::PLAY_SOUND,
+            Self::PerformAction => t::PERFORM_ACTION,
+            Self::StartMinigame => t::START_MINIGAME,
+            Self::UnlockScene => t::UNLOCK_SCENE,
+        }
+    }
+
+    /// The kind an authored `type` names; `None` for an unknown type (case-sensitive, like the
+    /// schema).
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
+
 /// A single event/action outcome. Not a discriminated union: one flat object whose `type`
 /// selects which optional fields apply.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -248,6 +344,19 @@ pub struct EventOutcome {
     pub extra: Map<String, Value>,
 }
 
+impl EventOutcome {
+    /// An outcome of `kind` with no fields set (the plugin mutations that share the outcome
+    /// executor build theirs this way).
+    pub fn of(kind: OutcomeKind) -> Self {
+        Self { r#type: kind.name().to_owned(), ..Self::default() }
+    }
+
+    /// The typed [`OutcomeKind`] of `type`; `None` when the type is unknown.
+    pub fn kind(&self) -> Option<OutcomeKind> {
+        OutcomeKind::parse(&self.r#type)
+    }
+}
+
 /// TS `EventTriggerSchema`.
 pub mod event_triggers {
     pub const ENTER: &str = "enter";
@@ -277,4 +386,22 @@ pub struct GameEvent {
 /// Flag used to record that a non-repeatable event has fired.
 pub fn event_fired_flag(event_id: &str) -> String {
     format!("event:{event_id}:fired")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outcome_kinds_cover_every_outcome_type_in_order() {
+        let names: Vec<&str> = OutcomeKind::ALL.iter().map(|kind| kind.name()).collect();
+        assert_eq!(names, event_outcome_types::ALL);
+        for kind in OutcomeKind::ALL {
+            assert_eq!(OutcomeKind::parse(kind.name()), Some(kind));
+            assert_eq!(EventOutcome::of(kind).kind(), Some(kind));
+        }
+        assert_eq!(OutcomeKind::parse("givItem"), None);
+        assert_eq!(OutcomeKind::parse("GiveItem"), None);
+        assert_eq!(EventOutcome::default().kind(), None);
+    }
 }

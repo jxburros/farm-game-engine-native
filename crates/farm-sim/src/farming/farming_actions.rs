@@ -228,7 +228,7 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
         // A declared 'fishing' minigame gates the catch on player skill; the
         // score re-enters through the resolveMinigame command. Without one the
         // cast resolves instantly (original behavior).
-        let minigame = ctx.content.minigames.iter().find(|def| def.id == FISHING_MINIGAME_ID);
+        let minigame = ctx.minigame(FISHING_MINIGAME_ID);
         if let Some(minigame) = minigame {
             if state.minigame.is_none() {
                 let mut context: IndexMap<String, Value> = IndexMap::new();
@@ -284,7 +284,7 @@ pub fn handle_interact_with(ctx: &EngineContext, state: &mut GameState, choice: 
 
     // NPC dialogue next (uses live NPC positions from state)
     if let Some(npc_entry_id) = social::npc_on_tile(ctx, state, target_x, target_y) {
-        let npc_def = ctx.content.npcs.iter().find(|npc| npc.id == npc_entry_id);
+        let npc_def = ctx.npc(&npc_entry_id);
         if let Some(npc_def) = npc_def {
             if !npc_def.dialogue.is_empty() {
                 ctx.emit(HookEvent::NpcInteract(NpcInteractHookPayload { npc_id: npc_def.id.clone() }));
@@ -314,7 +314,7 @@ pub fn handle_interact_with(ctx: &EngineContext, state: &mut GameState, choice: 
         if machine.processing.is_some() {
             return vec![Effect::message(message_levels::INFO, "Still working…")];
         }
-        let machine_def = ctx.content.machine_types.iter().find(|def| def.id == machine.type_id);
+        let machine_def = ctx.machine_type(&machine.type_id);
         let name = machine_def.map_or("Machine", |def| def.name.as_str());
         return vec![Effect::message(message_levels::INFO, format!("{name} is idle — load a recipe."))];
     }

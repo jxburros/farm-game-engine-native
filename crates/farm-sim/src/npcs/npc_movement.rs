@@ -50,6 +50,7 @@ fn with_walkability<R>(
         node_types: &ctx.content.node_types,
         machine_types: &ctx.content.machine_types,
         blocked: &blocked,
+        index: Some(ctx.index()),
     }))
 }
 

@@ -35,7 +35,7 @@ pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, score
     let Some(session) = state.minigame.take() else { return vec![] };
     // The score reads as a 0–1 fraction clamped onto the grid, like v8's `clampScore`.
     let score = score.min(units::PROBABILITY_ONE);
-    let definition = ctx.content.minigames.iter().find(|def| def.id == session.minigame_id);
+    let definition = ctx.minigame(&session.minigame_id);
 
     let mut effects = Vec::new();
 

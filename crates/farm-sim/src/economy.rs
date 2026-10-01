@@ -13,7 +13,7 @@ use crate::world::world_movement;
 use crate::{content_builtin, units};
 
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
-    ctx.content.shops.iter().find(|shop| shop.id == shop_id)
+    ctx.shop(shop_id)
 }
 
 pub fn handle_open_shop(ctx: &EngineContext, state: &mut GameState, shop_id: &str) -> Effects {
@@ -88,9 +88,7 @@ pub fn sell_unit_price(item: &Item, shop: &ShopDefinition) -> i64 {
 /// The value of one `item` at a crop `quality` (`None`: normal): `floor(value × quality
 /// multiplier)`, the same multipliers the harvest message uses.
 pub fn quality_value(item: &Item, quality: Option<&str>) -> i64 {
-    let multiplier = quality
-        .and_then(|quality| content_builtin::quality_multipliers().get(quality).copied())
-        .unwrap_or(units::MILLI_ONE);
+    let multiplier = quality.and_then(content_builtin::quality_multiplier).unwrap_or(units::MILLI_ONE);
     if multiplier == units::MILLI_ONE {
         return item.value;
     }
@@ -141,7 +139,7 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
         }
     }
 
-    let Some(item) = ctx.content.items.iter().find(|i| i.id == item_id) else {
+    let Some(item) = ctx.item(item_id) else {
         return vec![Effect::message(message_levels::ERROR, "Unknown item.")];
     };
 

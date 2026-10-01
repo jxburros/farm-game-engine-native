@@ -19,12 +19,12 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 
 pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str) -> Option<&'a Dialogue> {
     // NPC-owned dialogues first (interaction entry point), then the global list.
-    let npc = ctx.content.npcs.iter().find(|n| n.id == npc_id);
+    let npc = ctx.npc(npc_id);
     let owned = npc.and_then(|npc| npc.dialogue.iter().find(|d| d.id == dialogue_id));
     if owned.is_some() {
         return owned;
     }
-    ctx.content.dialogues.iter().find(|d| d.id == dialogue_id)
+    ctx.dialogue(dialogue_id)
 }
 
 pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: i32) -> Effects {
@@ -54,7 +54,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     }
     let mut item_grant = None;
     if let Some(give_item) = non_empty(option.give_item.as_deref()) {
-        if let Some(item) = ctx.content.items.iter().find(|i| i.id == give_item) {
+        if let Some(item) = ctx.item(give_item) {
             // `option.giveItemQuantity || 1`: undefined, 0 and NaN all fall back to 1.
             let quantity = option.give_item_quantity.filter(|q| *q != 0).unwrap_or(1);
             let result =
@@ -114,7 +114,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     // Shop-opening options close the dialogue and start a shop session.
     if let Some(open_shop_id) = non_empty(option.open_shop_id.as_deref()) {
-        let shop_exists = ctx.content.shops.iter().any(|shop| shop.id == open_shop_id);
+        let shop_exists = ctx.shop(open_shop_id).is_some();
         state.dialogue = None;
         if shop_exists {
             state.shop = Some(ShopSession { shop_id: open_shop_id.to_owned() });
