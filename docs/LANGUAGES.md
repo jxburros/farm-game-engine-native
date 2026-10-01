@@ -492,7 +492,8 @@ Later items (native and web roadmaps):
 |---|---|
 | Export Game: Windows and Linux | Copy the prebuilt `farm-player` template for the target, rename it, set its icon and version info, and put `game.cart` next to it. The cartridge is never appended to the exe: that gets in the way of code signing and makes every Steam patch re-ship the runtime. See [EXPORT.md](EXPORT.md). |
 | Export Game: web demo | Done: the `farm-wasm` player template + `game.cart` + `index.html`, for itch.io pages ([EXPORT.md](EXPORT.md#output-layout)). |
-| Seed selection, fertilizer choice, richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
+| Seed selection, fertilizer choice | Done: the `interactWith` command and the inventory's Hold button ([PLAYER.md](PLAYER.md#controls)) |
+| Richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
 | Audio-file import | C# import; F# embeds in the cartridge; Rust plays with kira (seasonal music crossfades, weather ambience layers) |
 | Zip/folder content packs with binary assets | F# pack loader + compiler |
 | JSON Schema for mod autocomplete | F# generates it from the authoring types |

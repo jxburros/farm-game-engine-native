@@ -68,6 +68,12 @@ same arguments always give the same image. A script lists input by frame:
 
 The mouse clicks every button, and the wheel (or the right stick) scrolls
 lists. The toolbar at the top has Inventory, Quests, Craft, Sleep and Menu.
+
+Planting: **Hold** on a seed or a fertilizer in the inventory picks what
+interacting with open soil uses (press it again to put it away). Without a held
+seed the first seed that grows this season is planted, and fertilizer is only
+used when one is held. Interact presses then go to the engine as `interactWith`
+commands.
 The hint row at the bottom shows the keys of the device used last: keyboard
 keycaps, or gamepad buttons once a pad is used.
 
