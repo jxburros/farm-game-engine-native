@@ -430,9 +430,6 @@ module GameContentSchema =
 
 [<RequireQualifiedAccess>]
 module SaveSchema =
-    [<Literal>]
-    let CurrentSaveVersion = 4.0
-
     /// TS `SKILL_NAMES`.
     let SkillNames : string list = [ "farming"; "foraging"; "fishing"; "mining"; "social" ]
 

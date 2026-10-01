@@ -8,9 +8,13 @@
     <!-- CS1591: public XML docs are encouraged, not required. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Deterministic>true</Deterministic>
+    <!-- CI and release builds map source paths to /_/, so no runner path ends up in the binaries
+         or their PDBs. Not for the test projects: they find fixtures through __SOURCE_DIRECTORY__. -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' And !$(MSBuildProjectName.EndsWith('.Tests'))">true</ContinuousIntegrationBuild>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- Overridden by CI from the git tag (vX.Y.Z → X.Y.Z). -->
-    <Version Condition="'$(Version)' == ''">0.1.0-dev</Version>
+    <!-- The release workflow passes -p:Version from the git tag (vX.Y.Z → X.Y.Z). Keep the
+         development version in step with the Cargo workspace version (tools/release/versions.sh). -->
+    <Version Condition="'$(Version)' == ''">0.3.0-dev</Version>
     <Authors>Farming RPG Maker contributors</Authors>
     <Product>Farming RPG Maker</Product>
   </PropertyGroup>

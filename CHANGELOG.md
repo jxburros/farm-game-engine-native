@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (unreleased)
 
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
@@ -133,6 +133,9 @@
   until the stable-JSON serializer is rewritten. Property tests now cover
   replay determinism and save round trips (proptest), and project migration
   and compiling (FsCheck). The sample games also ship as test cartridges.
+
+## 0.2.0
+
 - **Play Mode is the real game.** The editor's Play Mode now runs the same Rust
   player as exported games: the world, HUD, dialogue, shops, crafting,
   inventory, quests, minigames, toasts and pause menu look and behave exactly

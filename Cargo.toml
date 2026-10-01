@@ -24,7 +24,7 @@ members = [
 exclude = ["crates/farm-plugin-guest"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0-dev"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
@@ -37,7 +37,6 @@ serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 indexmap = { version = "2", features = ["serde"] }
 serde_path_to_error = "0.1"
 ryu-js = "1"
-thiserror = "2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
