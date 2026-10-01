@@ -142,11 +142,59 @@ Exported games open a window with a title screen, save slots, a pause menu,
 settings and gamepad support. See [docs/EXPORT.md](docs/EXPORT.md) and
 [docs/PLAYER.md](docs/PLAYER.md).
 
+## Troubleshooting
+
+**Windows says "Windows protected your PC" when installing.** The installer
+is not code-signed yet. Choose **More info → Run anyway** (see
+[Install](#install)).
+
+**The Update Center says "Updates are available only in the installed app".**
+You are running a development or source build, which Velopack cannot
+update. Install with `FarmingRpgMaker-win-Setup.exe`
+from the [latest release](https://github.com/jxburros/farm-game-engine-native/releases/latest)
+to get updates; your projects stay where they are.
+
+![The Update Center in a development build](docs/media/update-center-not-installed.png)
+
+**Where are my projects?** In `%APPDATA%\FarmingRpgMaker\projects\`, one
+`.json` file per project. **File → Export Project JSON** writes a copy anywhere,
+and **File → Import Project JSON** reads one back.
+
+**A project doesn't open, or its migration fails.** The editor says why. A
+project saved by a newer version of the editor (its schema version is newer
+than this engine supports) needs that version: update first. Projects from
+older versions and from the web version are migrated when they open; bring
+one in with **File → Import Project JSON**. When a migration fails, keep a
+copy of the file and open an issue with it attached.
+
+**Export Game says "The player template has no … slot. Use the templates that
+came with this editor." or "The … player template has no …".** The player
+templates in `players/` next to the app don't match this editor (a different
+version, or a partial copy). Reinstall the app, or for a source build run
+`dotnet build` again: it puts fresh templates in `players/` next to the app
+and `farmc`. `FARM_PLAYER_TEMPLATES` points the editor and `farmc` at
+another folder.
+
+**A Linux source build fails in `alsa-sys` or `libudev-sys`.** Install the
+[Linux prerequisites](#build-from-source):
+`sudo apt-get install libasound2-dev libudev-dev pkg-config`.
+
 ## Build from source
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and a
 [Rust toolchain](https://rustup.rs) (the version is pinned in
 `rust-toolchain.toml`). `dotnet build` also builds the Rust library.
+
+**Linux prerequisites.** The player links ALSA and libudev, so
+`cargo test --workspace` and `dotnet build` (which builds the Export Game
+template) also need:
+
+```sh
+sudo apt-get install libasound2-dev libudev-dev pkg-config
+sudo apt-get install libxkbcommon-x11-0 xvfb   # to run the window; xvfb for the window test
+```
+
+Without `xvfb`, the player's window test is skipped.
 
 ```sh
 dotnet build FarmingRpgMaker.sln
@@ -174,9 +222,12 @@ x64) in `players/` next to the app and `farmc`, so Export Game works from a
 source build. Export tests need no extra tools; rebuilding the PE test
 fixture needs mingw-w64 (see `tests/FarmEngine.Export.Tests/Fixtures/pe/build.sh`).
 
-Everything builds and tests on Windows, macOS and Linux. The
+CI builds and tests everything on Windows and Linux (macOS is untested, and
+Export Game has no macOS or arm64 host template yet). The
 [CI workflow](.github/workflows/ci.yml) also publishes a self-contained
-`win-x64` build on every push.
+`win-x64` build on every push. [CONTRIBUTING.md](CONTRIBUTING.md) lists the
+checks CI runs and how to re-record test fixtures (the `FARM_RECORD_*` and
+`*_BLESS` switches) and regenerate checked-in files.
 
 ### Projects
 
