@@ -1,6 +1,6 @@
 //! `Preview`: Edit Mode's map and the art studio's previews (mirrors `fe_preview_*`).
 
-use crate::{alive, bytes_arg, host_error, json_arg, rgba_image, RgbaImage};
+use crate::{bytes_arg, enter, host_error, json_arg, rgba_image, RgbaImage};
 use farm_host::{Guarded, HostPreview};
 use wasm_bindgen::prelude::*;
 
@@ -20,14 +20,14 @@ impl WasmPreview {
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Uint8Array | string | object")] project: JsValue,
     ) -> Result<WasmPreview, JsValue> {
-        alive()?;
         let project = bytes_arg(&project)?;
+        let _call = enter()?;
         let preview = farm_host::catch(|| HostPreview::new(&project)).map_err(host_error)?;
         Ok(WasmPreview { preview: Guarded::new(preview) })
     }
 
     fn run<R>(&mut self, body: impl FnOnce(&mut HostPreview) -> Result<R, String>) -> Result<R, JsValue> {
-        alive()?;
+        let _call = enter()?;
         self.preview.run(body).map_err(host_error)
     }
 

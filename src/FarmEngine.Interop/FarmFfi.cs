@@ -35,7 +35,8 @@ public static class FarmFfi
         }
     }
 
-    /// <summary>FNV-1a state hash (<c>hashText</c>) of <paramref name="text"/>, computed by Rust.</summary>
+    /// <summary>The v8 text hash (FNV-1a, <c>hashText</c>) of <paramref name="text"/>, computed by Rust. Not the
+    /// state hash since v9: hashing a state's JSON with it never matches <c>StateHash()</c>.</summary>
     public static string HashText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

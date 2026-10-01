@@ -1,7 +1,7 @@
 //! `Player`: the graphical player for web pages (mirrors `fe_player_*`).
 
-use crate::storage::WebStorage;
-use crate::{alive, bytes_arg, host_error, json_arg, set, FrameResult};
+use crate::storage::{StoredDocument, WebStorage};
+use crate::{bytes_arg, enter, host_error, json_arg, set, FrameResult};
 use farm_host::player::{is_engine_failure, FrameRequest, PlayerCreate};
 use farm_host::{Guarded, HostPlayer};
 use farm_player::PlayerOptions;
@@ -59,9 +59,9 @@ impl WasmPlayer {
         #[wasm_bindgen(unchecked_param_type = "Uint8Array | ArrayBuffer | string | object")] game: JsValue,
         #[wasm_bindgen(unchecked_param_type = "PlayerOptions | string | void")] options: Option<JsValue>,
     ) -> Result<WasmPlayer, JsValue> {
-        alive()?;
         let game = bytes_arg(&game)?;
         let options = json_arg(&options.unwrap_or(JsValue::UNDEFINED))?;
+        let _call = enter()?;
         let storage = WebStorage::new();
         let player = farm_host::catch(|| {
             let options: WebPlayerOptions = if options.is_empty() {
@@ -94,7 +94,7 @@ impl WasmPlayer {
     }
 
     fn run<R>(&mut self, body: impl FnOnce(&mut HostPlayer) -> Result<R, String>) -> Result<R, JsValue> {
-        alive()?;
+        let _call = enter()?;
         self.player.run(body).map_err(host_error)
     }
 
@@ -193,7 +193,7 @@ impl WasmPlayer {
     /// The game's id, title and version (namespace stored saves by `gameId`).
     #[wasm_bindgen(js_name = gameInfo, unchecked_return_type = "{gameId: string; title: string; version: string; author: string | null; company: string | null; credits: string | null}")]
     pub fn game_info(&self) -> Result<JsValue, JsValue> {
-        alive()?;
+        let _call = enter()?;
         let info = self.player.get().player().info();
         let json = serde_json::json!({
             "gameId": info.game_id,
@@ -210,13 +210,14 @@ impl WasmPlayer {
     /// persist (IndexedDB, `localStorage`) when a frame reports `storageChanged`.
     #[wasm_bindgen(js_name = exportStorage)]
     pub fn export_storage(&mut self) -> Result<String, JsValue> {
-        alive()?;
+        let _call = enter()?;
         self.reported = self.storage.revision();
         Ok(self.storage.export_json())
     }
 
     /// Replaces the save slots and settings with a stored document (object or JSON text). The
-    /// title screen's slot list and the settings update at once.
+    /// title screen's slot list and the settings update at once. A document that does not
+    /// parse, or whose settings do not, throws and changes nothing.
     #[wasm_bindgen(js_name = importStorage)]
     pub fn import_storage(
         &mut self,
@@ -225,13 +226,20 @@ impl WasmPlayer {
         let document = json_arg(&document)?;
         let storage = self.storage.clone();
         self.run(|p| {
-            let settings = storage.import_json(&document)?;
+            // Everything is checked before the store changes: slots replaced under a player
+            // that still lists the old ones would let New Game overwrite a save unasked.
+            let document = StoredDocument::parse(&document)?;
+            let settings = match &document.settings {
+                Some(text) => Some(
+                    farm_player::saves::settings_from_toml(text)
+                        .map_err(|error| format!("stored settings: {error}"))?,
+                ),
+                None => None,
+            };
+            storage.commit(document);
             let player = p.player_mut();
-            if let Some(text) = settings {
-                match farm_player::saves::settings_from_toml(&text) {
-                    Ok(settings) => player.set_settings(settings),
-                    Err(error) => return Err(format!("stored settings: {error}")),
-                }
+            if let Some(settings) = settings {
+                player.set_settings(settings);
             }
             player.reload_saves();
             Ok(())

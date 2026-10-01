@@ -8,7 +8,7 @@
 //! - [`Player`](player::WasmPlayer): the graphical player (Play Mode, web demo exports);
 //! - [`Session`](session::WasmSession): a headless game;
 //! - [`Preview`](preview::WasmPreview) and [`render_json`]: Edit Mode's map and art previews;
-//! - [`hash_text`], [`sfx_cues`], [`sfx_samples`], [`version`], [`last_panic`].
+//! - [`hash_state`], [`hash_text`], [`sfx_cues`], [`sfx_samples`], [`version`], [`last_panic`].
 //!
 //! The JavaScript API is documented in `crates/farm-wasm/README.md`.
 //!
@@ -16,12 +16,15 @@
 //! (bad input; the object stays usable), `"poisoned"` (an engine failure or an earlier panic;
 //! the object refuses every later call) or `"panic"`.
 //!
-//! **Panics.** `wasm32-unknown-unknown` aborts on panic: nothing unwinds, so nothing can be
-//! caught. The call traps and JavaScript sees a `WebAssembly.RuntimeError` ("unreachable").
-//! Before that, the panic hook installed at start-up logs the message with `console.error` and
-//! records it; from then on every call on any object throws a `FarmError` of kind
-//! `"poisoned"` with that message ([`last_panic`] returns it too), because the module's memory
-//! may be half-updated. The page should drop the module instance and load it again.
+//! **Panics and traps.** `wasm32-unknown-unknown` aborts on panic: nothing unwinds, so nothing
+//! can be caught. The call traps and JavaScript sees a `WebAssembly.RuntimeError`
+//! ("unreachable"). Before that, the panic hook installed at start-up logs the message with
+//! `console.error` and records it ([`last_panic`] returns it). Running out of memory aborts
+//! without running the panic hook, so every engine call also marks itself as running and
+//! clears the mark when it returns: a call that finds the mark of one that never returned knows
+//! the module trapped. From then on every call on any object throws a `FarmError` of kind
+//! `"poisoned"`, because the module's memory may be half-updated. The page should drop the
+//! module instance and load it again.
 #![forbid(unsafe_code)]
 
 pub mod player;
@@ -30,12 +33,16 @@ pub mod session;
 pub mod storage;
 
 use js_sys::{Array, Float32Array, Object, Reflect, Uint8Array, Uint8ClampedArray};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 /// The message of the first panic, once one happened.
 static PANIC: Mutex<Option<String>> = Mutex::new(None);
+/// An engine call is running (see [`enter`]); still set when the next call starts, it means the
+/// previous call trapped.
+static IN_CALL: AtomicBool = AtomicBool::new(false);
 
 #[wasm_bindgen]
 extern "C" {
@@ -162,12 +169,25 @@ pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }
 
-/// FNV-1a state hash (two 32-bit lanes, 16 hex characters) of `text`: the hash of
-/// `stateJson()` is `hash()`.
+/// The v8 text hash: FNV-1a over the UTF-16 code units of `text`, as two 32-bit lanes (16 hex
+/// characters). Since v9 it is **not** the state hash: `hash()` is xxh3-64 over the canonical
+/// binary encoding of the state (docs/NUMERICS.md), so `hashText(stateJson())` never equals
+/// `hash()`; [`hash_state`] is the function for that. Kept for tools that compare v8 text hashes.
 #[wasm_bindgen(js_name = hashText)]
 pub fn hash_text(text: &str) -> Result<String, JsValue> {
-    alive()?;
+    let _call = enter()?;
     Ok(farm_sim::hash_text(text))
+}
+
+/// The state hash of a `GameState` given as JSON (text such as `stateJson()`, or an object):
+/// `hashState(player.stateJson()) === player.hash()`, and likewise for a `Session`.
+#[wasm_bindgen(js_name = hashState)]
+pub fn hash_state(#[wasm_bindgen(unchecked_param_type = "string | object")] state: JsValue) -> Result<String, JsValue> {
+    let state = json_arg(&state)?;
+    let _call = enter()?;
+    let state: farm_sim::schema::GameState =
+        serde_json::from_str(&state).map_err(|e| js_error("invalid", &format!("state JSON: {e}")))?;
+    Ok(farm_sim::hash_state(&state))
 }
 
 /// Runs a stateless render request (the same JSON as `fe_render_json`):
@@ -178,8 +198,8 @@ pub fn hash_text(text: &str) -> Result<String, JsValue> {
 pub fn render_json(
     #[wasm_bindgen(unchecked_param_type = "string | object")] request: JsValue,
 ) -> Result<JsValue, JsValue> {
-    alive()?;
     let request = json_arg(&request)?;
+    let _call = enter()?;
     match farm_host::catch(|| farm_host::render::render_json(request.as_bytes())).map_err(host_error)? {
         farm_host::render::RenderOutput::Json(text) => Ok(JsValue::from_str(&text)),
         farm_host::render::RenderOutput::Png(bytes) => Ok(Uint8Array::from(&bytes[..]).into()),
@@ -201,15 +221,35 @@ pub fn sfx_samples(cue: &str, #[wasm_bindgen(js_name = sampleRate)] sample_rate:
     Some(Float32Array::from(&preset.render(sample_rate.clamp(3000, 384_000))[..]))
 }
 
-/// Refuses calls once a panic stopped the module.
-pub(crate) fn alive() -> Result<(), JsValue> {
-    match last_panic() {
-        None => Ok(()),
-        Some(message) => Err(js_error(
+/// A running engine call: see [`enter`].
+pub(crate) struct Call(());
+
+impl Drop for Call {
+    fn drop(&mut self) {
+        IN_CALL.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Starts an engine call, or refuses it once a panic or a trap stopped the module. A trap (a
+/// panic, or an allocation failure, which aborts without running the panic hook) skips the
+/// guard's drop, so the next call finds the mark still set. Convert JavaScript arguments (which
+/// may run page code, such as a `toJSON`) before entering, so a nested call is never taken for
+/// one that trapped.
+pub(crate) fn enter() -> Result<Call, JsValue> {
+    if let Some(message) = last_panic() {
+        return Err(js_error(
             "poisoned",
             &format!("The game engine panicked earlier and this module instance must be reloaded: {message}"),
-        )),
+        ));
     }
+    if IN_CALL.swap(true, Ordering::Relaxed) {
+        return Err(js_error(
+            "poisoned",
+            "An earlier call into the game engine never returned (it ran out of memory or trapped); \
+             this module instance must be reloaded.",
+        ));
+    }
+    Ok(Call(()))
 }
 
 /// A JavaScript `Error` named `FarmError` with a `kind`.
@@ -231,7 +271,9 @@ pub(crate) fn host_error(error: farm_host::HostError) -> JsValue {
 }
 
 /// JSON text from a string, or from any other value through `JSON.stringify`
-/// (`undefined`/`null` give an empty string).
+/// (`undefined`/`null` give an empty string). A value `JSON.stringify` turns into `undefined`
+/// (a function, a symbol, a `toJSON` that returns nothing) is refused like one it throws on:
+/// nothing here may throw past Rust, which would leave the object's borrow flag set for good.
 pub(crate) fn json_arg(value: &JsValue) -> Result<String, JsValue> {
     if let Some(text) = value.as_string() {
         return Ok(text);
@@ -239,9 +281,8 @@ pub(crate) fn json_arg(value: &JsValue) -> Result<String, JsValue> {
     if value.is_undefined() || value.is_null() {
         return Ok(String::new());
     }
-    js_sys::JSON::stringify(value)
-        .map(String::from)
-        .map_err(|_| js_error("invalid", "The argument cannot be converted to JSON."))
+    let invalid = || js_error("invalid", "The argument cannot be converted to JSON.");
+    js_sys::JSON::stringify(value).map_err(|_| invalid())?.as_string().ok_or_else(invalid)
 }
 
 /// Bytes from a `Uint8Array`, an `ArrayBuffer`, a string (UTF-8) or a JSON-able object.
