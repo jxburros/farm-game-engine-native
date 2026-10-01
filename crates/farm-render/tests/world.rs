@@ -6,7 +6,7 @@ use farm_render::tiny_skia::Pixmap;
 use farm_render::{
     apply_graphics, build_world, css_color, editor_snapshot, encode_png, shell_snapshot, BuiltinArt, Color, DrawCmd,
     GraphicsSource, ImageStore, Sampling, SnapshotAtmosphere, SnapshotCamera, SnapshotCrop, SnapshotEntity,
-    SnapshotItem, SnapshotNode, SnapshotOptions, SnapshotPop, SnapshotSprite, SnapshotTile, WorldRenderer,
+    SnapshotItem, SnapshotNode, SnapshotOptions, SnapshotPop, SnapshotSprite, SnapshotTile, TileWindow, WorldRenderer,
     WorldSnapshot,
 };
 use std::sync::Arc;
@@ -576,4 +576,45 @@ fn graphics_decorate_the_shell_snapshot_with_creator_art() {
     snapshot.atmosphere = None;
     let bitmap = with_art().render(&snapshot, 1.0);
     assert_color("#ff00ff", pixel(&bitmap, tx as f64 * 32.0 + 4.0, ty as f64 * 32.0 + 4.0), 3);
+}
+
+#[test]
+fn a_windowed_snapshot_draws_exactly_what_the_whole_scene_draws() {
+    let project = starter();
+    let content = farm_sim::create_content_from_project(&project);
+    let state = farm_sim::create_game_state(&project, None);
+    let scene = state.world.scenes.iter().find(|scene| scene.id == state.player.scene_id).unwrap();
+    let source = GraphicsSource::from_state(&farm_sim::Presentation::from_project(&project), &content, &state);
+    let (ts, padding) = (32.0, 12.0);
+    let world = (f64::from(scene.width) * ts + padding * 2.0, f64::from(scene.height) * ts + padding * 2.0);
+    // Cameras at the corners and the middle of the scene, smaller than it.
+    for (x, y) in [(0.0, 0.0), (world.0, world.1), (world.0 / 2.0, world.1 / 3.0), (17.5, world.1)] {
+        let camera = farm_render::compute_camera(x, y, world.0, world.1, 7.0 * ts + 5.0, 5.0 * ts + 3.0);
+        let draw = |window: Option<TileWindow>| {
+            let options = SnapshotOptions {
+                tile_size: ts,
+                padding,
+                camera: Some(camera),
+                tile_window: window,
+                ..SnapshotOptions::default()
+            };
+            let mut snapshot = shell_snapshot(&content, &state, scene, &options);
+            apply_graphics(&mut snapshot, &source, scene, 3.0, false);
+            build_world(&snapshot, Some(BuiltinArt::embedded()), &mut ImageStore::default())
+        };
+        // No margin: the window is exactly what the renderer reads.
+        let window = TileWindow::for_camera(&camera, padding, ts, 0);
+        let (part, full) = (draw(Some(window)), draw(None));
+        if let Some(index) =
+            (0..part.commands.len().max(full.commands.len())).find(|i| part.commands.get(*i) != full.commands.get(*i))
+        {
+            panic!(
+                "camera {camera:?}: command {index}: {:?} vs {:?} (lens {} {})",
+                part.commands.get(index),
+                full.commands.get(index),
+                part.commands.len(),
+                full.commands.len()
+            );
+        }
+    }
 }

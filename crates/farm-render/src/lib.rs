@@ -46,10 +46,10 @@ pub use graphics::{apply_graphics, resolve_visual, ArtAsset, GraphicsSource};
 pub use images::{Image, ImageError, ImageId, ImageStore};
 #[cfg(feature = "raster")]
 pub use raster::{encode_png, render_to_pixmap, Rasterizer, WorldRenderer};
-pub use shell::{editor_snapshot, shell_snapshot, SnapshotOptions};
+pub use shell::{editor_snapshot, shell_snapshot, shell_snapshot_shared, SharedUrls, SnapshotOptions};
 pub use snapshot::{
     SnapshotAtmosphere, SnapshotCamera, SnapshotCrop, SnapshotEntity, SnapshotItem, SnapshotMachine, SnapshotNode,
-    SnapshotPlayer, SnapshotPop, SnapshotSprite, SnapshotTile, WorldSnapshot,
+    SnapshotPlayer, SnapshotPop, SnapshotSprite, SnapshotTile, TileWindow, WorldSnapshot,
 };
 #[cfg(feature = "raster")]
 pub use tiny_skia;

@@ -32,8 +32,8 @@ use farm_plugins::PluginHostOptions;
 use farm_render::graphics::{art_assets, ArtAsset};
 use farm_render::tiny_skia::Pixmap;
 use farm_render::{
-    apply_graphics, compute_camera, shell_snapshot, BuiltinArt, DrawList, GraphicsSource, SnapshotOptions, SnapshotPop,
-    WorldSnapshot,
+    apply_graphics, compute_camera, shell_snapshot_shared, BuiltinArt, DrawList, GraphicsSource, SharedUrls,
+    SnapshotOptions, SnapshotPop, TileWindow, WorldSnapshot,
 };
 use farm_runtime::host::{calendar_view, MinigameInput};
 use farm_runtime::panels::{self, PanelState};
@@ -192,6 +192,8 @@ struct GameDef {
 struct Game {
     session: PlaySession,
     graphics: GraphicsSource,
+    /// Image URLs shared from frame to frame.
+    urls: SharedUrls,
     /// The slot autosaves go to (0 in embedded mode: none).
     slot: u32,
     play_seconds: f64,
@@ -246,7 +248,8 @@ pub struct Player {
     renderer: FrameRenderer,
     ui_list: DrawList,
     world: Option<(WorldSnapshot, WorldView)>,
-    title_state: Option<GameState>,
+    /// The title screen's backdrop: the start of the game, its art and shared URLs (built once).
+    title_state: Option<(GameState, GraphicsSource, SharedUrls)>,
     sounds: Vec<SoundRequest>,
     requests: Vec<PlayerRequest>,
     poisoned: Option<String>,
@@ -604,25 +607,30 @@ impl Player {
     // ── World ──────────────────────────────────────────────────────────
 
     /// The play snapshot of a state (interpolated player, pops, creator art), with the world's
-    /// size and the camera target in pixels.
+    /// size and the camera target in pixels. `view` (frame size, integer scaling) limits the
+    /// tiles to what that frame's camera shows; `None` builds the whole scene (thumbnails).
     fn snapshot_of(
         content: &GameContent,
-        graphics: &mut GraphicsSource,
-        session: &PlaySession,
+        game: &mut Game,
         pops: bool,
+        view: Option<(u32, u32, bool)>,
     ) -> Option<WorldFrame> {
+        let session = &game.session;
         let state = session.state();
         let scene = session.current_scene()?;
         let (ix, iy) = session.interpolated_player();
         let (px, py) = (PADDING + (ix - 0.5) * TILE_SIZE, PADDING + (iy - 0.5) * TILE_SIZE);
+        let target = (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0);
+        let world = session.world_size();
         let options = SnapshotOptions {
             tile_size: TILE_SIZE,
             padding: PADDING,
             pixel_x: Some(px),
             pixel_y: Some(py),
             camera: None,
+            tile_window: view.map(|(width, height, integer)| visible_tiles(width, height, integer, world, target)),
         };
-        let mut snapshot = shell_snapshot(content, state, scene, &options);
+        let mut snapshot = shell_snapshot_shared(content, state, scene, &options, &mut game.urls);
         if pops {
             let live = session.pops();
             if !live.is_empty() {
@@ -639,10 +647,10 @@ impl Player {
                 );
             }
         }
-        graphics.set_live_state(content, state);
+        game.graphics.refresh_live_state(content, state);
         let moving = state.player.move_intent.dx != 0 || state.player.move_intent.dy != 0;
-        apply_graphics(&mut snapshot, graphics, scene, state.clock.tick as f64, moving);
-        Some((snapshot, session.world_size(), (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)))
+        apply_graphics(&mut snapshot, &game.graphics, scene, state.clock.tick as f64, moving);
+        Some((snapshot, world, target))
     }
 
     fn build_world(&mut self, width: u32, height: u32) {
@@ -651,7 +659,7 @@ impl Player {
         self.world = None;
         if let Some(game) = self.game.as_mut() {
             if let Some((snapshot, world, target)) =
-                Self::snapshot_of(&self.def.content, &mut game.graphics, &game.session, !reduced)
+                Self::snapshot_of(&self.def.content, game, !reduced, Some((width, height, integer)))
             {
                 self.world = Some((snapshot, world_view(width, height, integer, world, target)));
             }
@@ -659,9 +667,11 @@ impl Player {
         }
         // The title screen shows the start of the game behind the menu.
         if self.screens.first() == Some(&Screen::Title) {
-            let state = self
-                .title_state
-                .get_or_insert_with(|| state::create_game_state_from_start(&self.def.start, self.seed.as_deref()));
+            let (state, graphics, urls) = self.title_state.get_or_insert_with(|| {
+                let state = state::create_game_state_from_start(&self.def.start, self.seed.as_deref());
+                let graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, &state);
+                (state, graphics, SharedUrls::new())
+            });
             let Some(scene) = state
                 .world
                 .scenes
@@ -673,27 +683,24 @@ impl Player {
             };
             let (x, y) = (units::position_to_tiles(state.player.x), units::position_to_tiles(state.player.y));
             let (px, py) = (PADDING + (x - 0.5) * TILE_SIZE, PADDING + (y - 0.5) * TILE_SIZE);
+            let target = (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0);
+            let world = (
+                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
+                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
+            );
             let options = SnapshotOptions {
                 tile_size: TILE_SIZE,
                 padding: PADDING,
                 pixel_x: Some(px),
                 pixel_y: Some(py),
                 camera: None,
+                tile_window: Some(visible_tiles(width, height, integer, world, target)),
             };
-            let mut snapshot = shell_snapshot(&self.def.content, state, scene, &options);
+            let mut snapshot = shell_snapshot_shared(&self.def.content, state, scene, &options, urls);
             let tick = if reduced { 0.0 } else { (self.time * 20.0).floor() };
             snapshot.tick = tick;
-            let mut graphics = GraphicsSource::from_state(&self.def.presentation, &self.def.content, state);
-            graphics.set_live_state(&self.def.content, state);
-            apply_graphics(&mut snapshot, &graphics, scene, tick, false);
-            let world = (
-                f64::from(scene.width) * TILE_SIZE + PADDING * 2.0,
-                f64::from(scene.height) * TILE_SIZE + PADDING * 2.0,
-            );
-            self.world = Some((
-                snapshot,
-                world_view(width, height, integer, world, (px + TILE_SIZE / 2.0, py + TILE_SIZE / 2.0)),
-            ));
+            apply_graphics(&mut snapshot, graphics, scene, tick, false);
+            self.world = Some((snapshot, world_view(width, height, integer, world, target)));
         }
     }
 
@@ -1037,7 +1044,7 @@ impl Player {
             let message = self.ui.lang().format("toast.pluginError", &[&error]);
             self.game_ui.toasts.push(message, ToastKind::Error);
         }
-        self.game = Some(Game { session, graphics, slot, play_seconds });
+        self.game = Some(Game { session, graphics, urls: SharedUrls::new(), slot, play_seconds });
         self.game_ui = GameUi { toasts: std::mem::take(&mut self.game_ui.toasts), ..GameUi::new() };
         self.screens.clear();
         self.drain_session_events();
@@ -1168,9 +1175,7 @@ impl Player {
         preview.farm_name = self.def.info.title.clone();
         preview.play_seconds = game.play_seconds.floor();
         preview.saved_at = (self.clock)();
-        if let Some((mut snapshot, world, target)) =
-            Self::snapshot_of(&self.def.content, &mut game.graphics, &game.session, false)
-        {
+        if let Some((mut snapshot, world, target)) = Self::snapshot_of(&self.def.content, game, false, None) {
             let (width, height) = (world.0.min(384.0), world.1.min(240.0));
             snapshot.camera = Some(compute_camera(target.0, target.1, world.0, world.1, width, height));
             preview.thumbnail_png = self.renderer.thumbnail(&snapshot, 192, 120, background);
@@ -1392,6 +1397,14 @@ impl Player {
         }
         report
     }
+}
+
+/// The tiles a frame of `width`×`height` shows of a `world` (pixels) whose camera follows
+/// `target`, and one more around: the frame renders the camera rounded out to whole pixels
+/// ([`FrameRenderer::draw_world`](crate::render::FrameRenderer::draw_world)).
+fn visible_tiles(width: u32, height: u32, integer: bool, world: (f64, f64), target: (f64, f64)) -> TileWindow {
+    let camera = world_view(width, height, integer, world, target).camera;
+    TileWindow::for_camera(&camera, PADDING, TILE_SIZE, 1)
 }
 
 /// Fields whose text the game shows (names, dialogue lines and options, quest and item text).
