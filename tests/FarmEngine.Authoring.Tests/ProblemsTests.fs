@@ -190,6 +190,41 @@ let ``graphics, interface, calendar, mine and packs`` () =
     Assert.Equal("old-pack", packed.TargetId)
 
 [<Fact>]
+let ``npc birthdays follow the calendar`` () =
+    let project = starter ()
+    let birthday season day =
+        let npc = project.Npcs.[1]
+        project |> apply (UpsertNpc { npc with Birthday = Some { NpcBirthday.Default with Season = season; Day = day } })
+    let unknown = has "npc.birthdayUnknownSeason" (birthday "monsoon" 3.0)
+    Assert.Equal("npcs[1].birthday.season", unknown.Path)
+    Assert.Contains("has a birthday in \"monsoon\", which is not in the calendar", unknown.Message)
+    let late = has "npc.birthdayDay" (birthday "spring" 40.0)
+    Assert.Contains("has a birthday on day 40 of Spring, which only has days 1 to 28", late.Message)
+    lacks "npc.birthdayDay" (birthday "spring" 28.0)
+    lacks "npc.birthdayUnknownSeason" (birthday "spring" 28.0)
+
+[<Fact>]
+let ``pack plugin capabilities and onWeatherRoll`` () =
+    let pack =
+        { ContentPack.Default with
+            Manifest =
+                { PackManifest.Default with
+                    Id = "weather-mod"; Name = "Weather Mod"; Version = "1.0.0"
+                    Permissions = { PackPermissions.Default with Hooks = [ "onWeatherRoll" ]; Mutations = Some [ "setWeather"; "giveItem:any"; "teleport" ] } }
+            Plugins = [ { PackPlugin.Default with Id = "rain"; Hooks = [ "onWeatherRoll" ] } ] }
+    let project = blank () |> apply (InstallPack pack)
+    let unknown = has "pack.unknownMutation" project
+    Assert.Equal("contentPacks[0].pack.manifest.permissions.mutations[2]", unknown.Path)
+    Assert.Contains("\"teleport\"", unknown.Message)
+    Assert.Equal(1, Problems.collect project |> List.filter (fun p -> p.Code = "pack.unknownMutation") |> List.length)
+    let weather = has "pack.weatherRollAfterwards" project
+    Assert.Contains("listens to onWeatherRoll, which plugins cannot answer in time", weather.Message)
+    Assert.Equal("weather-mod", weather.TargetId)
+    Assert.Equal("everything, including your game's and other packs' content", PackRules.describeMutations { PackPermissions.Default with Mutations = Some [ "*" ] })
+    Assert.StartsWith("default:", PackRules.describeMutations PackPermissions.Default)
+    Assert.Equal("message, giveItem (the pack's own content only)", PackRules.describeMutations { PackPermissions.Default with Mutations = Some [ "message"; "giveItem" ] })
+
+[<Fact>]
 let ``reserved hotkeys and C# friendly members`` () =
     let project = starter ()
     let action = { (Defaults.newAction project) with Hotkey = Some "w" }

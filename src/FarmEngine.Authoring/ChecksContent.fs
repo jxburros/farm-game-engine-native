@@ -582,7 +582,19 @@ module internal ChecksContent =
             if not (seen.Add manifest.Id) then
                 sink.Error("pack.duplicate", path + ".pack.manifest.id", sprintf "Pack \"%s\" is installed twice" manifest.Id, target)
             if not (PackRules.isEngineCompatible (Some manifest.EngineCompatibility) PackRules.EngineVersion) then
-                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
+                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target)
+            manifest.Permissions.Mutations
+            |> Option.defaultValue []
+            |> List.iteri (fun k entry ->
+                if not (PackRules.isMutationCapability entry) then
+                    sink.Warning("pack.unknownMutation", sprintf "%s.pack.manifest.permissions.mutations[%d]" path k, sprintf "Pack \"%s\" asks for plugin capability \"%s\", which this engine does not know (it is ignored)" manifest.Name entry, target))
+            // Plugins answer onWeatherRoll after the night: the day's watering and storm damage
+            // already used the rolled weather (docs/PLUGINS.md).
+            if install.Enabled && manifest.Permissions.Hooks |> List.contains "onWeatherRoll" then
+                install.Pack.Plugins
+                |> List.iteri (fun k plugin ->
+                    if plugin.Hooks |> List.contains "onWeatherRoll" then
+                        sink.Warning("pack.weatherRollAfterwards", sprintf "%s.pack.plugins[%d].hooks" path k, sprintf "Plugin \"%s\" of pack \"%s\" listens to onWeatherRoll, which plugins cannot answer in time: a setWeather answer changes the weather after the night's rain watering and storm damage" (defaultArg plugin.Name plugin.Id) manifest.Name, target)))
 
     /// Whole-number fields (money, counts) with a fraction: the engine keeps them as integers and
     /// rounds them when it loads the game (docs/NUMERICS.md), so say so.

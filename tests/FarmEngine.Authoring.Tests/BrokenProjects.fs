@@ -129,7 +129,7 @@ let private parseCases =
       case "npc patrol point fractional"
           [ Parse "npcs.0.patrolPoints.1.x: Expected integer, received 1.5"; Parse "npcs.0.patrolPoints.1.y: Expected integer, received 2.25" ]
           [ set "npcs.0.patrolPoints" """[{"x":1,"y":1},{"x":1.5,"y":2.25}]""" ]
-      // An unknown season is not a parse error (calendars are customizable): see the content cases.
+      // An unknown season is not a parse error (calendars are customizable): ProblemsTests.
       case "npc birthday" [ Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
           [ set "npcs.1.birthday" """{"season":"monsoon","day":3.5}""" ]
       nullCase "npc birthday season missing" "npcs.0.birthday.season: Expected string, received null" [ set "npcs.0.birthday" """{"season":null,"day":3}""" ]
@@ -295,11 +295,7 @@ let private lintCases =
 
 /// `Validation.ValidateProjectContent`: every content lint.
 let private contentCases =
-    [ case "npc birthday off the calendar" [ Content "has a birthday in \"monsoon\", which is not in the calendar" ]
-          [ set "npcs.1.birthday" """{"season":"monsoon","day":3}""" ]
-      case "npc birthday past the end of its season" [ Content "has a birthday on day 40 of Spring, which only has days 1 to 28" ]
-          [ set "npcs.1.birthday" """{"season":"spring","day":40}""" ]
-      case "transition to a missing scene" [ Content "at (0,0) leads to missing scene \"ghost-scene\"" ]
+    [ case "transition to a missing scene" [ Content "at (0,0) leads to missing scene \"ghost-scene\"" ]
           [ add "scenes.0.transitions" """{"fromX":0,"fromY":0,"toSceneId":"ghost-scene","toX":0,"toY":0}""" ]
       case "transition lands out of bounds" [ Content "lands out of bounds at (99,-1) in \"Farm\"" ]
           [ add "scenes.0.transitions" """{"fromX":1,"fromY":0,"toSceneId":"scene-farm","toX":99,"toY":-1}""" ]
@@ -354,7 +350,10 @@ let private contentCases =
           [ set "scenes.0.tiles.2.5.crop" (crop "pumpkin" "gold" "giant") ]
       case "seed of a missing crop" [ Content "references missing crop \"crop-ghost\"" ]
           [ add "items" """{"id":"seed-ghost","name":"Ghost Seeds","description":"","type":"seed","stackable":true,"maxStack":99,"value":1,"cropType":"crop-ghost"}""" ]
-      case "pack problems" [ Content "'pack-ghost'" ] [ add "contentPacks" (pack "lonely" """{"packId":"pack-ghost"}""") ] ]
+      case "pack problems" [ Content "'pack-ghost'" ] [ add "contentPacks" (pack "lonely" """{"packId":"pack-ghost"}""") ]
+      case "pack without contentInject"
+          [ Content "ships content but does not have the contentInject permission" ]
+          [ add "contentPacks" """{"enabled":true,"pack":{"manifest":{"id":"no-inject","name":"No Inject","version":"1.0.0","permissions":{"hooks":[],"contentInject":false}},"content":{"items":[{"id":"gem","name":"Gem","description":"","type":"material","stackable":true,"maxStack":99,"value":1}]},"plugins":[]}}""" ] ]
 
 /// Nulls where the schema has none: the typed parse refuses them at the first one.
 let private malformedCases =

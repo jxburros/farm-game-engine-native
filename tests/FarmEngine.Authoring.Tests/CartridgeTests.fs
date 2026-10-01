@@ -79,7 +79,11 @@ let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
         { ContentPack.Default with Manifest = { PackManifest.Default with Id = id; Name = id; Version = "1.0.0"; Permissions = { PackPermissions.Default with Hooks = [ "onDayStart"; "onEffect" ] } }; Plugins = [ { PackPlugin.Default with Id = "greeter"; Hooks = [ "onEffect"; "onCommand"; "onDayStart" ]; Source = "api.on('onDayStart', () => [])" } ] }
     let project =
         { starter () with
-            ContentPacks = [ { PackInstallation.Default with Pack = pack "alpha" }; { PackInstallation.Default with Pack = pack "off"; Enabled = false }; { PackInstallation.Default with Pack = pack "beta" } ] }
+            ContentPacks =
+                [ { PackInstallation.Default with Pack = pack "alpha" }
+                  { PackInstallation.Default with Pack = pack "off"; Enabled = false }
+                  { PackInstallation.Default with
+                      Pack = (let beta = pack "beta" in { beta with Manifest = { beta.Manifest with Permissions = { beta.Manifest.Permissions with Mutations = Some [ "message"; "giveItem:any" ] } } }) } ] }
     let cart = read (CartridgeCompiler.Compile project)
     Assert.Equal(2, cart.Plugins.Length)
     let first = cart.Plugins.[0]
@@ -88,7 +92,10 @@ let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
     Assert.Equal("api.on('onDayStart', () => [])", first.Source)
     // The plugin's order, filtered by the manifest's permissions.
     Assert.Equal<string list>([ "onEffect"; "onDayStart" ], first.GrantedHooks)
+    // Mutation capabilities travel only when the manifest declares them.
+    Assert.Equal(None, first.GrantedMutations)
     Assert.Equal("beta:greeter", cart.Plugins.[1].Id)
+    Assert.Equal(Some [ "message"; "giveItem:any" ], cart.Plugins.[1].GrantedMutations)
     Assert.Empty (read (CartridgeCompiler.Compile(starter ()))).Plugins
 
 [<Fact>]

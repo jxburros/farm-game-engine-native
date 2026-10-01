@@ -2233,14 +2233,16 @@ module SchemaJson =
         let mutable vHooks = []
         let mutable vContentInject = true
         let mutable vUiPanels = false
+        let mutable vMutations = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
             match key with
             | "hooks" -> vHooks <- (Decode.list Decode.string) (key :: path) value
             | "contentInject" -> vContentInject <- Decode.boolean (key :: path) value
             | "uiPanels" -> vUiPanels <- Decode.boolean (key :: path) value
+            | "mutations" -> vMutations <- Decode.optional (Decode.list Decode.string) (key :: path) value
             | _ -> extra.Add((key, value))
-        { Hooks = vHooks; ContentInject = vContentInject; UiPanels = vUiPanels; Extra = List.ofSeq extra }
+        { Hooks = vHooks; ContentInject = vContentInject; UiPanels = vUiPanels; Mutations = vMutations; Extra = List.ofSeq extra }
 
     and encodePackPermissions (value: PackPermissions) : Json =
         JObject(
@@ -2248,6 +2250,9 @@ module SchemaJson =
                 yield "hooks", (Encode.list JString) value.Hooks
                 yield "contentInject", JBool value.ContentInject
                 yield "uiPanels", JBool value.UiPanels
+                match value.Mutations with
+                | Some v -> yield "mutations", (Encode.list JString) v
+                | None -> ()
                 yield! value.Extra
             ]
         )

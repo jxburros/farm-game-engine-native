@@ -1046,17 +1046,21 @@ and PackPermissions =
     {
         /// Hook names the pack's plugins may subscribe to (user-approved at install).
         Hooks: string list
-        /// May contribute content definitions (the normal case).
+        /// May contribute content definitions, a player start and string tables (the normal case).
+        /// When off, none of the pack's content loads; its plugins still run.
         ContentInject: bool
-        /// Reserved: declarative UI panels (not yet implemented).
+        /// Reserved: declarative UI panels. Packs cannot add game panels yet, so this grants nothing.
         UiPanels: bool
+        /// Mutation capabilities the pack's plugins may use (`message`, `giveItem`, `setFlag:any`,
+        /// `*`, … — see docs/PLUGINS.md). None: the defaults, and onEffect/onCommand answers are dropped.
+        Mutations: (string list) option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `PackPermissions` with every field at its schema default.
     static member Default : PackPermissions =
-        { Hooks = []; ContentInject = true; UiPanels = false; Extra = [] }
+        { Hooks = []; ContentInject = true; UiPanels = false; Mutations = None; Extra = [] }
 
 /// Optional player-start block so a base pack can express the whole starter game.
 and PackPlayerStart =

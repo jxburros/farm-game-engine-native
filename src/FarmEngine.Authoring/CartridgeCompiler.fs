@@ -155,7 +155,8 @@ type CartridgeCompiler =
                    builder.EndTable() |]
         let assetsOffset = builder.CreateOffsetVector assetOffsets
         // Plugins of the enabled packs in load order, each with the hooks its manifest grants
-        // (Rust `farm_plugins::plugin_specs_from_project`).
+        // and the mutation capabilities it declares, if any (Rust
+        // `farm_plugins::plugin_specs_from_project`).
         let pluginOffsets =
             [| for install in project.ContentPacks do
                    if install.Enabled then
@@ -164,10 +165,16 @@ type CartridgeCompiler =
                        for plugin in pack.Plugins do
                            let hooks = plugin.Hooks |> List.filter granted.Contains |> List.map builder.CreateString |> Array.ofList
                            let hooksOffset = builder.CreateOffsetVector hooks
+                           // Absent (not empty) when the manifest declares none: the player then
+                           // applies the default capabilities.
+                           let mutationsOffset =
+                               pack.Manifest.Permissions.Mutations
+                               |> Option.map (fun mutations -> builder.CreateOffsetVector(mutations |> List.map builder.CreateString |> Array.ofList))
                            let idOffset = builder.CreateString(pack.Manifest.Id + ":" + plugin.Id)
                            let packOffset = builder.CreateString pack.Manifest.Id
                            let sourceOffset = builder.CreateString plugin.Source
-                           builder.StartTable 4
+                           builder.StartTable 5
+                           mutationsOffset |> Option.iter (fun offset -> builder.AddOffsetField(4, offset))
                            builder.AddOffsetField(3, hooksOffset)
                            builder.AddOffsetField(2, sourceOffset)
                            builder.AddOffsetField(1, packOffset)

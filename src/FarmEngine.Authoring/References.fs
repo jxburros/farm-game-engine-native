@@ -271,6 +271,7 @@ module References =
           reference "PackDependency" "PackId" ReferenceKind.Pack
           plain "PackManifest" "Overrides" "ids from other packs this pack replaces (checked when packs merge)"
           plain "PackPermissions" "Hooks" "plugin hook names the pack may use"
+          plain "PackPermissions" "Mutations" "plugin mutation capabilities (docs/PLUGINS.md)"
           plain "PackPlugin" "Hooks" "plugin hook names the plugin handles"
           plain "PackContent" "Strings" "locale string tables keyed by locale code"
           optional "PackPlayerStart" "SceneId" ReferenceKind.Scene

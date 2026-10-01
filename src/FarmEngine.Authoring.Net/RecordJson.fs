@@ -167,7 +167,7 @@ type RecordJson =
         add typeof<PackDependency> [ "PackId", "packId"; "Version", "version" ]
         add typeof<PackInstallation> [ "Pack", "pack"; "Enabled", "enabled" ]
         add typeof<PackManifest> [ "Id", "id"; "Name", "name"; "Version", "version"; "Description", "description"; "Author", "author"; "EngineCompatibility", "engineCompatibility"; "Base", "base"; "Dependencies", "dependencies"; "Overrides", "overrides"; "Permissions", "permissions" ]
-        add typeof<PackPermissions> [ "Hooks", "hooks"; "ContentInject", "contentInject"; "UiPanels", "uiPanels" ]
+        add typeof<PackPermissions> [ "Hooks", "hooks"; "ContentInject", "contentInject"; "UiPanels", "uiPanels"; "Mutations", "mutations" ]
         add typeof<PackPlayerStart> [ "SceneId", "sceneId"; "X", "x"; "Y", "y"; "Money", "money"; "Inventory", "inventory" ]
         add typeof<PackPlugin> [ "Id", "id"; "Name", "name"; "Hooks", "hooks"; "Source", "source" ]
         add typeof<PackStartItem> [ "ItemId", "itemId"; "Quantity", "quantity" ]

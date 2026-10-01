@@ -910,6 +910,8 @@ type RecordWith =
     [<Extension>]
     static member WithUiPanels(record: PackPermissions, value: bool) : PackPermissions = { record with UiPanels = value }
     [<Extension>]
+    static member WithMutations(record: PackPermissions, value: seq<string> | null) : PackPermissions = { record with Mutations = (match value with null -> None | items -> Some(List.ofSeq items)) }
+    [<Extension>]
     static member WithSceneId(record: PackPlayerStart, value: string | null) : PackPlayerStart = { record with SceneId = Option.ofObj value }
     [<Extension>]
     static member WithX(record: PackPlayerStart, value: Nullable<float>) : PackPlayerStart = { record with X = Option.ofNullable value }
