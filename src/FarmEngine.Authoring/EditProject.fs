@@ -126,9 +126,14 @@ module internal EditProject =
     let private packId (install: PackInstallation) = install.Pack.Manifest.Id
 
     /// ModsEditor `confirmPackInstall`: appended enabled; a pack id already installed is refused.
+    /// Installs a pack (one undo step). Its art joins the project's custom assets
+    /// (`PackMerge.mergeAssets`), where the game, the previews and the Art tab find it, and the
+    /// installed copy keeps no second copy of the images.
     let installPack (pack: ContentPack) (project: GameProject) =
         if project.ContentPacks |> List.exists (fun i -> packId i = pack.Manifest.Id) then project
-        else { project with ContentPacks = Lists.append { Pack = pack; Enabled = true } project.ContentPacks }
+        else
+            let project, _ = PackMerge.mergeAssets project pack
+            { project with ContentPacks = Lists.append { Pack = PackRules.withoutAssets pack; Enabled = true } project.ContentPacks }
 
     let setPackEnabled (id: string) (enabled: bool) (project: GameProject) =
         let toggle (install: PackInstallation) =
