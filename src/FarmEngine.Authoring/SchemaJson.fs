@@ -1292,6 +1292,7 @@ module SchemaJson =
         let mutable vGamePanels = None
         let mutable vCurrentSeason = ""
         let mutable vCurrentDay = 0.0
+        let mutable vCurrentDayOfSeason = None
         let mutable vCurrentTimeMinutes = 0.0
         let mutable vCurrentYear = 0.0
         let mutable vGameStartTime = 0.0
@@ -1314,6 +1315,7 @@ module SchemaJson =
         let mutable vSocialState = None
         let mutable vMineDeepestFloor = None
         let mutable vQuarantinedItems = None
+        let mutable vKeptState = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
             match key with
@@ -1328,7 +1330,7 @@ module SchemaJson =
             | "dialogues" -> vDialogues <- (Decode.list decodeDialogue) (key :: path) value
             | "quests" -> vQuests <- (Decode.list decodeQuest) (key :: path) value
             | "player" -> vPlayer <- decodePlayer (key :: path) value
-            | "eventFlags" -> vEventFlags <- (Decode.dict Decode.boolean) (key :: path) value
+            | "eventFlags" -> vEventFlags <- (Decode.dict Decode.flagValue) (key :: path) value
             | "startSceneId" -> vStartSceneId <- Decode.string (key :: path) value
             | "mode" -> vMode <- Decode.string (key :: path) value
             | "selectedTileType" -> vSelectedTileType <- Decode.string (key :: path) value
@@ -1344,6 +1346,7 @@ module SchemaJson =
             | "gamePanels" -> vGamePanels <- Decode.optional (Decode.list decodeGamePanel) (key :: path) value
             | "currentSeason" -> vCurrentSeason <- Decode.string (key :: path) value
             | "currentDay" -> vCurrentDay <- Decode.number (key :: path) value
+            | "currentDayOfSeason" -> vCurrentDayOfSeason <- Decode.optional Decode.number (key :: path) value
             | "currentTimeMinutes" -> vCurrentTimeMinutes <- Decode.number (key :: path) value
             | "currentYear" -> vCurrentYear <- Decode.number (key :: path) value
             | "gameStartTime" -> vGameStartTime <- Decode.number (key :: path) value
@@ -1366,8 +1369,9 @@ module SchemaJson =
             | "socialState" -> vSocialState <- Decode.optional (Decode.dict decodeNpcSocialState) (key :: path) value
             | "mineDeepestFloor" -> vMineDeepestFloor <- Decode.optional Decode.number (key :: path) value
             | "quarantinedItems" -> vQuarantinedItems <- Decode.optional (Decode.list decodeInventorySlot) (key :: path) value
+            | "keptState" -> vKeptState <- Decode.optional Decode.json (key :: path) value
             | _ -> extra.Add((key, value))
-        { SchemaVersion = vSchemaVersion; Id = vId; Name = vName; Version = vVersion; Scenes = vScenes; Npcs = vNpcs; Items = vItems; Events = vEvents; Dialogues = vDialogues; Quests = vQuests; Player = vPlayer; EventFlags = vEventFlags; StartSceneId = vStartSceneId; Mode = vMode; SelectedTileType = vSelectedTileType; SelectedTileVisual = vSelectedTileVisual; SelectedNpcId = vSelectedNpcId; SelectedItemId = vSelectedItemId; CurrentTime = vCurrentTime; CustomAssets = vCustomAssets; CustomCrops = vCustomCrops; PlayerCustomImage = vPlayerCustomImage; PlayerVisual = vPlayerVisual; Graphics = vGraphics; GamePanels = vGamePanels; CurrentSeason = vCurrentSeason; CurrentDay = vCurrentDay; CurrentTimeMinutes = vCurrentTimeMinutes; CurrentYear = vCurrentYear; GameStartTime = vGameStartTime; Shops = vShops; NodeTypes = vNodeTypes; Settings = vSettings; Recipes = vRecipes; MachineTypes = vMachineTypes; Weather = vWeather; AnimalSpecies = vAnimalSpecies; Animals = vAnimals; FishTables = vFishTables; Mine = vMine; Actions = vActions; Minigames = vMinigames; ContentPacks = vContentPacks; Export = vExport; RngState = vRngState; CurrentWeatherId = vCurrentWeatherId; SocialState = vSocialState; MineDeepestFloor = vMineDeepestFloor; QuarantinedItems = vQuarantinedItems; Extra = List.ofSeq extra }
+        { SchemaVersion = vSchemaVersion; Id = vId; Name = vName; Version = vVersion; Scenes = vScenes; Npcs = vNpcs; Items = vItems; Events = vEvents; Dialogues = vDialogues; Quests = vQuests; Player = vPlayer; EventFlags = vEventFlags; StartSceneId = vStartSceneId; Mode = vMode; SelectedTileType = vSelectedTileType; SelectedTileVisual = vSelectedTileVisual; SelectedNpcId = vSelectedNpcId; SelectedItemId = vSelectedItemId; CurrentTime = vCurrentTime; CustomAssets = vCustomAssets; CustomCrops = vCustomCrops; PlayerCustomImage = vPlayerCustomImage; PlayerVisual = vPlayerVisual; Graphics = vGraphics; GamePanels = vGamePanels; CurrentSeason = vCurrentSeason; CurrentDay = vCurrentDay; CurrentDayOfSeason = vCurrentDayOfSeason; CurrentTimeMinutes = vCurrentTimeMinutes; CurrentYear = vCurrentYear; GameStartTime = vGameStartTime; Shops = vShops; NodeTypes = vNodeTypes; Settings = vSettings; Recipes = vRecipes; MachineTypes = vMachineTypes; Weather = vWeather; AnimalSpecies = vAnimalSpecies; Animals = vAnimals; FishTables = vFishTables; Mine = vMine; Actions = vActions; Minigames = vMinigames; ContentPacks = vContentPacks; Export = vExport; RngState = vRngState; CurrentWeatherId = vCurrentWeatherId; SocialState = vSocialState; MineDeepestFloor = vMineDeepestFloor; QuarantinedItems = vQuarantinedItems; KeptState = vKeptState; Extra = List.ofSeq extra }
 
     and encodeGameProject (value: GameProject) : Json =
         JObject(
@@ -1383,7 +1387,7 @@ module SchemaJson =
                 yield "dialogues", (Encode.list encodeDialogue) value.Dialogues
                 yield "quests", (Encode.list encodeQuest) value.Quests
                 yield "player", encodePlayer value.Player
-                yield "eventFlags", (Encode.dict JBool) value.EventFlags
+                yield "eventFlags", (Encode.dict id) value.EventFlags
                 yield "startSceneId", JString value.StartSceneId
                 yield "mode", JString value.Mode
                 yield "selectedTileType", JString value.SelectedTileType
@@ -1415,6 +1419,9 @@ module SchemaJson =
                 | None -> ()
                 yield "currentSeason", JString value.CurrentSeason
                 yield "currentDay", JNumber value.CurrentDay
+                match value.CurrentDayOfSeason with
+                | Some v -> yield "currentDayOfSeason", JNumber v
+                | None -> ()
                 yield "currentTimeMinutes", JNumber value.CurrentTimeMinutes
                 yield "currentYear", JNumber value.CurrentYear
                 yield "gameStartTime", JNumber value.GameStartTime
@@ -1448,6 +1455,9 @@ module SchemaJson =
                 | None -> ()
                 match value.QuarantinedItems with
                 | Some v -> yield "quarantinedItems", (Encode.list encodeInventorySlot) v
+                | None -> ()
+                match value.KeptState with
+                | Some v -> yield "keptState", v
                 | None -> ()
                 yield! value.Extra
             ]
@@ -2781,6 +2791,7 @@ module SchemaJson =
         let mutable vTransitions = []
         let mutable vNpcs = []
         let mutable vEvents = []
+        let mutable vIndoor = None
         let extra = ResizeArray<string * Json>()
         for (key, value) in members do
             match key with
@@ -2792,8 +2803,9 @@ module SchemaJson =
             | "transitions" -> vTransitions <- (Decode.list decodeSceneTransition) (key :: path) value
             | "npcs" -> vNpcs <- (Decode.list Decode.string) (key :: path) value
             | "events" -> vEvents <- (Decode.list Decode.string) (key :: path) value
+            | "indoor" -> vIndoor <- Decode.optional Decode.boolean (key :: path) value
             | _ -> extra.Add((key, value))
-        { Id = vId; Name = vName; Width = vWidth; Height = vHeight; Tiles = vTiles; Transitions = vTransitions; Npcs = vNpcs; Events = vEvents; Extra = List.ofSeq extra }
+        { Id = vId; Name = vName; Width = vWidth; Height = vHeight; Tiles = vTiles; Transitions = vTransitions; Npcs = vNpcs; Events = vEvents; Indoor = vIndoor; Extra = List.ofSeq extra }
 
     and encodeScene (value: Scene) : Json =
         JObject(
@@ -2806,6 +2818,9 @@ module SchemaJson =
                 yield "transitions", (Encode.list encodeSceneTransition) value.Transitions
                 yield "npcs", (Encode.list JString) value.Npcs
                 yield "events", (Encode.list JString) value.Events
+                match value.Indoor with
+                | Some v -> yield "indoor", JBool v
+                | None -> ()
                 yield! value.Extra
             ]
         )
@@ -3136,13 +3151,15 @@ module SchemaJson =
         let mutable vDayStartMinute = 360.0
         let mutable vDayEndMinute = 1560.0
         let mutable vMinutesPerRealSecond = 1.0
+        let mutable vPauseInModals = None
         for (key, value) in members do
             match key with
             | "dayStartMinute" -> vDayStartMinute <- Decode.number (key :: path) value
             | "dayEndMinute" -> vDayEndMinute <- Decode.number (key :: path) value
             | "minutesPerRealSecond" -> vMinutesPerRealSecond <- Decode.number (key :: path) value
+            | "pauseInModals" -> vPauseInModals <- Decode.optional Decode.boolean (key :: path) value
             | _ -> ()
-        { DayStartMinute = vDayStartMinute; DayEndMinute = vDayEndMinute; MinutesPerRealSecond = vMinutesPerRealSecond }
+        { DayStartMinute = vDayStartMinute; DayEndMinute = vDayEndMinute; MinutesPerRealSecond = vMinutesPerRealSecond; PauseInModals = vPauseInModals }
 
     and encodeTimeConfig (value: TimeConfig) : Json =
         JObject(
@@ -3150,6 +3167,9 @@ module SchemaJson =
                 yield "dayStartMinute", JNumber value.DayStartMinute
                 yield "dayEndMinute", JNumber value.DayEndMinute
                 yield "minutesPerRealSecond", JNumber value.MinutesPerRealSecond
+                match value.PauseInModals with
+                | Some v -> yield "pauseInModals", JBool v
+                | None -> ()
             ]
         )
 

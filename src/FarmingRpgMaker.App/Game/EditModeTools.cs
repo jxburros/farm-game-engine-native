@@ -37,6 +37,8 @@ public sealed partial class EditModeView
     private readonly TextBox _doorX = new() { Name = "DoorX", Width = 58, Text = "0" };
     private readonly TextBox _doorY = new() { Name = "DoorY", Width = 58, Text = "0" };
     private readonly CheckBox _doorReturn = new() { Name = "DoorReturn", Content = "Return door" };
+    private readonly CheckBox _sceneIndoor = new() { Name = "SceneIndoor", Content = "Indoor (no weather)" };
+    private bool _showingSceneIndoor;
     private readonly Button _removeDoor = new() { Name = "RemoveDoorButton", Content = "Remove door" };
     private readonly StackPanel _transitionList = new() { Name = "TransitionList", Spacing = 6 };
     private readonly TextBlock _transitionCount = Ui.Text("", "muted", "small");
@@ -192,6 +194,13 @@ public sealed partial class EditModeView
         _sceneWidth.TextChanged += (_, _) => RefreshSceneSizeInfo();
         _sceneHeight.TextChanged += (_, _) => RefreshSceneSizeInfo();
         side.Children.Add(_sceneSizeInfo);
+        // Rain does not water an indoor scene's soil and storms do not reach its crops.
+        ToolTip.SetTip(_sceneIndoor, "Greenhouses and interiors: rain does not water the soil and storms do not damage crops here.");
+        _sceneIndoor.IsCheckedChanged += (_, _) =>
+        {
+            if (!_showingSceneIndoor) ApplyToScene(id => Edits.SetSceneIndoor(id, _sceneIndoor.IsChecked == true));
+        };
+        side.Children.Add(_sceneIndoor);
         foreach (var type in TileTypes.All)
         {
             _newSceneTile.Items.Add(new ComboBoxItem { Content = Ui.Capitalize(type), Tag = type });
@@ -291,6 +300,9 @@ public sealed partial class EditModeView
         _shownSceneWidth = ((int)scene.Width).ToString(CultureInfo.InvariantCulture);
         _shownSceneHeight = ((int)scene.Height).ToString(CultureInfo.InvariantCulture);
         _removeDoor.IsEnabled = _doorAt is { } at && scene.Transitions.Any(t => t.FromX == at.X && t.FromY == at.Y);
+        _showingSceneIndoor = true;
+        _sceneIndoor.IsChecked = scene.Indoor.OrNullable() == true;
+        _showingSceneIndoor = false;
         RefreshSceneSizeInfo();
 
         var previous = (_doorDestination.SelectedItem as ComboBoxItem)?.Tag as string;

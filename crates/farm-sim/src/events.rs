@@ -100,7 +100,7 @@ pub fn condition_met(
             true
         }
         EventCondition::TimeOfDay { min_minute, max_minute } => {
-            state.clock.time_minutes >= *min_minute && state.clock.time_minutes <= *max_minute
+            time_of_day_matches(state.clock.time_minutes, *min_minute, *max_minute)
         }
         EventCondition::QuestStatus { quest_id, status } => {
             state.quests.get(quest_id).map_or(QUEST_STATUS_NOT_STARTED, |progress| progress.status.as_str()) == status
@@ -110,9 +110,23 @@ pub fn condition_met(
         }
         EventCondition::Weather { weather_ids } => weather_ids.contains(&state.clock.weather_id),
         EventCondition::FestivalId { festival_id } => {
-            game_time::festival_on_day(&ctx.content.settings.calendar, state.clock.day)
+            game_time::festival_today(&ctx.content.settings.calendar, &state.clock)
                 .is_some_and(|festival| festival.id == *festival_id)
         }
+    }
+}
+
+/// A `timeOfDay` range against the clock (all in micro-minutes). The clock counts on past
+/// midnight until the day ends (26:00 by default) while the game shows 0:00–2:00, so a range
+/// matches the clock as it counts or as it is shown: "0:00–2:00" matches 24:00–26:00. A range
+/// whose start is after its end wraps past midnight: "22:00–2:00" matches 22:00 to 2:00 (#37).
+pub fn time_of_day_matches(time: u32, min: u32, max: u32) -> bool {
+    let day = units::MINUTES_PER_DAY * units::MINUTE;
+    let shown = time % day;
+    if min <= max {
+        (min..=max).contains(&time) || (min..=max).contains(&shown)
+    } else {
+        shown >= min % day || shown <= max % day
     }
 }
 

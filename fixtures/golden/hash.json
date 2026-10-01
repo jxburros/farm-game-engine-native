@@ -55,6 +55,7 @@
       "animals": [],
       "clock": {
         "day": 0,
+        "dayOfSeason": 0,
         "season": "",
         "tick": 0,
         "timeMinutes": 0,
@@ -110,7 +111,7 @@
         "scenes": []
       }
     },
-    "hash": "d44bb0c0969e75ad"
+    "hash": "eedd0f1d126e97a5"
   },
   {
     "name": "starter farm, seed hash-vector",
@@ -119,6 +120,7 @@
       "animals": [],
       "clock": {
         "day": 1,
+        "dayOfSeason": 1,
         "season": "spring",
         "tick": 0,
         "timeMinutes": 360,
@@ -2461,6 +2463,6 @@
         ]
       }
     },
-    "hash": "3b214ea5ad713252"
+    "hash": "3d6046ba3012fb32"
   }
 ]

@@ -98,6 +98,17 @@ pub struct Scene {
     pub transitions: Vec<SceneTransition>,
     pub npcs: Vec<String>,
     pub events: Vec<String>,
+    /// Indoor scenes (greenhouses, interiors, generated mine floors) keep the weather out: rain
+    /// does not water their soil and storms do not damage their crops. Absent means outdoor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indoor: Option<bool>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+impl Scene {
+    /// Is the scene sheltered from the weather ([`Scene::indoor`])?
+    pub fn is_indoor(&self) -> bool {
+        self.indoor == Some(true)
+    }
 }

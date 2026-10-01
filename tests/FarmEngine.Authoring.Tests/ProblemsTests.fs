@@ -288,3 +288,38 @@ let ``placed machines, scene lists, player quests and recipe skills are checked`
     let unlock = { RecipeUnlock.Default with Skill = Some({ RecipeSkillRequirement.Default with Skill = "juggling"; Level = 1.0 }) }
     let recipe = { (Defaults.newRecipe project) with Unlock = Some unlock }
     Assert.EndsWith(".unlock.skill.skill", (has "recipe.unknownSkill" (project |> apply (UpsertRecipe recipe))).Path)
+
+[<Fact>]
+let ``a day that ends before it starts, too late or too fast is an error`` () =
+    let project = starter ()
+    let withTime (time: TimeConfig) = project |> apply (SetSettings({ project.Settings with Time = time }))
+    let inverted = withTime { project.Settings.Time with DayStartMinute = 1560.0; DayEndMinute = 1500.0 }
+    let problem = has "schema.settings" inverted
+    Assert.Equal("settings.time.dayEndMinute", problem.Path)
+    Assert.True problem.IsError
+    Assert.True(Problems.blocksExport (Problems.collect inverted))
+    has "schema.settings" (withTime { project.Settings.Time with DayStartMinute = 600.0; DayEndMinute = 630.0 }) |> ignore
+    has "schema.settings" (withTime { project.Settings.Time with DayEndMinute = 4295.0 }) |> ignore
+    has "schema.settings" (withTime { project.Settings.Time with MinutesPerRealSecond = 1441.0 }) |> ignore
+    lacks "schema.settings" (withTime { project.Settings.Time with DayEndMinute = 4294.0; MinutesPerRealSecond = 1440.0 })
+
+[<Fact>]
+let ``time of day ranges may wrap past midnight`` () =
+    let project = starter ()
+    let condition = EventCondition.TimeOfDay { MinMinute = 22.0 * 60.0; MaxMinute = 2.0 * 60.0 }
+    let event = { Defaults.newEvent project with Conditions = [ condition ] }
+    let withEvent = project |> apply (UpsertEvent event)
+    Assert.Empty(Problems.collect withEvent |> List.filter (fun p -> p.Message.Contains "minMinute"))
+
+[<Fact>]
+let ``a starting day outside the starting season says which day the game starts on`` () =
+    let project = starter ()
+    // Absolute day 1 is spring; the game starts in summer (day 1 of summer).
+    let summer = { project with CurrentSeason = "summer"; CurrentDay = 1.0 }
+    let problem = has "project.currentDayOutsideSeason" summer
+    Assert.False problem.IsError
+    Assert.Contains("day 1 of Summer", problem.Message)
+    lacks "project.currentDayOutsideSeason" project
+    // Keep changes records the day of season: nothing to warn about then.
+    lacks "project.currentDayOutsideSeason" { summer with CurrentDayOfSeason = Some 12.0 }
+    has "project.currentDayOfSeasonOutOfRange" { summer with CurrentDayOfSeason = Some 40.0 } |> ignore

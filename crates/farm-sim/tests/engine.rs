@@ -6,9 +6,9 @@
 mod common;
 
 use common::{has_message, make_engine, make_project};
-use farm_sim::schema::{DialogueState, GameState, MinigameSession, Quest, QuestObjective, QuestRewards};
+use farm_sim::schema::{DialogueState, GameProject, GameState, MinigameSession, Quest, QuestObjective, QuestRewards};
 use farm_sim::units;
-use farm_sim::{engine, state, Command, Effect, EngineContext, HookEvent};
+use farm_sim::{engine, game_time, state, Command, Effect, EngineContext, HookEvent};
 
 fn engine_state(seed: &str) -> (EngineContext, GameState) {
     make_engine(|_| {}, seed)
@@ -347,8 +347,33 @@ fn advance_tick_with_no_ticks_is_a_no_op() {
 }
 
 #[test]
+fn an_open_minigame_pauses_the_clock_and_freezes_the_body() {
+    let (ctx, mut game_state) = engine_state("minigame-pause");
+    assert!(ctx.content.settings.time.pauses_in_modals(), "pauseInModals is on by default");
+    game_state.minigame = Some(MinigameSession { minigame_id: "mg".to_owned(), context: Default::default() });
+    game_state.player.move_intent.dx = 1;
+    let before = game_state.clone();
+    // A whole game day of ticks: the clock stays put, so nothing minute-based runs and the day
+    // never ends under the open minigame.
+    let effects = engine::advance_tick(&ctx, &mut game_state, 20 * 60 * 24);
+    assert!(effects.is_empty());
+    assert_eq!(game_state.clock.tick, 20 * 60 * 24);
+    assert_eq!(game_state.clock.time_minutes, before.clock.time_minutes);
+    assert_eq!(game_state.clock.day, before.clock.day);
+    assert_eq!(game_state.player, before.player);
+    assert_eq!(game_state.npcs, before.npcs);
+
+    // Closing it starts the clock again.
+    game_state.minigame = None;
+    engine::advance_tick(&ctx, &mut game_state, 20);
+    assert_eq!(game_state.clock.time_minutes, units::time_of_day(361.0));
+}
+
+#[test]
 fn ticks_step_the_clock_on_the_minute_quantum_while_a_minigame_freezes_the_body() {
-    let (ctx, mut game_state) = engine_state("minigame-clock");
+    // Without `pauseInModals` (v8 behavior) the clock runs on under a modal.
+    let (ctx, mut game_state) =
+        make_engine(|project| project.settings.time.pause_in_modals = Some(false), "minigame-clock");
     game_state.minigame = Some(MinigameSession { minigame_id: "mg".to_owned(), context: Default::default() });
     game_state.player.move_intent.dx = 1;
     let before = game_state.clone();
@@ -370,4 +395,242 @@ fn ticks_step_the_clock_on_the_minute_quantum_while_a_minigame_freezes_the_body(
     assert_eq!(fractional, farm_sim::replay::ticks(3));
     engine::advance_tick(&ctx, &mut batched, 3);
     assert_eq!(batched, stepped);
+}
+
+// --- the day window, modals and the clock (#24, #37) ---
+
+#[test]
+fn an_inverted_day_window_does_not_collapse_the_player_every_tick() {
+    // dayStartMinute ≥ dayEndMinute used to collapse on every tick: ~1,200 days and every coin
+    // gone in a minute of play.
+    let (_, mut game_state) = engine_state("window");
+    let mut project = make_project();
+    project.settings.time.day_start_minute = 1560;
+    project.settings.time.day_end_minute = 1500;
+    // Settings resolution replaces just the time section.
+    assert_eq!(state::settings_fallbacks(&project.settings), vec!["settings.time".to_owned()]);
+    let resolved = state::resolve_settings(&project.settings);
+    assert_eq!(resolved.time, farm_sim::schema::TimeConfig::default());
+    assert_eq!(resolved.calendar, project.settings.calendar);
+    // The engine guards content that skipped resolution, too.
+    let mut content = state::create_content_from_project(&project);
+    content.settings.time = project.settings.time.clone();
+    let ctx = EngineContext::new(content);
+    game_state.clock.time_minutes = units::minutes(1559);
+    let money = game_state.player.money;
+    engine::advance_tick(&ctx, &mut game_state, 61 * 20);
+    assert_eq!(game_state.clock.day, 2, "one collapse at the default 26:00, then a normal day");
+    assert!(game_state.player.money >= money - 50);
+    // The collapse came one game minute in; an hour of the new day has passed since.
+    assert_eq!(game_state.clock.time_minutes, units::time_of_day(7.0 * 60.0));
+}
+
+#[test]
+fn a_day_end_the_clock_cannot_reach_falls_back_to_the_default_window() {
+    let mut time = farm_sim::schema::TimeConfig::default();
+    assert!(game_time::is_valid_time_config(&time));
+    time.day_end_minute = game_time::MAX_DAY_END_MINUTE;
+    assert!(game_time::is_valid_time_config(&time));
+    time.day_end_minute = game_time::MAX_DAY_END_MINUTE + 1;
+    assert!(!game_time::is_valid_time_config(&time), "the u32 clock saturates before 71:35");
+    let time = farm_sim::schema::TimeConfig { day_start_minute: 600, day_end_minute: 659, ..Default::default() };
+    assert!(!game_time::is_valid_time_config(&time), "a day shorter than an hour");
+    let time = farm_sim::schema::TimeConfig { minutes_per_real_second: 0, ..Default::default() };
+    assert!(!game_time::is_valid_time_config(&time));
+    let fastest = units::from_authoring::<units::MinuteRate>(f64::from(game_time::MAX_MINUTES_PER_REAL_SECOND));
+    let time = farm_sim::schema::TimeConfig { minutes_per_real_second: fastest, ..Default::default() };
+    assert!(game_time::is_valid_time_config(&time));
+    let time = farm_sim::schema::TimeConfig { minutes_per_real_second: fastest + 1, ..Default::default() };
+    assert!(!game_time::is_valid_time_config(&time));
+}
+
+#[test]
+fn sleeping_closes_an_open_minigame() {
+    let (ctx, mut game_state) = engine_state("sleep-minigame");
+    game_state.minigame = Some(MinigameSession { minigame_id: "mg".to_owned(), context: Default::default() });
+    game_state.dialogue = Some(DialogueState { npc_id: "npc-test".to_owned(), dialogue_id: "dlg-1".to_owned() });
+    farm_sim::game_time::perform_sleep(&ctx, &mut game_state, farm_sim::game_time::SleepOptions::default());
+    assert!(game_state.minigame.is_none());
+    assert!(game_state.dialogue.is_none());
+}
+
+#[test]
+fn time_of_day_ranges_match_after_midnight_and_wrap_past_it() {
+    use farm_sim::events::time_of_day_matches;
+    let at = |hour: f64| units::time_of_day(hour * 60.0);
+    // The clock counts on to 26:00; "0:00–2:00" is how the game shows 24:00–26:00.
+    assert!(time_of_day_matches(at(24.5), at(0.0), at(2.0)));
+    assert!(time_of_day_matches(at(1.0), at(0.0), at(2.0)));
+    assert!(!time_of_day_matches(at(12.0), at(0.0), at(2.0)));
+    // Ranges written in clock minutes past midnight still match as before.
+    assert!(time_of_day_matches(at(25.0), at(24.0), at(26.0)));
+    assert!(time_of_day_matches(at(8.0), at(6.0), at(12.0)));
+    assert!(!time_of_day_matches(at(13.0), at(6.0), at(12.0)));
+    // Start after end: wraps past midnight.
+    assert!(time_of_day_matches(at(23.0), at(22.0), at(2.0)));
+    assert!(time_of_day_matches(at(25.5), at(22.0), at(2.0)));
+    assert!(!time_of_day_matches(at(12.0), at(22.0), at(2.0)));
+}
+
+#[test]
+fn npcs_take_a_step_per_minute_at_fast_clock_rates() {
+    use farm_sim::schema::NpcScheduleEntry;
+    let walker = |project: &mut GameProject| {
+        project.npcs[0].schedule = Some(vec![NpcScheduleEntry {
+            minute: 0,
+            scene_id: "scene-test".to_owned(),
+            x: 5,
+            y: 1,
+            ..NpcScheduleEntry::default()
+        }]);
+        project.player.x = units::tiles(1);
+        project.player.y = units::tiles(5);
+    };
+    // One game minute per tick: three ticks, three steps.
+    let (ctx, mut slow) = make_engine(walker, "walk");
+    let start = slow.npcs["npc-test"].clone();
+    engine::advance_tick(&ctx, &mut slow, 60);
+    let slow_position = (slow.npcs["npc-test"].x, slow.npcs["npc-test"].y);
+    // Three game minutes per tick (60 per real second): one tick, the same three steps.
+    let (ctx, mut fast) = make_engine(
+        |project| {
+            walker(project);
+            project.settings.time.minutes_per_real_second = units::from_authoring::<units::MinuteRate>(60.0);
+        },
+        "walk",
+    );
+    engine::advance_tick(&ctx, &mut fast, 1);
+    assert_eq!(fast.clock.time_minutes, slow.clock.time_minutes);
+    assert_ne!((start.x, start.y), slow_position);
+    assert_eq!((fast.npcs["npc-test"].x, fast.npcs["npc-test"].y), slow_position);
+}
+
+// --- Keep changes and round trips (#36, #142) ---
+
+#[test]
+fn keep_changes_carries_flags_and_the_live_state_into_the_next_playtest() {
+    use farm_sim::schema::{GridPoint, ShopSession};
+    let project = make_project();
+    let mut game_state = state::create_game_state(&project, Some("keep"));
+    game_state.flags.insert("count".to_owned(), serde_json::json!(3));
+    game_state.flags.insert("name".to_owned(), serde_json::json!("Ada"));
+    game_state.flags.insert("met".to_owned(), serde_json::json!(true));
+    game_state.clock.tick = 1234;
+    game_state.shop = Some(ShopSession { shop_id: "shop-general".to_owned() });
+    game_state.shop_purchases_today.insert("shop-general".to_owned(), [("seed-wheat".to_owned(), 4)].into());
+    game_state.mine.current_floor = 2;
+    let npc = game_state.npcs.get_mut("npc-test").unwrap();
+    npc.path = Some(vec![GridPoint { x: 2, y: 1 }]);
+    npc.patrol_index = Some(1);
+
+    let kept = state::apply_state_to_project(&project, &game_state);
+    assert_eq!(kept.event_flags, game_state.flags, "flag values go back as they are");
+    let next = state::create_game_state(&kept, Some("keep"));
+    assert_eq!(next.flags, game_state.flags);
+    assert_eq!(next.clock.tick, 1234);
+    assert_eq!(next.shop, game_state.shop);
+    assert_eq!(next.shop_purchases_today, game_state.shop_purchases_today);
+    assert_eq!(next.mine.current_floor, 2);
+    assert_eq!(next.npcs["npc-test"], game_state.npcs["npc-test"]);
+
+    // The JSON write-back keeps the project's key order (a removed key no longer swaps the last
+    // key into its place).
+    let mut project_json = serde_json::to_value(&project).unwrap();
+    // An equipped tool in the middle of the player object, which the state no longer has.
+    let player = project_json["player"].as_object().unwrap().clone();
+    let mut with_tool = serde_json::Map::new();
+    for (key, value) in player {
+        let after_direction = key == "direction";
+        with_tool.insert(key, value);
+        if after_direction {
+            with_tool.insert("equippedTool".to_owned(), serde_json::json!("tool-hoe"));
+        }
+    }
+    project_json["player"] = serde_json::Value::Object(with_tool);
+    let keys =
+        |json: &serde_json::Value| -> Vec<String> { json["player"].as_object().unwrap().keys().cloned().collect() };
+    let before: Vec<String> = keys(&project_json).into_iter().filter(|key| key != "equippedTool").collect();
+    let synced = state::apply_state_to_project_json(&project_json, &game_state).unwrap();
+    assert!(synced["player"].get("equippedTool").is_none());
+    let after: Vec<String> = keys(&synced).into_iter().filter(|key| before.contains(key)).collect();
+    assert_eq!(after, before);
+    // A fresh game has nothing extra to keep.
+    let fresh = state::create_game_state(&project, Some("keep"));
+    assert!(state::apply_state_to_project(&project, &fresh).kept_state.is_none());
+}
+
+#[test]
+fn the_npc_picked_on_a_shared_tile_does_not_depend_on_state_order() {
+    let (ctx, mut game_state) = make_engine(
+        |project| {
+            let mut second = project.npcs[0].clone();
+            second.id = "npc-second".to_owned();
+            project.npcs.insert(0, second);
+            for npc in &mut project.npcs {
+                npc.x = units::tiles(3);
+                npc.y = units::tiles(3);
+            }
+        },
+        "shared-tile",
+    );
+    // A save sorts `npcs` by id; content order decides.
+    game_state.npcs.sort_keys();
+    game_state.npcs.reverse();
+    let mut reordered = game_state.clone();
+    reordered.npcs.reverse();
+    engine::apply_command(&ctx, &mut game_state, &Command::Interact);
+    engine::apply_command(&ctx, &mut reordered, &Command::Interact);
+    assert_eq!(game_state.dialogue.as_ref().map(|d| d.npc_id.as_str()), Some("npc-second"));
+    assert_eq!(reordered.dialogue, game_state.dialogue);
+}
+
+#[test]
+fn whole_float_values_hash_and_save_like_integers() {
+    let (_, mut game_state) = engine_state("floats");
+    let mut float_state = game_state.clone();
+    game_state.flags.insert("n".to_owned(), serde_json::json!(1));
+    float_state.flags.insert("n".to_owned(), serde_json::json!(1.0));
+    assert_eq!(farm_sim::hash_state(&game_state), farm_sim::hash_state(&float_state));
+    // Integers keep every digit in stable JSON.
+    let big = serde_json::json!({ "n": 9_007_199_254_740_993_u64, "m": -9_007_199_254_740_993_i64 });
+    assert_eq!(farm_sim::stable_json::stringify_value(&big), r#"{"m":-9007199254740993,"n":9007199254740993}"#);
+    assert_eq!(
+        units::canonical_json(serde_json::json!([1.0, -0.0, 1.5, 1e300])),
+        serde_json::json!([1, 0, 1.5, 1e300])
+    );
+}
+
+#[test]
+fn an_all_zero_rng_state_is_reseeded() {
+    let project = GameProject { rng_state: Some(farm_sim::schema::RngState::default()), ..make_project() };
+    let game_state = state::create_game_state(&project, Some("zero"));
+    assert!(!game_state.rng.is_degenerate());
+    assert_eq!(game_state.rng, farm_sim::rng::create_rng_state("zero"));
+    // A degenerate state handed to the generator does not draw 0 forever either.
+    let mut rng = farm_sim::Rng::new(farm_sim::schema::RngState::default());
+    assert!((0..4).map(|_| rng.next_u32()).any(|draw| draw != 0));
+}
+
+#[test]
+fn one_invalid_setting_no_longer_resets_every_setting() {
+    use farm_sim::schema::CalendarFestival;
+    let mut settings = make_project().settings;
+    settings.locale = "fr".to_owned();
+    settings.max_energy = units::points(250);
+    settings.calendar.festivals = vec![
+        CalendarFestival { id: "bad".to_owned(), name: "Bad".to_owned(), season_id: "spring".to_owned(), day: 0 },
+        CalendarFestival { id: "good".to_owned(), name: "Good".to_owned(), season_id: "spring".to_owned(), day: 4 },
+    ];
+    assert!(!state::is_valid_settings(&settings));
+    assert_eq!(state::settings_fallbacks(&settings), vec!["settings.calendar.festivals.0".to_owned()]);
+    let resolved = state::resolve_settings(&settings);
+    assert_eq!(resolved.locale, "fr");
+    assert_eq!(resolved.max_energy, units::points(250));
+    assert_eq!(resolved.calendar.festivals.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), vec!["good"]);
+    assert_eq!(resolved.calendar.seasons, settings.calendar.seasons);
+
+    settings.max_energy = 0;
+    let resolved = state::resolve_settings(&settings);
+    assert_eq!(resolved.max_energy, farm_sim::schema::ProjectSettings::default().max_energy);
+    assert_eq!(resolved.locale, "fr");
 }

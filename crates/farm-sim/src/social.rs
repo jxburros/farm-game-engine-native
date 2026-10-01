@@ -11,13 +11,28 @@ use crate::hooks::{GiftGivenHookPayload, HookEvent};
 use crate::inventory;
 use crate::quests;
 use crate::schema::{
-    gift_friendship_delta, gift_reactions, Dialogue, DialogueOption, GameState, Npc, NpcSocialState,
+    gift_friendship_delta, gift_reactions, Dialogue, DialogueOption, GameState, Npc, NpcSocialState, NpcState,
     FRIENDSHIP_PER_HEART, MAX_FRIENDSHIP,
 };
 use crate::skills;
 use crate::text;
 use crate::units;
 use crate::world::world_movement;
+
+/// The NPC standing on tile (`x`, `y`) of the player's scene. When several share the tile (a
+/// `spawnNPC` outcome or a schedule teleport skips occupancy checks), the first in content order
+/// wins, then the smallest id among NPCs the content lacks: the pick never depends on the order
+/// of `state.npcs`, which a save does not keep (#142).
+pub fn npc_on_tile(ctx: &EngineContext, state: &GameState, x: i32, y: i32) -> Option<String> {
+    let here =
+        |npc: &NpcState| npc.scene_id == state.player.scene_id && npc.x == units::tiles(x) && npc.y == units::tiles(y);
+    ctx.content
+        .npcs
+        .iter()
+        .find(|def| state.npcs.get(&def.id).is_some_and(here))
+        .map(|def| def.id.clone())
+        .or_else(|| state.npcs.iter().filter(|(_, npc)| here(npc)).map(|(id, _)| id).min().cloned())
+}
 
 pub fn friendship_with(state: &GameState, npc_id: &str) -> i32 {
     state.social.get(npc_id).map(|social| social.friendship).unwrap_or(0)
@@ -68,16 +83,7 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 /// Give the first matching inventory item to the NPC the player faces.
 pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let facing = world_movement::facing_target(state);
-    let target_x = facing.x;
-    let target_y = facing.y;
-    let npc_entry_id = state
-        .npcs
-        .iter()
-        .find(|(_, npc)| {
-            npc.scene_id == state.player.scene_id && npc.x == units::tiles(target_x) && npc.y == units::tiles(target_y)
-        })
-        .map(|(id, _)| id.clone());
-    let Some(npc_entry_id) = npc_entry_id else {
+    let Some(npc_entry_id) = npc_on_tile(ctx, state, facing.x, facing.y) else {
         return vec![Effect::message(message_levels::INFO, "No one to give that to.")];
     };
 
@@ -110,7 +116,7 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
     let mut delta = gift_friendship_delta(&reaction).unwrap_or(0);
     let is_birthday = npc_def.birthday.as_ref().is_some_and(|birthday| {
         birthday.season == state.clock.season
-            && birthday.day == game_time::day_of_season(&ctx.content.settings.calendar, state.clock.day)
+            && birthday.day == game_time::clock_date(&ctx.content.settings.calendar, &state.clock).day_of_season
     });
     if is_birthday {
         delta *= 2;

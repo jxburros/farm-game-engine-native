@@ -50,6 +50,7 @@ type Edits =
     static member AddScene(scene: Scene) : Edit = AddScene scene
     static member RemoveScene(sceneId: string) : Edit = RemoveScene sceneId
     static member RenameScene(sceneId: string, name: string) : Edit = RenameScene(sceneId, name)
+    static member SetSceneIndoor(sceneId: string, indoor: bool) : Edit = SetSceneIndoor(sceneId, indoor)
     static member ResizeScene(sceneId: string, width: int, height: int) : Edit = ResizeScene(sceneId, width, height)
     static member DuplicateScene(sceneId: string, newSceneId: string) : Edit = DuplicateScene(sceneId, newSceneId)
     static member SetTransition(sceneId: string, transition: SceneTransition) : Edit = SetTransition(sceneId, transition)

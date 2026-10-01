@@ -544,9 +544,9 @@ type RecordWith =
     [<Extension>]
     static member WithPlayer(record: GameProject, value: Player) : GameProject = { record with Player = value }
     [<Extension>]
-    static member WithEventFlags(record: GameProject, value: ((string * bool) list)) : GameProject = { record with EventFlags = value }
+    static member WithEventFlags(record: GameProject, value: ((string * Json) list)) : GameProject = { record with EventFlags = value }
     [<Extension>]
-    static member WithEventFlags(record: GameProject, value: seq<KeyValuePair<string, bool>>) : GameProject = { record with EventFlags = [ for pair in value -> pair.Key, pair.Value ] }
+    static member WithEventFlags(record: GameProject, value: seq<KeyValuePair<string, Json>>) : GameProject = { record with EventFlags = [ for pair in value -> pair.Key, pair.Value ] }
     [<Extension>]
     static member WithStartSceneId(record: GameProject, value: string) : GameProject = { record with StartSceneId = value }
     [<Extension>]
@@ -577,6 +577,8 @@ type RecordWith =
     static member WithCurrentSeason(record: GameProject, value: string) : GameProject = { record with CurrentSeason = value }
     [<Extension>]
     static member WithCurrentDay(record: GameProject, value: float) : GameProject = { record with CurrentDay = value }
+    [<Extension>]
+    static member WithCurrentDayOfSeason(record: GameProject, value: Nullable<float>) : GameProject = { record with CurrentDayOfSeason = Option.ofNullable value }
     [<Extension>]
     static member WithCurrentTimeMinutes(record: GameProject, value: float) : GameProject = { record with CurrentTimeMinutes = value }
     [<Extension>]
@@ -621,6 +623,8 @@ type RecordWith =
     static member WithMineDeepestFloor(record: GameProject, value: Nullable<float>) : GameProject = { record with MineDeepestFloor = Option.ofNullable value }
     [<Extension>]
     static member WithQuarantinedItems(record: GameProject, value: seq<InventorySlot> | null) : GameProject = { record with QuarantinedItems = (match value with null -> None | items -> Some(List.ofSeq items)) }
+    [<Extension>]
+    static member WithKeptState(record: GameProject, value: Json | null) : GameProject = { record with KeptState = Option.ofObj value }
     [<Extension>]
     static member WithLoved(record: GiftTastes, value: seq<string>) : GiftTastes = { record with Loved = List.ofSeq value }
     [<Extension>]
@@ -1102,6 +1106,8 @@ type RecordWith =
     [<Extension>]
     static member WithEvents(record: Scene, value: seq<string>) : Scene = { record with Events = List.ofSeq value }
     [<Extension>]
+    static member WithIndoor(record: Scene, value: Nullable<bool>) : Scene = { record with Indoor = Option.ofNullable value }
+    [<Extension>]
     static member WithFromX(record: SceneTransition, value: float) : SceneTransition = { record with FromX = value }
     [<Extension>]
     static member WithFromY(record: SceneTransition, value: float) : SceneTransition = { record with FromY = value }
@@ -1209,6 +1215,8 @@ type RecordWith =
     static member WithDayEndMinute(record: TimeConfig, value: float) : TimeConfig = { record with DayEndMinute = value }
     [<Extension>]
     static member WithMinutesPerRealSecond(record: TimeConfig, value: float) : TimeConfig = { record with MinutesPerRealSecond = value }
+    [<Extension>]
+    static member WithPauseInModals(record: TimeConfig, value: Nullable<bool>) : TimeConfig = { record with PauseInModals = Option.ofNullable value }
     [<Extension>]
     static member WithMinMinute(record: TimeOfDayCondition, value: float) : TimeOfDayCondition = { record with MinMinute = value }
     [<Extension>]

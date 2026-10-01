@@ -172,3 +172,37 @@ let ``empty scenes are rows of grass tiles with nothing placed`` () =
     Assert.Empty scene.Transitions
     Assert.Empty scene.Npcs
     Assert.Empty scene.Events
+
+[<Fact>]
+let ``one invalid setting replaces only itself`` () =
+    let project = starter ()
+    let festival (id: string) (day: float) = { CalendarFestival.Default with Id = id; Name = id; SeasonId = "spring"; Day = day }
+    let settings =
+        { project.Settings with
+            Locale = "fr"
+            MaxEnergy = 250.0
+            Calendar = { project.Settings.Calendar with Festivals = [ festival "bad" 0.0; festival "good" 4.0 ] } }
+    let resolved = ContentCompiler.settings { project with Settings = settings }
+    Assert.Equal("fr", resolved.Locale)
+    Assert.Equal(250.0, resolved.MaxEnergy)
+    Assert.Equal<string list>([ "good" ], resolved.Calendar.Festivals |> List.map (fun f -> f.Id))
+    // An inverted day window takes the default time settings and nothing else.
+    let inverted = { settings with Time = { settings.Time with DayStartMinute = 1560.0; DayEndMinute = 1500.0 }; MaxEnergy = -1.0 }
+    let resolved = ContentCompiler.settings { project with Settings = inverted }
+    Assert.Equal(TimeConfig.Default, resolved.Time)
+    Assert.Equal(ProjectSettings.Default.MaxEnergy, resolved.MaxEnergy)
+    Assert.Equal("fr", resolved.Locale)
+
+[<Fact>]
+let ``calendar helpers match the engine`` () =
+    let season (id: string) (days: float) = { CalendarSeason.Default with Id = id; Name = id; Days = days }
+    let calendar = { CalendarConfig.Default with Seasons = [ season "spring" 5.0; season "summer" 20.0; season "fall" 5.0; season "spring" 9.0 ] }
+    Assert.Equal<string list>([ "spring"; "summer"; "fall" ], SettingsSchema.calendarSeasons calendar |> List.map (fun s -> s.Id))
+    let date day = SettingsSchema.naturalDate calendar day |> fun (s, d) -> s.Id, d
+    Assert.Equal(("spring", 1.0), date 1.0)
+    Assert.Equal(("summer", 1.0), date 6.0)
+    Assert.Equal(("fall", 5.0), date 30.0)
+    Assert.Equal(("spring", 1.0), date 31.0)
+    Assert.Equal(4.0, SettingsSchema.clockDayOfSeason calendar "summer" 9.0 None)
+    Assert.Equal(5.0, SettingsSchema.clockDayOfSeason calendar "spring" 24.0 None)
+    Assert.Equal(12.0, SettingsSchema.clockDayOfSeason calendar "summer" 1.0 (Some 12.0))

@@ -10,6 +10,7 @@
       "timeMinutes": 366.85,
       "day": 2,
       "season": "spring",
+      "dayOfSeason": 0,
       "year": 1,
       "weatherId": "sun"
     },

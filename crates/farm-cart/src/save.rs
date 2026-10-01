@@ -55,6 +55,9 @@ pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
     }
 
     let migrated = from_version < current_version();
+    // Whole doubles as integers (`1.0` → `1`): stable JSON writes them that way, so a state that
+    // went through a save compares and hashes the same as before (#142).
+    let raw = &units::canonical_json(raw.clone());
     let mut state = spread(Some(raw));
     let mut version = from_version;
     while version < current_version() {

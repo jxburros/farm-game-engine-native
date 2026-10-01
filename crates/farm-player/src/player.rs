@@ -883,8 +883,13 @@ impl Player {
             play_seconds: preview.play_seconds,
             saved_at: preview.saved_at,
             thumbnail,
-            // Preview days are whole numbers (the FlatBuffers field is a double).
-            day_of_season: Some(f64::from(farm_sim::game_time::day_of_season(calendar, preview.day as u32))),
+            // Preview days are whole numbers (the FlatBuffers fields are doubles). Saves written
+            // before the day of season was recorded place the absolute day in the calendar.
+            day_of_season: Some(if preview.day_of_season > 0.0 {
+                preview.day_of_season
+            } else {
+                f64::from(farm_sim::game_time::day_of_season(calendar, preview.day as u32))
+            }),
         }
     }
 

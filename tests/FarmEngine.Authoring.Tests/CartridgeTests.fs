@@ -124,3 +124,79 @@ let ``the sample cartridges are current`` (file: string, sampleId: string) =
     else
         Assert.True((IO.File.ReadAllBytes path = bytes), file + ".cart is stale; rerun with FARM_RECORD_CARTRIDGES=1")
         Assert.Equal(ProjectCatalog.CreateSampleProject(sampleId, 1.7e12).Name, (read bytes).Info.Title)
+
+/// A game state as the engine writes it (only the parts Keep changes reads).
+let private engineState (project: GameProject) (clock: (string * Json) list) (rest: (string * Json) list) : Json =
+    let encoded = SchemaJson.encodeGameProject project
+    JObject(
+        [ "player", Json.get "player" encoded
+          "world", JObject [ "scenes", Json.get "scenes" encoded ]
+          "npcs", JObject []
+          "quests", JObject []
+          "clock", JObject([ "tick", JNumber 0.0; "timeMinutes", JNumber 360.0; "day", JNumber 1.0; "season", JString "spring"; "dayOfSeason", JNumber 1.0; "year", JNumber 1.0; "weatherId", JString "sun" ] |> List.map (fun (key, value) -> key, (clock |> List.tryFind (fst >> (=) key) |> Option.map snd |> Option.defaultValue value)))
+          "flags", JObject []
+          "animals", JArray []
+          "social", JObject []
+          "quarantinedItems", JArray []
+          "mine", JObject [ "deepestFloor", JNumber 0.0; "currentFloor", JNumber 0.0 ]
+          "dialogue", JNull
+          "shop", JNull
+          "minigame", JNull
+          "shopPurchasesToday", JObject []
+          "rng", JObject [ "algorithm", JString "xoshiro128ss"; "s", JArray [ JNumber 1.0; JNumber 2.0; JNumber 3.0; JNumber 4.0 ] ] ]
+        |> List.map (fun (key, value) -> key, (rest |> List.tryFind (fst >> (=) key) |> Option.map snd |> Option.defaultValue value))
+    )
+
+[<Fact>]
+let ``keep changes writes flag values and the live state back as they are`` () =
+    let project = starter ()
+    let flags = JObject [ "count", JNumber 3.0; "name", JString "Ada"; "met", JBool true ]
+    let state =
+        engineState project [ "tick", JNumber 1234.0 ] [
+            "flags", flags
+            "shop", JObject [ "shopId", JString "shop-general" ]
+            "shopPurchasesToday", JObject [ "shop-general", JObject [ "seed-wheat", JNumber 4.0 ] ]
+            "mine", JObject [ "deepestFloor", JNumber 3.0; "currentFloor", JNumber 2.0 ]
+            "npcs", JObject [ "npc-farmer", JObject [ "x", JNumber 1.0; "y", JNumber 1.0; "sceneId", JString "scene-farm"; "patrolIndex", JNumber 1.0 ] ] ]
+    match Playtest.applyState project state with
+    | Error message -> failwith message
+    | Ok kept ->
+        Assert.Equal<(string * Json) list>([ "count", JNumber 3.0; "name", JString "Ada"; "met", JBool true ], kept.EventFlags)
+        let keptState = kept.KeptState |> Option.defaultValue JNull
+        Assert.Equal(JNumber 1234.0, Json.get "tick" keptState)
+        Assert.Equal(JObject [ "shopId", JString "shop-general" ], Json.get "shop" keptState)
+        Assert.Equal(JNumber 2.0, Json.get "mineCurrentFloor" keptState)
+        Assert.Equal(JObject [ "npc-farmer", JObject [ "patrolIndex", JNumber 1.0 ] ], Json.get "npcs" keptState)
+        Assert.True(Json.isNullish (Json.get "dialogue" keptState))
+        // The next playtest's cartridge starts from it.
+        let start = parse (read (CartridgeCompiler.CompileForPlaytest kept)).StartJson
+        Assert.Equal(keptState, Json.get "keptState" start)
+        Assert.Equal(JString "Ada", Json.get "name" (Json.get "eventFlags" start))
+    // A fresh state has nothing extra to keep, and the start on day 1 of spring needs no day of season.
+    match Playtest.applyState project (engineState project [] []) with
+    | Ok kept ->
+        Assert.Equal(None, kept.KeptState)
+        Assert.Equal(None, kept.CurrentDayOfSeason)
+    | Error message -> failwith message
+
+[<Fact>]
+let ``keep changes records the day of season when the absolute day does not give it`` () =
+    let project = starter ()
+    let state = engineState project [ "day", JNumber 11.0; "season", JString "summer"; "dayOfSeason", JNumber 11.0 ] []
+    match Playtest.applyState project state with
+    | Ok kept ->
+        Assert.Equal(Some 11.0, kept.CurrentDayOfSeason)
+        let start = parse (read (CartridgeCompiler.CompileForPlaytest kept)).StartJson
+        Assert.Equal(JNumber 11.0, Json.get "currentDayOfSeason" start)
+    | Error message -> failwith message
+
+[<Fact>]
+let ``keep changes keeps the project key order`` () =
+    let project = starter ()
+    let tool = { project with Player = { project.Player with EquippedTool = Some "tool-hoe" } }
+    let keys (json: Json) = Json.keys json
+    let before = SchemaJson.encodeGameProject tool
+    // The playtest ends with no tool equipped: the key goes, the others stay in place.
+    let after = Playtest.applyStateJson before (engineState project [] [])
+    Assert.Equal<string list>(keys (Json.get "player" before) |> List.filter ((<>) "equippedTool"), keys (Json.get "player" after) |> List.filter (fun key -> Json.has key (Json.get "player" before)))
+    Assert.Equal<string list>(keys before, keys after |> List.filter (fun key -> Json.has key before))

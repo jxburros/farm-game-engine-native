@@ -49,6 +49,8 @@ announce the tile under the cursor. The side panel holds the tools:
   placed there.
 - **Scene**: add a scene, rename, resize, duplicate or delete it, **Set as
   start**, **Fill scene** with one tile, **Clear crops/items** and **Reset soil**.
+  **Indoor (no weather)** marks a greenhouse or interior: rain doesn't water its
+  soil and storms don't damage its crops.
   Under the size boxes, the calculator shows the tile count and aspect ratio,
   and warns when a resize would cut tiles off.
 - **Transitions**: choose **Door**, click the departure tile, then pick the
@@ -106,8 +108,11 @@ scene that needs a fix.
 Project settings: name, version and the game-text **locale**; gameplay
 (energy, skills and the XP each skill level needs, player speed, collapse
 penalties); the clock (day start and
-end, game minutes per real second); the calendar's **seasons** (add, rename,
-reorder, change their length) and **festivals**. The **Export** section holds
+end, game minutes per real second, and whether it **pauses** while a dialogue,
+shop, minigame or menu is open, on by default); the calendar's **seasons**
+(add, rename, reorder, change their length) and **festivals**. The day must
+end at least an hour after it starts and by minute 4294; the clock can run at
+most 1440 game minutes per real second. The **Export** section holds
 what the exported game shows: its title, executable name, version, author,
 company, game id (set it once: it keeps players' save folders stable), icon,
 window size, pixel scale, fullscreen and credits.
@@ -174,7 +179,10 @@ Playtests are safe: returning to Edit Mode restores the world to the moment
 you started, so your farm isn't trampled by testing. The Play Mode toolbar has:
 
 - **Restart**: start the playtest over from that moment.
-- **Keep changes**: keep what happened in the playtest when you return.
+- **Keep changes**: keep what happened in the playtest when you return: the
+  world, the player, flags, the date, and what was open or under way (a
+  dialogue or shop, today's purchases, walking NPCs, the mine floor), so the
+  next playtest starts right there.
 - **Debug**: add money, restore energy, skip a day or an hour, change the
   season, give seeds or materials, teleport to a scene and set flags.
 

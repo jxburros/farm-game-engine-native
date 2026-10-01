@@ -707,3 +707,61 @@ fn invalid_overrides_are_ignored() {
     assert!(ctx.content.weather.types.iter().any(|weather_type| weather_type.id == next.clock.weather_id));
     assert_ne!(next.clock.weather_id, "sharknado");
 }
+
+// --- indoor scenes keep the weather out (#34) ---
+
+#[test]
+fn rain_and_storms_skip_indoor_scenes() {
+    for (weather_id, waters, damage) in [("rain", true, 0.0), ("storm", true, 1.0)] {
+        let (ctx, mut current) = make_engine(|project| {
+            project.weather = always_weather(weather_id, vec![weather_type(weather_id, weather_id, waters, damage)]);
+            project.scenes[0].indoor = Some(true);
+        });
+        at(&mut current, 8, 5, "up");
+        farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
+        assert!(current.world.scenes[0].tiles[4][8].crop.is_some());
+        // Day 2 rolls the weather; day 3's overnight pass would water or wreck an outdoor bed.
+        farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
+        farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
+        assert_eq!(current.clock.weather_id, weather_id);
+        let tile = &current.world.scenes[0].tiles[4][8];
+        let crop = tile.crop.as_ref().expect("the greenhouse crop survives the storm");
+        assert!(!crop.watered, "{weather_id} does not water indoor crops");
+        assert_ne!(tile.soil_state.as_deref(), Some("watered"));
+    }
+}
+
+#[test]
+fn storms_keep_npcs_home_only_outdoors() {
+    use farm_sim::schema::NpcScheduleEntry;
+    // A storm keeps scheduled NPCs from walking outside; inside, an indoor schedule still runs.
+    let run = |indoor: bool| {
+        let (ctx, mut current) = make_engine(|project| {
+            let storm = WeatherTypeDefinition { npcs_stay_inside: true, ..weather_type("storm", "Storm", false, 0.0) };
+            project.weather = always_weather("storm", vec![storm]);
+            project.scenes[0].indoor = Some(indoor);
+            let npc = &mut project.npcs[0];
+            let scene_id = npc.scene_id.clone();
+            npc.schedule = Some(vec![NpcScheduleEntry {
+                minute: 0,
+                scene_id,
+                x: units::tile_of(npc.x) + 1,
+                y: units::tile_of(npc.y),
+                ..Default::default()
+            }]);
+        });
+        current.clock.weather_id = "storm".to_owned();
+        let id = ctx.content.npcs[0].id.clone();
+        let before = current.npcs[&id].clone();
+        farm_sim::engine::advance_tick(&ctx, &mut current, 40);
+        current.npcs[&id] != before
+    };
+    assert!(!run(false), "outdoors the storm keeps the NPC put");
+    assert!(run(true), "indoors the NPC keeps its schedule");
+}
+
+#[test]
+fn generated_mine_floors_are_indoor() {
+    let (ctx, _) = make_engine(|project| *project = with_m4_content(project.clone(), SCENE));
+    assert!(mines::generate_mine_floor(&ctx, "seed", 1).is_indoor());
+}

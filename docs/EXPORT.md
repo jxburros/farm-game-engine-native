@@ -317,7 +317,7 @@ expensive to change after games have shipped:
 | Phase | Decision |
 |---|---|
 | **1. Scaffolding** | `cart.fbs` has a `GameInfo` table (title, version, `gameId`, author, window defaults, pixel scale) and an embedded-asset table keyed by id from the start. The player never reads project JSON. The `wasm32-unknown-unknown` CI check keeps the web demo possible. |
-| **2. Rust core** | **Saves store content by stable string id, never by the cartridge's interned indices.** Every compile re-interns ids, and a save from version 1.0 of a game must still load in 1.1 after the creator adds an item. Loading a save maps ids to indices. Ids that no longer exist go to the existing quarantine path (`QuarantinedItems`) instead of failing. |
+| **2. Rust core** | **Saves store content by stable string id, never by the cartridge's interned indices.** Every compile re-interns ids, and a save from version 1.0 of a game must still load in 1.1 after the creator adds an item. Loading a save maps ids to indices. Ids that no longer exist go to the existing quarantine path (`QuarantinedItems`) instead of failing. A save from another version of the game also takes that version's maps (tiles, doors, new scenes) while keeping what the player did on them, and NPCs new in the game join the world. |
 | **2. Rust core** | The save header carries `gameId`, the game version, the cartridge content hash and the save format version. The player refuses a save from a different `gameId`, loads saves from older game versions, and warns about saves from newer ones. |
 | **2. Rust core** | `farm-sim` does no file, environment or clock access (already a rule). The web demo depends on it. |
 | **3. F# authoring** | The `export` settings schema and its validation. |

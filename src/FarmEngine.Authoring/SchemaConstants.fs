@@ -1,5 +1,6 @@
 namespace FarmEngine.Schemas
 
+open System
 open FarmEngine.Authoring
 
 // The schema's enums (string constants, as zod string enums stay open strings in JSON) and the
@@ -403,6 +404,56 @@ module SettingsSchema =
         |> List.map (fun id -> { Id = id; Name = id.Substring(0, 1).ToUpperInvariant() + id.Substring 1; Days = 28.0 })
 
     let DefaultProjectSettings : ProjectSettings = ProjectSettings.Default
+
+    /// The shortest day a project may configure (`dayEndMinute - dayStartMinute`).
+    let MinDayWindowMinutes = 60.0
+    /// The latest `dayEndMinute` the engine's clock can reach (71:34; Rust `MAX_DAY_END_MINUTE`).
+    let MaxDayEndMinute = 4294.0
+    /// The fastest clock a project may configure (a whole day per real second).
+    let MaxMinutesPerRealSecond = 1440.0
+
+    let private isWhole (value: float) = not (Double.IsNaN value || Double.IsInfinity value) && Math.Truncate value = value
+
+    /// Rust `game_time::is_valid_time_config`: a day the clock can run through. A start at or
+    /// after the end collapsed the player on every tick; an end past 71:34 never came.
+    let validTime (time: TimeConfig) : bool =
+        isWhole time.DayStartMinute && isWhole time.DayEndMinute && time.DayStartMinute >= 0.0
+        && time.DayEndMinute - time.DayStartMinute >= MinDayWindowMinutes
+        && time.DayEndMinute <= MaxDayEndMinute
+        && time.MinutesPerRealSecond > 0.0 && time.MinutesPerRealSecond <= MaxMinutesPerRealSecond
+
+    /// Rust `game_time::calendar_seasons`: the positive-length seasons, a repeated id once (at
+    /// its first place), or the classic calendar when none is left.
+    let calendarSeasons (calendar: CalendarConfig) : CalendarSeason list =
+        match calendar.Seasons |> List.filter (fun season -> season.Days > 0.0) |> List.distinctBy (fun season -> season.Id) with
+        | [] -> ClassicCalendarSeasons ()
+        | seasons -> seasons
+
+    /// Rust `game_time::natural_date`: the season and day of season an absolute (1-based) day
+    /// falls on in a game that started on day 1 of the first season.
+    let naturalDate (calendar: CalendarConfig) (absoluteDay: float) : CalendarSeason * float =
+        let seasons = calendarSeasons calendar
+        let yearLength = seasons |> List.sumBy (fun season -> season.Days)
+        let dayInYear = ((absoluteDay - 1.0) % yearLength + yearLength) % yearLength
+        let rec find (remaining: float) (rest: CalendarSeason list) =
+            match rest with
+            | [ last ] when remaining >= last.Days -> last, last.Days
+            | season :: tail when remaining >= season.Days -> find (remaining - season.Days) tail
+            | season :: _ -> season, remaining + 1.0
+            | [] -> List.last seasons, (List.last seasons).Days
+        find dayInYear seasons
+
+    /// Rust `game_time::clock_date`'s day: `dayOfSeason` (or, when absent, where the absolute day
+    /// falls in its season), clamped to the length of `season` (an unknown season counts as the
+    /// first).
+    let clockDayOfSeason (calendar: CalendarConfig) (season: string) (absoluteDay: float) (dayOfSeason: float option) : float =
+        let seasons = calendarSeasons calendar
+        let current = seasons |> List.tryFind (fun s -> s.Id = season) |> Option.defaultValue seasons.Head
+        let day =
+            match dayOfSeason with
+            | Some day when day <> 0.0 -> day
+            | _ -> snd (naturalDate calendar absoluteDay)
+        max 1.0 (min current.Days day)
 
 [<RequireQualifiedAccess>]
 module ProjectSchema =

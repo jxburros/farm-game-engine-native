@@ -10,7 +10,13 @@
 //! - when the **content changed** since the save was written, inventory items are looked up by
 //!   their stable string id: items that still exist take the current definition, items that no
 //!   longer exist go to quarantine (`quarantinedItems`) instead of failing the load, and
-//!   quarantined items whose id is back return to the inventory.
+//!   quarantined items whose id is back return to the inventory; and the world is rebased onto
+//!   the new maps ([`rebase_world`]): a fixed map, a new door or a new scene reaches old saves,
+//!   while what the player did there (crops, soil, nodes, machines, dropped items) stays; and
+//!   NPCs new in the content join the world ([`add_missing_npcs`]).
+//!
+//! Every load also fits the clock's day of season to the game's calendar and reseeds an
+//! all-zero random state.
 //!
 //! Two envelopes carry the same header and state:
 //!
@@ -26,8 +32,10 @@ use crate::save::{migrate_game_state, MAX_ERRORS};
 use farm_cart_schema::farm_engine::save as fb_save;
 use farm_cart_schema::farm_engine::save::save_file_buffer_has_identifier;
 use farm_cart_schema::flatbuffers::FlatBufferBuilder;
-use farm_sim::schema::{GameContent, GameProject, GameState, InventorySlot, Item};
-use farm_sim::{hash_state, stable_json, text};
+use farm_sim::schema::{
+    GameContent, GameProject, GameState, InventorySlot, Item, NpcState, Scene, SceneTransition, Tile,
+};
+use farm_sim::{game_time, hash_state, rng, stable_json, text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -203,6 +211,21 @@ fn load_parts(header: Option<SaveHeader>, state_raw: &Value, target: &SaveTarget
     let same_content = header.as_ref().is_some_and(|h| h.cart_hash == target.cart_hash);
     let (quarantined, restored) =
         if same_content { (Vec::new(), Vec::new()) } else { reconcile_items(&mut state, content) };
+    // A save written by another version of this game takes its maps; a headerless save may be
+    // from this very content, and a rebase would undo what events changed on the map.
+    if header.is_some() && !same_content {
+        rebase_world(&mut state, content);
+    }
+    if !same_content {
+        add_missing_npcs(&mut state, content);
+    }
+    // Older saves have no day of season, and season lengths may have changed (#23).
+    game_time::reconcile_clock(&content.settings.calendar, &mut state.clock);
+    // An all-zero random state draws 0 forever: every chance roll succeeds (#140).
+    if state.rng.is_degenerate() {
+        state.rng = rng::create_rng_state(&format!("{}:{}", state.meta.engine_seed, state.clock.tick));
+        warnings.push("This save had no random number state; a new one was started.".to_owned());
+    }
     if !quarantined.is_empty() {
         warnings.push(format!(
             "{} item{} in this save no longer exist{} in the game and {} set aside: {}.",
@@ -241,6 +264,8 @@ pub struct SavePreview {
     pub saved_at: i64,
     /// A small PNG of the scene (empty when none).
     pub thumbnail_png: Vec<u8>,
+    /// The day within `season` (0 in saves written before it existed: derive it from `day`).
+    pub day_of_season: f64,
 }
 
 impl SavePreview {
@@ -252,6 +277,7 @@ impl SavePreview {
             // whole numbers.
             day: f64::from(state.clock.day),
             season: state.clock.season.clone(),
+            day_of_season: f64::from(state.clock.day_of_season),
             year: f64::from(state.clock.year),
             money: state.player.money as f64,
             ..Self::default()
@@ -291,6 +317,7 @@ pub fn write_save_binary(state: &GameState, target: &SaveTarget, preview: &SaveP
             play_seconds: preview.play_seconds,
             saved_at: preview.saved_at,
             thumbnail_png: Some(thumbnail),
+            day_of_season: preview.day_of_season,
         },
     );
     let game_id = builder.create_string(&target.game_id);
@@ -342,6 +369,7 @@ fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<Sa
             play_seconds: p.play_seconds(),
             saved_at: p.saved_at(),
             thumbnail_png: p.thumbnail_png().map(|t| t.bytes().to_vec()).unwrap_or_default(),
+            day_of_season: p.day_of_season(),
         })
         .unwrap_or_default();
     if header.format > SAVE_FORMAT {
@@ -414,6 +442,75 @@ pub fn reconcile_items(state: &mut GameState, content: &GameContent) -> (Vec<Str
     state.player.inventory = inventory;
     state.quarantined_items = still_quarantined.into_iter().chain(set_aside).collect();
     (quarantined, restored)
+}
+
+/// Rebases the save's world onto the maps of `content` (the save was written by another version
+/// of the game, #36). Each authored scene comes from the content, tiles, transitions and
+/// collision included; on tiles both versions have, the save keeps what play made of them:
+/// crops, dropped items, gathering nodes (mined or regrown), machines, soil state, moisture and
+/// fertility, and hoed ground (soil where the content has grass or floor). Transitions events
+/// locked or unlocked keep that state. Scenes new in the content are added; generated scenes
+/// (mine floors) and scenes the content no longer has stay as saved.
+pub fn rebase_world(state: &mut GameState, content: &GameContent) {
+    let mut saved: Vec<Scene> = std::mem::take(&mut state.world.scenes);
+    let mut scenes = Vec::with_capacity(content.scenes.len() + saved.len());
+    for authored in &content.scenes {
+        let mut scene = authored.clone();
+        if let Some(index) = saved.iter().position(|old| old.id == authored.id) {
+            let old = saved.remove(index);
+            for (row, old_row) in scene.tiles.iter_mut().zip(&old.tiles) {
+                for (tile, old_tile) in row.iter_mut().zip(old_row) {
+                    keep_play(tile, old_tile);
+                }
+            }
+            for transition in &mut scene.transitions {
+                let same = |t: &&SceneTransition| {
+                    t.from_x == transition.from_x
+                        && t.from_y == transition.from_y
+                        && t.to_scene_id == transition.to_scene_id
+                };
+                if let Some(old_transition) = old.transitions.iter().find(same) {
+                    transition.locked = old_transition.locked;
+                }
+            }
+        }
+        scenes.push(scene);
+    }
+    scenes.extend(saved);
+    state.world.scenes = scenes;
+}
+
+/// The parts of `old` (a saved tile) that play changed, onto `tile` (the content's tile).
+fn keep_play(tile: &mut Tile, old: &Tile) {
+    let hoed = old.background == "soil" && (tile.background == "grass" || tile.background == "floor");
+    if hoed {
+        tile.background = old.background.clone();
+        tile.r#type = old.r#type.clone();
+    }
+    tile.crop = old.crop.clone();
+    tile.item = old.item.clone();
+    tile.node = old.node.clone();
+    tile.machine = old.machine.clone();
+    tile.soil_state = old.soil_state.clone();
+    tile.soil_moisture = old.soil_moisture;
+    tile.soil_fertility = old.soil_fertility;
+}
+
+/// Gives every NPC of `content` that the save has no state for one at its authored place (an
+/// NPC added by a game update could otherwise not be talked to and never moved, #36). Returns
+/// the ids added.
+pub fn add_missing_npcs(state: &mut GameState, content: &GameContent) -> Vec<String> {
+    let mut added = Vec::new();
+    for npc in &content.npcs {
+        if !state.npcs.contains_key(&npc.id) {
+            state.npcs.insert(
+                npc.id.clone(),
+                NpcState { x: npc.x, y: npc.y, scene_id: npc.scene_id.clone(), ..NpcState::default() },
+            );
+            added.push(npc.id.clone());
+        }
+    }
+    added
 }
 
 /// Compares dotted version strings segment by segment: numeric segments numerically

@@ -2,6 +2,33 @@
 
 ## 0.2.0 (unreleased)
 
+- **Calendar, clock and save fixes.**
+  - **Games can start in any season.** The clock keeps its own day of season,
+    so every season lasts its configured length and festivals, birthdays and
+    the HUD date follow it, also after season lengths change under a save.
+    Problems says which day a start that doesn't line up with the calendar
+    becomes.
+  - **Day window checks.** A day that ends before it starts (or within an
+    hour of it), ends after minute 4294, or a clock faster than 1440 minutes
+    per second is an error; the engine no longer collapses the player on
+    every tick when one slips through. One invalid setting now replaces only
+    itself instead of every setting.
+  - **Indoor scenes.** Mark a scene **Indoor (no weather)** and rain and storms
+    leave it alone; mine floors are indoor.
+  - **The clock pauses in dialogue, shops, minigames and menus** (Project
+    Settings, on by default). Sleeping closes an open minigame, time-of-day
+    conditions work after midnight and may wrap past it, and NPCs keep up at
+    fast clock rates.
+  - **Keep changes keeps everything.** Number and text flags, the tick, an
+    open dialogue, shop or minigame, today's purchases, walking NPCs and the
+    mine floor carry into the next playtest, and project keys keep their
+    order.
+  - **Game updates reach old saves.** A save from another version of the game
+    takes its fixed maps, new doors and scenes while keeping the player's
+    crops, soil, nodes and machines, and NPCs added in the update join the
+    world. A save without a random state gets a new one, and a save/load round
+    trip no longer changes which NPC you talk to or the state hash.
+
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:

@@ -370,7 +370,206 @@ fn grows_while_its_season_is_current_and_withers_once_the_calendar_rolls_out_of_
 
     // Jump to the last day of season 'a' and sleep past the boundary into 'b'.
     current.clock.day = 10;
+    current.clock.day_of_season = 10;
     farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
     assert_eq!(current.clock.season, "b");
     assert_eq!(current.world.scenes[0].tiles[4][8].crop.as_ref().and_then(|c| c.withered), Some(true));
+}
+
+// --- the clock's own calendar position (#23) ---
+
+/// A minimal game on `calendar` that starts on `current_day` with `current_season`.
+fn calendar_game(calendar: CalendarConfig, current_season: &str, current_day: u32) -> (EngineContext, GameState) {
+    let mut project = GameProject { id: "calendar".to_owned(), ..GameProject::default() };
+    project.settings.calendar = calendar;
+    project.current_season = current_season.to_owned();
+    project.current_day = current_day;
+    project.current_year = 1;
+    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    let state = state::create_game_state(&project, Some("calendar"));
+    (ctx, state)
+}
+
+/// Sleeps `days` times: per new day, its season, day of season, year and whether a festival
+/// message came.
+fn sleep_days(ctx: &EngineContext, state: &mut GameState, days: u32) -> Vec<(String, u32, u32, Option<String>)> {
+    (0..days)
+        .map(|_| {
+            let effects = game_time::perform_sleep(ctx, state, game_time::SleepOptions::default());
+            let festival = effects.iter().find_map(|effect| match effect {
+                Effect::Message { text, .. } if text.starts_with("Today is the ") => Some(text.clone()),
+                _ => None,
+            });
+            (state.clock.season.clone(), state.clock.day_of_season, state.clock.year, festival)
+        })
+        .collect()
+}
+
+fn issue_calendar() -> CalendarConfig {
+    CalendarConfig {
+        seasons: vec![season("spring", "Spring", 5), season("summer", "Summer", 20), season("fall", "Fall", 5)],
+        festivals: vec![CalendarFestival {
+            id: "summer-fest".to_owned(),
+            name: "Summer Fest".to_owned(),
+            season_id: "summer".to_owned(),
+            day: 3,
+        }],
+    }
+}
+
+#[test]
+fn a_game_that_starts_in_a_later_season_keeps_every_season_length_and_festival_day() {
+    // Starting in summer on absolute day 1 (spring by the absolute day) used to give summer 5
+    // days, fall days 6–20 and the summer festival on fall day 3.
+    let (ctx, mut state) = calendar_game(issue_calendar(), "summer", 1);
+    assert_eq!((state.clock.season.as_str(), state.clock.day_of_season), ("summer", 1));
+    let days = sleep_days(&ctx, &mut state, 60);
+    let summer = days.iter().take_while(|(season, ..)| season == "summer").count();
+    assert_eq!(summer, 19, "summer days 2–20 follow the start");
+    assert_eq!(days[19].0, "fall");
+    assert_eq!(days[19].1, 1);
+    let fall = days.iter().skip(19).take_while(|(season, ..)| season == "fall").count();
+    assert_eq!(fall, 5);
+    for (season, day, _, festival) in &days {
+        assert!(*day >= 1 && *day <= game_time::season_by_id(&ctx.content.settings.calendar, season).unwrap().days);
+        assert_eq!(festival.is_some(), season == "summer" && *day == 3, "{season} {day}");
+    }
+    // Spring starts year 2.
+    assert_eq!(days[24], ("spring".to_owned(), 1, 2, None));
+}
+
+#[test]
+fn the_clock_keeps_its_place_when_season_lengths_change() {
+    let (_, mut state) = calendar_game(issue_calendar(), "summer", 1);
+    state.clock.day_of_season = 18;
+    // Summer shrinks to 10 days: day 18 becomes its last day.
+    let mut shorter = issue_calendar();
+    shorter.seasons[1].days = 10;
+    game_time::reconcile_clock(&shorter, &mut state.clock);
+    assert_eq!(state.clock.day_of_season, 10);
+    let ctx = EngineContext::new(state::create_content_from_project(&{
+        let mut project = GameProject::default();
+        project.settings.calendar = shorter;
+        project
+    }));
+    game_time::perform_sleep(&ctx, &mut state, game_time::SleepOptions::default());
+    assert_eq!((state.clock.season.as_str(), state.clock.day_of_season), ("fall", 1));
+}
+
+#[test]
+fn a_clock_without_a_day_of_season_takes_its_absolute_day_place() {
+    let calendar = issue_calendar();
+    let mut clock = farm_sim::schema::ClockState { day: 9, season: "summer".to_owned(), ..Default::default() };
+    // Absolute day 9 is summer day 4.
+    game_time::reconcile_clock(&calendar, &mut clock);
+    assert_eq!(clock.day_of_season, 4);
+    // Not summer by the absolute day: its place in its own season, within the season.
+    let mut clock = farm_sim::schema::ClockState { day: 27, season: "spring".to_owned(), ..Default::default() };
+    game_time::reconcile_clock(&calendar, &mut clock);
+    assert_eq!(clock.day_of_season, 2);
+    let mut clock = farm_sim::schema::ClockState { day: 24, season: "spring".to_owned(), ..Default::default() };
+    game_time::reconcile_clock(&calendar, &mut clock);
+    assert_eq!(clock.day_of_season, 5, "summer day 19 is past spring's 5 days");
+}
+
+#[test]
+fn a_repeated_season_id_cannot_trap_the_calendar() {
+    // [a, b, a]: Problems rejects the repeat; the engine counts it once, so the calendar cycles
+    // a → b → a with one year per cycle instead of skipping the third season forever.
+    let calendar = CalendarConfig {
+        seasons: vec![season("a", "A", 2), season("b", "B", 2), season("a", "A again", 3)],
+        festivals: Vec::new(),
+    };
+    assert_eq!(season_ids(&game_time::calendar_seasons(&calendar)), vec!["a", "b"]);
+    let (ctx, mut state) = calendar_game(calendar, "a", 1);
+    let days = sleep_days(&ctx, &mut state, 8);
+    let seasons: Vec<(&str, u32, u32)> = days.iter().map(|(s, d, y, _)| (s.as_str(), *d, *y)).collect();
+    assert_eq!(
+        seasons,
+        vec![("a", 2, 1), ("b", 1, 1), ("b", 2, 1), ("a", 1, 2), ("a", 2, 2), ("b", 1, 2), ("b", 2, 2), ("a", 1, 3)]
+    );
+}
+
+#[test]
+fn keep_changes_carries_the_day_of_season_only_when_the_day_does_not() {
+    let mut project = GameProject { id: "calendar".to_owned(), ..GameProject::default() };
+    project.settings.calendar = issue_calendar();
+    project.current_season = "summer".to_owned();
+    project.current_day = 1;
+    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    let mut game = state::create_game_state(&project, Some("keep"));
+    sleep_days(&ctx, &mut game, 10);
+    assert_eq!((game.clock.season.as_str(), game.clock.day_of_season, game.clock.day), ("summer", 11, 11));
+    let kept = state::apply_state_to_project(&project, &game);
+    assert_eq!(kept.current_day_of_season, Some(11), "absolute day 11 is summer day 6");
+    // The next playtest starts where this one ended.
+    let next = state::create_game_state(&kept, Some("keep"));
+    assert_eq!((next.clock.season.as_str(), next.clock.day_of_season), ("summer", 11));
+
+    // A game that started on day 1 of the first season needs no extra field.
+    project.current_season = "spring".to_owned();
+    let mut game = state::create_game_state(&project, Some("keep"));
+    sleep_days(&ctx, &mut game, 10);
+    assert_eq!(state::apply_state_to_project(&project, &game).current_day_of_season, None);
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig { cases: 48, ..Default::default() })]
+
+    /// For any season lengths, start season and start day, every season after the start lasts
+    /// exactly its configured length, every festival fires on its configured day and only then,
+    /// and the year turns when the first season comes back.
+    #[test]
+    fn seasons_last_their_length_and_festivals_fire_on_their_day(
+        lengths in proptest::collection::vec(1u32..=6, 1..=4),
+        start in 0usize..4,
+        start_day in 1u32..=40,
+        festival_season in 0usize..4,
+        festival_day in 1u32..=6,
+    ) {
+        let seasons: Vec<CalendarSeason> =
+            lengths.iter().enumerate().map(|(i, days)| season(&format!("s{i}"), &format!("S{i}"), *days)).collect();
+        let festival_season = festival_season % seasons.len();
+        let festival_day = festival_day.min(seasons[festival_season].days);
+        let calendar = CalendarConfig {
+            festivals: vec![CalendarFestival {
+                id: "fest".to_owned(),
+                name: "Fest".to_owned(),
+                season_id: seasons[festival_season].id.clone(),
+                day: festival_day,
+            }],
+            seasons: seasons.clone(),
+        };
+        let start = start % seasons.len();
+        let (ctx, mut state) = calendar_game(calendar, &seasons[start].id, start_day);
+        let year_length: u32 = lengths.iter().sum();
+        let days = sleep_days(&ctx, &mut state, year_length * 3);
+
+        // Runs of one season after the first change have the season's length.
+        let mut runs: Vec<(String, u32)> = Vec::new();
+        for (season, ..) in &days {
+            match runs.last_mut() {
+                Some((current, count)) if current == season => *count += 1,
+                _ => runs.push((season.clone(), 1)),
+            }
+        }
+        for (season, count) in runs.iter().skip(1).take(runs.len().saturating_sub(2)) {
+            let index = seasons.iter().position(|s| &s.id == season).unwrap();
+            proptest::prop_assert_eq!(*count, lengths[index], "season {} ran {} days", season, count);
+        }
+        for (season, day, _, festival) in &days {
+            let on_festival = *season == seasons[festival_season].id && *day == festival_day;
+            proptest::prop_assert_eq!(festival.is_some(), on_festival);
+        }
+        // Each return of the first season starts a new year.
+        let mut year = 1;
+        let mut previous = seasons[start].id.clone();
+        for (season, day, y, _) in &days {
+            if *season == seasons[0].id && *day == 1 && *season != previous || (seasons.len() == 1 && *day == 1) {
+                year += 1;
+            }
+            proptest::prop_assert_eq!(*y, year);
+            previous = season.clone();
+        }
+    }
 }

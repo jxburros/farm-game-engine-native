@@ -71,6 +71,8 @@ pub fn generate_mine_floor(ctx: &EngineContext, engine_seed: &str, floor: u32) -
 
     // Mark the scene as generated so the project bridge skips it.
     scene.extra.insert("generated".to_owned(), Value::Bool(true));
+    // Underground: the weather stays outside.
+    scene.indoor = Some(true);
     scene
 }
 

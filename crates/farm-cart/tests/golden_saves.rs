@@ -108,7 +108,8 @@ fn every_v8_save_still_loads_with_its_values() {
         let v8: Value = serde_json::from_str(fixture["stable"].as_str().expect("stable")).expect("v8 stable JSON");
         let now: Value = serde_json::from_str(&stable_stringify(&data)).expect("stable JSON");
         let mut differences = Vec::new();
-        same_within_grid("", &v8, &now, &[".meta.saveVersion"], &mut differences);
+        // `clock.dayOfSeason` is newer than v8 (#23); loading with the game's calendar fills it.
+        same_within_grid("", &v8, &now, &[".meta.saveVersion", ".clock.dayOfSeason"], &mut differences);
         if !differences.is_empty() {
             failures.push(format!("{name}: values moved beyond the grid:\n  {}", differences.join("\n  ")));
         }

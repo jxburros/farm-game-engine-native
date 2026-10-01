@@ -12,9 +12,8 @@ use crate::schema::{
     crop_qualities, item_types, soil_states, tile_types, tool_types, Crop, DialogueState, GameState, Item, Tile,
     FISHING_MINIGAME_ID,
 };
-use crate::units;
 use crate::world::world_movement;
-use crate::{animals, crafting, energy, events, fishing, gathering, inventory, mines, quests, skills, tools};
+use crate::{animals, crafting, energy, events, fishing, gathering, inventory, mines, quests, skills, social, tools};
 use indexmap::IndexMap;
 use serde_json::Value;
 
@@ -235,14 +234,7 @@ pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     }
 
     // NPC dialogue next (uses live NPC positions from state)
-    let npc_entry_id = state
-        .npcs
-        .iter()
-        .find(|(_, npc)| {
-            npc.scene_id == state.player.scene_id && npc.x == units::tiles(target_x) && npc.y == units::tiles(target_y)
-        })
-        .map(|(id, _)| id.clone());
-    if let Some(npc_entry_id) = npc_entry_id {
+    if let Some(npc_entry_id) = social::npc_on_tile(ctx, state, target_x, target_y) {
         let npc_def = ctx.content.npcs.iter().find(|npc| npc.id == npc_entry_id);
         if let Some(npc_def) = npc_def {
             if !npc_def.dialogue.is_empty() {

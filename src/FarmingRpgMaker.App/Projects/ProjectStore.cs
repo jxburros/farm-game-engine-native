@@ -257,7 +257,7 @@ public sealed class ProjectStore
         }
 
         var name = string.IsNullOrWhiteSpace(project.Name) ? "Imported Game" : project.Name.Trim();
-        project = project.WithId(NewId()).WithName(name).WithMode("tiles").WithSelectedTileType("grass").WithSelectedNpcId(null).WithSelectedItemId(null).WithEventFlags(FSharpList<Tuple<string, bool>>.Empty);
+        project = project.WithId(NewId()).WithName(name).WithMode("tiles").WithSelectedTileType("grass").WithSelectedNpcId(null).WithSelectedItemId(null).WithEventFlags(FSharpList<Tuple<string, FarmEngine.Authoring.Json>>.Empty);
         return new ProjectLoadResult(project, [], migratedFrom);
     }
 

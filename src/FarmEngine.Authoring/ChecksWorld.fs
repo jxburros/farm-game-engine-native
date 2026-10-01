@@ -245,6 +245,32 @@ module internal ChecksWorld =
                     sink.Error("calendar.festivalDayOutOfRange", path + ".day", sprintf "Festival \"%s\" is on day %g but %s has %g days" festival.Name festival.Day season.Name season.Days, settings))
         if context.SeasonIds.Count > 0 && not (context.SeasonIds.Contains project.CurrentSeason) then
             sink.Warning("project.currentSeasonUnknown", "currentSeason", sprintf "The starting season \"%s\" is not in the calendar" project.CurrentSeason, settings)
+        else
+            // The clock keeps its own day of season (#23): say which day a start that does not
+            // line up with the calendar becomes.
+            match calendar.Seasons |> List.tryFind (fun s -> s.Id = project.CurrentSeason) with
+            | Some season when season.Days > 0.0 ->
+                let natural, naturalDay = SettingsSchema.naturalDate calendar project.CurrentDay
+                match project.CurrentDayOfSeason with
+                | Some day when day > season.Days ->
+                    sink.Warning(
+                        "project.currentDayOfSeasonOutOfRange",
+                        "currentDayOfSeason",
+                        sprintf "The game starts on day %g of %s, which has %g days; it starts on day %g" day season.Name season.Days season.Days,
+                        settings
+                    )
+                | None when natural.Id <> season.Id ->
+                    let day = SettingsSchema.clockDayOfSeason calendar season.Id project.CurrentDay None
+                    sink.Warning(
+                        "project.currentDayOutsideSeason",
+                        "currentDay",
+                        sprintf
+                            "Day %g of the calendar is day %g of %s, not in the starting season %s; the game starts on day %g of %s"
+                            project.CurrentDay naturalDay natural.Name season.Name day season.Name,
+                        settings
+                    )
+                | _ -> ()
+            | _ -> ()
         let weatherSeen = HashSet<string>()
         project.Weather.Types
         |> Seq.iteri (fun i weather ->

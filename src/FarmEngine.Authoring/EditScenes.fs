@@ -151,6 +151,11 @@ module internal EditScenes =
         if System.String.IsNullOrWhiteSpace name then project
         else Proj.mapScene sceneId (fun scene -> if scene.Name = name then scene else { scene with Name = name }) project
 
+    /// Marks the scene indoor (`indoor: true`) or outdoor (the key absent).
+    let setSceneIndoor (sceneId: string) (indoor: bool) (project: GameProject) =
+        let value = if indoor then Some true else None
+        Proj.mapScene sceneId (fun scene -> if scene.Indoor = value then scene else { scene with Indoor = value }) project
+
     /// SceneManager `applyResize`: tiles in the overlap are kept, new tiles are dry grass.
     let resizeScene (sceneId: string) (width: int) (height: int) (project: GameProject) =
         if width < 1 || height < 1 then project

@@ -62,7 +62,7 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
     let custom_asset = match extra.get("customAsset") {
         Some(Value::String(asset)) => {
             let asset = asset.clone();
-            extra.remove("customAsset");
+            extra.shift_remove("customAsset");
             Some(asset)
         }
         _ => None,

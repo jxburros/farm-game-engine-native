@@ -48,10 +48,11 @@ type CartridgeCompiler =
               yield "player", SchemaJson.encodePlayer project.Player
               yield "quests", JArray quests
               yield "npcs", JArray npcs
-              yield "eventFlags", Encode.dict JBool project.EventFlags
+              yield "eventFlags", Encode.dict id project.EventFlags
               yield "currentTimeMinutes", JNumber project.CurrentTimeMinutes
               yield "currentDay", JNumber project.CurrentDay
               yield "currentSeason", JString project.CurrentSeason
+              yield! optional "currentDayOfSeason" project.CurrentDayOfSeason JNumber
               yield "currentYear", JNumber project.CurrentYear
               yield! optional "currentWeatherId" project.CurrentWeatherId JString
               yield "scenes", Encode.list SchemaJson.encodeScene project.Scenes
@@ -60,7 +61,8 @@ type CartridgeCompiler =
               yield "animals", Encode.list SchemaJson.encodeAnimalState project.Animals
               yield! optional "mineDeepestFloor" project.MineDeepestFloor JNumber
               yield! optional "quarantinedItems" project.QuarantinedItems (Encode.list SchemaJson.encodeInventorySlot)
-              yield! optional "rngState" project.RngState SchemaJson.encodeRngState ]
+              yield! optional "rngState" project.RngState SchemaJson.encodeRngState
+              yield! optional "keptState" project.KeptState id ]
 
     /// What the renderer and the game panels read (Rust `Presentation::from_project`).
     static member PresentationSection(project: GameProject) : Json =
