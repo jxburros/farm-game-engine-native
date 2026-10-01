@@ -5,8 +5,13 @@ open FarmEngine.Schemas
 /// What removing a thing takes with it. The web editors mostly only filter the list they own
 /// (NPCEditor also drops the NPC's dialogues, WildlifeEditor the species' animals, CropEditor the
 /// seed and crop items, ProjectSettingsEditor the festivals of a season); everything else was left
-/// for the Problems panel to report. Here every `Remove*` edit scrubs the references too, so a
-/// project never gains dangling ids from an edit. Each function returns the same instance when
+/// for the Problems panel to report. Here every `Remove*` edit scrubs the references too, except
+/// the ones that gate something (#86): a condition on the removed item, NPC, quest or season, a
+/// dialogue option's required item, a quest prerequisite, a recipe's unlock quest, and a season
+/// list it was the only entry of. Dropping those would make the gated content available to
+/// everyone; kept, the dangling reference never holds (nobody has the missing item, the missing
+/// quest never completes, the season never comes), so the content stays locked and Problems
+/// reports the reference until the creator decides. Each function returns the same instance when
 /// there was nothing to scrub.
 module Cleanup =
     /// `Some list'` when `f` removed (None) or changed at least one element.
@@ -90,8 +95,9 @@ module Cleanup =
     // ---- one function per removed kind ----
 
     /// An item is gone: inventory slots, shop stock, recipe lines, drops, feed/product links,
-    /// fish entries, quest targets and rewards, dialogue gifts, item conditions and outcomes,
-    /// dropped copies on tiles, and interface entries that showed it.
+    /// fish entries, quest targets and rewards, dialogue gifts, item outcomes, dropped copies on
+    /// tiles, and interface entries that showed it. Gates on it stay (`hasItem` and
+    /// `inventorySpace` conditions, options that require it): they now never hold.
     let dropItem (itemId: string) (project: GameProject) : GameProject =
         let refersTo (id: string option) = refers id itemId
         project
@@ -122,14 +128,7 @@ module Cleanup =
                 match Lists.filterChanged (fun (r: QuestRewardItem) -> r.ItemId <> itemId) items with
                 | Some kept -> { q with Rewards = { q.Rewards with Items = Some kept } }
                 | None -> q)
-        |> mapDialogueOptions (fun o ->
-            let o = if refersTo o.GiveItem then { o with GiveItem = None; GiveItemQuantity = None } else o
-            Some(if refersTo o.RequiresItem then { o with RequiresItem = None } else o))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.HasItem h -> dropWhen (h.ItemId = itemId) c
-            | EventCondition.InventorySpace s -> dropWhen (s.ItemId = itemId) c
-            | _ -> Some c)
+        |> mapDialogueOptions (fun o -> Some(if refersTo o.GiveItem then { o with GiveItem = None; GiveItemQuantity = None } else o))
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.GiveItem || o.Type = EventOutcomeTypes.TakeItem) && refersTo o.ItemId) o)
         |> mapTiles (fun t ->
             match t.Item with
@@ -142,8 +141,8 @@ module Cleanup =
                     (fun p l -> { p with Entries = l })
             ))
 
-    /// An NPC is gone: its dialogues, the editor selection, quest givers and talk targets,
-    /// friendship conditions, NPC outcomes and scene NPC lists.
+    /// An NPC is gone: its dialogues, the editor selection, quest givers and talk targets, NPC
+    /// outcomes and scene NPC lists. Friendship conditions on it stay: they now never hold.
     let dropNpc (npcId: string) (project: GameProject) : GameProject =
         project
         |> fun p -> withList p (Lists.filterChanged (fun (d: Dialogue) -> d.NpcId <> npcId) p.Dialogues) (fun p l -> { p with Dialogues = l })
@@ -153,10 +152,6 @@ module Cleanup =
             withList q
                 (Lists.mapChanged (fun (o: QuestObjective) -> if refers o.TargetNpcId npcId then { o with TargetNpcId = None } else o) q.Objectives)
                 (fun q l -> { q with Objectives = l }))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.Friendship f -> dropWhen (f.NpcId = npcId) c
-            | _ -> Some c)
         |> mapOutcomes (fun o ->
             let npcOutcome =
                 o.Type = EventOutcomeTypes.SpawnNpc || o.Type = EventOutcomeTypes.RemoveNpc
@@ -171,24 +166,13 @@ module Cleanup =
         |> mapOutcomes (fun o ->
             Some(if o.Type = EventOutcomeTypes.StartDialogue && refers o.DialogueId dialogueId then { o with DialogueId = None } else o))
 
-    /// A quest is gone: prerequisites, offers, quest conditions and outcomes, recipe unlocks and the player's lists.
+    /// A quest is gone: offers, quest outcomes and the player's lists. Gates on it stay (other
+    /// quests' prerequisites, `questStatus` conditions, recipe unlocks): the quest never
+    /// completes now, so what waited for it stays locked.
     let dropQuest (questId: string) (project: GameProject) : GameProject =
         project
-        |> mapQuests (fun q ->
-            match q.Prerequisites with
-            | None -> q
-            | Some prerequisites ->
-                withList q (Lists.filterChanged (fun (id: string) -> id <> questId) prerequisites) (fun q l -> { q with Prerequisites = Some l }))
         |> mapDialogueOptions (fun o -> Some(if refers o.OfferQuestId questId then { o with OfferQuestId = None } else o))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.QuestStatus q -> dropWhen (q.QuestId = questId) c
-            | _ -> Some c)
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.StartQuest || o.Type = EventOutcomeTypes.CompleteQuest) && refers o.QuestId questId) o)
-        |> mapRecipes (fun r ->
-            match r.Unlock with
-            | Some unlock when refers unlock.QuestId questId -> { r with Unlock = Some { unlock with QuestId = None } }
-            | _ -> r)
         |> fun p ->
             let player = p.Player
             let player = withList player (Lists.filterChanged (fun (id: string) -> id <> questId) player.ActiveQuests) (fun pl l -> { pl with ActiveQuests = l })
@@ -372,17 +356,19 @@ module Cleanup =
                     { p with Player = { p.Player with SceneId = start.Id; X = float x; Y = float y } }
 
     /// A calendar season is gone: festivals on it, weather rows, and season lists that named it.
+    /// A list it was the only entry of keeps it: an empty (or absent) list means "every season",
+    /// so emptying it would open winter-only stock, quests, fish and recipes all year. Kept, the
+    /// season never comes, and Problems reports it.
     let dropSeason (seasonId: string) (project: GameProject) : GameProject =
-        let without (seasons: string list) = Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons
-        /// An optional season list without the season; absent once empty.
+        let without (seasons: string list) =
+            match Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons with
+            | Some [] -> None
+            | other -> other
+        /// An optional season list without the season.
         let optionalList (seasons: string list option) : string list option option =
             match seasons with
             | None -> None
-            | Some list ->
-                match without list with
-                | Some [] -> Some None
-                | Some kept -> Some(Some kept)
-                | None -> None
+            | Some list -> without list |> Option.map Some
         project
         |> fun p ->
             let calendar = p.Settings.Calendar
@@ -411,7 +397,6 @@ module Cleanup =
             match c with
             | EventCondition.Season s ->
                 match without s.Seasons with
-                | Some [] -> None
                 | Some kept -> Some(EventCondition.Season { s with Seasons = kept })
                 | None -> Some c
             | _ -> Some c)
