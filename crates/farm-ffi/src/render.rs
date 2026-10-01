@@ -10,10 +10,11 @@
 //!
 //! Same conventions as the sessions: Rust allocates results and .NET frees them with
 //! `fe_bytes_free`; panics are caught and never unwind into .NET. On failure `out` holds the
-//! UTF-8 error message instead of a result. A preview is used by one thread at a time; after a
-//! panic it is poisoned and answers `FeResult::Poisoned`.
+//! UTF-8 error message instead of a result ([`fe_preview_last_error`] returns it again). A preview
+//! is used by one thread at a time; after a panic it is poisoned and answers
+//! `FeResult::Poisoned` with the panic's message.
 
-use crate::{bytes_arg, write, write_empty, FeBytes, FeResult};
+use crate::{bytes_arg, fail, release, write, write_empty, FeBytes, FeResult};
 use farm_host::{Guarded, HostPreview, Rgba};
 
 /// Width and height as little-endian `u32`s, then the pixels.
@@ -37,19 +38,22 @@ fn sized(image: Rgba) -> Vec<u8> {
 /// `request` must point to `len` readable bytes; `out` must be a valid pointer.
 #[no_mangle]
 pub unsafe extern "C" fn fe_render_json(request: *const u8, len: usize, out: *mut FeBytes) -> FeResult {
-    write_empty(out);
-    let Some(bytes) = bytes_arg(request, len) else { return FeResult::InvalidArgument };
-    if out.is_null() {
-        return FeResult::InvalidArgument;
-    }
-    match farm_host::catch(|| farm_host::render::render_json(bytes)) {
-        Ok(result) => {
-            write(out, result.into_bytes());
-            FeResult::Ok
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(out);
+        let Some(bytes) = bytes_arg(request, len) else { return FeResult::InvalidArgument };
+        if out.is_null() {
+            return FeResult::InvalidArgument;
         }
-        Err(e) => {
-            write(out, e.message.into_bytes());
-            e.kind.into()
+        match farm_host::catch(|| farm_host::render::render_json(bytes)) {
+            Ok(result) => {
+                write(out, result.into_bytes());
+                FeResult::Ok
+            }
+            Err(e) => {
+                write(out, e.message.into_bytes());
+                e.kind.into()
+            }
         }
     }
 }
@@ -77,42 +81,44 @@ pub unsafe extern "C" fn fe_preview_new(
     out: *mut *mut FePreview,
     error: *mut FeBytes,
 ) -> FeResult {
-    write_empty(error);
-    if out.is_null() {
-        return FeResult::InvalidArgument;
-    }
-    *out = std::ptr::null_mut();
-    let Some(bytes) = bytes_arg(project_json, len) else { return FeResult::InvalidArgument };
-    match farm_host::catch(|| HostPreview::new(bytes)) {
-        Ok(preview) => {
-            *out = Box::into_raw(Box::new(FePreview { preview: Guarded::new(preview) }));
-            FeResult::Ok
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(error);
+        if out.is_null() {
+            return FeResult::InvalidArgument;
         }
-        Err(e) => {
-            write(error, e.message.into_bytes());
-            e.kind.into()
+        *out = std::ptr::null_mut();
+        let Some(bytes) = bytes_arg(project_json, len) else { return FeResult::InvalidArgument };
+        match farm_host::catch(|| HostPreview::new(bytes)) {
+            Ok(preview) => {
+                *out = Box::into_raw(Box::new(FePreview { preview: Guarded::new(preview) }));
+                FeResult::Ok
+            }
+            Err(e) => {
+                write(error, e.message.into_bytes());
+                e.kind.into()
+            }
         }
     }
 }
 
-/// Runs `body` on the preview. A poisoned preview answers `Poisoned` with an empty `out`.
+/// Runs `body` on the preview. `out` receives the result or the error's message.
 unsafe fn with_preview<F>(preview: *mut FePreview, out: *mut FeBytes, body: F) -> FeResult
 where
     F: FnOnce(&mut HostPreview) -> Result<Vec<u8>, String>,
 {
-    write_empty(out);
-    if preview.is_null() {
-        return FeResult::InvalidArgument;
-    }
-    match (*preview).preview.run(body) {
-        Ok(bytes) => {
-            write(out, bytes);
-            FeResult::Ok
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(out);
+        if preview.is_null() {
+            return FeResult::InvalidArgument;
         }
-        Err(e) if e.kind == farm_host::ErrorKind::Poisoned => FeResult::Poisoned,
-        Err(e) => {
-            write(out, e.message.into_bytes());
-            e.kind.into()
+        match (*preview).preview.run(body) {
+            Ok(bytes) => {
+                write(out, bytes);
+                FeResult::Ok
+            }
+            Err(e) => fail(out, e),
         }
     }
 }
@@ -129,11 +135,39 @@ pub unsafe extern "C" fn fe_preview_set_project(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(project_json, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_preview(preview, out, |preview| preview.set_project(bytes).map(|()| Vec::new()))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(project_json, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_preview(preview, out, |preview| preview.set_project(bytes).map(|()| Vec::new()))
+    }
+}
+
+/// Replaces scenes of the previewed project by id after an edit that changed only scenes
+/// (painting): `scenes_json` is a JSON array of scenes. The art and the rest of the project stay.
+/// A scene the project does not have, or bad JSON, keeps the previous project and `out` holds
+/// the message (send the whole project with [`fe_preview_set_project`] then); on success `out`
+/// is empty.
+///
+/// # Safety
+/// `preview` from [`fe_preview_new`]; `scenes_json` points to `len` bytes; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_preview_set_scenes(
+    preview: *mut FePreview,
+    scenes_json: *const u8,
+    len: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(scenes_json, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_preview(preview, out, |preview| preview.set_scenes(bytes).map(|()| Vec::new()))
+    }
 }
 
 /// Renders a scene: `request` is `{"sceneId":"…","tileSize":28,"padding":12,"camera":{"x":…,
@@ -150,11 +184,14 @@ pub unsafe extern "C" fn fe_preview_render(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(request, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_preview(preview, out, |preview| preview.render(bytes).map(sized))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(request, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_preview(preview, out, |preview| preview.render(bytes).map(sized))
+    }
 }
 
 /// Renders one frame of a visual binding of the previewed project (the art studio's preview):
@@ -171,25 +208,52 @@ pub unsafe extern "C" fn fe_preview_render_visual(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(request, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_preview(preview, out, |preview| preview.render_visual(bytes).map(sized))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(request, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_preview(preview, out, |preview| preview.render_visual(bytes).map(sized))
+    }
 }
 
-/// Frees a preview. Null is a no-op.
+/// The message of the last error or panic on this preview (empty when none).
+///
+/// # Safety
+/// `preview` from [`fe_preview_new`] (poisoned previews are fine); `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_preview_last_error(preview: *mut FePreview, out: *mut FeBytes) -> FeResult {
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(out);
+        if preview.is_null() {
+            return FeResult::InvalidArgument;
+        }
+        write(out, (*preview).preview.last_error().as_bytes().to_vec());
+        FeResult::Ok
+    }
+}
+
+/// Frees a preview. Null is a no-op. A panic while dropping it is caught; a poisoned preview is
+/// leaked instead of dropped.
 ///
 /// # Safety
 /// `preview` must have come from [`fe_preview_new`] and must not be used afterwards.
 #[no_mangle]
 pub unsafe extern "C" fn fe_preview_free(preview: *mut FePreview) {
-    if !preview.is_null() {
-        drop(Box::from_raw(preview));
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        if !preview.is_null() {
+            let preview = *Box::from_raw(preview);
+            let poisoned = preview.preview.is_poisoned();
+            release(preview, poisoned);
+        }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::*;
     use farm_render::WorldSnapshot;
@@ -207,8 +271,8 @@ mod tests {
         if bytes.ptr.is_null() {
             return Vec::new();
         }
-        let data = std::slice::from_raw_parts(bytes.ptr, bytes.len).to_vec();
-        crate::fe_bytes_free(bytes);
+        let data = unsafe { std::slice::from_raw_parts(bytes.ptr, bytes.len) }.to_vec();
+        unsafe { crate::fe_bytes_free(bytes) };
         data
     }
 
@@ -308,6 +372,20 @@ mod tests {
         let (result, message) = render(r#"{"sceneId":"missing"}"#.to_owned());
         assert_eq!(result, FeResult::InvalidArgument);
         assert_eq!(String::from_utf8(message).unwrap(), "Scene missing not found.");
+
+        // Scenes alone (a paint stroke); an unknown one is refused and reported.
+        let scenes = serde_json::from_str::<serde_json::Value>(&project).unwrap()["scenes"].to_string();
+        let mut out = FeBytes::empty();
+        assert_eq!(unsafe { fe_preview_set_scenes(preview, scenes.as_ptr(), scenes.len(), &mut out) }, FeResult::Ok);
+        assert!(unsafe { take(out) }.is_empty());
+        let unknown = br#"[{"id":"elsewhere","name":"x","width":0,"height":0,"tiles":[]}]"#;
+        let mut out = FeBytes::empty();
+        let result = unsafe { fe_preview_set_scenes(preview, unknown.as_ptr(), unknown.len(), &mut out) };
+        assert_eq!(result, FeResult::InvalidArgument);
+        let message = String::from_utf8(unsafe { take(out) }).unwrap();
+        let mut out = FeBytes::empty();
+        assert_eq!(unsafe { fe_preview_last_error(preview, &mut out) }, FeResult::Ok);
+        assert_eq!(String::from_utf8(unsafe { take(out) }).unwrap(), message);
         unsafe { fe_preview_free(preview) };
         unsafe { fe_preview_free(std::ptr::null_mut()) };
     }

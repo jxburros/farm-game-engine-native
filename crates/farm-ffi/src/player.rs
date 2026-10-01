@@ -9,13 +9,35 @@
 //!
 //! Same conventions as the sessions: Rust allocates results and .NET frees them with
 //! `fe_bytes_free`; panics never unwind into .NET. On failure `out` holds the UTF-8 error
-//! message. A player is used by one thread at a time (the editor runs it on a worker thread).
+//! message ([`fe_player_last_error`] returns it again); a player whose game stopped (a panic, an
+//! engine failure) is poisoned and answers `FeResult::Poisoned` with the reason. A player is
+//! used by one thread at a time (the editor runs it on a worker thread).
+//!
+//! Frames: [`fe_player_frame`] returns the pixels in its buffer (one copy in Rust, one more in
+//! the host). Play Mode uses [`fe_player_frame_info`] instead and then copies the frame once,
+//! straight into its bitmap, with [`fe_player_copy_pixels`].
 
-use crate::{bytes_arg, write, write_empty, FeBytes, FeResult};
-use farm_host::player::{is_engine_failure, FrameRequest, PlayerCreate};
+use crate::{bytes_arg, fail, release, write, write_empty, FeBytes, FeResult};
+use farm_host::player::{FrameRequest, PlayerCreate};
 use farm_host::{Guarded, HostPlayer};
+#[cfg(feature = "audio-out")]
 use farm_player::speaker::SpeakerThread;
 use farm_player::PlayerOptions;
+
+/// Without the `audio-out` feature (an editor built without ALSA) there is no output device:
+/// the frames still report their sounds, and `{"audio":true}` plays nothing.
+#[cfg(not(feature = "audio-out"))]
+#[derive(Debug)]
+struct SpeakerThread;
+
+#[cfg(not(feature = "audio-out"))]
+impl SpeakerThread {
+    fn start() -> Self {
+        SpeakerThread
+    }
+
+    fn play(&self, _sound: farm_player::SoundRequest) {}
+}
 
 /// An opaque embedded player.
 pub struct FePlayer {
@@ -47,30 +69,33 @@ pub unsafe extern "C" fn fe_player_new(
     out: *mut *mut FePlayer,
     error: *mut FeBytes,
 ) -> FeResult {
-    write_empty(error);
-    if out.is_null() {
-        return FeResult::InvalidArgument;
-    }
-    *out = std::ptr::null_mut();
-    let (Some(game), Some(options)) = (bytes_arg(game, len), bytes_arg(options, options_len)) else {
-        return FeResult::InvalidArgument;
-    };
-    let result = farm_host::catch(|| {
-        let mut create = PlayerCreate::parse(options)?;
-        // Play Mode: the editor's accessibility option always wins (off unless it asks).
-        create.reduced_motion.get_or_insert(false);
-        let player = HostPlayer::new(game, &create, PlayerOptions::embedded())?;
-        let speaker = create.audio.then(SpeakerThread::start);
-        Ok(FePlayer { player: Guarded::new(player).poisoning_on(is_engine_failure), speaker })
-    });
-    match result {
-        Ok(player) => {
-            *out = Box::into_raw(Box::new(player));
-            FeResult::Ok
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(error);
+        if out.is_null() {
+            return FeResult::InvalidArgument;
         }
-        Err(e) => {
-            write(error, e.message.into_bytes());
-            e.kind.into()
+        *out = std::ptr::null_mut();
+        let (Some(game), Some(options)) = (bytes_arg(game, len), bytes_arg(options, options_len)) else {
+            return FeResult::InvalidArgument;
+        };
+        let result = farm_host::catch(|| {
+            let mut create = PlayerCreate::parse(options)?;
+            // Play Mode: the editor's accessibility option always wins (off unless it asks).
+            create.reduced_motion.get_or_insert(false);
+            let player = HostPlayer::new(game, &create, PlayerOptions::embedded())?;
+            let speaker = create.audio.then(SpeakerThread::start);
+            Ok(FePlayer { player: Guarded::new(player).poisoning_when(HostPlayer::stopped), speaker })
+        });
+        match result {
+            Ok(player) => {
+                *out = Box::into_raw(Box::new(player));
+                FeResult::Ok
+            }
+            Err(e) => {
+                write(error, e.message.into_bytes());
+                e.kind.into()
+            }
         }
     }
 }
@@ -79,19 +104,19 @@ unsafe fn with_player<F>(player: *mut FePlayer, out: *mut FeBytes, body: F) -> F
 where
     F: FnOnce(&mut HostPlayer, Option<&SpeakerThread>) -> Result<Vec<u8>, String>,
 {
-    write_empty(out);
-    if player.is_null() {
-        return FeResult::InvalidArgument;
-    }
-    let FePlayer { player, speaker } = &mut *player;
-    match player.run(|p| body(p, speaker.as_ref())) {
-        Ok(bytes) => {
-            write(out, bytes);
-            FeResult::Ok
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(out);
+        if player.is_null() {
+            return FeResult::InvalidArgument;
         }
-        Err(e) => {
-            write(out, e.message.into_bytes());
-            e.kind.into()
+        let FePlayer { player, speaker } = &mut *player;
+        match player.run(|p| body(p, speaker.as_ref())) {
+            Ok(bytes) => {
+                write(out, bytes);
+                FeResult::Ok
+            }
+            Err(e) => fail(out, e),
         }
     }
 }
@@ -111,30 +136,107 @@ pub unsafe extern "C" fn fe_player_frame(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(request, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_player(player, out, |p, speaker| {
-        let outcome = p.frame(&FrameRequest::parse(bytes)?)?;
-        if let Some(speaker) = speaker {
-            for sound in &outcome.sounds {
-                speaker.play(sound.clone());
-            }
-        }
-        let json = outcome.info_json().into_bytes();
-        let ((width, height), data) = match outcome.size {
-            Some(size) => (size, p.pixels()),
-            None => ((0, 0), &[][..]),
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(request, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
         };
-        let mut out = Vec::with_capacity(12 + json.len() + data.len());
-        out.extend_from_slice(&width.to_le_bytes());
-        out.extend_from_slice(&height.to_le_bytes());
-        out.extend_from_slice(&(json.len() as u32).to_le_bytes());
-        out.extend_from_slice(&json);
-        out.extend_from_slice(data);
-        Ok(out)
-    })
+        with_player(player, out, |p, speaker| run_frame(p, speaker, bytes, true))
+    }
+}
+
+/// Runs one frame like [`fe_player_frame`], but `out` holds only the size and the JSON info
+/// block (12 bytes of header, then the JSON): the pixels stay in the player until the host
+/// copies them with [`fe_player_copy_pixels`].
+///
+/// # Safety
+/// `player` from [`fe_player_new`]; `request` points to `len` bytes; `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_player_frame_info(
+    player: *mut FePlayer,
+    request: *const u8,
+    len: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(request, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_player(player, out, |p, speaker| run_frame(p, speaker, bytes, false))
+    }
+}
+
+/// Runs a frame; the answer is the size, the JSON info block and, `with_pixels`, the pixels.
+fn run_frame(
+    p: &mut HostPlayer,
+    speaker: Option<&SpeakerThread>,
+    request: &[u8],
+    with_pixels: bool,
+) -> Result<Vec<u8>, String> {
+    let outcome = p.frame(&FrameRequest::parse(request)?)?;
+    if let Some(speaker) = speaker {
+        for sound in &outcome.sounds {
+            speaker.play(sound.clone());
+        }
+    }
+    let json = outcome.info_json().into_bytes();
+    let ((width, height), data) = match outcome.size {
+        Some(size) => (size, if with_pixels { p.pixels() } else { &[][..] }),
+        None => ((0, 0), &[][..]),
+    };
+    let mut out = Vec::with_capacity(12 + json.len() + data.len());
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    out.extend_from_slice(&json);
+    out.extend_from_slice(data);
+    Ok(out)
+}
+
+/// Copies the last rendered frame (`width × height` premultiplied RGBA8, the size the last
+/// [`fe_player_frame_info`] reported) into `dst`, one row of `width × 4` bytes every `stride`
+/// bytes: the host's bitmap, written once. `dst_len` must hold `stride × (height - 1) +
+/// width × 4` bytes; a smaller buffer, or a stride shorter than a row, answers
+/// `InvalidArgument` with the frame's size in the message and writes nothing.
+///
+/// # Safety
+/// `player` from [`fe_player_new`]; `dst` points to `dst_len` writable bytes that nothing else
+/// reads or writes during the call; `out` is valid (it receives only an error message).
+#[no_mangle]
+pub unsafe extern "C" fn fe_player_copy_pixels(
+    player: *mut FePlayer,
+    dst: *mut u8,
+    dst_len: usize,
+    stride: usize,
+    out: *mut FeBytes,
+) -> FeResult {
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        if dst.is_null() {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        }
+        let dst = std::slice::from_raw_parts_mut(dst, dst_len);
+        with_player(player, out, |p, _| {
+            let pixmap = p.player().pixels();
+            let (width, height) = (pixmap.width() as usize, pixmap.height() as usize);
+            let row = width * 4;
+            let needed = stride.checked_mul(height.saturating_sub(1)).and_then(|rows| rows.checked_add(row));
+            if stride < row || needed.is_none_or(|needed| dst.len() < needed) {
+                return Err(format!(
+                    "The frame is {width}×{height}: it needs a stride of at least {row} and {} bytes.",
+                    needed.unwrap_or(usize::MAX)
+                ));
+            }
+            for (y, source) in pixmap.data().chunks_exact(row).enumerate() {
+                dst[y * stride..y * stride + row].copy_from_slice(source);
+            }
+            Ok(Vec::new())
+        })
+    }
 }
 
 /// A creator debug-drawer action (`{"type":"addMoney","amount":500}`, `fullEnergy`,
@@ -149,11 +251,14 @@ pub unsafe extern "C" fn fe_player_debug(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(action, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_player(player, out, |p, _| p.debug(bytes).map(|()| Vec::new()))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(action, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_player(player, out, |p, _| p.debug(bytes).map(|()| Vec::new()))
+    }
 }
 
 /// Runs engine commands (a JSON array) as if the player had done them (tests and tools).
@@ -167,11 +272,14 @@ pub unsafe extern "C" fn fe_player_commands(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(commands, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_player(player, out, |p, _| p.commands(bytes).map(|()| Vec::new()))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(commands, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_player(player, out, |p, _| p.commands(bytes).map(|()| Vec::new()))
+    }
 }
 
 /// The live game state as stable JSON.
@@ -180,7 +288,8 @@ pub unsafe extern "C" fn fe_player_commands(
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_state_json(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p, _| p.state_json().map(String::into_bytes))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe { with_player(player, out, |p, _| p.state_json().map(String::into_bytes)) }
 }
 
 /// The state hash (`hashState`) of the live game.
@@ -189,7 +298,8 @@ pub unsafe extern "C" fn fe_player_state_json(player: *mut FePlayer, out: *mut F
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_hash(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p, _| p.hash().map(String::into_bytes))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe { with_player(player, out, |p, _| p.hash().map(String::into_bytes)) }
 }
 
 /// The editor project with the live state written back ("keep changes"), as stable JSON.
@@ -199,7 +309,8 @@ pub unsafe extern "C" fn fe_player_hash(player: *mut FePlayer, out: *mut FeBytes
 /// `player` from [`fe_player_new`]; `out` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_synced_project(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
-    with_player(player, out, |p, _| p.synced_project().map(String::into_bytes))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe { with_player(player, out, |p, _| p.synced_project().map(String::into_bytes)) }
 }
 
 /// Read-only queries (`{"type":"summary"}`, `{"type":"widgetRect","path":[…]}`,
@@ -214,25 +325,53 @@ pub unsafe extern "C" fn fe_player_query_json(
     len: usize,
     out: *mut FeBytes,
 ) -> FeResult {
-    let Some(bytes) = bytes_arg(query, len) else {
-        write_empty(out);
-        return FeResult::InvalidArgument;
-    };
-    with_player(player, out, |p, _| p.query_json(bytes).map(String::into_bytes))
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        let Some(bytes) = bytes_arg(query, len) else {
+            write_empty(out);
+            return FeResult::InvalidArgument;
+        };
+        with_player(player, out, |p, _| p.query_json(bytes).map(String::into_bytes))
+    }
 }
 
-/// Frees a player. Null is a no-op.
+/// The message of the last error or panic on this player (empty when none).
+///
+/// # Safety
+/// `player` from [`fe_player_new`] (poisoned players are fine); `out` is valid.
+#[no_mangle]
+pub unsafe extern "C" fn fe_player_last_error(player: *mut FePlayer, out: *mut FeBytes) -> FeResult {
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        write_empty(out);
+        if player.is_null() {
+            return FeResult::InvalidArgument;
+        }
+        write(out, (*player).player.last_error().as_bytes().to_vec());
+        FeResult::Ok
+    }
+}
+
+/// Frees a player. Null is a no-op. The output device closes first; a panic while dropping is
+/// caught, and the game of a poisoned player is leaked instead of dropped.
 ///
 /// # Safety
 /// `player` must have come from [`fe_player_new`] and must not be used afterwards.
 #[no_mangle]
 pub unsafe extern "C" fn fe_player_free(player: *mut FePlayer) {
-    if !player.is_null() {
-        drop(Box::from_raw(player));
+    // SAFETY: the caller upholds this function's `# Safety` contract, which covers every pointer used here.
+    unsafe {
+        if !player.is_null() {
+            let FePlayer { player, speaker } = *Box::from_raw(player);
+            release(speaker, false);
+            let poisoned = player.is_poisoned();
+            release(player, poisoned);
+        }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::*;
 
@@ -246,8 +385,8 @@ mod tests {
         if bytes.ptr.is_null() {
             return Vec::new();
         }
-        let data = std::slice::from_raw_parts(bytes.ptr, bytes.len).to_vec();
-        crate::fe_bytes_free(bytes);
+        let data = unsafe { std::slice::from_raw_parts(bytes.ptr, bytes.len) }.to_vec();
+        unsafe { crate::fe_bytes_free(bytes) };
         data
     }
 
@@ -345,6 +484,65 @@ mod tests {
         assert_eq!(result, FeResult::Ok, "{}", String::from_utf8_lossy(&rect));
         unsafe { fe_player_free(player) };
         unsafe { fe_player_free(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn frames_copy_their_pixels_once_into_the_hosts_buffer() {
+        let project = starter_project();
+        let player = new_player(project.as_bytes(), r#"{"seed":"copy"}"#);
+        let request = r#"{"dt":0,"events":[],"width":32,"height":20}"#;
+        let (_, _, _, inline) = frame(player, request);
+        assert_eq!(inline, 32 * 20 * 4);
+        let (_, reference) = call(|out| unsafe { fe_player_frame(player, request.as_ptr(), request.len(), out) });
+        let reference = &reference[reference.len() - inline..];
+
+        let (result, info) = call(|out| unsafe { fe_player_frame_info(player, request.as_ptr(), request.len(), out) });
+        assert_eq!(result, FeResult::Ok);
+        let json_len = u32::from_le_bytes(info[8..12].try_into().unwrap()) as usize;
+        assert_eq!((&info[0..8], info.len()), (&[32, 0, 0, 0, 20, 0, 0, 0][..], 12 + json_len), "no pixels");
+
+        // Into a bitmap with padded rows.
+        let stride = 32 * 4 + 16;
+        let mut bitmap = vec![0xAA; stride * 20];
+        let (result, message) =
+            call(|out| unsafe { fe_player_copy_pixels(player, bitmap.as_mut_ptr(), bitmap.len(), stride, out) });
+        assert_eq!(result, FeResult::Ok, "{}", String::from_utf8_lossy(&message));
+        for (y, row) in bitmap.chunks_exact(stride).enumerate() {
+            assert_eq!(&row[..128], &reference[y * 128..(y + 1) * 128]);
+            assert!(row[128..].iter().all(|&byte| byte == 0xAA), "the padding stays untouched");
+        }
+
+        // Too small a buffer or stride: refused, nothing written, and the player goes on.
+        let mut small = vec![0u8; 100];
+        let (result, message) =
+            call(|out| unsafe { fe_player_copy_pixels(player, small.as_mut_ptr(), small.len(), 128, out) });
+        assert_eq!(result, FeResult::InvalidArgument);
+        assert!(String::from_utf8(message).unwrap().contains("32×20"));
+        assert!(small.iter().all(|&byte| byte == 0));
+        let (result, _) =
+            call(|out| unsafe { fe_player_copy_pixels(player, bitmap.as_mut_ptr(), bitmap.len(), 8, out) });
+        assert_eq!(result, FeResult::InvalidArgument);
+        frame(player, request);
+        unsafe { fe_player_free(player) };
+    }
+
+    #[test]
+    fn a_panic_poisons_the_player_and_every_call_reports_why() {
+        let project = starter_project();
+        let player = new_player(project.as_bytes(), "");
+        let panic = br#"{"type":"panic"}"#;
+        let (result, message) = call(|out| unsafe { fe_player_query_json(player, panic.as_ptr(), panic.len(), out) });
+        assert_eq!(result, FeResult::Panic);
+        let message = String::from_utf8(message).unwrap();
+        assert!(message.contains("panic"), "{message}");
+        let request = r#"{"dt":0,"width":16,"height":16}"#;
+        let (result, again) = call(|out| unsafe { fe_player_frame(player, request.as_ptr(), request.len(), out) });
+        assert_eq!(result, FeResult::Poisoned);
+        assert_eq!(String::from_utf8(again).unwrap(), message, "the error that poisoned it");
+        let (result, last) = call(|out| unsafe { fe_player_last_error(player, out) });
+        assert_eq!((result, String::from_utf8(last).unwrap()), (FeResult::Ok, message));
+        // Freeing a poisoned player neither panics nor aborts.
+        unsafe { fe_player_free(player) };
     }
 
     #[test]

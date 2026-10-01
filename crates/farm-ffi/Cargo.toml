@@ -12,22 +12,39 @@ publish.workspace = true
 name = "farm_ffi"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["audio-out"]
+# Play Mode's sound on the default output device (cpal). On Linux cpal links ALSA
+# (libasound.so.2) when the library loads, and cpal 0.18 has no backend that opens it at run time,
+# so a library built with this feature does not load at all on a machine without libasound, and
+# Play Mode, the map preview and sessions are all unavailable there. Build without it
+# (`cargo build -p farm-ffi --no-default-features`, or `dotnet build -p:FarmFfiAudio=false`) for an
+# editor that runs without ALSA and plays Play Mode silently.
+audio-out = ["farm-player/audio-out"]
+
 [dependencies]
 farm-sim = { path = "../farm-sim" }
 # The JSON protocol (shared with farm-wasm); this crate is the C ABI around it.
 farm-host = { path = "../farm-host" }
 # The embeddable player without the desktop window/audio/gamepad layer.
-farm-player = { path = "../farm-player", default-features = false, features = ["audio-out"] }
+farm-player = { path = "../farm-player", default-features = false }
 
 [dev-dependencies]
 farm-cart = { path = "../farm-cart" }
 farm-render = { path = "../farm-render" }
 serde_json.workspace = true
 
+# The crate's own lint tables replace the workspace's, so they repeat its rules; the one
+# difference is that `unsafe` is allowed here (it only dereferences pointers .NET hands it), with
+# every unsafe operation in its own block and every block justified by a `// SAFETY:` comment.
 [lints.rust]
-# The FFI crate is the one place `unsafe` is allowed: it only dereferences pointers .NET hands it.
 unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
 
 [lints.clippy]
-all = "warn"
+all = { level = "warn", priority = -1 }
+disallowed_types = "deny"
+disallowed_methods = "deny"
 missing_safety_doc = "deny"
+undocumented_unsafe_blocks = "deny"

@@ -1308,6 +1308,11 @@ impl Player {
         }
     }
 
+    /// Whether the game stopped after an engine failure: every later frame and command fails.
+    pub fn is_poisoned(&self) -> bool {
+        self.poisoned.is_some()
+    }
+
     /// The open host panel (inventory, quests, crafting).
     pub fn panel(&self) -> Option<Panel> {
         self.game_ui.panel
