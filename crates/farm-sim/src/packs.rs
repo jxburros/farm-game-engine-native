@@ -278,6 +278,9 @@ pub fn apply_locale_strings(content: GameContent, installs: &[PackInstallation],
     let packs = resolve_pack_order(installs).packs;
     let mut table: IndexMap<String, String> = IndexMap::new();
     for raw_pack in &packs {
+        if !raw_pack.manifest.permissions.content_inject {
+            continue;
+        }
         let pack = namespace_pack(raw_pack);
         if let Some(locale_table) = pack.content.strings.get(locale) {
             for (key, value) in locale_table {
@@ -552,6 +555,29 @@ fn merge_pack(
     merger.merge_array(&c.minigames, |d| &d.id, slots.minigames, "minigame");
 }
 
+/// Whether a pack declares any content: definitions, a player start or string tables.
+fn has_content(content: &PackContent) -> bool {
+    !collection_ids(content).is_empty() || content.player_start.is_some() || !content.strings.is_empty()
+}
+
+/// `permissions.contentInject` is off: none of the pack's content loads (its plugins still
+/// run). A pack that ships content anyway gets a warning, so the Problems panel shows it.
+fn content_blocked(pack: &ContentPack, problems: &mut Vec<PackProblem>) -> bool {
+    if pack.manifest.permissions.content_inject {
+        return false;
+    }
+    if has_content(&pack.content) {
+        let id = &pack.manifest.id;
+        problems.push(PackProblem::warning(
+            id,
+            format!(
+                "Pack '{id}' ships content but does not have the contentInject permission — its content is not loaded"
+            ),
+        ));
+    }
+    true
+}
+
 /// Layer enabled packs (in resolved order) on top of a GameContent. Used at play time so mods
 /// apply without touching the authored project fields.
 pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation]) -> MergePacksIntoContentResult {
@@ -562,6 +588,9 @@ pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation
 
     let mut content = base.clone();
     for raw_pack in &packs {
+        if content_blocked(raw_pack, &mut problems) {
+            continue;
+        }
         let pack = namespace_pack(raw_pack);
         merge_pack(
             &pack,
@@ -594,6 +623,9 @@ pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation
 /// problems for anything skipped.
 pub fn apply_pack_to_project(project: &GameProject, raw_pack: &ContentPack) -> ApplyPackToProjectResult {
     let mut problems = Vec::new();
+    if content_blocked(raw_pack, &mut problems) {
+        return ApplyPackToProjectResult { project: project.clone(), problems };
+    }
     let pack = namespace_pack(raw_pack);
 
     let mut next = project.clone();
@@ -749,6 +781,42 @@ mod tests {
                 PackProblem::error("d", "Pack 'd' depends on 'missing' which is not installed/enabled".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn packs_without_content_inject_load_no_content() {
+        let mut blocked = pack("blocked", &[]);
+        blocked.pack.manifest.permissions.content_inject = false;
+        blocked.pack.content.items.push(Item { id: "gem".to_owned(), ..Item::default() });
+        blocked
+            .pack
+            .content
+            .strings
+            .insert("fr".to_owned(), [("item:wheat:name".to_owned(), "Blé".to_owned())].into_iter().collect());
+        let mut allowed = pack("allowed", &[]);
+        allowed.pack.content.items.push(Item { id: "gem".to_owned(), ..Item::default() });
+        let base =
+            GameContent { items: vec![Item { id: "wheat".to_owned(), ..Item::default() }], ..GameContent::default() };
+
+        let merged = merge_packs_into_content(&base, &[blocked.clone(), allowed]);
+        let ids: Vec<&str> = merged.content.items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, ["wheat", "allowed:gem"]);
+        let warning =
+            "Pack 'blocked' ships content but does not have the contentInject permission — its content is not loaded";
+        assert_eq!(merged.problems, [PackProblem::warning("blocked", warning.to_owned())]);
+
+        // No translations either, and importing it into a project changes nothing.
+        let localized = apply_locale_strings(base.clone(), std::slice::from_ref(&blocked), "fr");
+        assert_eq!(localized.items[0].name, base.items[0].name);
+        let project = GameProject::default();
+        let applied = apply_pack_to_project(&project, &blocked.pack);
+        assert_eq!(applied.project, project);
+        assert_eq!(applied.problems, [PackProblem::warning("blocked", warning.to_owned())]);
+
+        // A pack without content (plugins only) has nothing to warn about.
+        let mut plugins_only = pack("plugins-only", &[]);
+        plugins_only.pack.manifest.permissions.content_inject = false;
+        assert!(merge_packs_into_content(&base, &[plugins_only]).problems.is_empty());
     }
 
     #[test]

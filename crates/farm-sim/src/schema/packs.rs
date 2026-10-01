@@ -26,9 +26,12 @@ use serde_json::{Map, Value};
 pub struct PackPermissions {
     /// Hook names the pack's plugins may subscribe to (user-approved at install).
     pub hooks: Vec<String>,
-    /// May contribute content definitions (the normal case).
+    /// May contribute content definitions, a player start and string tables (the normal case).
+    /// When off, none of the pack's content loads and the Problems panel warns if it has some;
+    /// its plugins still run.
     pub content_inject: bool,
-    /// Reserved: declarative UI panels (not yet implemented).
+    /// Reserved: declarative UI panels. Packs cannot add game panels yet, so this grants
+    /// nothing either way.
     pub ui_panels: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
