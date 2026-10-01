@@ -506,14 +506,13 @@
     "stable": "aa8ea54c14a3a332",
     "problems": [
       "error|content.dialogue|npcs[0].dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc",
-      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc",
       "error|content.shops|shops[1]|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop",
       "info|shop.unreachable|shops[0]|No dialogue option opens shop \"General Store\"|shop",
       "info|shop.noStock|shops[2].stock|Shop \"Museum\" sells nothing|shop",
       "info|shop.unreachable|shops[2]|No dialogue option opens shop \"Museum\"|shop"
     ],
     "content": "51400465dbcf7aba",
-    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"\nnpcs[0].dialogue: Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"\nshops[1]: Shop \"Picky Shop\" stocks missing item \"ghost-item\"",
+    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"\nshops[1]: Shop \"Picky Shop\" stocks missing item \"ghost-item\"",
     "gameOk": true,
     "gameErrors": [],
     "game": "aa8ea54c14a3a332"
@@ -1227,8 +1226,8 @@
     "fromVersion": 8,
     "migrated": true,
     "errors": [],
-    "json": "8bfb61fcc3e0361b",
-    "stable": "9513c6c04900bfde",
+    "json": "14a0083dc3ac5bc7",
+    "stable": "6a2f1f4f9b6ec9a3",
     "problems": [
       "error|content.packs|contentPacks[3]|Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled|pack",
       "error|content.packs|contentPacks[3]|Dependency cycle involving pack 'pack-d'|pack",
@@ -1236,13 +1235,12 @@
       "warning|content.packs|contentPacks[0]|Pack 'pack-b' redefines item 'pack-a:berry' without declaring it in manifest.overrides — keeping the earlier definition|pack",
       "error|player.startOutOfBounds|player.x|The player starts at (2,0.25), outside \"Farm\" (2×1)|scene",
       "warning|dialogue.noOptions|npcs[0].dialogue[0].options|Dialogue \"dlg-base\" of Base NPC has no options, so the player cannot answer|npc",
-      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"dlg-base\" of Base NPC is missing from the project dialogue list|npc",
       "warning|crop.noSeedItem|customCrops[0]|Crop \"Glowcorn\" has no seed item, so nobody can plant it|crop",
       "warning|crop.noHarvestItem|customCrops[0].harvestItemId|Crop \"Glowcorn\" has no harvest item (no \"crop-glowcorn\" and no harvest item set), so harvesting it gives nothing|crop",
       "warning|machineType.noItem|machineTypes[0].itemId|Machine \"Mill\" has no item, so players cannot place it|machineType",
       "warning|pack.incompatible|contentPacks[0].pack.manifest.engineCompatibility|Pack \"PACK-B\" wants engine ^9.0.0, this is 0.5.0|pack"
     ],
-    "content": "b9d2dc4da222b46e",
+    "content": "529a1f5101a27bbd",
     "cartridge": "throws InvalidOperationException: contentPacks[3]: Pack 'pack-d' depends on 'missing-pack' which is not installed/enabled\ncontentPacks[3]: Dependency cycle involving pack 'pack-d'\nplayer.x: The player starts at (2,0.25), outside \"Farm\" (2×1)",
     "gameOk": true,
     "gameErrors": [],
@@ -2187,6 +2185,7 @@
     "json": "73881e590a4b77e2",
     "stable": "2cf7864571a10329",
     "problems": [
+      "warning|lint.id|id|Required id must be a non-empty string|settings",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "e1bb1c763c153444",
@@ -2203,6 +2202,7 @@
     "json": "d3fc2ae8c639cf9f",
     "stable": "70a33778f068ab4a",
     "problems": [
+      "warning|lint.scenes|scenes[0].id|Required id must be a non-empty string|scene",
       "error|content.scenes|startSceneId|Start scene \"scene-farm\" does not exist|settings",
       "warning|content.scenes|scenes[0]|Scene \"Farm\" is unreachable (no transition leads to it)|scene",
       "error|content.npcs|npcs[0]|NPC \"Old Farmer\" is placed in missing scene \"scene-farm\"|npc",
@@ -2327,6 +2327,7 @@
     "json": "af11d1e7b910a6dc",
     "stable": "2ddebd32d30e1355",
     "problems": [
+      "warning|lint.player|player.inventory[0].item.id|Required id must be a non-empty string|scene",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "e1bb1c763c153444",
@@ -2343,6 +2344,7 @@
     "json": "1138607b0d7a572f",
     "stable": "15c31bdabcd8dc8e",
     "problems": [
+      "warning|lint.items|items[0].id|Required id must be a non-empty string|item",
       "error|content.shops|shops[0]|Shop \"General Store\" stocks missing item \"seed-wheat\"|shop",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
@@ -2357,18 +2359,21 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "37f63acfeacd1c73",
-    "stable": "b1642a68fd120d7a",
+    "json": "665eda96f81f9f11",
+    "stable": "b356445c046eaf40",
     "problems": [
+      "warning|lint.npcs|npcs[0].id|Required id must be a non-empty string|npc",
+      "warning|lint.npcs|npcs[0].dialogue[0].id|Required id must be a non-empty string|npc",
+      "warning|lint.dialogues|dialogues[3].id|Required id must be a non-empty string|",
       "error|dialogue.npcMissing|dialogues[0].npcId|Dialogue \"dialogue-farmer-greeting\" belongs to missing NPC \"npc-farmer\"|",
       "error|dialogue.npcMissing|dialogues[1].npcId|Dialogue \"dialogue-farmer-crops\" belongs to missing NPC \"npc-farmer\"|",
-      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"\" of Old Farmer is missing from the project dialogue list|npc",
+      "error|dialogue.npcMissing|dialogues[3].npcId|Dialogue \"\" belongs to missing NPC \"npc-farmer\"|",
       "error|quest.giverMissing|quests[0].giver|Quest \"First Harvest\" is given by missing NPC \"npc-farmer\"|quest",
       "error|quest.giverMissing|quests[1].giver|Quest \"Supply Run\" is given by missing NPC \"npc-farmer\"|quest",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "1a1ad79f3df07e9e",
-    "cartridge": "throws InvalidOperationException: dialogues[0].npcId: Dialogue \"dialogue-farmer-greeting\" belongs to missing NPC \"npc-farmer\"\ndialogues[1].npcId: Dialogue \"dialogue-farmer-crops\" belongs to missing NPC \"npc-farmer\"\nquests[0].giver: Quest \"First Harvest\" is given by missing NPC \"npc-farmer\"\nquests[1].giver: Quest \"Supply Run\" is given by missing NPC \"npc-farmer\"",
+    "content": "82a9882a22500041",
+    "cartridge": "throws InvalidOperationException: dialogues[0].npcId: Dialogue \"dialogue-farmer-greeting\" belongs to missing NPC \"npc-farmer\"\ndialogues[1].npcId: Dialogue \"dialogue-farmer-crops\" belongs to missing NPC \"npc-farmer\"\ndialogues[3].npcId: Dialogue \"\" belongs to missing NPC \"npc-farmer\"\nquests[0].giver: Quest \"First Harvest\" is given by missing NPC \"npc-farmer\"\nquests[1].giver: Quest \"Supply Run\" is given by missing NPC \"npc-farmer\"",
     "gameOk": true,
     "gameErrors": [],
     "game": "b1642a68fd120d7a"
@@ -2378,15 +2383,15 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "ecf5789521beabd6",
-    "stable": "7a1fb93065b2ab9d",
+    "json": "ebe6cf62d75d1409",
+    "stable": "11602a8e19ad5449",
     "problems": [
+      "warning|lint.dialogues|dialogues[0].id|Required id must be a non-empty string|",
       "warning|dialogue.notOnNpc|dialogues[0]|Dialogue \"\" is in the project list but not on NPC \"npc-farmer\"|npc",
-      "warning|dialogue.notInProject|npcs[0].dialogue[0]|Dialogue \"dialogue-farmer-greeting\" of Old Farmer is missing from the project dialogue list|npc",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "05a5d7fb0c53f222",
-    "cartridge": "458b3e856da627f7",
+    "content": "bd3addcc2b9d2d0f",
+    "cartridge": "bd8a2a05b4a857e9",
     "gameOk": true,
     "gameErrors": [],
     "game": "7a1fb93065b2ab9d"
@@ -2399,6 +2404,8 @@
     "json": "2ad7ffeeee772e7c",
     "stable": "e00a6c731d5a87a3",
     "problems": [
+      "warning|lint.quests|quests[0].id|Required id must be a non-empty string|quest",
+      "warning|lint.quests|quests[0].objectives[0].id|Required id must be a non-empty string|quest",
       "error|content.quests|quests[1]|Quest \"Supply Run\" requires missing quest \"quest-first-harvest\"|quest",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
@@ -2416,6 +2423,7 @@
     "json": "8bdc5ac74698d473",
     "stable": "d2450d926513de3c",
     "problems": [
+      "warning|lint.events|events[0].id|Required id must be a non-empty string|event",
       "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
       "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
@@ -2434,6 +2442,10 @@
     "json": "39844fc3402962f8",
     "stable": "2bce5242c176021f",
     "problems": [
+      "warning|lint.events|events[0].conditions[0].x2|x2 must be >= x|event",
+      "warning|lint.events|events[0].conditions[0].y2|y2 must be >= y|event",
+      "warning|lint.events|events[0].conditions[1].x2|x2 must be >= x|event",
+      "warning|lint.events|events[0].conditions[1].y2|y2 must be >= y|event",
       "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
@@ -2451,6 +2463,12 @@
     "json": "8ebb71a9446801c6",
     "stable": "a61fd39c6bb5e0db",
     "problems": [
+      "warning|lint.events|events[0].conditions[0].itemId|Required id must be a non-empty string|event",
+      "warning|lint.events|events[0].conditions[1].itemId|Required id must be a non-empty string|event",
+      "warning|lint.events|events[0].conditions[2].flag|Flag name must be a non-empty string|event",
+      "warning|lint.events|events[0].conditions[3].questId|Required id must be a non-empty string|event",
+      "warning|lint.events|events[0].conditions[4].npcId|Required id must be a non-empty string|event",
+      "warning|lint.events|events[0].conditions[5].festivalId|Required id must be a non-empty string|event",
       "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing item \"\"|event",
       "error|content.events|events[0]|Event \"Broken ev-broken\" checks missing quest \"\"|event",
       "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
@@ -2471,6 +2489,8 @@
     "json": "dc4641b002c92bba",
     "stable": "245d62ba6e5a2f56",
     "problems": [
+      "warning|lint.events|events[0].conditions[0]|minDay is greater than maxDay|event",
+      "warning|lint.events|events[0].conditions[1]|minYear is greater than maxYear|event",
       "warning|event.noOutcomes|events[0].outcomes|Event \"Broken ev-broken\" does nothing (no outcomes)|event",
       "warning|event.enterWithoutTile|events[0].conditions|Event \"Broken ev-broken\" fires on enter but has no tile or region condition, so it fires on every step|event",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
@@ -2489,6 +2509,8 @@
     "json": "b09c68f2ddb8ac9c",
     "stable": "563fbc79bfcfdb3d",
     "problems": [
+      "warning|lint.actions|actions[0].id|Required id must be a non-empty string|action",
+      "warning|lint.minigames|minigames[0].id|Required id must be a non-empty string|minigame",
       "error|item.useActionMissing|items[57].useActionId|Item \"Growth Charm\" uses missing action \"action-growth-blessing\"|item",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
@@ -2506,7 +2528,14 @@
     "json": "97dde56fa6fa1051",
     "stable": "4ad91493a9626082",
     "problems": [
-      "error|content.dialogue|npcs[1].dialogue|Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"|npc",
+      "warning|lint.shops|shops[0].id|Required id must be a non-empty string|shop",
+      "warning|lint.recipes|recipes[0].id|Required id must be a non-empty string|recipe",
+      "warning|lint.machineTypes|machineTypes[0].id|Required id must be a non-empty string|machineType",
+      "warning|lint.animalSpecies|animalSpecies[0].id|Required id must be a non-empty string|animalSpecies",
+      "warning|lint.fishTables|fishTables[0].id|Required id must be a non-empty string|fishTable",
+      "warning|lint.animals|animals[0].id|Required id must be a non-empty string|animalSpecies",
+      "warning|lint.nodeTypes|nodeTypes[0].id|Required id must be a non-empty string|nodeType",
+      "warning|lint.weather|weather.types[0].id|Required id must be a non-empty string|settings",
       "error|content.dialogue|npcs[1].dialogue|Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"|npc",
       "error|weather.tableUnknownType|weather.table.spring[0].weatherId|The spring weather table rolls missing weather \"sun\"|settings",
       "error|weather.tableUnknownType|weather.table.summer[0].weatherId|The summer weather table rolls missing weather \"sun\"|settings",
@@ -2519,7 +2548,7 @@
       "error|animal.unknownSpecies|animals[0].speciesId|Animal \"Hen\" is of missing species \"animal-chicken\"|animalSpecies"
     ],
     "content": "5dee56b7d91ee4d3",
-    "cartridge": "throws InvalidOperationException: npcs[1].dialogue: Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"\nnpcs[1].dialogue: Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"\nweather.table.spring[0].weatherId: The spring weather table rolls missing weather \"sun\"\nweather.table.summer[0].weatherId: The summer weather table rolls missing weather \"sun\"\nweather.table.fall[0].weatherId: The fall weather table rolls missing weather \"sun\"\nweather.table.winter[0].weatherId: The winter weather table rolls missing weather \"sun\"\nrecipes[3].machineTypeId: Recipe \"Copper Bar\" needs missing machine \"machine-furnace\"\nrecipes[4].machineTypeId: Recipe \"Iron Bar\" needs missing machine \"machine-furnace\"\nanimals[0].speciesId: Animal \"Hen\" is of missing species \"animal-chicken\"",
+    "cartridge": "throws InvalidOperationException: npcs[1].dialogue: Dialogue \"dialogue-merchant-greeting\" opens missing shop \"shop-general\"\nweather.table.spring[0].weatherId: The spring weather table rolls missing weather \"sun\"\nweather.table.summer[0].weatherId: The summer weather table rolls missing weather \"sun\"\nweather.table.fall[0].weatherId: The fall weather table rolls missing weather \"sun\"\nweather.table.winter[0].weatherId: The winter weather table rolls missing weather \"sun\"\nrecipes[3].machineTypeId: Recipe \"Copper Bar\" needs missing machine \"machine-furnace\"\nrecipes[4].machineTypeId: Recipe \"Iron Bar\" needs missing machine \"machine-furnace\"\nanimals[0].speciesId: Animal \"Hen\" is of missing species \"animal-chicken\"",
     "gameOk": true,
     "gameErrors": [],
     "game": "4ad91493a9626082"
@@ -2532,6 +2561,8 @@
     "json": "44f8b7a203aa8166",
     "stable": "9b09b568040d204d",
     "problems": [
+      "warning|lint.settings|settings.calendar.seasons[0].id|Required id must be a non-empty string|settings",
+      "warning|lint.settings|settings.calendar.festivals[0].id|Required id must be a non-empty string|settings",
       "warning|project.currentSeasonUnknown|currentSeason|The starting season \"spring\" is not in the calendar|settings",
       "warning|weather.tableUnknownSeason|weather.table.spring|The weather table has a row for unknown season \"spring\"|settings",
       "warning|crop.unknownSeason|customCrops[0].seasons[0]|Crop \"Wheat\" grows in \"spring\", which is not in the calendar|crop",
@@ -2608,17 +2639,15 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "5ba586b1a6875420",
-    "stable": "04589243b93cd407",
+    "json": "99bdcca92d738170",
+    "stable": "4794c0ff1b2e03bb",
     "problems": [
-      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" links to missing dialogue \"dlg-ghost\"|npc",
-      "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" gives missing item \"item-ghost\"|npc",
       "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" opens missing shop \"shop-ghost\"|npc",
       "error|content.dialogue|npcs[0].dialogue|Dialogue \"dialogue-farmer-greeting\" offers missing quest \"quest-ghost\"|npc",
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "e817a69c3c8b0dd9",
-    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" links to missing dialogue \"dlg-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" gives missing item \"item-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" opens missing shop \"shop-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" offers missing quest \"quest-ghost\"",
+    "content": "889df0ba55e429bc",
+    "cartridge": "throws InvalidOperationException: npcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" opens missing shop \"shop-ghost\"\nnpcs[0].dialogue: Dialogue \"dialogue-farmer-greeting\" offers missing quest \"quest-ghost\"",
     "gameOk": true,
     "gameErrors": [],
     "game": "04589243b93cd407"

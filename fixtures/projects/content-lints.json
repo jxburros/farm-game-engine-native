@@ -87,11 +87,9 @@
   "replays/replay-three-days.json (migrated)": [],
   "replays/shop-economy.json (as is)": [
     "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
-    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
     "error|shops|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop-picky"
   ],
   "replays/shop-economy.json (migrated)": [
-    "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
     "error|dialogue|Dialogue \"dlg-vendor\" opens missing shop \"shop-nope\"|npc-vendor",
     "error|shops|Shop \"Picky Shop\" stocks missing item \"ghost-item\"|shop-picky"
   ],
