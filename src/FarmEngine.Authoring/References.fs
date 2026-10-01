@@ -183,7 +183,7 @@ module References =
           optionalOneOf "Npc" "MovePattern" (same NpcMovePatterns.All)
           oneOf "Npc" "Appearance" appearances
           plain "Npc" "CustomImage" "legacy NPC image: an asset id or a data URL"
-          oneOf "NpcBirthday" "Season" (same PrimitivesSchema.ClassicSeasons)
+          reference "NpcBirthday" "Season" ReferenceKind.Season
           reference "NpcScheduleEntry" "SceneId" ReferenceKind.Scene
           list "GiftTastes" "Loved" ReferenceKind.Item
           list "GiftTastes" "Liked" ReferenceKind.Item

@@ -129,9 +129,8 @@ let private parseCases =
       case "npc patrol point fractional"
           [ Parse "npcs.0.patrolPoints.1.x: Expected integer, received 1.5"; Parse "npcs.0.patrolPoints.1.y: Expected integer, received 2.25" ]
           [ set "npcs.0.patrolPoints" """[{"x":1,"y":1},{"x":1.5,"y":2.25}]""" ]
-      case "npc birthday"
-          [ Parse "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
-            Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
+      // An unknown season is not a parse error (calendars are customizable): see the content cases.
+      case "npc birthday" [ Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
           [ set "npcs.1.birthday" """{"season":"monsoon","day":3.5}""" ]
       nullCase "npc birthday season missing" "npcs.0.birthday.season: Expected string, received null" [ set "npcs.0.birthday" """{"season":null,"day":3}""" ]
       case "quest status unknown" [ Parse "quests.0.status: Invalid enum value." ] [ set "quests.0.status" "\"maybe\"" ]
@@ -296,7 +295,11 @@ let private lintCases =
 
 /// `Validation.ValidateProjectContent`: every content lint.
 let private contentCases =
-    [ case "transition to a missing scene" [ Content "at (0,0) leads to missing scene \"ghost-scene\"" ]
+    [ case "npc birthday off the calendar" [ Content "has a birthday in \"monsoon\", which is not in the calendar" ]
+          [ set "npcs.1.birthday" """{"season":"monsoon","day":3}""" ]
+      case "npc birthday past the end of its season" [ Content "has a birthday on day 40 of Spring, which only has days 1 to 28" ]
+          [ set "npcs.1.birthday" """{"season":"spring","day":40}""" ]
+      case "transition to a missing scene" [ Content "at (0,0) leads to missing scene \"ghost-scene\"" ]
           [ add "scenes.0.transitions" """{"fromX":0,"fromY":0,"toSceneId":"ghost-scene","toX":0,"toY":0}""" ]
       case "transition lands out of bounds" [ Content "lands out of bounds at (99,-1) in \"Farm\"" ]
           [ add "scenes.0.transitions" """{"fromX":1,"fromY":0,"toSceneId":"scene-farm","toX":99,"toY":-1}""" ]

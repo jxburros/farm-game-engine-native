@@ -91,6 +91,24 @@ module internal ChecksContent =
                 if not (seedsFor.Contains crop.Id) then
                     sink.Warning("crop.noSeedItem", path, sprintf "Crop \"%s\" has no seed item, so nobody can plant it" crop.Name, target))
 
+    /// Birthdays follow the project's calendar: the season must exist and the day must fall
+    /// inside it, or the birthday never comes.
+    let private npcs (context: Context) (sink: Sink) =
+        let seasons = context.Project.Settings.Calendar.Seasons
+        context.Project.Npcs
+        |> Seq.iteri (fun i npc ->
+            match npc.Birthday with
+            | None -> ()
+            | Some birthday ->
+                let path = sprintf "npcs[%d].birthday" i
+                let target = Some(NavigationTarget.Npc npc.Id)
+                match seasons |> List.tryFind (fun season -> season.Id = birthday.Season) with
+                | None ->
+                    sink.Warning("npc.birthdayUnknownSeason", path + ".season", sprintf "NPC \"%s\" has a birthday in \"%s\", which is not in the calendar" npc.Name birthday.Season, target)
+                | Some season when birthday.Day < 1.0 || birthday.Day > season.Days ->
+                    sink.Warning("npc.birthdayDay", path + ".day", sprintf "NPC \"%s\" has a birthday on day %g of %s, which only has days 1 to %g" npc.Name birthday.Day season.Name season.Days, target)
+                | Some _ -> ())
+
     let private quests (context: Context) (sink: Sink) =
         context.Project.Quests
         |> Seq.iteri (fun i quest ->
@@ -633,6 +651,7 @@ module internal ChecksContent =
         duplicates context sink
         items context sink
         crops context sink
+        npcs context sink
         quests context sink
         events context sink
         actions context sink

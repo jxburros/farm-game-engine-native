@@ -201,7 +201,8 @@ module SchemaChecks =
               match npc.Birthday with
               | None -> ()
               | Some birthday ->
-                  yield! oneOf (np + ".birthday.season") birthday.Season PrimitivesSchema.ClassicSeasons
+                  // The season is checked against the project's calendar in ChecksContent (a
+                  // warning: calendars are customizable).
                   yield! integer (np + ".birthday.day") birthday.Day
               yield! each npc.Dialogue (fun d dialogue -> nonEmpty $"{np}.dialogue.{d}.id" dialogue.Id) ])
 
