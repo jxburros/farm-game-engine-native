@@ -10,7 +10,7 @@ use crate::ui::{Ui, WidgetId};
 use crate::widgets::{Button, ButtonKind, ModalSpec};
 use farm_render::{FontId, Rect};
 use farm_sim::economy;
-use farm_sim::schema::item_types;
+use farm_sim::schema::{crop_qualities, item_types, InventorySlot};
 use farm_sim::{tools, Command};
 
 const ROW_GAP: f32 = 8.0;
@@ -109,8 +109,17 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
     let row_height = (ui.line_height(14.0) + ui.line_height(12.5) + 16.0).max(small + 16.0);
     match *tab {
         ShopTab::Sell => {
-            let sellable: Vec<_> =
-                player.inventory.iter().filter(|slot| slot.item.r#type != item_types::QUEST).collect();
+            // One row per item and quality, totalled across the slots holding it.
+            let mut sellable: Vec<(&InventorySlot, u32)> = Vec::new();
+            for slot in player.inventory.iter().filter(|slot| slot.item.r#type != item_types::QUEST) {
+                match sellable
+                    .iter_mut()
+                    .find(|(first, _)| first.item.id == slot.item.id && first.quality == slot.quality)
+                {
+                    Some((_, total)) => *total = total.saturating_add(slot.quantity),
+                    None => sellable.push((slot, slot.quantity)),
+                }
+            }
             if sellable.is_empty() {
                 y += ui.empty_state(
                     area,
@@ -120,29 +129,39 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, tab: &mut ShopTab, actions:
                     lang.tr("shop.nothingToSellDetail"),
                 );
             }
-            for slot in sellable {
-                let unit = economy::sell_unit_price(&slot.item, shop);
+            for (slot, held) in sellable {
+                let unit = economy::sell_unit_price_with_quality(&slot.item, slot.quality.as_deref(), shop);
                 let sell_one = Button::new(lang.tr("shop.sellOne")).primary().size(12.5);
                 let sell_all = Button::new(lang.tr("shop.sellAll")).size(12.5);
                 let mut widths = vec![ui.button_width(&sell_one)];
-                if slot.quantity > 1 {
+                if held > 1 {
                     widths.push(ui.button_width(&sell_all));
                 }
                 let actions_width = widths.iter().sum::<f32>() + 6.0 * (widths.len() - 1) as f32;
                 let (content, buttons) = row(ui, area, y, row_height, actions_width);
-                let quantity = slot.item.stackable.then(|| format!("\u{00d7}{}", num(slot.quantity)));
+                let quantity = slot.item.stackable.then(|| format!("\u{00d7}{}", num(held)));
                 let each = lang.format("shop.each", &[&money(unit)]);
-                two_lines(ui, content, &slot.item.name, quantity.as_deref(), &each, false);
+                let name = super::slot_name(&slot.item.name, slot.quality.as_deref());
+                two_lines(ui, content, &name, quantity.as_deref(), &each, false);
                 let rects = right_aligned(buttons, &widths, small, 6.0);
-                let id = WidgetId::new("shop-sell").with(&slot.item.id);
-                if ui.button(id, rects[0], sell_one) {
-                    actions.push(GameAction::Command(Command::SellItem { item_id: slot.item.id.clone(), quantity: 1 }));
+                let mut id = WidgetId::new("shop-sell").with(&slot.item.id);
+                if let Some(quality) = &slot.quality {
+                    id = id.with(quality);
                 }
-                if slot.quantity > 1 && ui.button(id.with("all"), rects[1], sell_all) {
-                    actions.push(GameAction::Command(Command::SellItem {
+                // The row's own quality (normal included), never another quality's units.
+                let quality = slot.quality.clone().unwrap_or_else(|| crop_qualities::NORMAL.to_owned());
+                let sell = |quantity| {
+                    GameAction::Command(Command::SellItem {
                         item_id: slot.item.id.clone(),
-                        quantity: slot.quantity,
-                    }));
+                        quantity,
+                        quality: Some(quality.clone()),
+                    })
+                };
+                if ui.button(id, rects[0], sell_one) {
+                    actions.push(sell(1));
+                }
+                if held > 1 && ui.button(id.with("all"), rects[1], sell_all) {
+                    actions.push(sell(held));
                 }
                 y += row_height + ROW_GAP;
             }

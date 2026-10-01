@@ -54,6 +54,9 @@ pub struct CropDefinition {
     pub yield_min: u32,
     #[serde(with = "crate::units::count")]
     pub yield_max: u32,
+    /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harvest_item_id: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -96,6 +99,9 @@ pub struct CustomCropDefinition {
     pub yield_min: u32,
     #[serde(with = "crate::units::count")]
     pub yield_max: u32,
+    /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harvest_item_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_asset: Option<String>,
     #[serde(flatten)]
@@ -149,6 +155,18 @@ pub struct InventorySlot {
     pub item: Item,
     #[serde(with = "crate::units::count")]
     pub quantity: u32,
+    /// The crop quality of the units in this slot, one of [`super::crop_qualities`] other than
+    /// normal; absent for normal quality. Slots of different qualities never merge, and a shop
+    /// pays the quality's price multiplier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+}
+
+impl InventorySlot {
+    /// A normal-quality slot.
+    pub fn new(item: Item, quantity: u32) -> Self {
+        Self { item, quantity, quality: None }
+    }
 }
 
 /// A dropped/growing crop instance on a tile (game state, not content).

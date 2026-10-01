@@ -180,6 +180,8 @@ const EN: &[(&str, &str)] = &[
     ("inventory.emptyDetail", "Explore the world to find items!"),
     ("inventory.use", "Use"),
     ("inventory.gift", "Gift"),
+    ("inventory.hold", "Hold"),
+    ("inventory.held", "Held"),
     ("inventory.totalValue", "Total value: {0}"),
     // Quests.
     ("quests.title", "Quest Log"),
@@ -400,6 +402,8 @@ const ES: &[(&str, &str)] = &[
     ("inventory.emptyDetail", "\u{a1}Explora el mundo para encontrar objetos!"),
     ("inventory.use", "Usar"),
     ("inventory.gift", "Regalar"),
+    ("inventory.hold", "Tomar"),
+    ("inventory.held", "En mano"),
     ("inventory.totalValue", "Valor total: {0}"),
     ("quests.title", "Diario de misiones"),
     ("quests.subtitle", "{0} activas \u{2022} {1} completadas"),

@@ -35,13 +35,24 @@ pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Comma
         Command::Move { dir } => world_movement::handle_move(ctx, state, dir),
         Command::UseTool { tool } => farming_actions::handle_use_tool(ctx, state, tool),
         Command::Interact => farming_actions::handle_interact(ctx, state),
+        Command::InteractWith { seed_item_id, fertilizer_item_id } => farming_actions::handle_interact_with(
+            ctx,
+            state,
+            farming_actions::PlantChoice {
+                seed_item_id: seed_item_id.as_deref(),
+                fertilizer_item_id: fertilizer_item_id.as_deref(),
+                chosen: true,
+            },
+        ),
         Command::ChooseDialogueOption { index } => dialogue_system::handle_choose_dialogue_option(ctx, state, *index),
         Command::CloseDialogue => dialogue_system::handle_close_dialogue(state),
         Command::Sleep => game_time::perform_sleep(ctx, state, SleepOptions { collapsed: false }),
         Command::OpenShop { shop_id } => economy::handle_open_shop(ctx, state, shop_id),
         Command::CloseShop => economy::handle_close_shop(state),
         Command::BuyItem { item_id, quantity } => economy::handle_buy_item(ctx, state, item_id, *quantity),
-        Command::SellItem { item_id, quantity } => economy::handle_sell_item(ctx, state, item_id, *quantity),
+        Command::SellItem { item_id, quantity, quality } => {
+            economy::handle_sell_item(ctx, state, item_id, *quantity, quality.as_deref())
+        }
         Command::RepairTool { item_id } => economy::handle_repair_tool(ctx, state, item_id),
         Command::Craft { recipe_id } => crafting::handle_craft(ctx, state, recipe_id),
         Command::PlaceMachine { machine_type_id } => crafting::handle_place_machine(ctx, state, machine_type_id),

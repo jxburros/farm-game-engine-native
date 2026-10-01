@@ -14,8 +14,9 @@ use crate::animals;
 use crate::crafting;
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
-use crate::farming::crops;
+use crate::farming::{crops, multi_tile};
 use crate::hooks::{DayHookPayload, HookEvent, SeasonChangeHookPayload, WeatherRollHookPayload, YearStartHookPayload};
+use crate::quests;
 use crate::rng::Rng;
 use crate::schema::{
     classic_calendar_seasons, soil_states, tile_types, CalendarConfig, CalendarFestival, CalendarSeason, GameState,
@@ -223,6 +224,9 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
     let crop_damage_chance = weather_def.map_or(0, |def| def.crop_damage_chance);
     let waters_outdoor_soil = weather_def.is_some_and(|def| def.waters_outdoor_soil);
 
+    // Multi-tile crops grow and fall as one (watered together; a storm takes the whole crop).
+    let multi_tile_crops = multi_tile::before_night(state);
+
     // Nightly world pass (C# cloned every tile grid; the reducer edits the tiles in place)
     for scene in &mut state.world.scenes {
         for row in &mut scene.tiles {
@@ -299,6 +303,8 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
         }
     }
 
+    multi_tile::after_night(state, &multi_tile_crops);
+
     // Energy restore / collapse penalty
     let max_energy = state.player.max_energy;
     let mut money = state.player.money;
@@ -335,6 +341,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
     // since completion is an absolute-minute comparison (M4a).
     animals::advance_animals_nightly(ctx, state);
     crafting::settle_machines(ctx, state);
+    effects.extend(quests::restart_repeatable_quests(ctx, state));
 
     if let Some(weather_def) = weather_def {
         if new_weather_id != previous_weather_id {

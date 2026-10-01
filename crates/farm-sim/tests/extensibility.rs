@@ -191,7 +191,7 @@ fn with_snack_item(project: &mut GameProject, consume_on_use: bool, conditions: 
     };
     project.actions = vec![ActionDef { conditions, fail_message: "Cannot.".to_owned(), ..snack_action() }];
     project.items.push(snack.clone());
-    project.player.inventory.push(InventorySlot { item: snack, quantity: 2 });
+    project.player.inventory.push(InventorySlot::new(snack, 2));
 }
 
 fn snack_quantity(state: &GameState) -> Option<u32> {
@@ -333,7 +333,7 @@ fn with_fishing(project: &mut GameProject) {
         ..Item::default()
     };
     project.items.push(rod.clone());
-    project.player.inventory.push(InventorySlot { item: rod, quantity: 1 });
+    project.player.inventory.push(InventorySlot::new(rod, 1));
     project.fish_tables = vec![FishTable {
         id: "ft-test".to_owned(),
         name: "Test Waters".to_owned(),

@@ -2,3 +2,4 @@
 
 pub mod crops;
 pub mod farming_actions;
+pub mod multi_tile;

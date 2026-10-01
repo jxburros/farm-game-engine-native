@@ -77,7 +77,7 @@ fn make_engine(mutate: impl FnOnce(&mut GameProject)) -> (EngineContext, GameSta
 
 fn give(state: &mut GameState, item_id: &str, quantity: u32, ctx: &EngineContext) {
     let item = ctx.content.items.iter().find(|i| i.id == item_id).unwrap_or_else(|| panic!("item {item_id}")).clone();
-    state.player.inventory.push(InventorySlot { item, quantity });
+    state.player.inventory.push(InventorySlot::new(item, quantity));
 }
 
 fn quantity(state: &GameState, item_id: &str) -> Option<u32> {

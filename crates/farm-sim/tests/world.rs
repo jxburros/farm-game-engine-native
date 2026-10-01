@@ -35,7 +35,7 @@ fn t(position: i32) -> f64 {
 }
 
 fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
-    InventorySlot { item: items.iter().find(|item| item.id == id).expect("built-in item").clone(), quantity }
+    InventorySlot::new(items.iter().find(|item| item.id == id).expect("built-in item").clone(), quantity)
 }
 
 /// The C# `EngineTests.MakeProject`.

@@ -3,6 +3,7 @@
 //! the Problems panel — never silent last-wins.
 
 use crate::farming::crops::to_custom_crop_definition;
+use crate::inventory;
 use crate::schema::{
     is_engine_compatible, ContentPack, CropDefinition, CustomCropDefinition, GameContent, GameProject, GameState,
     InventorySlot, Item, PackContent, PackInstallation, SavePackRef, ENGINE_VERSION,
@@ -631,7 +632,24 @@ pub fn apply_pack_to_project(project: &GameProject, raw_pack: &ContentPack) -> A
         let mut inventory = next.player.inventory.clone();
         for slot in &start.inventory {
             match item_by_id.get(slot.item_id.as_str()) {
-                Some(item) => inventory.push(InventorySlot { item: (*item).clone(), quantity: slot.quantity }),
+                // Merged like any other add: stacks fill to maxStack and the slot limit holds.
+                Some(item) => {
+                    let added =
+                        inventory::add_item(&inventory, item, slot.quantity, next.player.max_inventory_size, None);
+                    if !added.added {
+                        problems.push(PackProblem::warning(
+                            &pack.manifest.id,
+                            format!(
+                                "playerStart: {} of {}× '{}' don't fit in the starting inventory ({} slots)",
+                                added.rejected(slot.quantity),
+                                slot.quantity,
+                                slot.item_id,
+                                next.player.max_inventory_size
+                            ),
+                        ));
+                    }
+                    inventory = added.inventory;
+                }
                 None => problems.push(PackProblem::error(
                     &pack.manifest.id,
                     format!("playerStart references unknown item '{}'", slot.item_id),
@@ -677,7 +695,9 @@ pub fn stamp_packs(installs: &[PackInstallation]) -> Vec<SavePackRef> {
 }
 
 /// Quarantine inventory items whose owning pack is missing or disabled, and restore quarantined
-/// items whose pack came back. Items are never dropped.
+/// items whose pack came back. Items are never dropped: restored items merge into the
+/// inventory like any other add (stack caps, slot limit), and what doesn't fit stays
+/// quarantined until there is room.
 pub fn reconcile_pack_items(state: GameState, enabled_pack_ids: &IndexSet<String>) -> GameState {
     let is_available = |item_id: &str| match pack_id_of(item_id) {
         None => true,
@@ -698,9 +718,38 @@ pub fn reconcile_pack_items(state: GameState, enabled_pack_ids: &IndexSet<String
     }
 
     let mut state = state;
-    state.player.inventory = keep.into_iter().chain(to_restore).collect();
-    state.quarantined_items = still_quarantined.into_iter().chain(to_quarantine).collect();
+    let (inventory, left_over) = restore_slots(keep, &to_restore, state.player.max_inventory_size);
+    state.player.inventory = inventory;
+    state.quarantined_items = still_quarantined.into_iter().chain(left_over).chain(to_quarantine).collect();
     state
+}
+
+/// Merge `slots` into `inventory` through [`inventory::add_item_with_quality`] (each slot keeps
+/// its own item copy and quality). Returns the inventory and the units that did not fit, as
+/// slots.
+pub fn restore_slots(
+    inventory: Vec<InventorySlot>,
+    slots: &[InventorySlot],
+    max_inventory_size: u32,
+) -> (Vec<InventorySlot>, Vec<InventorySlot>) {
+    let mut inventory = inventory;
+    let mut left_over = Vec::new();
+    for slot in slots {
+        let added = inventory::add_item_with_quality(
+            &inventory,
+            &slot.item,
+            slot.quality.as_deref(),
+            slot.quantity,
+            max_inventory_size,
+            None,
+        );
+        let rejected = added.rejected(slot.quantity);
+        inventory = added.inventory;
+        if rejected > 0 {
+            left_over.push(InventorySlot { quantity: rejected, ..slot.clone() });
+        }
+    }
+    (inventory, left_over)
 }
 
 #[cfg(test)]
@@ -755,10 +804,7 @@ mod tests {
     fn reconcile_returns_the_same_state_when_nothing_moves() {
         let state = GameState {
             player: PlayerState {
-                inventory: vec![InventorySlot {
-                    item: Item { id: "wheat".to_owned(), ..Item::default() },
-                    quantity: 1,
-                }],
+                inventory: vec![InventorySlot::new(Item { id: "wheat".to_owned(), ..Item::default() }, 1)],
                 ..PlayerState::default()
             },
             ..GameState::default()
@@ -769,9 +815,13 @@ mod tests {
 
     #[test]
     fn reconcile_quarantines_and_restores_pack_items() {
-        let slot = |id: &str| InventorySlot { item: Item { id: id.to_owned(), ..Item::default() }, quantity: 1 };
+        let slot = |id: &str| InventorySlot::new(Item { id: id.to_owned(), ..Item::default() }, 1);
         let state = GameState {
-            player: PlayerState { inventory: vec![slot("wheat"), slot("gone:thing")], ..PlayerState::default() },
+            player: PlayerState {
+                inventory: vec![slot("wheat"), slot("gone:thing")],
+                max_inventory_size: 10,
+                ..PlayerState::default()
+            },
             quarantined_items: vec![slot("back:thing")],
             ..GameState::default()
         };
@@ -781,5 +831,26 @@ mod tests {
         let quarantined: Vec<&str> = reconciled.quarantined_items.iter().map(|slot| slot.item.id.as_str()).collect();
         assert_eq!(inventory, ["wheat", "back:thing"]);
         assert_eq!(quarantined, ["gone:thing"]);
+    }
+
+    #[test]
+    fn restored_items_merge_into_stacks_and_what_does_not_fit_stays_quarantined() {
+        let item = |id: &str| Item { id: id.to_owned(), stackable: true, max_stack: 10, ..Item::default() };
+        let state = GameState {
+            player: PlayerState {
+                inventory: vec![InventorySlot::new(item("back:ore"), 4), InventorySlot::new(item("wheat"), 1)],
+                max_inventory_size: 3,
+                ..PlayerState::default()
+            },
+            quarantined_items: vec![InventorySlot::new(item("back:ore"), 25)],
+            ..GameState::default()
+        };
+        let enabled: IndexSet<String> = ["back".to_owned()].into_iter().collect();
+        let reconciled = reconcile_pack_items(state, &enabled);
+        let inventory: Vec<(&str, u32)> =
+            reconciled.player.inventory.iter().map(|slot| (slot.item.id.as_str(), slot.quantity)).collect();
+        // 6 top up the first stack, 10 open the last free slot, 9 wait in quarantine.
+        assert_eq!(inventory, [("back:ore", 10), ("wheat", 1), ("back:ore", 10)]);
+        assert_eq!(reconciled.quarantined_items, vec![InventorySlot::new(item("back:ore"), 9)]);
     }
 }

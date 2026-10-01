@@ -51,6 +51,7 @@ pub fn to_crop_definition(custom: &CustomCropDefinition) -> CropDefinition {
         mutation_chance: custom.mutation_chance,
         yield_min: custom.yield_min,
         yield_max: custom.yield_max,
+        harvest_item_id: custom.harvest_item_id.clone(),
         extra,
     }
 }
@@ -84,6 +85,7 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
         mutation_chance: crop.mutation_chance,
         yield_min: crop.yield_min,
         yield_max: crop.yield_max,
+        harvest_item_id: crop.harvest_item_id.clone(),
         custom_asset,
         extra,
     }
@@ -304,6 +306,45 @@ pub fn is_crop_mature_by_days(crop: &Crop, definition: &CropDefinition) -> bool 
     crop.days_grown.unwrap_or(0) >= crop_growth_days(definition)
 }
 
+/// The ids a harvest of `definition` may give, in order: its `harvestItemId` when set; else
+/// `crop-{id}` (the editor's convention) and, for a pack crop `pack:local`, `pack:crop-local`
+/// (the pack's own item, namespaced the same way).
+pub fn harvest_item_candidates(definition: &CropDefinition) -> Vec<String> {
+    if let Some(id) = definition.harvest_item_id.as_deref().filter(|id| !id.is_empty()) {
+        return vec![id.to_owned()];
+    }
+    let mut candidates = vec![format!("crop-{}", definition.id)];
+    if let Some((pack, local)) =
+        definition.id.split_once(':').filter(|(pack, local)| !pack.is_empty() && !local.is_empty())
+    {
+        candidates.push(format!("{pack}:crop-{local}"));
+    }
+    candidates
+}
+
+/// The item a harvest of `definition` gives (see [`harvest_item_candidates`]); `Err` names the
+/// id that was expected when none exists.
+pub fn harvest_item<'a>(
+    content: &'a GameContent,
+    definition: &CropDefinition,
+) -> Result<&'a crate::schema::Item, String> {
+    let candidates = harvest_item_candidates(definition);
+    candidates
+        .iter()
+        .find_map(|id| content.items.iter().find(|item| item.id == *id))
+        .ok_or_else(|| candidates[0].clone())
+}
+
+/// The quality a harvest comes out at: the quality the crop was planted with (silver when the
+/// soil was fertilized), one tier higher per three farming levels, at most iridium.
+/// Deterministic: it draws nothing from the RNG.
+pub fn harvest_quality(planted_quality: &str, farming_level: u32) -> String {
+    let tiers = crop_qualities::ALL;
+    let planted = tiers.iter().position(|tier| *tier == planted_quality).unwrap_or(0);
+    let bonus = usize::try_from(farming_level / 3).unwrap_or(usize::MAX);
+    tiers[planted.saturating_add(bonus).min(tiers.len() - 1)].to_owned()
+}
+
 /// Day-based planting (M2+): crops start unwatered — water them or they won't grow.
 pub fn create_planted_crop(crop_type: &str, planted_on_day: u32, fertilized: bool) -> Crop {
     Crop {
@@ -337,8 +378,9 @@ pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Cr
     }
 }
 
-/// Bounds come from `tiles.length` and `tiles[0].length` like the TS; a ragged grid panics on
-/// the row index exactly where the TS reads `undefined.type` (and the C# throws).
+/// Whether a `width`×`height` crop fits with its top-left corner at (x, y): every covered tile
+/// is open soil, as single-tile planting needs (no crop, machine, dropped item, active gathering
+/// node or collision). Tiles outside the grid (a ragged row too) don't fit.
 pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32, height: u32) -> bool {
     for dy in 0..i64::from(height) {
         for dx in 0..i64::from(width) {
@@ -347,11 +389,16 @@ pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32
             let (Ok(row), Ok(column)) = (usize::try_from(check_y), usize::try_from(check_x)) else {
                 return false;
             };
-            if row >= tiles.len() || column >= tiles[0].len() {
+            let Some(tile) = tiles.get(row).and_then(|row| row.get(column)) else {
                 return false;
-            }
-            let tile = &tiles[row][column];
-            if tile.r#type != tile_types::SOIL || tile.crop.is_some() {
+            };
+            if tile.r#type != tile_types::SOIL
+                || tile.crop.is_some()
+                || tile.machine.is_some()
+                || tile.item.is_some()
+                || tile.collision
+                || crate::gathering::is_node_active(tile)
+            {
                 return false;
             }
         }
@@ -893,10 +940,37 @@ mod characterization_tests {
     }
 
     #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn quirk_bounds_use_the_first_row_length_so_ragged_grids_throw() {
+    fn multi_tile_crops_need_every_covered_tile_open_like_single_tile_planting() {
+        let blocked = |edit: &dyn Fn(&mut Tile)| {
+            let mut grid = soil_grid(3, 3);
+            edit(&mut grid[1][1]);
+            !can_place_multi_tile_crop(&grid, 0, 0, 2, 2)
+        };
+        assert!(blocked(&|tile| tile.machine = Some(crate::schema::TileMachine::default())));
+        assert!(blocked(&|tile| tile.item = Some(crate::schema::Item::default())));
+        assert!(blocked(&|tile| tile.collision = true));
+        assert!(blocked(&|tile| {
+            tile.node = Some(crate::schema::TileNode { remaining_health: 3, ..crate::schema::TileNode::default() });
+        }));
+        // A depleted node (waiting to respawn) doesn't block, as for single tiles.
+        assert!(!blocked(&|tile| tile.node = Some(crate::schema::TileNode::default())));
+    }
+
+    #[test]
+    fn ragged_grids_do_not_fit_a_multi_tile_crop() {
         let soil = || Tile { r#type: "soil".to_owned(), ..Tile::default() };
         let ragged = vec![vec![soil(), soil()], vec![soil()]];
-        can_place_multi_tile_crop(&ragged, 0, 0, 2, 2);
+        assert!(!can_place_multi_tile_crop(&ragged, 0, 0, 2, 2));
+    }
+
+    #[test]
+    fn harvest_quality_starts_at_the_planted_quality_and_rises_with_farming_skill() {
+        assert_eq!(harvest_quality("normal", 0), "normal");
+        assert_eq!(harvest_quality("silver", 2), "silver");
+        assert_eq!(harvest_quality("normal", 3), "silver");
+        assert_eq!(harvest_quality("silver", 3), "gold");
+        assert_eq!(harvest_quality("normal", 6), "gold");
+        assert_eq!(harvest_quality("silver", 9), "iridium");
+        assert_eq!(harvest_quality("bogus", 0), "normal");
     }
 }

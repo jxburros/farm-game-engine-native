@@ -118,7 +118,7 @@ fn enforces_and_resets_daily_limits() {
 fn sells_items_for_their_value() {
     let (ctx, mut state) = make_m2_engine(|_| {});
     open_shop(&ctx, &mut state);
-    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 10);
+    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 10, None);
     assert_eq!(state.player.money, 100 + 100);
     assert!(!state.player.inventory.iter().any(|s| s.item.id == "seed-wheat"));
     assert_eq!(effects, vec![Effect::message("success", "Sold 10x Wheat Seeds for $100")]);
@@ -293,20 +293,23 @@ fn sell_rejects_non_buying_shops_and_missing_quantities() {
             ..ShopDefinition::default()
         });
     });
-    assert_eq!(handle_sell_item(&ctx, &mut state, "seed-wheat", 1), vec![Effect::message("error", "No shop is open.")]);
-    open_shop(&ctx, &mut state);
-    assert!(handle_sell_item(&ctx, &mut state, "seed-wheat", 0).is_empty());
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "seed-wheat", 11),
+        handle_sell_item(&ctx, &mut state, "seed-wheat", 1, None),
+        vec![Effect::message("error", "No shop is open.")]
+    );
+    open_shop(&ctx, &mut state);
+    assert!(handle_sell_item(&ctx, &mut state, "seed-wheat", 0, None).is_empty());
+    assert_eq!(
+        handle_sell_item(&ctx, &mut state, "seed-wheat", 11, None),
         vec![Effect::message("error", "You don't have that many.")]
     );
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "gift-flower", 1),
+        handle_sell_item(&ctx, &mut state, "gift-flower", 1, None),
         vec![Effect::message("error", "You don't have that many.")]
     );
     state.shop = Some(ShopSession { shop_id: "shop-museum".to_owned() });
     assert_eq!(
-        handle_sell_item(&ctx, &mut state, "seed-wheat", 1),
+        handle_sell_item(&ctx, &mut state, "seed-wheat", 1, None),
         vec![Effect::message("error", "Museum doesn't buy items.")]
     );
     assert_eq!(state.player.money, 100);
@@ -320,7 +323,7 @@ fn sell_floors_the_unit_price_through_the_multiplier() {
     });
     open_shop(&ctx, &mut state);
     // Wheat seeds are worth 10: floor(7.5) = 7 each.
-    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 3);
+    let effects = handle_sell_item(&ctx, &mut state, "seed-wheat", 3, None);
     assert_eq!(effects, vec![Effect::message("success", "Sold 3x Wheat Seeds for $21")]);
     assert_eq!(state.player.money, 121);
     assert_eq!(quantity(&state, "seed-wheat"), Some(7));

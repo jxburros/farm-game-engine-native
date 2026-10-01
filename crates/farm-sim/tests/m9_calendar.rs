@@ -348,8 +348,7 @@ fn grows_while_its_season_is_current_and_withers_once_the_calendar_rolls_out_of_
         project.player.y = units::tiles(5);
         project.player.direction = "up".to_owned();
         let watering_can = project.items.iter().find(|i| i.id == "tool-watering-can").expect("watering can").clone();
-        project.player.inventory =
-            vec![InventorySlot { item: seed_item(), quantity: 1 }, InventorySlot { item: watering_can, quantity: 1 }];
+        project.player.inventory = vec![InventorySlot::new(seed_item(), 1), InventorySlot::new(watering_can, 1)];
     });
 
     // Plant on the soil tile (facing up from (8,5) → (8,4)).

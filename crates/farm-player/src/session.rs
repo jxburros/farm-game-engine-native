@@ -18,8 +18,8 @@ use farm_runtime::input::{self, InputManager, Modifiers, MoveVector};
 use farm_runtime::timestep::FixedTimestep;
 use farm_sim::effects::message_levels;
 use farm_sim::hooks::{EffectHookPayload, HookBus, HookEvent};
-use farm_sim::schema::{GameContent, GameState, InventorySlot, Scene};
-use farm_sim::{engine, game_time, quests, state, units, Command, Effect, EngineContext, StartState};
+use farm_sim::schema::{GameContent, GameState, Scene};
+use farm_sim::{engine, game_time, inventory, quests, state, units, Command, Effect, EngineContext, StartState};
 use serde_json::Value;
 
 /// Play-mode tile size in world pixels (web `TILE_SIZE_PLAY`).
@@ -153,6 +153,8 @@ pub struct PlaySession {
     cosmetic: u64,
     /// The last commands run, as JSON with their tick (crash reports).
     recent: std::collections::VecDeque<String>,
+    /// What the player holds for planting (seed, fertilizer); see [`Self::set_planting`].
+    planting: Option<(Option<String>, Option<String>)>,
 }
 
 /// Commands kept for crash reports.
@@ -194,6 +196,7 @@ impl PlaySession {
             reduced_motion: false,
             cosmetic: 0x9E37_79B9_7F4A_7C15,
             recent: std::collections::VecDeque::new(),
+            planting: None,
         }
     }
 
@@ -356,7 +359,13 @@ impl PlaySession {
 
         let frame = input::poll_play_frame(&self.input, &self.state, &self.ctx.content, host_modal_open);
         for command in &frame.commands {
-            self.run_command(command);
+            match (command, &self.planting) {
+                (Command::Interact, Some((seed, fertilizer))) => self.run_command(&Command::InteractWith {
+                    seed_item_id: seed.clone(),
+                    fertilizer_item_id: fertilizer.clone(),
+                }),
+                _ => self.run_command(command),
+            }
         }
         self.update_minigame(delta);
         self.input.end_frame();
@@ -366,6 +375,14 @@ impl PlaySession {
             crafting: frame.toggle_crafting,
             escape: frame.escape,
         }
+    }
+
+    /// What the player holds for planting, `(seed, fertilizer)`. While set, interact presses
+    /// become `interactWith` commands: open soil gets the held seed (else the first seed that
+    /// grows this season) and the held fertilizer (else none). Unset (the default), they are
+    /// plain `interact`, which also uses the first fertilizer held.
+    pub fn set_planting(&mut self, planting: Option<(Option<String>, Option<String>)>) {
+        self.planting = planting;
     }
 
     /// Clears held keys and the sent intent (focus loss, opening a menu, leaving play).
@@ -427,19 +444,30 @@ impl PlaySession {
             }
             DebugAction::FullEnergy => self.state.player.energy = self.state.player.max_energy,
             DebugAction::AddMinutes { minutes } if minutes.is_finite() => {
-                let micro =
-                    i64::from(self.state.clock.time_minutes) + (minutes * f64::from(units::MINUTE)).round() as i64;
-                self.state.clock.time_minutes = micro.clamp(0, i64::from(u32::MAX)) as u32;
+                // Stays inside the day window: the clock stops at the day's end, where the next
+                // tick ends the day the way it does in play (it never jumps past it).
+                let time = &self.ctx.content.settings.time;
+                let minute = i64::from(units::MINUTE);
+                let (start, end) = (i64::from(time.day_start_minute) * minute, i64::from(time.day_end_minute) * minute);
+                let micro = i64::from(self.state.clock.time_minutes)
+                    .saturating_add((minutes * f64::from(units::MINUTE)).round() as i64);
+                let micro = micro.min(end).max(start.min(end)).max(0);
+                self.state.clock.time_minutes = u32::try_from(micro).unwrap_or(u32::MAX);
             }
             DebugAction::SetSeason { season } => self.state.clock.season.clone_from(season),
             DebugAction::GiveFirst { item_type } => {
                 let Some(item) = self.ctx.content.items.iter().find(|item| &item.r#type == item_type) else {
                     return;
                 };
-                let inventory = &mut self.state.player.inventory;
-                match inventory.iter_mut().find(|slot| slot.item.id == item.id) {
-                    Some(slot) => slot.quantity = slot.quantity.saturating_add(5),
-                    None => inventory.push(InventorySlot { item: item.clone(), quantity: 5 }),
+                // The same add as every item source in play: stack caps and the slot limit hold.
+                let player = &self.state.player;
+                let added = inventory::add_item(&player.inventory, item, 5, player.max_inventory_size, None);
+                if added.added_quantity > 0 {
+                    self.state.player.inventory = added.inventory;
+                }
+                if !added.added {
+                    self.events
+                        .push(SessionEvent::Toast { text: "Inventory is full!".to_owned(), kind: ToastKind::Error });
                 }
             }
             DebugAction::Teleport { scene_id } => {

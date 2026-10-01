@@ -63,7 +63,7 @@ pub fn empty_scene(id: &str, name: &str, width: i32, height: i32) -> Scene {
 /// `CoreTestHelpers.Slot`.
 pub fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
     let item = items.iter().find(|i| i.id == id).unwrap_or_else(|| panic!("no built-in item '{id}'"));
-    InventorySlot { item: item.clone(), quantity }
+    InventorySlot::new(item.clone(), quantity)
 }
 
 /// TS `effects.some(e => e.type === 'message' && predicate(e.text))`.
