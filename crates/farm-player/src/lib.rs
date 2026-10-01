@@ -29,7 +29,9 @@ pub mod speaker;
 pub use audio::{Mixer, SoundRequest};
 pub use farm_ui::{GamepadButton, Settings};
 pub use input::{FrameInput, GamepadAxis, InputEvent, InputRouter, PointerButton};
-pub use player::{FrameOutput, Player, PlayerError, PlayerMode, PlayerOptions, PlayerRequest, ScreenKind, StepOutput};
+pub use player::{
+    FrameOutput, HostView, Player, PlayerError, PlayerMode, PlayerOptions, PlayerRequest, ScreenKind, StepOutput,
+};
 pub use saves::{
     FsSaveStore, FsSettingsStore, MemorySaveStore, MemorySettingsStore, SaveStore, SettingsStore, SLOT_COUNT,
 };

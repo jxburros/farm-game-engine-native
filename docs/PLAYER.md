@@ -69,7 +69,9 @@ same arguments always give the same image. A script lists input by frame:
 The mouse clicks every button, and the wheel (or the right stick) scrolls
 lists. The toolbar at the top has Inventory, Quests, Craft, Sleep and Menu.
 The hint row at the bottom shows the keys of the device used last: keyboard
-keycaps, or gamepad buttons once a pad is used.
+keycaps, or gamepad buttons once a pad is used. On a touch screen with
+on-screen controls (the web demo) there is no hint row and the toolbar names
+no keys.
 
 Keyboard keys are rebindable in **Settings → Controls**: press a key's button,
 then the new key (Esc cancels). A key bound elsewhere moves to the new action.
@@ -234,7 +236,13 @@ under one lock, so plugin hooks never block the editor. Editor shortcuts
 
 The UI scales with the window (1× at 1280×800, 1.35× at 1920×1080) times the
 interface size setting. 16:10 (Steam Deck) and 16:9 both lay out without
-overlap; the HUD drops its labels and then wraps when space runs out.
+overlap; the HUD drops its labels and then wraps when space runs out. A host
+can describe its surface with `Player::set_host_view` (the web player does,
+per frame): the pixel density, so the fit is computed in CSS pixels and the
+UI keeps its size on dense phone screens, and the strip its on-screen touch
+controls cover at the bottom, which the hint row, creator panels, "Made with"
+credit, title menu and dialogue box stay above. Desktop windows keep the
+defaults (density 1, no controls).
 
 Frame times in a release build (starter farm, one thread, a 2.1 GHz Xeon
 cloud core), for the whole frame: input, UI, world and rasterizing:

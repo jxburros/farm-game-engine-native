@@ -120,7 +120,8 @@ fn toolbar_labels(view: &GameView<'_>, device: InputDevice, compact: bool, lang:
     let player = &view.state.player;
     let inventory = lang.format("toolbar.inventory", &[&player.inventory.len(), &num(player.max_inventory_size)]);
     let with_key = |key: &'static str, action: BindAction| {
-        if compact {
+        // Touch screens have no keys to name.
+        if compact || device == InputDevice::Touch {
             lang.tr(key).to_owned()
         } else {
             lang.format("toolbar.withKey", &[&lang.tr(key), &prompt(view, device, action, lang)])
@@ -256,46 +257,13 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         }
     }
 
-    // ── Controls hint row ──
-    let hints: Vec<(String, &str)> = [
-        BindAction::MoveUp,
-        BindAction::Interact,
-        BindAction::Water,
-        BindAction::Till,
-        BindAction::Axe,
-        BindAction::Pickaxe,
-        BindAction::Scythe,
-        BindAction::Craft,
-        BindAction::Sleep,
-        BindAction::Inventory,
-        BindAction::Quests,
-        BindAction::Menu,
-    ]
-    .iter()
-    .map(|action| (prompt(view, device, *action, lang), action.hint(lang)))
-    .collect();
-    let hint_sizes: Vec<(f32, f32)> = hints
-        .iter()
-        .map(|(key, label)| (ui.keycap_width(key) + 5.0 + ui.measure(label, 12.0, FontId::Regular), 22.0))
-        .collect();
-    let max_hint_width = (screen.width - 48.0).min(1100.0);
-    let hint_flow =
-        Flow::layout(Rect::new(0.0, 0.0, max_hint_width - 24.0, 0.0), &hint_sizes, 14.0, 4.0, Align::Center);
-    let pill = Rect::new(
-        (screen.width - hint_flow.width - 24.0) / 2.0,
-        screen.bottom() - 10.0 - hint_flow.height - 12.0,
-        hint_flow.width + 24.0,
-        hint_flow.height + 12.0,
-    );
-    ui.panel(pill, fade(colors.hud, 0.9), colors.hud_border, 8.0, false);
-    let origin_x = pill.x + 12.0 - (max_hint_width - 24.0 - hint_flow.width) / 2.0;
-    for ((key, label), item) in hints.iter().zip(&hint_flow.items) {
-        let item = item.offset(origin_x, pill.y + 6.0);
-        let key_width = ui.keycap(item.x, item.y + item.height / 2.0, key, true);
-        let text = Rect::new(item.x + key_width + 5.0, item.y, item.width - key_width - 5.0, item.height);
-        ui.label(text, label, 12.0, FontId::Regular, colors.muted, Align::Start);
+    // Everything below sits above the host's on-screen controls.
+    let safe = ui.safe_area();
+    // ── Controls hint row ── (not on touch screens: their controls are on screen)
+    let mut above_hints = safe.bottom() - 10.0;
+    if device != InputDevice::Touch {
+        above_hints = hint_row(ui, view, device, lang, safe);
     }
-    let mut above_hints = pill.y - 8.0;
 
     // ── Creator game panels ──
     let visible: Vec<_> = view.panels.iter().filter(|panel| !panel.hidden).collect();
@@ -356,4 +324,48 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         ui.label(rect, text, 11.0, FontId::Regular, colors.muted, Align::Center);
     }
     bar.bottom()
+}
+
+/// The controls hint row along the bottom of `safe`; returns the y just above it.
+fn hint_row(ui: &mut Ui, view: &GameView<'_>, device: InputDevice, lang: Lang, safe: Rect) -> f32 {
+    let colors = ui.theme().colors;
+    let hints: Vec<(String, &str)> = [
+        BindAction::MoveUp,
+        BindAction::Interact,
+        BindAction::Water,
+        BindAction::Till,
+        BindAction::Axe,
+        BindAction::Pickaxe,
+        BindAction::Scythe,
+        BindAction::Craft,
+        BindAction::Sleep,
+        BindAction::Inventory,
+        BindAction::Quests,
+        BindAction::Menu,
+    ]
+    .iter()
+    .map(|action| (prompt(view, device, *action, lang), action.hint(lang)))
+    .collect();
+    let hint_sizes: Vec<(f32, f32)> = hints
+        .iter()
+        .map(|(key, label)| (ui.keycap_width(key) + 5.0 + ui.measure(label, 12.0, FontId::Regular), 22.0))
+        .collect();
+    let max_hint_width = (safe.width - 48.0).min(1100.0);
+    let hint_flow =
+        Flow::layout(Rect::new(0.0, 0.0, max_hint_width - 24.0, 0.0), &hint_sizes, 14.0, 4.0, Align::Center);
+    let pill = Rect::new(
+        (safe.width - hint_flow.width - 24.0) / 2.0,
+        safe.bottom() - 10.0 - hint_flow.height - 12.0,
+        hint_flow.width + 24.0,
+        hint_flow.height + 12.0,
+    );
+    ui.panel(pill, fade(colors.hud, 0.9), colors.hud_border, 8.0, false);
+    let origin_x = pill.x + 12.0 - (max_hint_width - 24.0 - hint_flow.width) / 2.0;
+    for ((key, label), item) in hints.iter().zip(&hint_flow.items) {
+        let item = item.offset(origin_x, pill.y + 6.0);
+        let key_width = ui.keycap(item.x, item.y + item.height / 2.0, key, true);
+        let text = Rect::new(item.x + key_width + 5.0, item.y, item.width - key_width - 5.0, item.height);
+        ui.label(text, label, 12.0, FontId::Regular, colors.muted, Align::Start);
+    }
+    pill.y - 8.0
 }

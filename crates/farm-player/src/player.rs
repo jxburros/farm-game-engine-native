@@ -224,6 +224,26 @@ struct SlotInfo {
     thumbnail: Option<(farm_render::ImageId, f32, f32)>,
 }
 
+/// What a host tells the player about the surface it draws on (the web page; desktop windows
+/// keep the default). Set with [`Player::set_host_view`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HostView {
+    /// Frame pixels per host layout pixel (a browser's CSS pixel): the interface is laid out in
+    /// layout pixels, so it keeps its size on dense screens. 1 on the desktop.
+    pub density: f32,
+    /// The host shows on-screen touch controls: prompts name no keys.
+    pub touch_controls: bool,
+    /// Frame pixels at the bottom the host covers with its controls: the HUD, panels and the
+    /// dialogue box stay above them.
+    pub inset_bottom: f32,
+}
+
+impl Default for HostView {
+    fn default() -> Self {
+        Self { density: 1.0, touch_controls: false, inset_bottom: 0.0 }
+    }
+}
+
 /// The graphical player (see the module docs).
 pub struct Player {
     mode: PlayerMode,
@@ -243,6 +263,7 @@ pub struct Player {
     slots: Vec<SlotInfo>,
     clock: Box<dyn Fn() -> i64 + Send>,
     router: InputRouter,
+    host_view: HostView,
     renderer: FrameRenderer,
     ui_list: DrawList,
     world: Option<(WorldSnapshot, WorldView)>,
@@ -371,6 +392,7 @@ impl Player {
             slots: Vec::new(),
             clock: options.clock,
             router: InputRouter::new(),
+            host_view: HostView::default(),
             renderer: FrameRenderer::new(Arc::new(assets)),
             ui_list: DrawList::new(),
             world: None,
@@ -398,6 +420,19 @@ impl Player {
     }
 
     // ── Frames ─────────────────────────────────────────────────────────
+
+    /// What the host tells the player about its surface, for the next frames (out-of-range
+    /// values fall back to the defaults).
+    pub fn set_host_view(&mut self, view: HostView) {
+        let density = if view.density.is_finite() { view.density.clamp(0.25, 8.0) } else { 1.0 };
+        let inset_bottom = if view.inset_bottom.is_finite() { view.inset_bottom.max(0.0) } else { 0.0 };
+        self.host_view = HostView { density, touch_controls: view.touch_controls, inset_bottom };
+        self.router.set_touch_controls(view.touch_controls);
+    }
+
+    pub fn host_view(&self) -> HostView {
+        self.host_view
+    }
 
     /// One frame: input, simulation, UI, pixels. `dt_seconds` is the time since the last frame.
     pub fn frame(
@@ -708,9 +743,13 @@ impl Player {
 
     // ── UI ─────────────────────────────────────────────────────────────
 
+    /// Frame pixels per interface unit: the layout fits a 1280×800 design in host layout pixels
+    /// (between 75 % and 300 %), times the density and the interface size setting. A phone
+    /// (390×844 CSS pixels at density 3) lays out 520 units wide at 3 × 0.75 pixels each.
     fn ui_scale(&self, width: u32, height: u32) -> f32 {
-        let fit = (width as f32 / 1280.0).min(height as f32 / 800.0).clamp(0.75, 3.0);
-        fit * self.settings.display.ui_scale.clamp(0.5, 2.0)
+        let density = self.host_view.density;
+        let fit = (width as f32 / density / 1280.0).min(height as f32 / density / 800.0).clamp(0.75, 3.0);
+        density * fit * self.settings.display.ui_scale.clamp(0.5, 2.0)
     }
 
     /// The interface language: the setting, else the system's, else the game's, else English.
@@ -720,6 +759,7 @@ impl Player {
 
     fn draw_ui(&mut self, input: farm_ui::UiInput, width: u32, height: u32, playing: bool, game_modal: bool) {
         let scale = self.ui_scale(width, height);
+        self.ui.set_bottom_inset(self.host_view.inset_bottom);
         self.ui.set_reduced_motion(self.settings.accessibility.reduced_motion);
         self.ui.set_readable_font(self.settings.accessibility.readable_font);
         self.ui.set_lang(self.lang());

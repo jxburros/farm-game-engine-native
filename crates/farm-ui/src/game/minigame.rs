@@ -100,7 +100,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             actions.push(GameAction::Minigame(MinigameInput::Release));
         }
         y += height + 6.0;
-        let hint = if ui.device() == InputDevice::Gamepad { "A" } else { ui.tr("minigame.keys") };
+        // Gamepad A, or the touch controls' A button.
+        let hint =
+            if matches!(ui.device(), InputDevice::Gamepad | InputDevice::Touch) { "A" } else { ui.tr("minigame.keys") };
         ui.label(
             Rect::new(area.x, y, area.width, ui.line_height(12.0)),
             hint,
