@@ -227,7 +227,11 @@ fn normalize(value: Value) -> Value {
 /// Plays one replay and returns the summary after creation (index 0) and after every step.
 fn play(name: &str) -> Vec<Map<String, Value>> {
     let fixture = replay_fixture(name);
-    let project: GameProject = serde_json::from_value(fixture["project"].clone()).expect("project parses");
+    let mut project: GameProject = serde_json::from_value(fixture["project"].clone()).expect("project parses");
+    // Intended divergence: v8 ran the clock while a dialogue, shop or minigame was open. Since
+    // `time.pauseInModals` (on unless a project turns it off) it stops; v8 projects never set
+    // it, so they are compared with it off.
+    project.settings.time.pause_in_modals = Some(false);
     let ctx = EngineContext::new(state::create_content_from_project(&project));
     let mut game_state = state::create_game_state(&project, fixture["seed"].as_str());
     if fixture["autoStartQuests"].as_bool() == Some(true) {

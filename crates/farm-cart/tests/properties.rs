@@ -69,4 +69,26 @@ proptest! {
         farm_sim::apply_command(&ctx, &mut restored, &farm_sim::Command::Sleep);
         prop_assert_eq!(hash_state(&original), hash_state(&restored));
     }
+
+    /// After a save/load round trip the same commands give the same game: nothing the engine
+    /// decides on (map order, number kinds) is lost in the save (#142).
+    #[test]
+    fn a_loaded_game_plays_the_same_commands_the_same_way(
+        seed in strategies::seed(),
+        before in strategies::inputs(&STARTER.ids, 30, 400),
+        after in strategies::inputs(&STARTER.ids, 30, 400),
+    ) {
+        let fixture = &*STARTER;
+        let game = reached(fixture, &seed, &before);
+        let loaded = load_save(&write_save(&game, &fixture.target), &fixture.target, &fixture.content);
+        prop_assert!(loaded.ok, "save refused: {:?}", loaded.errors);
+        let mut restored = loaded.state.expect("a loaded save has a state");
+        let mut original = game;
+        let ctx = EngineContext::new(fixture.content.clone());
+        let played = replay::run_replay(&ctx, &mut original, &after);
+        let replayed = replay::run_replay(&ctx, &mut restored, &after);
+        prop_assert_eq!(played.hash, replayed.hash);
+        prop_assert_eq!(played.effects, replayed.effects);
+        prop_assert!(original == restored, "the loaded game played differently");
+    }
 }

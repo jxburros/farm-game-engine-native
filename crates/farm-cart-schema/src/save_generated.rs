@@ -50,6 +50,7 @@ impl<'a> SavePreview<'a> {
   pub const VT_PLAY_SECONDS: flatbuffers::VOffsetT = 14;
   pub const VT_SAVED_AT: flatbuffers::VOffsetT = 16;
   pub const VT_THUMBNAIL_PNG: flatbuffers::VOffsetT = 18;
+  pub const VT_DAY_OF_SEASON: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -61,6 +62,7 @@ impl<'a> SavePreview<'a> {
     args: &'args SavePreviewArgs<'args>
   ) -> flatbuffers::WIPOffset<SavePreview<'bldr>> {
     let mut builder = SavePreviewBuilder::new(_fbb);
+    builder.add_day_of_season(args.day_of_season);
     builder.add_saved_at(args.saved_at);
     builder.add_play_seconds(args.play_seconds);
     builder.add_money(args.money);
@@ -129,6 +131,13 @@ impl<'a> SavePreview<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(SavePreview::VT_THUMBNAIL_PNG, None)}
   }
+  #[inline]
+  pub fn day_of_season(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(SavePreview::VT_DAY_OF_SEASON, Some(0.0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for SavePreview<'_> {
@@ -146,6 +155,7 @@ impl flatbuffers::Verifiable for SavePreview<'_> {
      .visit_field::<f64>("play_seconds", Self::VT_PLAY_SECONDS, false)?
      .visit_field::<i64>("saved_at", Self::VT_SAVED_AT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("thumbnail_png", Self::VT_THUMBNAIL_PNG, false)?
+     .visit_field::<f64>("day_of_season", Self::VT_DAY_OF_SEASON, false)?
      .finish();
     Ok(())
   }
@@ -159,6 +169,7 @@ pub struct SavePreviewArgs<'a> {
     pub play_seconds: f64,
     pub saved_at: i64,
     pub thumbnail_png: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub day_of_season: f64,
 }
 impl<'a> Default for SavePreviewArgs<'a> {
   #[inline]
@@ -172,6 +183,7 @@ impl<'a> Default for SavePreviewArgs<'a> {
       play_seconds: 0.0,
       saved_at: 0,
       thumbnail_png: None,
+      day_of_season: 0.0,
     }
   }
 }
@@ -214,6 +226,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SavePreviewBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SavePreview::VT_THUMBNAIL_PNG, thumbnail_png);
   }
   #[inline]
+  pub fn add_day_of_season(&mut self, day_of_season: f64) {
+    self.fbb_.push_slot::<f64>(SavePreview::VT_DAY_OF_SEASON, day_of_season, 0.0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SavePreviewBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     SavePreviewBuilder {
@@ -239,6 +255,7 @@ impl core::fmt::Debug for SavePreview<'_> {
       ds.field("play_seconds", &self.play_seconds());
       ds.field("saved_at", &self.saved_at());
       ds.field("thumbnail_png", &self.thumbnail_png());
+      ds.field("day_of_season", &self.day_of_season());
       ds.finish()
   }
 }

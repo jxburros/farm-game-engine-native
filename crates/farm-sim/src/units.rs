@@ -759,6 +759,39 @@ pub fn json_int(value: &Value) -> Option<i64> {
     })
 }
 
+/// The largest integer a double holds exactly (JS `Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// The integer a double equals, when it is whole and within ±(2⁵³−1) (`-0.0` is 0).
+pub fn whole_float(x: f64) -> Option<i64> {
+    // Exact: |x| ≤ 2⁵³ − 1. NaN and infinities have no zero fraction.
+    (x.fract() == 0.0 && x.abs() <= MAX_SAFE_INTEGER).then_some(x as i64)
+}
+
+/// A JSON number in its canonical form: a [whole double](whole_float) becomes the integer it
+/// equals (`1.0` → `1`). Saves are written as stable JSON, where `1.0` reads back as `1`;
+/// holding pass-through values (flags, minigame context) in this form keeps a save/load round
+/// trip equal (#142).
+pub fn canonical_number(number: serde_json::Number) -> serde_json::Number {
+    if number.is_i64() || number.is_u64() {
+        return number;
+    }
+    match number.as_f64().and_then(whole_float) {
+        Some(whole) => serde_json::Number::from(whole),
+        None => number,
+    }
+}
+
+/// [`canonical_number`] for every number inside `value`.
+pub fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Number(number) => Value::Number(canonical_number(number)),
+        Value::Array(items) => Value::Array(items.into_iter().map(canonical_json).collect()),
+        Value::Object(map) => Value::Object(map.into_iter().map(|(key, value)| (key, canonical_json(value))).collect()),
+        other => other,
+    }
+}
+
 /// The authoring JSON number of a grid value.
 pub fn json<U: Unit>(value: U::Int) -> Value {
     U::to_authoring(value).to_json()

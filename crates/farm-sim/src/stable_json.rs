@@ -89,10 +89,17 @@ fn write(out: &mut String, value: &Value) {
         }
         Value::String(s) => text::push_quoted(out, s),
         Value::Number(n) => {
-            // JSON.stringify writes non-finite numbers as null.
-            match n.as_f64() {
-                Some(d) if d.is_finite() => out.push_str(&units::format_number(d)),
-                _ => out.push_str("null"),
+            // Integers keep every digit (a double would round those above 2⁵³, #142); doubles
+            // print like JS. JSON.stringify writes non-finite numbers as null.
+            if let Some(int) = n.as_i64() {
+                out.push_str(&int.to_string());
+            } else if let Some(int) = n.as_u64() {
+                out.push_str(&int.to_string());
+            } else {
+                match n.as_f64() {
+                    Some(d) if d.is_finite() => out.push_str(&units::format_number(d)),
+                    _ => out.push_str("null"),
+                }
             }
         }
         Value::Bool(true) => out.push_str("true"),

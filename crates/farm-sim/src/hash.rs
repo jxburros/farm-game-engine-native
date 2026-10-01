@@ -5,7 +5,9 @@
 //!
 //! - integers little-endian at their own width, booleans as one byte, `char` as a `u32`;
 //! - floats (only JSON values such as flags and pass-through keys carry them) as their IEEE-754
-//!   bits, little-endian;
+//!   bits, little-endian, except that a whole float within ±(2⁵³−1) is written as the integer it
+//!   equals: stable JSON writes `1.0` as `1`, which reads back as an integer, so a save/load round
+//!   trip must not change the hash (#142);
 //! - strings and byte strings, sequences and maps with a `u32` length prefix; map entries
 //!   sorted by their encoded key, so the order a map was built in (which a save, written as
 //!   stable JSON, does not keep) does not change the hash;
@@ -155,7 +157,11 @@ impl<'a> ser::Serializer for &'a mut Encoder {
     }
 
     fn serialize_f64(self, value: f64) -> Result<(), EncodeError> {
-        self.out.extend_from_slice(&value.to_bits().to_le_bytes());
+        match crate::units::whole_float(value) {
+            // As `serialize_i64`/`serialize_u64` write it (equal bytes for equal values).
+            Some(whole) => self.out.extend_from_slice(&whole.to_le_bytes()),
+            None => self.out.extend_from_slice(&value.to_bits().to_le_bytes()),
+        }
         Ok(())
     }
 

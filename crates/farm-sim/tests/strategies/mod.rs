@@ -94,6 +94,9 @@ fn plugin_mutation(ids: &Ids) -> impl Strategy<Value = PluginMutation> {
             prop_oneof![
                 any::<bool>().prop_map(Value::from),
                 (0..100i32).prop_map(Value::from),
+                // Doubles, whole ones too: a save writes `2.0` as `2` (#142).
+                (0..100i32).prop_map(|n| Value::from(f64::from(n))),
+                (-1000.0..1000.0f64).prop_map(Value::from),
                 Just(Value::from("text")),
             ]
         )

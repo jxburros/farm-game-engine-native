@@ -21,11 +21,13 @@ pub struct CalendarView {
 
 pub fn calendar_view(content: &farm_sim::GameContent, state: &GameState) -> CalendarView {
     let calendar = &content.settings.calendar;
+    // The clock's own season and day (#23); a season the calendar lacks shows no name.
     let season = farm_sim::game_time::season_by_id(calendar, &state.clock.season);
+    let date = farm_sim::game_time::clock_date(calendar, &state.clock);
     CalendarView {
         season_name: season.map(|s| s.name.clone()),
-        season_days: season.map_or(farm_sim::content_builtin::DAYS_PER_SEASON, |s| s.days),
-        day_of_season: farm_sim::game_time::day_of_season(calendar, state.clock.day),
+        season_days: date.season.days,
+        day_of_season: date.day_of_season,
         time_text: farm_sim::game_time::format_time_of_day(state.clock.time_minutes),
         seasons: farm_sim::game_time::calendar_seasons(calendar),
     }

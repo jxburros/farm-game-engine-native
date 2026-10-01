@@ -20,6 +20,13 @@ impl RngState {
     fn with_words(s: [u32; 4]) -> Self {
         Self { algorithm: "xoshiro128ss".to_owned(), s }
     }
+
+    /// All four words zero: a fixed point of xoshiro, which then draws 0 forever (every chance
+    /// succeeds, every weighted pick is the first). [`RngState::default`] is this state, so a
+    /// save or project without an `rng` has it.
+    pub fn is_degenerate(&self) -> bool {
+        self.s == [0; 4]
+    }
 }
 
 impl Default for RngState {
@@ -113,7 +120,13 @@ pub struct Rng {
 }
 
 impl Rng {
+    /// A generator continuing `state`. A [degenerate](RngState::is_degenerate) state (which
+    /// loading replaces, see `farm_cart`) starts from seed 0 instead, so a missed one cannot
+    /// pin every draw to 0.
     pub fn new(state: RngState) -> Self {
+        if state.is_degenerate() {
+            return Self { state: create_rng_state_from_u32(0) };
+        }
         Self { state }
     }
 

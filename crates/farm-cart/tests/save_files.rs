@@ -249,3 +249,87 @@ fn damaged_or_foreign_binary_saves_are_refused() {
 
     assert!(!load_save_bytes(&[0xff, 0xfe, 0x00], &target, &content).ok);
 }
+
+#[test]
+fn map_and_npc_updates_reach_old_saves_and_play_stays() {
+    use farm_sim::schema::{Npc, SceneTransition};
+    // Version 1: the player hoes and plants on the farm, and a door gets locked by an event.
+    let v1 = starter_project();
+    let (content_v1, target_v1) = build(&v1);
+    let ctx = farm_sim::EngineContext::new(content_v1);
+    let mut game = state::create_game_state(&v1, Some("update"));
+    game.player.x = farm_sim::units::tiles(8);
+    game.player.y = farm_sim::units::tiles(5);
+    game.player.direction = "up".to_owned();
+    farm_sim::apply_command(&ctx, &mut game, &farm_sim::Command::Interact);
+    let planted = game.world.scenes[0].tiles[4][8].clone();
+    assert!(planted.crop.is_some(), "the starter bed takes a seed");
+    // A grass tile the player hoed into soil.
+    game.world.scenes[0].tiles[1][1].background = "soil".to_owned();
+    game.world.scenes[0].tiles[1][1].r#type = "soil".to_owned();
+    game.world.scenes[0].tiles[1][1].soil_state = Some("tilled".to_owned());
+    let text = write_save(&game, &target_v1);
+
+    // Version 1.1 fixes the map (a wall at (0,0)), adds a door, a new scene and a new NPC.
+    let mut v11 = v1.clone();
+    v11.version = "1.1".to_owned();
+    let tile = &mut v11.scenes[0].tiles[0][0];
+    tile.object = Some("wall".to_owned());
+    tile.collision = true;
+    v11.scenes[0].transitions.push(SceneTransition {
+        from_x: 15,
+        from_y: 6,
+        to_scene_id: "scene-town".to_owned(),
+        to_x: 1,
+        to_y: 1,
+        ..SceneTransition::default()
+    });
+    let mut town = v11.scenes[0].clone();
+    town.id = "scene-town".to_owned();
+    town.name = "Town".to_owned();
+    v11.scenes.push(town);
+    v11.npcs.push(Npc {
+        id: "npc-new".to_owned(),
+        name: "Newcomer".to_owned(),
+        scene_id: "scene-town".to_owned(),
+        x: farm_sim::units::tiles(2),
+        y: farm_sim::units::tiles(2),
+        ..Npc::default()
+    });
+    let (content_v11, target_v11) = build(&v11);
+    let loaded = load_save(&text, &target_v11, &content_v11);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    let state = loaded.state.unwrap();
+    let farm = &state.world.scenes[0];
+    assert!(farm.tiles[0][0].collision, "the fixed map reaches the save");
+    assert_eq!(farm.transitions.last().map(|t| t.to_scene_id.as_str()), Some("scene-town"));
+    assert_eq!(state.world.scenes.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["scene-farm", "scene-town"]);
+    assert_eq!(farm.tiles[4][8], planted, "play stays: the planted crop");
+    assert_eq!(farm.tiles[1][1].background, "soil", "play stays: hoed ground");
+    assert_eq!(farm.tiles[1][1].soil_state.as_deref(), Some("tilled"));
+    let npc = state.npcs.get("npc-new").expect("the new NPC joins the world");
+    assert_eq!((npc.scene_id.as_str(), npc.x), ("scene-town", farm_sim::units::tiles(2)));
+
+    // On the cartridge that wrote it, the save loads exactly as written.
+    let loaded = load_save(&text, &target_v1, &build(&v1).0);
+    assert_eq!(stable_stringify(loaded.state.as_ref().unwrap()), stable_stringify(&game));
+}
+
+#[test]
+fn loading_fits_the_clock_to_the_calendar_and_reseeds_an_empty_rng() {
+    let project = starter_project();
+    let (content, target) = build(&project);
+    let mut game = state::create_game_state(&project, Some("old-save"));
+    game.clock.day = 33;
+    game.clock.season = "summer".to_owned();
+    let mut raw = serde_json::to_value(&game).unwrap();
+    // Written before the day of season existed, with no random state.
+    raw["clock"].as_object_mut().unwrap().remove("dayOfSeason");
+    raw.as_object_mut().unwrap().remove("rng");
+    let loaded = load_save(&raw.to_string(), &target, &content);
+    assert!(loaded.ok, "{:?}", loaded.errors);
+    let state = loaded.state.unwrap();
+    assert_eq!(state.clock.day_of_season, 5, "day 33 is summer day 5");
+    assert!(!state.rng.is_degenerate());
+    assert!(loaded.warnings.iter().any(|w| w.contains("random")), "{:?}", loaded.warnings);
+}

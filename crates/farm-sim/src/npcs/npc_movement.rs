@@ -143,7 +143,10 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
             continue;
         }
 
-        let schedule_target = if stay_inside { None } else { active_schedule_entry(def, state.clock.time_minutes) };
+        // Indoors the storm does not matter: an NPC keeps a schedule that stays inside (#34).
+        let indoor = |scene_id: &str| state.world.scenes.iter().any(|scene| scene.id == scene_id && scene.is_indoor());
+        let schedule_target = active_schedule_entry(def, state.clock.time_minutes)
+            .filter(|target| !stay_inside || (indoor(&npc.scene_id) && indoor(&target.scene_id)));
 
         if let Some(target) = schedule_target {
             if target.scene_id != npc.scene_id {

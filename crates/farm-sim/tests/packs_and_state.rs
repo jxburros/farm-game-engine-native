@@ -72,6 +72,10 @@ fn assert_matches_reference<T: Serialize>(key: &str, actual: &T) {
     if let Some(version) = actual.pointer_mut("/meta/saveVersion") {
         *version = Value::from(4);
     }
+    // The clock's day of season (#23) is newer than the reference; loading derives it.
+    if let Some(clock) = actual.pointer_mut("/clock").and_then(Value::as_object_mut) {
+        clock.shift_remove("dayOfSeason");
+    }
     assert_same_within_grid(key, &reference(key), &actual);
 }
 
@@ -169,6 +173,8 @@ fn create_game_state_hashes_like_the_ts_reference_state() {
     let project = load_project();
     let mut reference: farm_sim::GameState = serde_json::from_value(reference("stateSeeded")).expect("a GameState");
     reference.meta.save_version = farm_sim::schema::save::CURRENT_SAVE_VERSION;
+    // The reference predates the clock's day of season (#23): derive it as loading a save does.
+    farm_sim::game_time::reconcile_clock(&project.settings.calendar, &mut reference.clock);
     assert_eq!(hash_state(&reference), hash_state(&state::create_game_state(&project, Some("seed-x"))));
 }
 

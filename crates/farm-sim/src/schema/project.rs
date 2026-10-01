@@ -14,7 +14,7 @@ use super::mining::MineConfig;
 use super::nodes::NodeTypeDefinition;
 use super::packs::PackInstallation;
 use super::quests::Quest;
-use super::save::RngState;
+use super::save::{KeptState, RngState};
 use super::settings::ProjectSettings;
 use super::social::NpcSocialState;
 use super::weather::WeatherConfig;
@@ -39,7 +39,10 @@ pub struct GameProject {
     pub dialogues: Vec<Dialogue>,
     pub quests: Vec<Quest>,
     pub player: Player,
-    pub event_flags: IndexMap<String, bool>,
+    /// Flags a new game starts with. Values are `boolean | number | string` like
+    /// [`super::GameState::flags`] (plugins store numbers and strings, and Keep changes writes
+    /// them back as they are).
+    pub event_flags: IndexMap<String, Value>,
     pub start_scene_id: String,
     /// One of [`super::editor_modes`].
     pub mode: String,
@@ -68,6 +71,11 @@ pub struct GameProject {
     pub current_season: String,
     #[serde(with = "crate::units::count")]
     pub current_day: u32,
+    /// 1-based day within `currentSeason` (mirrors GameState.clock.dayOfSeason). Absent when
+    /// `currentDay` already lands on that day of that season in a calendar that starts on day 1
+    /// of the first season (see [`crate::game_time::clock_date`]). int, positive.
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub current_day_of_season: Option<u32>,
     /// Minute-of-day of the game clock (v4+).
     #[serde(with = "crate::units::micro_minutes")]
     pub current_time_minutes: u32,
@@ -107,6 +115,10 @@ pub struct GameProject {
     /// Items whose owning pack is missing/disabled (mirrors GameState.quarantinedItems).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quarantined_items: Option<Vec<InventorySlot>>,
+    /// The rest of a kept playtest's state: tick, open dialogue/shop/minigame, today's shop
+    /// purchases, NPC walks and mine floor (see [`KeptState`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kept_state: Option<KeptState>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

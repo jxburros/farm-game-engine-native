@@ -41,6 +41,12 @@ pub struct ClockState {
     #[serde(with = "crate::units::count")]
     pub day: u32,
     pub season: String,
+    /// 1-based day within `season`: with `season` the clock's place in the calendar, which the
+    /// absolute `day` does not determine (a game may start in any season, and season lengths
+    /// may change under a save). 0 in saves written before it existed; loading derives it
+    /// (see [`crate::game_time::reconcile_clock`]). int.
+    #[serde(with = "crate::units::count")]
+    pub day_of_season: u32,
     /// int.
     #[serde(with = "crate::units::count")]
     pub year: u32,
@@ -50,7 +56,15 @@ pub struct ClockState {
 
 impl Default for ClockState {
     fn default() -> Self {
-        Self { tick: 0, time_minutes: 0, day: 0, season: String::new(), year: 0, weather_id: "sun".to_owned() }
+        Self {
+            tick: 0,
+            time_minutes: 0,
+            day: 0,
+            season: String::new(),
+            day_of_season: 0,
+            year: 0,
+            weather_id: "sun".to_owned(),
+        }
     }
 }
 
@@ -232,6 +246,81 @@ pub struct GameState {
     /// return to the inventory when the pack comes back (M5).
     pub quarantined_items: Vec<InventorySlot>,
     pub rng: RngState,
+}
+
+/// What "Keep changes" carries from a playtest into the next one beyond the project's own
+/// fields (the project's `keptState`), so the next playtest starts where the last one ended
+/// (#36). Absent when there is nothing to carry (tick 0, nothing open, no NPC mid-walk, on the
+/// surface).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeptState {
+    /// [`ClockState::tick`].
+    #[serde(with = "crate::units::ticks")]
+    pub tick: u64,
+    /// [`GameState::shop_purchases_today`].
+    #[serde(with = "crate::units::count::nested_map")]
+    pub shop_purchases_today: IndexMap<String, IndexMap<String, u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialogue: Option<DialogueState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shop: Option<ShopSession>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minigame: Option<MinigameSession>,
+    /// Walking NPCs by id: their remaining path and patrol waypoint (positions are the
+    /// project's NPC fields).
+    pub npcs: IndexMap<String, KeptNpc>,
+    /// [`MineProgress::current_floor`].
+    #[serde(with = "crate::units::count")]
+    pub mine_current_floor: u32,
+}
+
+/// An NPC's walk in [`KeptState::npcs`] (the [`NpcState`] fields the project's NPC lacks).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeptNpc {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<Vec<GridPoint>>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub patrol_index: Option<u32>,
+}
+
+impl KeptState {
+    /// The parts of `state` a project does not hold, or `None` when there are none.
+    pub fn of_state(state: &GameState) -> Option<Self> {
+        let npcs: IndexMap<String, KeptNpc> = state
+            .npcs
+            .iter()
+            .filter(|(_, npc)| npc.path.is_some() || npc.patrol_index.is_some())
+            .map(|(id, npc)| (id.clone(), KeptNpc { path: npc.path.clone(), patrol_index: npc.patrol_index }))
+            .collect();
+        let kept = Self {
+            tick: state.clock.tick,
+            shop_purchases_today: state.shop_purchases_today.clone(),
+            dialogue: state.dialogue.clone(),
+            shop: state.shop.clone(),
+            minigame: state.minigame.clone(),
+            npcs,
+            mine_current_floor: state.mine.current_floor,
+        };
+        (kept != Self::default()).then_some(kept)
+    }
+
+    /// Puts the kept parts back into a new game's `state` (NPCs the state lacks are skipped).
+    pub fn apply_to(&self, state: &mut GameState) {
+        state.clock.tick = self.tick;
+        state.shop_purchases_today.clone_from(&self.shop_purchases_today);
+        state.dialogue.clone_from(&self.dialogue);
+        state.shop.clone_from(&self.shop);
+        state.minigame.clone_from(&self.minigame);
+        for (id, kept) in &self.npcs {
+            if let Some(npc) = state.npcs.get_mut(id) {
+                npc.path.clone_from(&kept.path);
+                npc.patrol_index = kept.patrol_index;
+            }
+        }
+        state.mine.current_floor = self.mine_current_floor;
+    }
 }
 
 /// TS `SaveMigrationResult` (returned by the save migration pipeline).

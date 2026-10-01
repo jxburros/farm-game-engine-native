@@ -150,7 +150,7 @@ fn panel_entries_render_flags_items_and_text() {
 #[test]
 fn panel_state_projects_the_running_game_and_the_synced_project() {
     let mut project = common::make_project();
-    project.event_flags = [("met".to_owned(), true)].into_iter().collect();
+    project.event_flags = [("met".to_owned(), serde_json::Value::Bool(true))].into_iter().collect();
     let game = state::create_game_state(&project, Some("panels"));
     let shop_open = GameState { shop: Some(ShopSession { shop_id: "s".to_owned() }), ..game.clone() };
     let live = PanelState::from_game_state(&shop_open, false);

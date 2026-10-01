@@ -89,7 +89,8 @@ fn apply_plugin_mutation(
             vec![Effect::message(message_levels::INFO, format!("Received {quantity}× {}", item.name))]
         }
         PluginMutation::SetFlag { flag, value } => {
-            state.flags.insert(flag.clone(), value.clone());
+            // Canonical numbers (`1.0` is `1`) so the flag survives a save/load round trip (#142).
+            state.flags.insert(flag.clone(), units::canonical_json(value.clone()));
             vec![]
         }
         PluginMutation::Message { text } => vec![Effect::message(message_levels::INFO, text.clone())],
@@ -228,17 +229,30 @@ pub fn advance_tick(ctx: &EngineContext, state: &mut GameState, ticks: u64) -> E
     effects
 }
 
+/// Is a dialogue, shop or minigame open? The player's body stays put while one is, and with
+/// `time.pauseInModals` the clock does too.
+pub fn modal_open(state: &GameState) -> bool {
+    state.dialogue.is_some() || state.shop.is_some() || state.minigame.is_some()
+}
+
 fn advance_single_tick(ctx: &EngineContext, state: &mut GameState) -> Effects {
-    let settings = &ctx.content.settings;
+    // An invalid day window would collapse the player every tick (#24).
+    let time = game_time::time_config(&ctx.content.settings.time);
+    state.clock.tick = state.clock.tick.saturating_add(1);
+    let modal = modal_open(state);
+    // With `pauseInModals` an open dialogue, shop or minigame stops the clock: no minutes pass,
+    // so no minute-boundary systems run and the day cannot end mid-conversation (#37).
+    if modal && time.pauses_in_modals() {
+        return Vec::new();
+    }
     // The time rate is stored in micro-minutes per tick.
     let before_minute = units::whole_minute(state.clock.time_minutes);
-    state.clock.tick = state.clock.tick.saturating_add(1);
-    state.clock.time_minutes = state.clock.time_minutes.saturating_add(settings.time.minutes_per_real_second);
+    state.clock.time_minutes = state.clock.time_minutes.saturating_add(time.minutes_per_real_second);
     let mut effects = Vec::new();
 
     // Free movement integrates every tick from the held intent. Frozen while a dialogue, shop or
     // minigame is open (modal interactions pause the body).
-    if state.dialogue.is_none() && state.shop.is_none() && state.minigame.is_none() {
+    if !modal {
         effects.extend(world_movement::integrate_movement(ctx, state));
     }
 
@@ -246,14 +260,28 @@ fn advance_single_tick(ctx: &EngineContext, state: &mut GameState) -> Effects {
     // minute (bounds evaluation cost).
     let after_minute = units::whole_minute(state.clock.time_minutes);
     if after_minute > before_minute {
-        npc_movement::advance_npcs(ctx, state, after_minute - before_minute);
+        advance_npcs_per_minute(ctx, state, before_minute, after_minute);
         crafting::settle_machines(ctx, state);
         effects.extend(events::evaluate_events(ctx, state, "tick", None));
     }
 
-    if u64::from(state.clock.time_minutes) >= u64::from(settings.time.day_end_minute) * u64::from(units::MINUTE) {
+    if u64::from(state.clock.time_minutes) >= u64::from(time.day_end_minute) * u64::from(units::MINUTE) {
         effects.extend(game_time::perform_sleep(ctx, state, SleepOptions { collapsed: true }));
     }
 
     effects
+}
+
+/// NPCs take one step per whole minute that passed, each seeing the clock at that minute. At
+/// more than one game minute per tick (`minutesPerRealSecond` above 20) one call per tick fell
+/// behind and skipped the wander minutes (#37). The last step sees the clock as it is, so at
+/// most one minute per tick (every shipped rate) nothing changes.
+fn advance_npcs_per_minute(ctx: &EngineContext, state: &mut GameState, before_minute: u32, after_minute: u32) {
+    let now = state.clock.time_minutes;
+    for minute in before_minute + 1..after_minute {
+        state.clock.time_minutes = minute.saturating_mul(units::MINUTE);
+        npc_movement::advance_npcs(ctx, state, 1);
+    }
+    state.clock.time_minutes = now;
+    npc_movement::advance_npcs(ctx, state, 1);
 }

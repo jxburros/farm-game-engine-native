@@ -340,8 +340,12 @@ impl PlaySession {
         // modal is open.
         let intent =
             if host_modal_open { MoveVector::default() } else { input::move_intent(&self.input, &self.state, None) };
-        let ticks = self.timestep.advance(delta);
+        let mut ticks = self.timestep.advance(delta);
         self.alpha = self.timestep.alpha();
+        // With `time.pauseInModals` a menu stops the game clock like a dialogue does (#37).
+        if host_modal_open && self.ctx.content.settings.time.pauses_in_modals() {
+            ticks = 0;
+        }
         if intent != self.last_intent {
             self.last_intent = intent;
             // The intent is −1, 0 or 1 on each axis.
@@ -431,7 +435,10 @@ impl PlaySession {
                     i64::from(self.state.clock.time_minutes) + (minutes * f64::from(units::MINUTE)).round() as i64;
                 self.state.clock.time_minutes = micro.clamp(0, i64::from(u32::MAX)) as u32;
             }
-            DebugAction::SetSeason { season } => self.state.clock.season.clone_from(season),
+            DebugAction::SetSeason { season } => {
+                self.state.clock.season.clone_from(season);
+                farm_sim::game_time::reconcile_clock(&self.ctx.content.settings.calendar, &mut self.state.clock);
+            }
             DebugAction::GiveFirst { item_type } => {
                 let Some(item) = self.ctx.content.items.iter().find(|item| &item.r#type == item_type) else {
                     return;

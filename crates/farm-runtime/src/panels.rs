@@ -42,7 +42,7 @@ impl PanelState {
             money: project.player.money as f64,
             energy: units::to_f64::<units::Energy>(project.player.energy.unwrap_or(0)),
             day: f64::from(project.current_day),
-            flags: project.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect(),
+            flags: project.event_flags.clone(),
             inventory: project.player.inventory.clone(),
             blocked,
         }
