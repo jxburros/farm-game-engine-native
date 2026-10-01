@@ -1,6 +1,8 @@
-//! Built-in content definitions (port of `ContentBuiltin.cs` / content-builtin.ts). These
-//! migrate into the `content-default` pack in M5; until then they live here so both the engine
-//! and the editor consume a single copy.
+//! Built-in content definitions (port of `ContentBuiltin.cs` / content-builtin.ts) for the Rust
+//! project pipeline (`state::create_content_from_project`), which the hosts that get project
+//! JSON use (editor previews and sessions, `Player::from_project`, farm-wasm). Cartridges get the
+//! F# copy (`FarmEngine.Authoring/Builtin.fs`); the two are kept identical by
+//! `tests/fsharp_parity.rs` and the F# `ParityTests` (docs/LANGUAGES.md "Two project pipelines").
 
 use crate::schema::{
     AnimalSpeciesDefinition, CropDefinition, CropMultiTile, FishTable, FishTableEntry, Item, MachineTypeDefinition,

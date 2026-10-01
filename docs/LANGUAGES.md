@@ -369,10 +369,33 @@ below record where each part went.
 | `GameTime.cs`, `Weather.cs`, `Energy.cs`, `Tools.cs`, `Inventory.cs`, `Economy.cs`, `Crafting.cs`, `Gathering.cs`, `Skills.cs`, `Social.cs`, `Animals.cs`, `Fishing.cs`, `Mines.cs`, `DialogueSystem.cs`, `Events.cs`, `Extensibility.cs`, `Hooks.cs` | same-named `farm-sim` modules |
 | `Farming/*`, `World/*`, `Npcs/*`, `Quests/*` | `farm_sim::{farming, world, npcs, quests}` |
 | `Validation.cs` | **F#** `Authoring.Validation` (it checks the project, not play) |
-| `Packs.cs` (merge and namespacing) | **F#** `Authoring.Packs` (merging happens at compile time) |
-| `ContentBuiltin.cs` | **F#** `Authoring.Builtin`, compiled into every cartridge |
-| `State.cs` `CreateBaseContentFromProject` / `CreateContentFromProject` | **F#** compiler |
+| `Packs.cs` (merge and namespacing) | **F#** `Authoring.PackMerge` for cartridges; **also** Rust `farm_sim::packs` (see [two project pipelines](#two-project-pipelines)) |
+| `ContentBuiltin.cs` | **F#** `Authoring.Builtin`, compiled into every cartridge; **also** Rust `farm_sim::content_builtin` |
+| `State.cs` `CreateBaseContentFromProject` / `CreateContentFromProject` | **F#** compiler (`ContentCompiler`, `CartridgeCompiler`); **also** Rust `state::create_content_from_project`, `StartState::from_project`, `Presentation::from_project` |
 | `State.cs` `ApplyStateToProject` | Rust reports the playtest's final `GameState` as JSON; **F#** writes it back (`Playtest.applyState`, one undoable edit). Rust keeps its own `apply_state_to_project` for players started from project JSON, and a test keeps the two identical. |
+
+### Two project pipelines
+
+Both languages can still turn a project into what a game runs on, and both are in use:
+
+- **F#** (`ContentCompiler`, `PackMerge`, `Builtin`, `CartridgeCompiler`) writes every
+  cartridge: Export Game, `farmc`, the editor's Play Mode and the web editor (through Fable).
+- **Rust** (`farm_sim::packs`, `content_builtin`, `state::create_content_from_project`,
+  `StartState::from_project`, `Presentation::from_project`, `apply_state_to_project_json`)
+  serves the hosts that receive project JSON instead of a cartridge: `fe_session_new` and
+  `fe_preview_*` (the editor's map preview and headless sessions), `Player::from_project`, and
+  farm-wasm when it is given a project.
+
+So the rule "Rust never owns project JSON" holds for cartridges and saves, not for those
+hosts. Until they receive cartridges (or F#-compiled sections) and the Rust `from_project`
+paths can go, the two pipelines are kept identical by tests: `ParityTests.fs` compiles the
+Rust-recorded `fixtures/golden/content` projects with F#, and records `fixtures/parity` (a
+kitchen-sink project and content with every F# record field set, plus the F# pipeline's
+output for the templates, the fixture projects and the example packs), which
+`crates/farm-sim/tests/fsharp_parity.rs` checks against serde and the Rust pipeline. The
+schema itself is still kept by hand on both sides (Schema.fs/SchemaJson.fs and the serde
+types); generating one from the other is future work, and these tests catch a field added on
+one side only.
 
 ### `FarmEngine.Content` → F# — done, deleted
 
