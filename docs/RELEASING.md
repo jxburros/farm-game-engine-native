@@ -6,7 +6,7 @@ Windows releases are built by GitHub Actions, packaged with
 (Help → Update Center…) reads those releases, so publishing a release is all
 it takes to ship an update.
 
-```
+```text
 git tag v0.3.0 ──► .github/workflows/release.yml
                      version       on main? CI green? versions agree? not released yet?
                      player-*      templates (Windows, Steam Runtime Linux, web)
@@ -46,7 +46,7 @@ Anything with a `-suffix` is a pre-release.
    run still in progress, up to an hour).
 3. Release notes come from the first of these the workflow finds:
    1. a section in `CHANGELOG.md` whose heading is `## [0.3.0]`, `## 0.3.0`
-      or `## v0.3.0` (everything up to the next `## ` heading);
+      or `## v0.3.0` (everything up to the next `##` heading);
    2. the message of an **annotated** tag (`git tag -a v0.3.0 -m "…"`, or
       `git tag -a v0.3.0` to write it in your editor — Markdown is fine);
    3. otherwise, a list of commit subjects since the previous `v*` tag.

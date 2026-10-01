@@ -64,9 +64,8 @@ content packs and plugins), and the Rust tests replay them and require every
 state hash to match byte for byte. Now that the web editor runs this engine
 too, Rust is the reference: since the move to integer numerics (schema v9,
 [docs/NUMERICS.md](docs/NUMERICS.md)) the goldens are recorded from it, and the
-TypeScript ones stay as migration inputs. Same seed
-+ same inputs ⇒ the same game, on the desktop, in exported games and in the
-browser.
+TypeScript ones stay as migration inputs. The same seed and the same inputs
+give the same game, on the desktop, in exported games and in the browser.
 
 ## Install
 

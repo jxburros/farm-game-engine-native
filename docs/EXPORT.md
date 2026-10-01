@@ -30,7 +30,7 @@ the same Rust player compiled to WebAssembly, reading the same `game.cart`.
 
 ## How export works
 
-```
+```text
 project ──▶ F# compiler ──▶ game.cart ──┐
                                         ├──▶ export folder ──▶ zip / tar.gz
 player template for the target ─────────┘    (renamed exe, icon, version info,
@@ -85,7 +85,7 @@ player template for the target ─────────┘    (renamed exe, i
 Each target gets its own folder under the output folder, and an archive next
 to it:
 
-```
+```text
 dist/
   windows-x64/WillowCreek/        the Windows game folder (below)
   linux-x64/WillowCreek/          the Linux game folder (below)
@@ -112,7 +112,7 @@ throws, and `farmc export` prints the report.
 
 Windows:
 
-```
+```text
 WillowCreek/
   WillowCreek.exe          farm-player, renamed; export sets its icon and version info
   game.cart
@@ -121,7 +121,7 @@ WillowCreek/
 
 Linux:
 
-```
+```text
 WillowCreek/
   WillowCreek              farm-player, renamed; executable bit set in the archive
   game.cart
@@ -133,7 +133,7 @@ WillowCreek/
 Web demo (`web/WillowCreek/`, and `WillowCreek-web.zip` with the files at its
 root, which is what itch.io expects):
 
-```
+```text
 index.html            the page (the game's title filled in)
 style.css             its styles
 game.js               canvas loop, input, sound, saves in localStorage
@@ -197,7 +197,7 @@ game is installed with its `.png`. The file passes `desktop-file-validate`.
 A template is a folder per target with the player, its manifest and the
 license notices:
 
-```
+```text
 players/windows-x64/farm-player.exe   players/linux-x64/farm-player
 players/windows-x64/template.json     players/linux-x64/template.json
 players/windows-x64/THIRD-PARTY.txt   players/linux-x64/THIRD-PARTY.txt

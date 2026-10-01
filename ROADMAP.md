@@ -89,6 +89,7 @@ Status at the end of September 2026: phases 1–7 are done
 [Later](#later).
 
 **Rust core (phase 2)**: done.
+
 - [x] `SaveMigrations.cs` ported to `farm-cart::save`; all eight save
   migration goldens (`fixtures/golden/saves`) match the TypeScript result,
   stable JSON and hash.
@@ -108,7 +109,8 @@ Status at the end of September 2026: phases 1–7 are done
   `LoadSave()`. Until the export settings exist (phase 3), `gameId` is the
   project id.
 
-**F# authoring (phase 3)**
+**F# authoring (phase 3)**:
+
 - [x] F# authoring core merged: `Edit` cases for every editor, `Defaults`,
   the problems pipeline with JSON paths, workshop patterns, the C# `Api`,
   and `ProjectWorkspace` on the F# `Document` (62 F# tests, all app tests
@@ -160,6 +162,7 @@ Status at the end of September 2026: phases 1–7 are done
   the project compiles under Fable. Done in phase 7 (below).
 
 **Switch the app (phase 4)**: done; the C# engine projects are deleted.
+
 - [x] Play Mode moved to the Rust engine, first behind a C# fallback and a
   differential test against the C# engine after every step, then (phase 6)
   to the embedded Rust player; the fallback, the C# overlays and the state
@@ -176,6 +179,7 @@ Status at the end of September 2026: phases 1–7 are done
 
 **Editor port (phase 5)**: map tools and a broad content workspace are now
 available as native views.
+
 - [x] Tile painter (layers, rectangle, fill, copy/paste), scene manager,
   transitions and collision; art bindings remain in the art pipeline milestone.
 - [x] Content workspace for NPCs, dialogue, items, crops, quests, events,
@@ -213,6 +217,7 @@ available as native views.
 **Player and export (phase 6)**: done. `farm-plugins` (QuickJS in wasmi),
 `farm-ui`, `farm-player`, game shell, Export Game, and the player embedded in
 Play Mode.
+
 - [x] Headless `farm-player` loads `game.cart` beside the executable or by
   `--cart`, replays commands, checks a hash, and loads/writes portable saves.
 - [x] `farm-ui`: an immediate-mode UI on `farm-render` draw lists, with
@@ -256,7 +261,8 @@ Play Mode.
 - [x] Ship only used assets: the compiler leaves unused custom assets out of
   the cartridge, and Export lists them as warnings.
 
-**Audit follow-ups**
+**Audit follow-ups**:
+
 - [x] Run plugin hooks off the UI thread: Play Mode frames, plugins included,
   run on a worker thread.
 - [x] `respawnDays` keeps absent and `null` apart in both engines, like the

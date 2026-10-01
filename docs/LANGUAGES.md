@@ -68,7 +68,7 @@ led here):
 
 ## Target architecture
 
-```
+```text
                        ┌──────────────────────────── .NET (one solution) ─────────────────────────────┐
  project.json ───────▶ │ FarmEngine.Authoring (F#)            FarmingRpgMaker.App (C#, Avalonia)      │
  (v8, web-compatible)  │  schema · migrations · validation      views · view models · dialogs         │
@@ -152,6 +152,7 @@ what an exported game contains.
   wrappers.
 - **Coarse, handle-based, batched.** Never one call per tile or entity. Three
   handles:
+
   ```c
   // The editor's Play Mode: the whole game player (crates/farm-ffi/src/player.rs).
   fe_result fe_player_new(const uint8_t* game, size_t len, const uint8_t* options, size_t options_len,
@@ -175,6 +176,7 @@ what an exported game contains.
 
   void      fe_bytes_free(fe_bytes);
   ```
+
   Requests and answers are JSON (stable JSON for state); frames are raw
   premultiplied RGBA. Each handle has its `_free`.
 - **Play Mode.** The editor forwards raw input events (keys by the engine's
@@ -253,7 +255,7 @@ These replace `BannedSymbols.txt`. They're enforced in `farm-sim` with
 
 ## Repository layout (target)
 
-```
+```text
 Cargo.toml                       # Rust workspace; rust-toolchain.toml pins the version
 schemas/cart.fbs, save.fbs
 crates/
@@ -320,6 +322,7 @@ needs (with a Rust toolchain installed).
   `Document.apply`. Undo/redo is a stack of immutable documents (structural
   sharing makes that cheap). Workshop patterns are functions that return a
   list of edits, applied as one undo step.
+
   ```fsharp
   type Edit =
     | PaintTiles of scene: SceneId * layer: Layer * cells: (int<tile> * int<tile>) list * brush: TileBrush
@@ -328,6 +331,7 @@ needs (with a Rust toolchain installed).
     | AddNpc     of Npc
     | Batch      of label: string * Edit list      // one undo step
   ```
+
 - **C# friendliness at the boundary.** Types C# view models consume are
   records with `[<CLIMutable>]` only where binding needs it. Options are
   exposed as nullable through small helper modules; don't make C# match on
@@ -609,7 +613,6 @@ Use this for every item in the editor list:
    the view, Rust tests plus a golden or replay if simulation changed.
 8. **Tick the item** in [ROADMAP.md](../ROADMAP.md) and add it to the
    [CHANGELOG](../CHANGELOG.md).
-
 
 ## Open questions
 
