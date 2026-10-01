@@ -2,6 +2,35 @@
 
 ## 0.2.0 (unreleased)
 
+- **Exported games, from the 2026-09-30 audit:**
+  - Windows games open no console window: Export marks the executable as a
+    GUI program (the template stays a console program for `--headless`).
+    Windows builds link the C runtime statically, so games and the editor's
+    engine library start without the VC++ redistributable; CI checks both.
+  - Saves are flushed to disk before they replace the old file, use a
+    temporary file of their own per running copy, and keep the previous save
+    as `slot<N>.bak`, which loads (with a message) when a save is damaged.
+  - Closing the window during a game asks first, like Quit. When the game
+    stops with an error or its cartridge doesn't load, the window shows what
+    happened and where the crash log is instead of vanishing.
+  - Crash logs are never written through an existing file or link, get their
+    own name per run, say how old their game report is, and only the newest
+    ten are kept.
+  - Sound comes back after headphones are unplugged or the default output
+    device changes, the audio callback no longer allocates, and every sample
+    format a device offers works.
+  - A gamepad can cancel the key-rebind prompt (B or Start), and the game
+    ignores the gamepad while its window is in the background.
+  - Toasts stay long enough to read (longer for long text and errors; point
+    at one to hold it, click to dismiss), a long dialogue scrolls inside its
+    card, and Play Mode warns when the game's text has characters the fonts
+    can't draw.
+  - A frame builds only the tiles the camera shows (a 256×256 farm costs
+    about what the starter farm does), text that fades no longer re-renders
+    its glyphs every frame, and clips no longer rebuild a full-screen mask.
+  - Smaller fixes: a NaN frame time can't stall the simulation, save folders
+    avoid Windows device names (`Con`) and overlong names, and scripted input
+    at the last frame index no longer overflows.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:

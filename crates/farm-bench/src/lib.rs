@@ -248,8 +248,26 @@ pub const FRAME: f64 = 1.0 / 60.0;
 /// The starter farm in play (the embedded player starts the game right away), after a few
 /// frames to settle fonts and caches.
 pub fn gameplay_player(width: u32, height: u32) -> Player {
+    playing(starter_project(), width, height)
+}
+
+/// The starter farm with its farm scene grown to [`FarmSpec::OVERNIGHT_256`] (65,536 tiles, full
+/// crops, 50 machines), in play: a frame must cost what the camera shows, not the scene's size.
+pub fn large_map_player(width: u32, height: u32) -> Player {
+    let mut project = starter_project();
+    let content = farm_sim::create_content_from_project(&project);
+    let scene_id = project.player.scene_id.clone();
+    let scene = project.scenes.iter_mut().find(|scene| scene.id == scene_id).expect("the player's scene exists");
+    grow_scene(scene, &content, FarmSpec::OVERNIGHT_256);
+    playing(project, width, height)
+}
+
+/// A player in play at a frame size ([`gameplay_player`], [`large_map_player`]).
+pub type NewPlayer = fn(u32, u32) -> Player;
+
+fn playing(project: GameProject, width: u32, height: u32) -> Player {
     let options = PlayerOptions { seed: Some(SEED.to_owned()), ..PlayerOptions::embedded() };
-    let mut player = Player::from_project(starter_project(), options).unwrap_or_else(|error| panic!("{error:?}"));
+    let mut player = Player::from_project(project, options).unwrap_or_else(|error| panic!("{error:?}"));
     for frame in 0..30 {
         render_frame(&mut player, frame, width, height);
     }
@@ -446,24 +464,28 @@ pub fn scenarios(scale: f64) -> Vec<Scenario> {
             sample(runs, || (), |()| start_cartridge(&bytes))
         }));
     }
-    for (width, height) in [(1280, 800), (1920, 1080)] {
-        all.push(Scenario::new(
-            format!("frame/{width}x{height} cpu"),
-            Some(budgets::CPU_FRAME),
-            runs(120),
-            move |runs| {
-                let mut player = gameplay_player(width, height);
-                let mut frame = 30;
-                sample(
-                    runs,
-                    || (),
-                    |()| {
-                        render_frame(&mut player, frame, width, height);
-                        frame += 1;
-                    },
-                )
-            },
-        ));
+    // High resolutions are reported only: the CPU path recomposes the whole frame (see
+    // docs/PLAYER.md "How a frame is drawn").
+    let frames: [(&str, u32, u32, Option<f64>, NewPlayer); 5] = [
+        ("", 1280, 800, Some(budgets::CPU_FRAME), gameplay_player),
+        ("", 1920, 1080, Some(budgets::CPU_FRAME), gameplay_player),
+        ("", 2560, 1600, None, gameplay_player),
+        ("", 3840, 2160, None, gameplay_player),
+        (" 256x256 map", 1920, 1080, Some(budgets::CPU_FRAME), large_map_player),
+    ];
+    for (map, width, height, budget, player) in frames {
+        all.push(Scenario::new(format!("frame/{width}x{height}{map} cpu"), budget, runs(120), move |runs| {
+            let mut player = player(width, height);
+            let mut frame = 30;
+            sample(
+                runs,
+                || (),
+                |()| {
+                    render_frame(&mut player, frame, width, height);
+                    frame += 1;
+                },
+            )
+        }));
     }
     all
 }
@@ -500,6 +522,11 @@ mod tests {
         for (_, bytes) in &carts {
             start_cartridge(bytes);
         }
+
+        // The large map plays: the player stands on its 256×256 farm.
+        let large = large_map_player(320, 200);
+        let scene = large.session().unwrap().current_scene().unwrap();
+        assert_eq!((scene.width, scene.height), (256, 256));
 
         assert!(!scenarios(1.0).is_empty());
         assert_eq!(median(&[3.0, 1.0, 2.0]), 2.0);

@@ -258,8 +258,11 @@ under one lock, so plugin hooks never block the editor. Editor shortcuts
 1. Input is routed: bound keys become the engine's keys, and the UI gets
    navigation, pointer and raw keys.
 2. The session steps (fixed timestep) unless a menu pauses the game.
-3. `farm-render` builds the world snapshot; `farm-ui` draws the HUD, panels
-   and shell screens into a draw list.
+3. `farm-render` builds the world snapshot of the tiles the camera shows (a
+   tile window, one tile of margin and the row below for tall objects), so a
+   256×256 farm costs about what a small one does; image URLs are shared
+   `Arc`s that stay the same from frame to frame. `farm-ui` draws the HUD,
+   panels and shell screens into a draw list.
 4. The world is rasterized at its native pixel-art size (the camera viewport,
    32-pixel tiles, one pixel larger for smooth scrolling) and scaled up with
    nearest neighbour: whole steps with integer scaling, else fitted;
@@ -279,10 +282,23 @@ cloud core), for the whole frame: input, UI, world and rasterizing:
 | Gameplay, walking | 3.1 ms | 4.3 ms |
 | Shop open | 5.5 ms | 8.8 ms |
 
-The UI keeps these low by drawing text from cached glyph sprites, filling
+The UI keeps these low by drawing text from cached glyph coverage (one mask
+per glyph, size and quarter-pixel position, coloured while blending, so
+fading text reuses it; the least recently used masks make room), filling
 rectangles with direct pixel loops, dropping commands outside the screen or
-clip, and dimming the world at its native size instead of the full frame.
-The largest remaining cost is a modal's soft shadow (about 2 ms at 1080p).
+clip, building a clip's full-frame mask only for general path fills (and
+then only rewriting the rows of the old and new clip), and dimming the world
+at its native size instead of the full frame. The largest remaining cost is a
+modal's soft shadow (about 2 ms at 1080p).
+
+At high resolutions the whole frame is still recomposed every frame at full
+physical resolution (fill, upscale, UI, then a copy into the window), also
+on menus where nothing moves. `farm-bench` measures gameplay frames at
+1280×800 and 1920×1080 against the 60 Hz budget, the same on a 256×256 farm,
+and reports 2560×1600 and 3840×2160 without a budget (one run on a shared cloud machine:
+5.4, 8.2 and 11.1 ms, then 13.7 and 23.8 ms). Capping the UI's internal resolution, skipping
+unchanged menu frames and upscaling straight into the window's buffer are
+the next steps.
 
 ## Tests
 
