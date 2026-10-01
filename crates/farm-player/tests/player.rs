@@ -291,6 +291,30 @@ fn panels_open_from_the_toolbar_and_close_with_their_key() {
 }
 
 #[test]
+fn play_mode_warns_about_text_the_fonts_cannot_show() {
+    // The starter's text is all covered: no warning.
+    let stores = Stores::new();
+    let player = Player::from_project(common::starter(), stores.options(PlayerMode::Embedded)).unwrap();
+    assert!(player.toast_history().is_empty(), "{:?}", player.toast_history());
+    let content = player.session().unwrap().content();
+    assert_eq!(farm_player::player::missing_glyph("Ферма", content), None, "Cyrillic is covered");
+
+    // Japanese dialogue would draw as boxes: the creator hears about it once, at the start.
+    let mut project = common::starter();
+    let npc = project.npcs.iter_mut().find(|npc| !npc.dialogue.is_empty()).unwrap();
+    npc.dialogue[0].text = "こんにちは".into();
+    let player = Player::from_project(project, stores.options(PlayerMode::Embedded)).unwrap();
+    let warnings: Vec<_> = player.toast_history().iter().filter(|(_, kind)| *kind == ToastKind::Error).collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].0.contains("\"こ\"") && warnings[0].0.contains(".text"), "{warnings:?}");
+    // Players of an exported game can't fix it: no warning there.
+    let mut project = common::starter();
+    project.npcs.iter_mut().find(|npc| !npc.dialogue.is_empty()).unwrap().dialogue[0].text = "こんにちは".into();
+    let standalone = stores.standalone(&project);
+    assert!(standalone.toast_history().is_empty());
+}
+
+#[test]
 fn embedded_mode_starts_in_game_and_serves_the_editor() {
     let stores = Stores::new();
     let mut player = Player::from_project(common::starter(), stores.options(PlayerMode::Embedded)).unwrap();

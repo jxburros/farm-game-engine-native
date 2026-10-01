@@ -104,7 +104,13 @@ impl Font {
     /// Whether the font has a glyph for every character of `text` (whitespace and control
     /// characters aside).
     pub fn covers(&self, text: &str) -> bool {
-        text.chars().all(|ch| ch.is_whitespace() || ch.is_control() || self.face.glyph_index(ch).is_some())
+        self.first_missing(text).is_none()
+    }
+
+    /// The first character of `text` the font has no glyph for (whitespace and control
+    /// characters aside): it would draw as a box.
+    pub fn first_missing(&self, text: &str) -> Option<char> {
+        text.chars().find(|ch| !(ch.is_whitespace() || ch.is_control() || self.face.glyph_index(*ch).is_some()))
     }
 
     pub fn char_advance(&self, ch: char, size: f32) -> f32 {
@@ -242,6 +248,8 @@ mod tests {
         // Coverage is per character: neither face has CJK.
         assert!(!font(FontId::ReadableRegular).covers("\u{7530}"));
         assert!(font(FontId::ReadableRegular).covers(" \n\t"));
+        assert_eq!(font(FontId::Regular).first_missing("Farm \u{7530} \u{0628}"), Some('\u{7530}'));
+        assert_eq!(font(FontId::Regular).first_missing("Ferme \u{0444}\u{0435}\u{0440}\u{043c}\u{0430}"), None);
     }
 
     #[test]

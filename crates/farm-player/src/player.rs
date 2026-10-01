@@ -392,6 +392,11 @@ impl Player {
                 if let Err(panic) = result {
                     return Err(PlayerError::Engine(panic_message(&*panic)));
                 }
+                // The creator is playing: tell them about text the fonts would draw as boxes.
+                if let Some((place, missing)) = missing_glyph(&player.def.info.title, &player.def.content) {
+                    let message = player.ui.lang().format("toast.missingGlyph", &[&missing, &place]);
+                    player.game_ui.toasts.push(message, ToastKind::Error);
+                }
             }
         }
         Ok(player)
@@ -1387,6 +1392,60 @@ impl Player {
         }
         report
     }
+}
+
+/// Fields whose text the game shows (names, dialogue lines and options, quest and item text).
+const SHOWN_TEXT_KEYS: [&str; 6] = ["name", "text", "title", "description", "label", "message"];
+
+/// The first character of the game's shown text that the interface font has no glyph for, and
+/// where it is (`dialogues[2].options[0].text`). The embedded fonts cover Latin, Greek and
+/// Cyrillic; CJK, Arabic and other scripts would draw as boxes.
+pub fn missing_glyph(title: &str, content: &GameContent) -> Option<(String, char)> {
+    fn walk(value: &Value, path: &mut String, shown: bool) -> Option<(String, char)> {
+        match value {
+            Value::String(text) if shown => {
+                farm_render::text::font(farm_render::FontId::Regular).first_missing(text).map(|ch| (path.clone(), ch))
+            }
+            Value::Array(items) => items.iter().enumerate().find_map(|(index, item)| {
+                let length = path.len();
+                path.push_str(&format!("[{index}]"));
+                let found = walk(item, path, shown);
+                path.truncate(length);
+                found
+            }),
+            Value::Object(fields) => fields.iter().find_map(|(key, item)| {
+                let length = path.len();
+                path.push('.');
+                path.push_str(key);
+                let found = walk(item, path, SHOWN_TEXT_KEYS.contains(&key.as_str()));
+                path.truncate(length);
+                found
+            }),
+            _ => None,
+        }
+    }
+    let font = farm_render::text::font(farm_render::FontId::Regular);
+    if let Some(ch) = font.first_missing(title) {
+        return Some(("title".to_owned(), ch));
+    }
+    let sections = [
+        ("items", serde_json::to_value(&content.items)),
+        ("npcs", serde_json::to_value(&content.npcs)),
+        ("dialogues", serde_json::to_value(&content.dialogues)),
+        ("quests", serde_json::to_value(&content.quests)),
+        ("events", serde_json::to_value(&content.events)),
+        ("shops", serde_json::to_value(&content.shops)),
+        ("recipes", serde_json::to_value(&content.recipes)),
+        ("crops", serde_json::to_value(&content.crops)),
+        ("nodeTypes", serde_json::to_value(&content.node_types)),
+        ("machineTypes", serde_json::to_value(&content.machine_types)),
+        ("animalSpecies", serde_json::to_value(&content.animal_species)),
+        ("minigames", serde_json::to_value(&content.minigames)),
+    ];
+    sections.into_iter().find_map(|(name, value)| {
+        let mut path = name.to_owned();
+        walk(&value.ok()?, &mut path, false)
+    })
 }
 
 /// `top` (straight alpha) over an opaque colour.

@@ -15,7 +15,9 @@ mod quests;
 mod shop;
 mod toasts;
 
-pub use toasts::{Toast, ToastKind, Toasts, MAX_VISIBLE as MAX_TOASTS, TOAST_LIFETIME};
+pub use toasts::{
+    toast_lifetime, Toast, ToastKind, Toasts, MAX_TOAST_LIFETIME, MAX_VISIBLE as MAX_TOASTS, TOAST_LIFETIME,
+};
 
 use crate::icons::{self, Icon};
 use crate::layout::RectExt;

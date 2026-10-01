@@ -69,7 +69,18 @@ same arguments always give the same image. A script lists input by frame:
 The mouse clicks every button, and the wheel (or the right stick) scrolls
 lists. The toolbar at the top has Inventory, Quests, Craft, Sleep and Menu.
 The hint row at the bottom shows the keys of the device used last: keyboard
-keycaps, or gamepad buttons once a pad is used.
+keycaps, or gamepad buttons once a pad is used. A dialogue card taller than
+the window scrolls, and moving the focus scrolls the focused option into
+view.
+
+Messages (toasts) stay long enough to read: at least 3.5 seconds, about a
+second more for every fifteen characters (up to 15 seconds), and errors twice
+as long. Pointing at one holds it; clicking it dismisses it.
+
+The embedded fonts (Inter, Atkinson Hyperlegible) cover Latin, Greek and
+Cyrillic, without shaping. Other scripts (CJK, Arabic…) draw as boxes; the
+editor's Play Mode warns the creator once when the game's text has such
+characters.
 
 Keyboard keys are rebindable in **Settings → Controls**: press a key's button,
 then the new key (Esc, gamepad B or Start cancel). A key bound elsewhere moves

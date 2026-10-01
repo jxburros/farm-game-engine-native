@@ -328,6 +328,10 @@ const EN: &[(&str, &str)] = &[
     ("toast.loadFailed", "This save could not be loaded."),
     ("toast.loaded", "Loaded slot {0}"),
     ("toast.loadedBackup", "Slot {0} was damaged, so its previous save was loaded."),
+    (
+        "toast.missingGlyph",
+        "The game's fonts can't show \"{0}\" ({1}) or other characters of its script: they appear as boxes.",
+    ),
     ("toast.saved", "Saved (slot {0})"),
     ("toast.autosaved", "Autosaved (slot {0})"),
     ("toast.saveFailed", "Could not save: {0}"),
@@ -545,6 +549,7 @@ const ES: &[(&str, &str)] = &[
     ("toast.loadFailed", "No se pudo cargar esta partida."),
     ("toast.loaded", "Ranura {0} cargada"),
     ("toast.loadedBackup", "La ranura {0} estaba da\u{f1}ada; se carg\u{f3} su partida anterior."),
+    ("toast.missingGlyph", "Las fuentes del juego no pueden mostrar \u{ab}{0}\u{bb} ({1}) ni otros caracteres de su escritura: se ven como cuadros."),
     ("toast.saved", "Partida guardada (ranura {0})"),
     ("toast.autosaved", "Guardado autom\u{e1}tico (ranura {0})"),
     ("toast.saveFailed", "No se pudo guardar: {0}"),
