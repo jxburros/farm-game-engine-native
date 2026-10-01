@@ -72,7 +72,8 @@ The hint row at the bottom shows the keys of the device used last: keyboard
 keycaps, or gamepad buttons once a pad is used.
 
 Keyboard keys are rebindable in **Settings → Controls**: press a key's button,
-then the new key (Esc cancels). A key bound elsewhere moves to the new action.
+then the new key (Esc, gamepad B or Start cancel). A key bound elsewhere moves
+to the new action.
 The engine still sees its default keys: the player translates a pressed key to
 the key the action has by default, and swallows default game keys that were
 rebound away. Creator hotkeys and digits pass through unchanged.

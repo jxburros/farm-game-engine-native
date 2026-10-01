@@ -334,6 +334,66 @@ fn a_gamepad_plays_the_whole_game() {
     assert_eq!(player.screen(), ScreenKind::Playing);
 }
 
+/// Presses and releases a gamepad button, then lets two frames pass.
+fn pad(player: &mut Player, button: GamepadButton) {
+    player.step(FRAME, &[InputEvent::GamepadButton { button, pressed: true }], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[InputEvent::GamepadButton { button, pressed: false }], SIZE.0, SIZE.1).unwrap();
+    idle(player, 2);
+}
+
+/// Moves focus with a D-pad direction until `target` has it.
+fn pad_to(player: &mut Player, direction: GamepadButton, target: WidgetId) {
+    for _ in 0..16 {
+        if player.focused_widget() == Some(target) {
+            return;
+        }
+        pad(player, direction);
+    }
+    panic!("the D-pad never reached {target:?}");
+}
+
+#[test]
+fn a_gamepad_enters_and_leaves_the_rebind_prompt() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    pad_to(&mut player, GamepadButton::DpadDown, WidgetId::new("title").with("Settings"));
+    pad(&mut player, GamepadButton::South);
+    assert_eq!(player.screen(), ScreenKind::Settings);
+    // RB twice: Display → Audio → Controls; then down to Reset controls and right into the
+    // column of key buttons.
+    pad(&mut player, GamepadButton::RightShoulder);
+    pad(&mut player, GamepadButton::RightShoulder);
+    pad_to(&mut player, GamepadButton::DpadDown, WidgetId::new("rebind-reset"));
+    pad(&mut player, GamepadButton::DpadRight);
+    let focused = player.focused_widget();
+    assert!(
+        farm_ui::BindAction::ALL.iter().any(|bind| focused == Some(WidgetId::new("rebind").with(bind.canonical_key()))),
+        "{focused:?}"
+    );
+    let before = player.settings().controls.clone();
+    let prompt = "Press a key\u{2026} (Esc or B cancels)";
+
+    // A starts the capture; the D-pad and A are swallowed while it waits; B cancels it.
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt), "{:?}", ui_texts(&player));
+    pad(&mut player, GamepadButton::DpadDown);
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt));
+    pad(&mut player, GamepadButton::East);
+    assert!(!shows(&player, prompt));
+    assert_eq!(player.screen(), ScreenKind::Settings, "B only cancelled the capture");
+    // Start cancels too, and nothing was rebound.
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt));
+    pad(&mut player, GamepadButton::Start);
+    assert!(!shows(&player, prompt));
+    assert_eq!(player.settings().controls, before);
+    // B again leaves the settings.
+    pad(&mut player, GamepadButton::East);
+    assert_eq!(player.screen(), ScreenKind::Title);
+}
+
 #[test]
 fn a_player_runs_on_another_thread() {
     let stores = Stores::new();

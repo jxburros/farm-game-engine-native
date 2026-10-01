@@ -1283,6 +1283,11 @@ impl Player {
             .map(|rect| farm_render::Rect::new(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale))
     }
 
+    /// The widget with keyboard / gamepad focus (tests, accessibility hosts).
+    pub fn focused_widget(&self) -> Option<farm_ui::WidgetId> {
+        self.ui.focused()
+    }
+
     /// The UI draw list of the last frame (tests, other rasterizers).
     pub fn ui_draw_list(&self) -> &DrawList {
         &self.ui_list
