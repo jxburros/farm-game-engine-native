@@ -7,12 +7,15 @@ Windows releases are built by GitHub Actions, packaged with
 it takes to ship an update.
 
 ```
-git tag v0.2.0 ──► .github/workflows/release.yml (windows-latest)
-                     dotnet test
-                     dotnet publish -r win-x64 --self-contained -p:Version=0.2.0
-                     vpk download github   (previous release → delta updates)
-                     vpk pack              (Setup.exe, Portable.zip, nupkgs, feed)
-                     vpk upload github     (creates/publishes the GitHub Release)
+git tag v0.3.0 ──► .github/workflows/release.yml
+                     version       on main? CI green? versions agree? not released yet?
+                     player-*      templates (Windows, Steam Runtime Linux, web)
+                     smoke-linux   export + replay on the release Linux template
+                     release       dotnet test, dotnet publish -p:Version=0.3.0,
+                                   export + replay on the release Windows template,
+                                   vpk download/pack, SHA256SUMS      (read-only token)
+                     publish       [environment "release": reviewer approves]
+                                   attest, vpk upload github, gh release upload
                                    │
 installed app ◄── Update Center ◄──┘  (Velopack GithubSource + GitHub releases API)
 ```
@@ -30,28 +33,51 @@ Versions are [SemVer](https://semver.org). The tag is `v` + version.
 
 Anything with a `-suffix` is a pre-release.
 
-1. Make sure `main` is green in CI.
-2. Write release notes (optional but recommended), in one of these places —
-   the workflow uses the first one it finds:
-   1. a section in `CHANGELOG.md` whose heading is `## [0.2.0]`, `## 0.2.0`
-      or `## v0.2.0` (everything up to the next `## ` heading);
-   2. the message of an **annotated** tag (`git tag -a v0.2.0 -m "…"`, or
-      `git tag -a v0.2.0` to write it in your editor — Markdown is fine);
+1. On `main`, commit the version: set `version` in the root `Cargo.toml`
+   (`[workspace.package]`) and the default `<Version>` in
+   `Directory.Build.props` to the release version (run `cargo check` so
+   `Cargo.lock` follows), and rename the CHANGELOG heading
+   `## 0.3.0 (unreleased)` to `## 0.3.0`. `tools/release/versions.sh --release
+   0.3.0` checks all three; the workflow runs it and refuses a mismatch.
+   (Pre-releases such as `0.4.0-beta.1` need the version in `Cargo.toml` and
+   `Directory.Build.props`, not a CHANGELOG section.)
+2. Push and wait until CI is green on that commit. The workflow refuses a
+   commit that is not on `main` or has no successful CI run (it waits for a
+   run still in progress, up to an hour).
+3. Release notes come from the first of these the workflow finds:
+   1. a section in `CHANGELOG.md` whose heading is `## [0.3.0]`, `## 0.3.0`
+      or `## v0.3.0` (everything up to the next `## ` heading);
+   2. the message of an **annotated** tag (`git tag -a v0.3.0 -m "…"`, or
+      `git tag -a v0.3.0` to write it in your editor — Markdown is fine);
    3. otherwise, a list of commit subjects since the previous `v*` tag.
-3. Tag and push:
+4. Tag and push:
 
    ```sh
-   git tag -a v0.2.0 -m "## What's new
+   git tag -a v0.3.0 -m "## What's new
 
    - Fishing mini-game
    - Faster project loading"
-   git push origin v0.2.0
+   git push origin v0.3.0
    ```
 
    Or run the **Release** workflow manually (Actions → Release → Run workflow)
-   with a version such as `0.2.0`; it creates the tag `v0.2.0` on the commit you
-   ran it from.
-4. Watch the run. When it finishes, the release is published (not a draft).
+   on `main` with a version such as `0.3.0`; it creates the tag `v0.3.0` on
+   that commit.
+5. Watch the run. When the build is done, the **Publish** job waits for a
+   reviewer to approve the `release` environment; then the release is
+   published (not a draft).
+6. Start the next version: bump `Cargo.toml` and `Directory.Build.props` to
+   `0.4.0-dev` and add `## 0.4.0 (unreleased)` at the top of `CHANGELOG.md`
+   (CI's `tools/release/versions.sh` checks that they agree).
+
+A version is released once. The workflow fails when its GitHub Release
+already exists (or, for a manual run, its tag), and it never merges into or
+replaces the files of a published release: installed apps would see
+different bytes under the same version. If a publish fails half-way, run the
+workflow manually with the same version and **republish** checked; it uploads
+into the existing release (`vpk upload --merge`, replacing attached files).
+Never use it for a release users already have; release a new version
+instead.
 
 The notes are embedded in the Velopack package (`vpk pack --releaseNotes`),
 become the GitHub Release body, and are shown in the Update Center.
@@ -68,25 +94,80 @@ Assets attached to the GitHub Release (Velopack's default `win` channel):
 | `FarmingRpgMaker-X.Y.Z-delta.nupkg`    | Delta from the previous release (small download). Only when a previous release exists. |
 | `releases.win.json`, `assets.win.json` | Update feed read by the app.                                         |
 | `RELEASES`                             | Legacy (Squirrel-compatible) feed.                                   |
-| `player-windows-x64.zip`, `player-linux-x64.tar.gz` | Export Game player templates for this version (docs/EXPORT.md). The installer already ships them in `players/`. |
+| `player-windows-x64.zip`, `player-linux-x64.tar.gz`, `player-web.tar.gz` | Export Game player templates for this version (docs/EXPORT.md). The installer already ships them in `players/`. |
+| `SHA256SUMS`                           | SHA-256 of this version's installer, packages, feeds and templates. |
+| `build-info.txt`                       | Commit, .NET SDK, rustc and vpk versions and the runner image the release was built with. |
 
-The Velopack files are kept as a workflow artifact (`velopack-releases-X.Y.Z`,
-30 days) for debugging.
+Everything `publish` uploads is kept as a workflow artifact
+(`release-bundle-X.Y.Z`, 30 days) for debugging.
 
 The player templates are built first, in their own jobs: `windows-x64` on the
-Windows runner (with the placeholder icon and version resources) and
-`linux-x64` in the Steam Runtime 3 "sniper" SDK container. Their
-`template.json` carries the release version, which must equal the app's.
+Windows runner (with the placeholder icon and version resources),
+`linux-x64` in the Steam Runtime 3 "sniper" SDK container and `web` with
+wasm-bindgen. Their `template.json` carries the release version, which must
+equal the app's. Before anything is packed, a sample game is exported with
+each desktop template the release ships and replayed headless
+(`tools/release/smoke-export.sh`): the exported game must report the same run
+as its template, and the Windows and Linux templates the same run as each
+other.
+
+### How a release is protected
+
+- **Only `main`, only green, only once.** The `version` job checks that the
+  commit is on `main`, that `ci.yml` passed on it, that the repository is at
+  the release version, and that the version is not released yet, before
+  anything is built.
+- **Least privilege.** The workflow token is read-only in every job that
+  builds or tests (they compile hundreds of crates and run NuGet build
+  targets), and no checkout keeps credentials. Only `publish` can write. It
+  checks out nothing and runs no repository code: it attests and uploads the
+  bundle `release` built.
+- **Approval.** `publish` runs in the `release` environment. In the repository
+  settings (Settings → Environments → `release`), add required reviewers and
+  restrict deployments to tags matching `v*.*.*`. Also add a tag ruleset
+  (Settings → Rules → Rulesets) that lets only maintainers create `v*` tags.
+  Without the environment settings GitHub creates an unprotected `release`
+  environment and the job runs without approval.
+- **Pinned inputs.** Actions are pinned to commit SHAs (with the version in a
+  comment; Dependabot bumps them), the Steam Runtime SDK image to a digest,
+  `rustup-init` to a checksum (`tools/ci/install-rust.sh`), the .NET SDK to
+  `global.json`'s version (CI turns off its roll-forward), Rust to
+  `rust-toolchain.toml`, and every cargo build that ships uses `--locked`.
+- **Checksums and provenance.** `SHA256SUMS` lists every published file, and
+  GitHub's build provenance attestation covers them. To check a download:
+  `sha256sum --check --ignore-missing SHA256SUMS`, or
+  `gh attestation verify FarmingRpgMaker-win-Setup.exe --repo jxburros/farm-game-engine-native`.
+- **Reproducibility.** .NET release builds set `ContinuousIntegrationBuild`
+  (source paths become `/_/`), cargo builds map the runner's paths away
+  (`--remap-path-prefix`) and ship without debug info, so no runner path ends
+  up in a binary. Zip and nupkg bytes still depend on the runtime's zlib;
+  `build-info.txt` records the SDK and toolchains of each release.
 
 ### Versions in builds
 
-`Directory.Build.props` defaults the version to `0.1.0-dev`. The release
-workflow passes `-p:Version=X.Y.Z`, which stamps both `FarmingRpgMaker.exe` and
+The Cargo workspace (`Cargo.toml`) and `Directory.Build.props` carry the
+same version: the next release with `-dev` between releases (`0.3.0-dev`),
+the release version in the release commit. The release workflow also passes
+`-p:Version=X.Y.Z`, which stamps both `FarmingRpgMaker.exe` and
 `FarmingRpgMaker.Updates.dll`; `vpk pack --packVersion` uses the same value.
+Crash logs, `fe_version` and the web player's `version()` report the Cargo
+version.
 
 The `vpk` tool version is pinned in `release.yml` (`VPK_VERSION`) and **must
 match** the `Velopack` package version in `Directory.Packages.props` (currently
-`1.2.158`). Bump both together.
+`1.2.158`); `tools/release/versions.sh` fails CI until both are bumped
+together.
+
+### Dependencies
+
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests for the
+Cargo crates, the NuGet packages (Avalonia, SkiaSharp and Svg.Skia move
+together), the .NET SDK in `global.json` and the pinned actions. The
+**Dependency audit** workflow (`audit.yml`, run by CI and weekly) fails on a
+RustSec advisory (`cargo deny`, configured in `deny.toml`, over `Cargo.lock`
+and the plugin guest's and meter's lock files), on a vulnerable NuGet package
+(`tools/ci/dotnet-vulnerable.py`) and on an unused Cargo dependency
+(`cargo machete`).
 
 ## How the Update Center finds updates
 

@@ -4,7 +4,9 @@
 #   tools/release/versions.sh                  development: the Cargo workspace version and the
 #                                              Directory.Build.props default are the same
 #                                              X.Y.Z-dev, and CHANGELOG.md starts with
-#                                              "## X.Y.Z (unreleased)"
+#                                              "## X.Y.Z (unreleased)"; in both forms,
+#                                              VPK_VERSION in release.yml is the Velopack
+#                                              package version
 #   tools/release/versions.sh --release X.Y.Z  a release commit: both are X.Y.Z, and for a stable
 #                                              X.Y.Z, CHANGELOG.md has a "## X.Y.Z" section that
 #                                              is not marked unreleased
@@ -33,6 +35,12 @@ fail() {
 [[ -n "$props_version" ]] || fail "no default <Version> in Directory.Build.props"
 [[ "$cargo_version" == "$props_version" ]] ||
   fail "Cargo.toml says $cargo_version, Directory.Build.props says $props_version"
+
+# The vpk tool that packs a release must be the Velopack version the app ships.
+velopack="$(sed -n 's:.*<PackageVersion Include="Velopack" Version="\([^"]*\)".*:\1:p' "$root/Directory.Packages.props")"
+vpk="$(sed -n 's/^ *VPK_VERSION: *\([^ #]*\).*/\1/p' "$root/.github/workflows/release.yml")"
+[[ -n "$velopack" && "$velopack" == "$vpk" ]] ||
+  fail "Velopack is '$velopack' in Directory.Packages.props but VPK_VERSION is '$vpk' in release.yml"
 
 case "${1:-}" in
   "")
