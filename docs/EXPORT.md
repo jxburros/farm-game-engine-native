@@ -179,7 +179,13 @@ art.
 `licenses/THIRD-PARTY.txt` lists the Rust crates in the player with their
 license texts. [cargo-about](https://github.com/EmbarkStudios/cargo-about)
 generates it (`tools/player-licenses/generate.sh`, checked in; CI fails when
-it is stale). Every template ships it and export copies it.
+it is stale). Every template ships it and export copies it. The script appends
+what cargo-about can't see: the embedded fonts, the plugin sandbox's QuickJS,
+rquickjs-sys and wasi-libc (`tools/player-licenses/plugin-guest`), and the
+player's own license. The engine in an exported game is Farming RPG Maker's
+code under the MIT License, so a game may be sold or given away under any
+terms as long as that file ships with it; the game's content (its project,
+art, text and sounds) belongs to its creator.
 
 The `.desktop` file starts the game from the folder it sits in
 (`Exec=sh -c "exec \\"\\$(dirname \\"\\$0\\")/WillowCreek\\"" %k`), which works in

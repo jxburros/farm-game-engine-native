@@ -1,6 +1,6 @@
 # TypeScript golden fixtures (v8)
 
-The TypeScript engine ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
+The TypeScript engine (`jxburros/farm-game-engine`, a private repository)
 was the reference implementation until schema v9. This folder generated JSON
 fixtures from it, which now live, frozen, in `fixtures/golden/v8/`: every v8
 project, save and replay must still load (the Rust tests `golden_content`,

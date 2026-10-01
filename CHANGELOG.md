@@ -186,7 +186,7 @@
     single door, dialogue and asset counts in the project stats, and the scene
     size calculator.
 - **One engine for the web and native editors.** The web editor
-  ([jxburros/farm-game-engine](https://github.com/jxburros/farm-game-engine))
+  (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,
   and opening older projects, importing, the Problems panel and a new
   "Download cartridge (.farmcart)" export run the F# authoring core compiled to

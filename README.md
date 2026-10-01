@@ -1,11 +1,12 @@
 # Farming RPG Maker — native Windows app
 
-A native desktop rewrite of [Farming RPG Maker](https://github.com/jxburros/farm-game-engine),
-a 2D farming-RPG game engine and maker. The game engine, renderer, in-game UI
-and player are Rust; project edits, validation, the content compiler and
-Export Game are F#; the editor's desktop UI is C# on .NET 10 with
-[Avalonia](https://avaloniaui.net). There is no browser or web view inside. The app updates itself from GitHub Releases through the built-in
-**Update Center**.
+A native desktop rewrite of Farming RPG Maker, a 2D farming-RPG game engine
+and maker that started as a web app (`jxburros/farm-game-engine`, a private
+repository). The game engine, renderer, in-game UI and player are Rust;
+project edits, validation, the content compiler and Export Game are F#; the
+editor's desktop UI is C# on .NET 10 with [Avalonia](https://avaloniaui.net).
+There is no browser or web view inside. The app updates itself from GitHub
+Releases through the built-in **Update Center**.
 
 | Play Mode | Edit Mode |
 |---|---|
@@ -25,7 +26,7 @@ forms with nested editors, reference pickers, profit readouts and thumbnails,
 project and export settings, Problems, mods, an art and animation studio
 (raster and SVG), creator patterns and interface panels. Everything the web
 editor did is ported (see [ROADMAP.md](ROADMAP.md#parity-with-the-web-editor)). Projects move between the native and
-[web version](https://github.com/jxburros/farm-game-engine) through the same
+web version through the same
 project JSON format (schema v9), and both apps now run one engine: the web
 editor plays through `farm-wasm` and loads, checks and compiles projects with
 this repository's F# core compiled to JavaScript. See [ROADMAP.md](ROADMAP.md).
@@ -227,3 +228,19 @@ Commit the version bump on `main`, wait for CI, then push a version tag
 
 Installed apps find the release in their Update Center. See
 [docs/RELEASING.md](docs/RELEASING.md).
+
+## License
+
+Farming RPG Maker is free software under the [MIT License](LICENSE). The app
+ships the notices of the software it includes in its `licenses` folder
+(`THIRD-PARTY-dotnet.txt` for the .NET packages, the runtime, icons and
+fonts; `THIRD-PARTY-rust.txt` for the engine library), and **Help → About
+Farming RPG Maker**
+links to the license. Every exported game carries
+`licenses/THIRD-PARTY.txt`, which ends with the engine's MIT license: the
+player is free to ship in games you sell, and your project's content stays
+yours (see [docs/EXPORT.md](docs/EXPORT.md)).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and regenerate
+the checked-in files, and [SECURITY.md](SECURITY.md) for reporting
+vulnerabilities.

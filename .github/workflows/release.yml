@@ -450,7 +450,7 @@ jobs:
           $templates = (Resolve-Path players).Path
           dotnet publish src/FarmingRpgMaker.App -c Release -r win-x64 --self-contained "-p:Version=$env:VERSION" "-p:FarmPlayerTemplatesDir=$templates" -o publish
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($file in 'players/windows-x64/farm-player.exe', 'players/windows-x64/template.json', 'players/linux-x64/farm-player', 'players/linux-x64/THIRD-PARTY.txt') {
+          foreach ($file in 'players/windows-x64/farm-player.exe', 'players/windows-x64/template.json', 'players/linux-x64/farm-player', 'players/linux-x64/THIRD-PARTY.txt', 'licenses/LICENSE.txt', 'licenses/THIRD-PARTY-dotnet.txt', 'licenses/THIRD-PARTY-rust.txt') {
             if (-not (Test-Path "publish/$file")) { throw "publish/$file is missing" }
           }
 

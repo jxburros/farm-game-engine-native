@@ -1,6 +1,6 @@
 # Porting guide: TypeScript engine → Rust, F# and C#
 
-This repo is a native port of [`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine)
+This repo is a native port of `jxburros/farm-game-engine`
 (the web version). The TypeScript engine is the **reference implementation**:
 same seed + same command/tick log must produce a state whose stable JSON and
 `hashState` output is byte-identical to the TS `stableStringify`/`hashState`.

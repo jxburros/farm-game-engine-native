@@ -17,7 +17,12 @@ public sealed class AboutViewModel(string version, IUrlLauncher launcher) : Obse
     public string RuntimeText =>
         $"{RuntimeInformation.FrameworkDescription} · Avalonia {typeof(Avalonia.Application).Assembly.GetName().Version?.ToString(3)} · {RuntimeInformation.OSDescription}";
 
+    public string LicenseText =>
+        "Free software under the MIT License. Third-party notices are in the licenses folder next to the app.";
+
     public RelayCommand OpenRepositoryCommand { get; } = new(() => launcher.Open(UpdateSource.RepositoryUrl));
+
+    public RelayCommand OpenLicenseCommand { get; } = new(() => launcher.Open(UpdateSource.RepositoryUrl + "/blob/main/LICENSE"));
 
     public RelayCommand OpenReleasesCommand { get; } = new(() => launcher.Open(UpdateSource.ReleasesPageUrl));
 }

@@ -1,8 +1,8 @@
 # Native port roadmap
 
 The native app is a phased port of the web version,
-[`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine),
-which was the reference implementation until both apps moved onto one engine.
+`jxburros/farm-game-engine` (a private repository), which was the reference
+implementation until both apps moved onto one engine.
 The port is complete: phases 1–7 below are done, including phase 7, one
 engine for the web and native versions (see [Phase 7](#phase-7-one-engine)). Each
 phase ships as a normal release through the Update Center.
@@ -266,7 +266,7 @@ Play Mode.
 
 ## Phase 7: one engine
 
-The web editor ([`jxburros/farm-game-engine`](https://github.com/jxburros/farm-game-engine))
+The web editor (`jxburros/farm-game-engine`, private)
 and this app now run the same code: Rust plays the game, F# understands the
 project. See [docs/LANGUAGES.md](docs/LANGUAGES.md#phases).
 

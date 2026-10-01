@@ -276,6 +276,10 @@ jobs:
           tools/fable/build.sh
           node tools/fable/smoke.mjs
 
+      # The editor ships tools/editor-licenses/THIRD-PARTY-dotnet.txt (its NuGet packages' notices).
+      - name: Editor license notices are current
+        run: node tools/editor-licenses/generate.mjs --check
+
       # farmc finds the linux-x64 template the build put in its players/ folder.
       - name: Export a sample game and run it (linux-x64)
         run: |
