@@ -17,16 +17,19 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|s| !s.is_empty())
 }
 
+/// The dialogue `dialogue_id`: the NPC's own dialogue of that id first, then the standalone one.
 pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str) -> Option<&'a Dialogue> {
     // NPC-owned dialogues first (interaction entry point), then the global list.
-    let npc = ctx.content.npcs.iter().find(|n| n.id == npc_id);
+    let npc = ctx.npc(npc_id);
     let owned = npc.and_then(|npc| npc.dialogue.iter().find(|d| d.id == dialogue_id));
     if owned.is_some() {
         return owned;
     }
-    ctx.content.dialogues.iter().find(|d| d.id == dialogue_id)
+    ctx.dialogue(dialogue_id)
 }
 
+/// The `chooseDialogueOption` command: pick the `index`-th visible option of the open dialogue
+/// and apply it (its outcomes, item, shop, next dialogue).
 pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: i32) -> Effects {
     let Some(dialogue_ref) = state.dialogue.clone() else {
         return Vec::new();
@@ -54,7 +57,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     }
     let mut item_grant = None;
     if let Some(give_item) = non_empty(option.give_item.as_deref()) {
-        if let Some(item) = ctx.content.items.iter().find(|i| i.id == give_item) {
+        if let Some(item) = ctx.item(give_item) {
             // `option.giveItemQuantity || 1`: undefined, 0 and NaN all fall back to 1.
             let quantity = option.give_item_quantity.filter(|q| *q != 0).unwrap_or(1);
             let result =
@@ -114,7 +117,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     // Shop-opening options close the dialogue and start a shop session.
     if let Some(open_shop_id) = non_empty(option.open_shop_id.as_deref()) {
-        let shop_exists = ctx.content.shops.iter().any(|shop| shop.id == open_shop_id);
+        let shop_exists = ctx.shop(open_shop_id).is_some();
         state.dialogue = None;
         if shop_exists {
             state.shop = Some(ShopSession { shop_id: open_shop_id.to_owned() });
@@ -135,6 +138,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     effects
 }
 
+/// The `closeDialogue` command.
 pub fn handle_close_dialogue(state: &mut GameState) -> Effects {
     if state.dialogue.is_none() {
         return Vec::new();

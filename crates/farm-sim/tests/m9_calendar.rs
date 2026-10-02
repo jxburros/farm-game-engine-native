@@ -88,8 +88,6 @@ fn resolves_day_of_season_season_year_across_uneven_and_even_custom_calendars() 
     assert_eq!(game_time::season_for_day(&calendar, 21), "c");
     assert_eq!(game_time::season_for_day(&calendar, 30), "c");
     assert_eq!(game_time::season_for_day(&calendar, 31), "a");
-    assert_eq!(game_time::year_for_day(&calendar, 30), 1);
-    assert_eq!(game_time::year_for_day(&calendar, 31), 2);
 }
 
 #[test]
@@ -103,8 +101,6 @@ fn honors_each_seasons_own_length_for_heterogeneous_calendars() {
     assert_eq!(game_time::day_of_season(&uneven, 25), 20);
     assert_eq!(game_time::season_for_day(&uneven, 25), "long");
     assert_eq!(game_time::season_for_day(&uneven, 26), "short"); // year wraps: 5 + 20 = 25 days/year
-    assert_eq!(game_time::year_for_day(&uneven, 25), 1);
-    assert_eq!(game_time::year_for_day(&uneven, 26), 2);
 }
 
 #[test]

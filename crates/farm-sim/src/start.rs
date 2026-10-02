@@ -158,6 +158,7 @@ pub struct Presentation {
 }
 
 impl Presentation {
+    /// The start of `project`: its name, assets, crops, player look and starting state.
     pub fn from_project(project: &GameProject) -> Self {
         Self {
             name: project.name.clone(),

@@ -249,6 +249,7 @@ impl fmt::Debug for HookBus {
 }
 
 impl HookBus {
+    /// An empty bus: no listeners, no recorded events.
     pub fn new() -> Self {
         Self::default()
     }

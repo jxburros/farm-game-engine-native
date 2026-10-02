@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3396df17d6feefa0b2b3bd091c46c49a9e9e257e5da47d76f4aa1b2215ae1544 # shrinks to base = 0, edits = [StartItem { index: 0, quantity: 100 }], scripted = false, log = []
+cc 8c1b5ed27c48c5c55c92964c9e8be66670086e13d2ae0b367d3946737799e02e # shrinks to base = 0, edits = [PlayerAt { scene: 0, x: 0, y: 1 }], scripted = false, log = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0]
+cc e1ded7a1ee825b23a84bb6551d9009468ebc3513c8a764efdf74f63a563968fe # shrinks to base = 5, edits = [StartItem { index: 2323363581957668917, quantity: 100 }, ItemStack { index: 5125105962748839113, max_stack: 1, stackable: false }, StartItem { index: 1558378465471076227, quantity: 1 }], scripted = false, log = []

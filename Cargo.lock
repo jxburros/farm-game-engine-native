@@ -732,6 +732,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "farm-fuzz"
+version = "0.3.0-dev"
+dependencies = [
+ "farm-cart",
+ "farm-host",
+ "farm-plugins",
+ "farm-render",
+ "farm-sim",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "farm-host"
 version = "0.3.0-dev"
 dependencies = [

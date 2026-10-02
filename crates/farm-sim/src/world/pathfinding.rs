@@ -5,6 +5,7 @@
 //! (the reference scanned its open list in insertion order; here a binary heap orders by cost,
 //! then insertion sequence, which picks the same node).
 
+use crate::content_index::{self as ids, ContentIndex};
 use crate::schema::{MachineTypeDefinition, NodeTypeDefinition, Scene, Tile};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -24,6 +25,8 @@ pub struct Walkability<'a> {
     pub node_types: &'a [NodeTypeDefinition],
     pub machine_types: &'a [MachineTypeDefinition],
     pub blocked: &'a [PathPoint],
+    /// The engine's id tables over `node_types` and `machine_types` (`None` scans the lists).
+    pub index: Option<&'a ContentIndex>,
 }
 
 const NEIGHBORS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
@@ -32,19 +35,35 @@ const NEIGHBORS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 /// machine types block (safe fallback); a depleted node does not. Shared by the player's
 /// collision and NPC pathfinding, so NPCs never walk through what stops the player.
 pub fn tile_blocks(tile: &Tile, node_types: &[NodeTypeDefinition], machine_types: &[MachineTypeDefinition]) -> bool {
+    tile_blocks_indexed(tile, node_types, machine_types, None)
+}
+
+/// [`tile_blocks`], looking the types up through the engine's id tables when given.
+pub(crate) fn tile_blocks_indexed(
+    tile: &Tile,
+    node_types: &[NodeTypeDefinition],
+    machine_types: &[MachineTypeDefinition],
+    index: Option<&ContentIndex>,
+) -> bool {
     if tile.collision {
         return true;
     }
     if let Some(node) = &tile.node {
         if node.remaining_health > 0 {
-            let definition = node_types.iter().find(|def| def.id == node.type_id);
+            let definition = match index {
+                Some(index) => index.node_types.find(node_types, &node.type_id, ids::node_type_id),
+                None => node_types.iter().find(|def| def.id == node.type_id),
+            };
             if definition.is_none_or(|def| def.blocks_movement) {
                 return true;
             }
         }
     }
     if let Some(machine) = &tile.machine {
-        let definition = machine_types.iter().find(|def| def.id == machine.type_id);
+        let definition = match index {
+            Some(index) => index.machine_types.find(machine_types, &machine.type_id, ids::machine_type_id),
+            None => machine_types.iter().find(|def| def.id == machine.type_id),
+        };
         if definition.is_none_or(|def| def.blocks_movement) {
             return true;
         }
@@ -52,11 +71,13 @@ pub fn tile_blocks(tile: &Tile, node_types: &[NodeTypeDefinition], machine_types
     false
 }
 
+/// Whether an NPC may step on `(x, y)`: inside the scene, not blocked by the tile, a node or a
+/// machine, and not taken by another NPC or the player.
 pub fn is_walkable(w: &Walkability<'_>, x: i32, y: i32) -> bool {
     let Some(tile) = w.scene.tile(x, y) else {
         return false;
     };
-    if tile_blocks(tile, w.node_types, w.machine_types) {
+    if tile_blocks_indexed(tile, w.node_types, w.machine_types, w.index) {
         return false;
     }
     !w.blocked.iter().any(|point| point.x == x && point.y == y)
@@ -263,7 +284,7 @@ mod tests {
     }
 
     fn walk<'a>(scene: &'a Scene, machine_types: &'a [MachineTypeDefinition]) -> Walkability<'a> {
-        Walkability { scene, node_types: &[], machine_types, blocked: &[] }
+        Walkability { scene, node_types: &[], machine_types, blocked: &[], index: None }
     }
 
     #[test]

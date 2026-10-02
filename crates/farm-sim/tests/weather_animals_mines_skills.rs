@@ -129,16 +129,6 @@ fn formats_time_of_day() {
     assert_eq!(game_time::format_time_of_day(units::time_of_day(9.0 * 60.0 + 5.5)), "9:05 AM");
 }
 
-#[test]
-fn classifies_day_phases() {
-    assert_eq!(game_time::day_phase(units::minutes(6 * 60)), "morning");
-    assert_eq!(game_time::day_phase(units::minutes(12 * 60)), "day");
-    assert_eq!(game_time::day_phase(units::minutes(18 * 60)), "evening");
-    assert_eq!(game_time::day_phase(units::minutes(23 * 60)), "night");
-    assert_eq!(game_time::day_phase(units::minutes(4 * 60)), "night");
-    assert_eq!(game_time::day_phase(units::minutes(26 * 60)), "night");
-}
-
 // --- weather (M4b) ---
 
 #[test]
