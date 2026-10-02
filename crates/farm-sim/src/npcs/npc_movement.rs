@@ -132,50 +132,48 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
     let stay_inside = weather::current_weather(ctx, state).is_some_and(|w| w.npcs_stay_inside);
 
     for def in movers {
-        let Some(mut npc) = state.npcs.get(&def.id).cloned() else {
+        let Some(npc) = state.npcs.get(&def.id).cloned() else {
             continue;
         };
-
         // Player proximity pause: never move while the player stands beside.
         if player_is_adjacent(state, &npc) {
             continue;
         }
+        advance_npc(ctx, state, def, npc, stay_inside, &mut rng);
+    }
 
-        // Indoors the storm does not matter: an NPC keeps a schedule that stays inside (#34).
-        let indoor = |scene_id: &str| state.world.scenes.iter().any(|scene| scene.id == scene_id && scene.is_indoor());
-        let schedule_target = active_schedule_entry(def, state.clock.time_minutes)
-            .filter(|target| !stay_inside || (indoor(&npc.scene_id) && indoor(&target.scene_id)));
+    state.rng = rng.state;
+}
 
-        if let Some(target) = schedule_target {
-            if target.scene_id != npc.scene_id {
-                // Cross-scene schedule: teleport (v1 simplification).
-                npc.scene_id = target.scene_id.clone();
-                npc.x = units::tiles(target.x);
-                npc.y = units::tiles(target.y);
-                npc.path = None;
-                state.npcs.insert(def.id.clone(), npc);
-                continue;
-            }
+/// One NPC's step: its schedule first, then its movement pattern (patrol or wander).
+fn advance_npc(ctx: &EngineContext, state: &mut GameState, def: &Npc, npc: NpcState, stay_inside: bool, rng: &mut Rng) {
+    // Indoors the storm does not matter: an NPC keeps a schedule that stays inside (#34).
+    let indoor = |scene_id: &str| state.world.scenes.iter().any(|scene| scene.id == scene_id && scene.is_indoor());
+    let schedule_target = active_schedule_entry(def, state.clock.time_minutes)
+        .filter(|target| !stay_inside || (indoor(&npc.scene_id) && indoor(&target.scene_id)));
 
-            if npc.x != units::tiles(target.x) || npc.y != units::tiles(target.y) {
-                if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
-                    let path = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
-                        pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: target.x, y: target.y })
-                    })
-                    .flatten();
-                    npc.path = to_grid_path(path);
-                }
-                let stepped = step_along_path(ctx, state, &def.id, &npc);
-                state.npcs.insert(def.id.clone(), stepped);
-                continue;
-            }
+    let mut npc = npc;
+    if let Some(target) = schedule_target {
+        if target.scene_id != npc.scene_id {
+            // Cross-scene schedule: teleport (v1 simplification).
+            npc.scene_id = target.scene_id.clone();
+            npc.x = units::tiles(target.x);
+            npc.y = units::tiles(target.y);
+            npc.path = None;
+            state.npcs.insert(def.id.clone(), npc);
+            return;
         }
-
-        if !def.can_move {
-            continue;
+        if npc.x != units::tiles(target.x) || npc.y != units::tiles(target.y) {
+            walk_toward(ctx, state, &def.id, npc, PathPoint { x: target.x, y: target.y });
+            return;
         }
+    }
 
-        if def.move_pattern.as_deref() == Some("patrol") {
+    if !def.can_move {
+        return;
+    }
+    match def.move_pattern.as_deref() {
+        Some("patrol") => {
             if let Some(patrol_points) = def.patrol_points.as_ref().filter(|points| !points.is_empty()) {
                 let count = patrol_points.len();
                 let index = npc.patrol_index.unwrap_or(0) as usize % count;
@@ -184,44 +182,48 @@ pub fn advance_npcs(ctx: &EngineContext, state: &mut GameState, minutes: u32) {
                     npc.patrol_index = Some(((index + 1) % count) as u32);
                     npc.path = None;
                     state.npcs.insert(def.id.clone(), npc);
-                    continue;
+                } else {
+                    walk_toward(ctx, state, &def.id, npc, PathPoint { x: waypoint.x, y: waypoint.y });
                 }
-                if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
-                    let path = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
-                        pathfinding::find_path(w, npc_tile(&npc), PathPoint { x: waypoint.x, y: waypoint.y })
-                    })
-                    .flatten();
-                    npc.path = to_grid_path(path);
-                }
-                let stepped = step_along_path(ctx, state, &def.id, &npc);
-                state.npcs.insert(def.id.clone(), stepped);
-                continue;
             }
         }
-
-        if def.move_pattern.as_deref() == Some("wander") {
-            // Move at most once per WANDER_PERIOD_MINUTES; use the minute counter
-            // so behavior is time-based rather than frame-based.
-            if !units::whole_minute(state.clock.time_minutes).is_multiple_of(WANDER_PERIOD_MINUTES) {
-                continue;
-            }
-            let pick = DIRECTIONS[rng.int(0, 3) as usize];
-            let nx = npc.x.saturating_add(units::tiles(pick.0));
-            let ny = npc.y.saturating_add(units::tiles(pick.1));
-            let radius = i64::from(units::TILE) * i64::from(def.wander_radius.unwrap_or(3));
-            if (i64::from(nx) - i64::from(def.x)).abs() > radius || (i64::from(ny) - i64::from(def.y)).abs() > radius {
-                continue;
-            }
-            let walkable = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
-                pathfinding::is_walkable(w, units::tile_of(nx), units::tile_of(ny))
-            });
-            if walkable == Some(true) {
-                npc.x = nx;
-                npc.y = ny;
-                state.npcs.insert(def.id.clone(), npc);
-            }
-        }
+        Some("wander") => wander(ctx, state, def, npc, rng),
+        _ => {}
     }
+}
 
-    state.rng = rng.state;
+/// Take one step toward `goal`, finding a path first when the NPC has none.
+fn walk_toward(ctx: &EngineContext, state: &mut GameState, npc_id: &str, mut npc: NpcState, goal: PathPoint) {
+    if npc.path.as_ref().is_none_or(|path| path.is_empty()) {
+        let path =
+            with_walkability(ctx, state, npc_id, &npc.scene_id, |w| pathfinding::find_path(w, npc_tile(&npc), goal))
+                .flatten();
+        npc.path = to_grid_path(path);
+    }
+    let stepped = step_along_path(ctx, state, npc_id, &npc);
+    state.npcs.insert(npc_id.to_owned(), stepped);
+}
+
+/// A wandering NPC moves at most once per [`WANDER_PERIOD_MINUTES`] (the minute counter makes it
+/// time-based rather than frame-based): one random step, within its wander radius of its home
+/// tile, onto a walkable tile.
+fn wander(ctx: &EngineContext, state: &mut GameState, def: &Npc, mut npc: NpcState, rng: &mut Rng) {
+    if !units::whole_minute(state.clock.time_minutes).is_multiple_of(WANDER_PERIOD_MINUTES) {
+        return;
+    }
+    let pick = DIRECTIONS[rng.int(0, 3) as usize];
+    let nx = npc.x.saturating_add(units::tiles(pick.0));
+    let ny = npc.y.saturating_add(units::tiles(pick.1));
+    let radius = i64::from(units::TILE) * i64::from(def.wander_radius.unwrap_or(3));
+    if (i64::from(nx) - i64::from(def.x)).abs() > radius || (i64::from(ny) - i64::from(def.y)).abs() > radius {
+        return;
+    }
+    let walkable = with_walkability(ctx, state, &def.id, &npc.scene_id, |w| {
+        pathfinding::is_walkable(w, units::tile_of(nx), units::tile_of(ny))
+    });
+    if walkable == Some(true) {
+        npc.x = nx;
+        npc.y = ny;
+        state.npcs.insert(def.id.clone(), npc);
+    }
 }

@@ -57,36 +57,15 @@ pub fn strike_node(
         return NodeStrikeOutcome::default();
     };
 
-    if definition.required_tool != tool_type {
-        return NodeStrikeOutcome {
-            effects: vec![Effect::message(
-                message_levels::INFO,
-                format!("{} needs a {}.", definition.name, replace_first_dash(&definition.required_tool)),
-            )],
-            struck: false,
-        };
-    }
-    if tool_tier < definition.required_tool_tier {
-        return NodeStrikeOutcome {
-            effects: vec![Effect::message(
-                message_levels::INFO,
-                format!(
-                    "Your {} isn't strong enough for {}.",
-                    replace_first_dash(tool_type),
-                    definition.name.to_lowercase()
-                ),
-            )],
-            struck: false,
-        };
+    if let Some(refused) = tool_refusal(definition, tool_type, tool_tier) {
+        return NodeStrikeOutcome { effects: vec![refused], struck: false };
     }
 
     let damage = tool_power.max(1);
     let remaining = node.remaining_health.saturating_sub(damage);
 
     let mut effects: Effects = Vec::new();
-    let mut added_drops: Vec<GatherDrop> = Vec::new();
-
-    if remaining > 0 {
+    let added_drops = if remaining > 0 {
         if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
             tile.node = Some(TileNode { remaining_health: remaining, ..node.clone() });
         }
@@ -94,71 +73,10 @@ pub fn strike_node(
             message_levels::INFO,
             format!("{}: {}/{}", definition.name, remaining, definition.health),
         ));
+        Vec::new()
     } else {
-        // Depleted: roll the weighted drop table once.
-        let mut rng = Rng::new(state.rng.clone());
-        let mut drops: Vec<GatherDrop> = Vec::new();
-        if !definition.drops.is_empty() {
-            let weights: Vec<u32> = definition.drops.iter().map(|drop| drop.weight).collect();
-            if let Some(index) = rng.weighted(&weights) {
-                let drop = &definition.drops[index];
-                let quantity = if drop.max > drop.min {
-                    // min ≤ result ≤ max
-                    rng.int(i64::from(drop.min), i64::from(drop.max)) as u32
-                } else {
-                    drop.min
-                };
-                if quantity > 0 {
-                    drops.push(GatherDrop { item_id: drop.item_id.clone(), quantity });
-                }
-            }
-        }
-        let rng_state = rng.state;
-
-        let mut inventory = state.player.inventory.clone();
-        let mut received: Vec<String> = Vec::new();
-        for drop in &drops {
-            let Some(item) = ctx.item(&drop.item_id) else {
-                continue;
-            };
-            let result = inventory::add_item(&inventory, item, drop.quantity, state.player.max_inventory_size, None);
-            if result.added {
-                inventory = result.inventory;
-                received.push(format!("{}x {}", drop.quantity, item.name));
-                added_drops.push(drop.clone());
-            } else {
-                effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
-            }
-        }
-        state.player.inventory = inventory;
-
-        let depleted_on_day = state.clock.day;
-        // The tile exists: the node was read from it above.
-        if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
-            if definition.respawn_after().is_some() {
-                tile.node = Some(TileNode {
-                    type_id: node.type_id.clone(),
-                    remaining_health: 0,
-                    depleted_on_day: Some(depleted_on_day),
-                    ..TileNode::default()
-                });
-            } else {
-                tile.node = None;
-            }
-        }
-
-        effects.push(Effect::message(
-            message_levels::SUCCESS,
-            if received.is_empty() {
-                format!("{} cleared!", definition.name)
-            } else {
-                format!("{} cleared! Got {}", definition.name, received.join(", "))
-            },
-        ));
-        ctx.emit(HookEvent::ResourceGather(ResourceGatherHookPayload { node_type_id: definition.id.clone(), drops }));
-
-        state.rng = rng_state;
-    }
+        deplete_node(ctx, state, (scene_index, x, y), &node, definition, &mut effects)
+    };
 
     // Gathered drops count toward collect objectives (M3).
     for drop in &added_drops {
@@ -175,6 +93,110 @@ pub fn strike_node(
     }
 
     NodeStrikeOutcome { effects, struck: true }
+}
+
+/// Why the tool cannot strike a node of `definition` (the wrong tool, or too low a tier).
+fn tool_refusal(definition: &NodeTypeDefinition, tool_type: &str, tool_tier: i32) -> Option<Effect> {
+    if definition.required_tool != tool_type {
+        return Some(Effect::message(
+            message_levels::INFO,
+            format!("{} needs a {}.", definition.name, replace_first_dash(&definition.required_tool)),
+        ));
+    }
+    if tool_tier < definition.required_tool_tier {
+        return Some(Effect::message(
+            message_levels::INFO,
+            format!(
+                "Your {} isn't strong enough for {}.",
+                replace_first_dash(tool_type),
+                definition.name.to_lowercase()
+            ),
+        ));
+    }
+    None
+}
+
+/// Roll the weighted drop table once: at most one drop.
+fn roll_drops(definition: &NodeTypeDefinition, rng: &mut Rng) -> Vec<GatherDrop> {
+    let mut drops: Vec<GatherDrop> = Vec::new();
+    if definition.drops.is_empty() {
+        return drops;
+    }
+    let weights: Vec<u32> = definition.drops.iter().map(|drop| drop.weight).collect();
+    if let Some(index) = rng.weighted(&weights) {
+        let drop = &definition.drops[index];
+        let quantity = if drop.max > drop.min {
+            // min ≤ result ≤ max
+            rng.int(i64::from(drop.min), i64::from(drop.max)) as u32
+        } else {
+            drop.min
+        };
+        if quantity > 0 {
+            drops.push(GatherDrop { item_id: drop.item_id.clone(), quantity });
+        }
+    }
+    drops
+}
+
+/// The last strike: roll the drops into the inventory (what does not fit stays behind),
+/// deplete or clear the node, announce it and emit `onResourceGather`. Returns the drops the
+/// player received.
+fn deplete_node(
+    ctx: &EngineContext,
+    state: &mut GameState,
+    (scene_index, x, y): (usize, i32, i32),
+    node: &TileNode,
+    definition: &NodeTypeDefinition,
+    effects: &mut Effects,
+) -> Vec<GatherDrop> {
+    let mut rng = Rng::new(state.rng.clone());
+    let drops = roll_drops(definition, &mut rng);
+
+    let mut added_drops: Vec<GatherDrop> = Vec::new();
+    let mut inventory = state.player.inventory.clone();
+    let mut received: Vec<String> = Vec::new();
+    for drop in &drops {
+        let Some(item) = ctx.item(&drop.item_id) else {
+            continue;
+        };
+        let result = inventory::add_item(&inventory, item, drop.quantity, state.player.max_inventory_size, None);
+        if result.added {
+            inventory = result.inventory;
+            received.push(format!("{}x {}", drop.quantity, item.name));
+            added_drops.push(drop.clone());
+        } else {
+            effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+        }
+    }
+    state.player.inventory = inventory;
+
+    let depleted_on_day = state.clock.day;
+    // The tile exists: the node was read from it.
+    if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
+        if definition.respawn_after().is_some() {
+            tile.node = Some(TileNode {
+                type_id: node.type_id.clone(),
+                remaining_health: 0,
+                depleted_on_day: Some(depleted_on_day),
+                ..TileNode::default()
+            });
+        } else {
+            tile.node = None;
+        }
+    }
+
+    effects.push(Effect::message(
+        message_levels::SUCCESS,
+        if received.is_empty() {
+            format!("{} cleared!", definition.name)
+        } else {
+            format!("{} cleared! Got {}", definition.name, received.join(", "))
+        },
+    ));
+    ctx.emit(HookEvent::ResourceGather(ResourceGatherHookPayload { node_type_id: definition.id.clone(), drops }));
+
+    state.rng = rng.state;
+    added_drops
 }
 
 #[cfg(test)]
