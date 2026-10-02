@@ -8,6 +8,7 @@ namespace FarmingRpgMaker.Updates.Testing;
 public sealed class FakeUpdateService : IUpdateService
 {
     private TaskCompletionSource? _downloadGate;
+    private TaskCompletionSource? _checkGate;
 
     public string CurrentVersion { get; set; } = "0.1.0";
 
@@ -32,8 +33,14 @@ public sealed class FakeUpdateService : IUpdateService
     /// <summary>When true, <see cref="DownloadAsync"/> pauses after the first progress step until <see cref="ReleaseDownload"/>.</summary>
     public bool HoldDownload { get; set; }
 
-    /// <summary>Artificial latency for <see cref="CheckAsync"/>.</summary>
+    /// <summary>Artificial latency for <see cref="CheckAsync"/> (demos; tests use <see cref="HoldNextCheck"/>).</summary>
     public TimeSpan CheckDelay { get; set; } = TimeSpan.Zero;
+
+    /// <summary>
+    /// When true, the next <see cref="CheckAsync"/> waits until <see cref="ReleaseCheck"/> or its
+    /// cancellation, so a test decides when a check is in flight. Resets once a check holds.
+    /// </summary>
+    public bool HoldNextCheck { get; set; }
 
     public int CheckCount { get; private set; }
 
@@ -49,6 +56,13 @@ public sealed class FakeUpdateService : IUpdateService
     {
         CheckCount++;
         CheckedChannels.Add(Channel);
+        if (HoldNextCheck)
+        {
+            HoldNextCheck = false;
+            _checkGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await _checkGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (CheckDelay > TimeSpan.Zero)
         {
             await Task.Delay(CheckDelay, cancellationToken).ConfigureAwait(false);
@@ -81,6 +95,9 @@ public sealed class FakeUpdateService : IUpdateService
             throw DownloadFailure;
         }
     }
+
+    /// <summary>Lets a check held by <see cref="HoldNextCheck"/> continue.</summary>
+    public void ReleaseCheck() => _checkGate?.TrySetResult();
 
     /// <summary>Lets a download paused by <see cref="HoldDownload"/> continue.</summary>
     public void ReleaseDownload() => _downloadGate?.TrySetResult();

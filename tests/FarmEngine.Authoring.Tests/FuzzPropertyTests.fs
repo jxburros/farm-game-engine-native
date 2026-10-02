@@ -1,7 +1,7 @@
 /// FsCheck properties at the F# untrusted-input boundaries (#116): the JSON parser and the
 /// cartridge reader take files from anywhere, so they must answer every input with a value or an
-/// error, never an exception. A failure prints FsCheck's `Replay` seed; pass it as
-/// `[<Property(Replay = "…")>]` to rerun that case.
+/// error, never an exception. A failure prints FsCheck's `Replay` seed; set it as
+/// FARM_FSCHECK_REPLAY (PropertyTests.fs) or pass it as `[<Property(Replay = "…")>]` to rerun that case.
 module FarmEngine.Authoring.Tests.FuzzPropertyTests
 
 open System

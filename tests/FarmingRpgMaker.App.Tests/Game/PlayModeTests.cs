@@ -243,15 +243,13 @@ public sealed class PlayModeTests
         using var host = new GameTestHost(autoRun: true);
         host.EnterPlay();
         var surface = host.Play.Surface;
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (surface.FrameCount < 5 && DateTime.UtcNow < deadline)
+        // The loop's frames are posted from its worker thread; each wait round also ticks the
+        // headless render timer so they get drawn.
+        PumpUntil(() =>
         {
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-            Pump();
-            Thread.Sleep(5);
-        }
-
-        Assert.True(surface.FrameCount >= 5, $"frames: {surface.FrameCount}");
+            return surface.FrameCount >= 5;
+        }, "five frames from the worker thread");
         // Leaving Play Mode stops the loop and frees the player while a frame may be in flight.
         host.ViewModel.Mode = EditorMode.Edit;
         Pump();

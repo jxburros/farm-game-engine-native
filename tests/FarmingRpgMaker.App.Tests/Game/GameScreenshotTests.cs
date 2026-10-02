@@ -3,18 +3,23 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using FarmingRpgMaker.App.Game;
+using FarmingRpgMaker.App.Tests.Ui;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
 
 namespace FarmingRpgMaker.App.Tests.Game;
 
 /// <summary>
-/// Renders Play Mode and Edit Mode with Skia. Always checks a frame can be captured; set
-/// <c>FRM_SCREENSHOT_DIR</c> to save the PNGs used in docs/media
-/// (play-mode.png, play-dialogue.png, edit-mode.png).
+/// Renders Play Mode and Edit Mode with Skia and compares each frame with its reference in
+/// <c>fixtures/editor/</c> (<see cref="ScreenshotGoldens"/>; re-record with
+/// <c>FARM_EDITOR_BLESS=1</c>). Set <c>FRM_SCREENSHOT_DIR</c> to also save the full-size PNGs used
+/// in docs/media (play-mode.png, play-dialogue.png, edit-mode.png).
 /// </summary>
 public sealed class GameScreenshotTests
 {
     private static readonly string? OutputDir = Environment.GetEnvironmentVariable("FRM_SCREENSHOT_DIR");
+
+    /// <summary>A fixed game seed: the project's own changes with every new test project (weather).</summary>
+    private const string Seed = "editor-screenshots";
 
     /// <summary>Holds a movement key until the player passes <paramref name="until"/> (max 3 s).</summary>
     private static void Walk(GameTestHost host, PhysicalKey key, Func<Snapshot, bool> until)
@@ -68,7 +73,7 @@ public sealed class GameScreenshotTests
     [AvaloniaFact]
     public void PlayMode_StarterFarm()
     {
-        using var host = new GameTestHost();
+        using var host = new GameTestHost(seed: Seed);
         host.EnterPlay();
         host.Frames(5);
 
@@ -99,7 +104,7 @@ public sealed class GameScreenshotTests
     [AvaloniaFact]
     public void PlayMode_Dialogue()
     {
-        using var host = new GameTestHost();
+        using var host = new GameTestHost(seed: Seed);
         host.EnterPlay();
         host.Frames(2);
 
@@ -145,5 +150,7 @@ public sealed class GameScreenshotTests
             Directory.CreateDirectory(OutputDir);
             frame.Save(Path.Combine(OutputDir, fileName));
         }
+
+        ScreenshotGoldens.Check(frame, fileName);
     }
 }
