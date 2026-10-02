@@ -1,0 +1,79 @@
+name: Fuzz
+
+# cargo-fuzz over the untrusted-input boundaries (#116): cartridges, saves, images, projects,
+# host requests and plugin output (crates/farm-fuzz, fuzz/). Optional: weekly and on demand,
+# nothing waits on it. CI's `cargo test` runs the same targets on stable (seed corpora, random
+# and edited inputs), so this job only adds coverage-guided search. A crash uploads its input:
+# `cargo +nightly fuzz run <target> <file>` replays it.
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds of fuzzing per target
+        default: '300'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: cargo-fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - cartridge
+          - save
+          - save_migration
+          - image
+          - project
+          - commands
+          - render_request
+          - preview
+          - session
+          - plugin_mutations
+    env:
+      TARGET: ${{ matrix.target }}
+      SECONDS_PER_TARGET: ${{ inputs.seconds || '300' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The pinned stable toolchain (rust-toolchain.toml) writes the corpus; libFuzzer needs nightly.
+      - name: Rust toolchains
+        run: |
+          rustup toolchain install
+          rustup toolchain install nightly --profile minimal
+          rustc --version
+          rustc +nightly --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            .
+            fuzz
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-fuzz
+
+      - name: Seed corpus from the fixtures
+        run: cargo run --locked -p farm-fuzz --example write_corpus
+
+      - name: Fuzz
+        run: cargo +nightly fuzz run "$TARGET" -- -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=4096
+
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

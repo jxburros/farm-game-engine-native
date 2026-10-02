@@ -451,6 +451,16 @@ New tests:
 - **Property tests:** proptest (Rust) for "replay ⇒ same hash" and "save →
   load ⇒ same state". FsCheck (F#) for "migrate(vN) is valid vN+1" and
   "compile never throws on a project with no validation errors".
+- **Fuzzing:** `crates/farm-fuzz` has one entry point per untrusted-input
+  boundary (cartridges, saves and their migrations, images, project JSON,
+  render, preview and session requests, plugin mutations, random play) and
+  the state invariants every reachable state keeps (money ≥ 0, energy in
+  range, stacks and slots within their caps, the player on a scene's grid,
+  grids of their scene's size). Its tests run every target on stable over
+  its seed corpus, random bytes and edited seeds, and the invariants under
+  generated content; `fuzz/` wraps the same targets for cargo-fuzz (nightly,
+  the optional weekly `Fuzz` workflow). A proptest failure prints its shrunk
+  input; `PROPTEST_RNG_SEED` replays a run and `PROPTEST_CASES` lengthens it.
 - **Benchmarks** (`farm-bench`, criterion), with budgets checked in CI once
   measured. Starting targets for a mid-range laptop:
 

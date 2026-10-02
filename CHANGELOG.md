@@ -39,6 +39,21 @@
   of enabled content packs join the world. Problems reports the grids, loops,
   blocked landings and sizes the game would have to fix.
 
+- **Fuzz targets and invariant tests, from the 2026-09-30 audit.** The new
+  `farm-fuzz` crate feeds arbitrary and edited bytes to every place where
+  outside input reaches the engine (cartridges, saves, save migrations,
+  images, project JSON, render, preview and session requests, plugin
+  mutations) and checks after every command and tick that money stays
+  non-negative, energy in range, stacks and slots within their caps and the
+  player on the grid, under generated content. `cargo test` runs it on
+  stable; `fuzz/` runs the same targets under cargo-fuzz (an optional weekly
+  workflow). What it found is fixed: a new game whose project starts the
+  player beside the scene (or with a collision box over its edge) could walk
+  off the map, so the player now starts on the nearest tile; a starting
+  inventory over its stack sizes or slot count goes to quarantine and comes
+  back when there is room; negative starting money and energy above the
+  maximum are clamped; and an item stack held from before its stack size
+  shrank no longer grows past the new size.
 - **Exported games, from the 2026-09-30 audit:**
   - Windows games open no console window: Export marks the executable as a
     GUI program (the template stays a console program for `--headless`).

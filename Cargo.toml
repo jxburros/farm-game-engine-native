@@ -18,10 +18,12 @@ members = [
     "crates/farm-player",
     "crates/farm-plugins",
     "crates/farm-bench",
+    "crates/farm-fuzz",
 ]
 # The plugin guest builds only for wasm32-wasip1 (tools/plugin-guest/build.sh); its output is
-# checked in under crates/farm-plugins/guest.
-exclude = ["crates/farm-plugin-guest"]
+# checked in under crates/farm-plugins/guest. The cargo-fuzz targets (fuzz/) need nightly; the
+# stable tests of crates/farm-fuzz run the same entry points.
+exclude = ["crates/farm-plugin-guest", "fuzz"]
 
 [workspace.package]
 version = "0.3.0-dev"
