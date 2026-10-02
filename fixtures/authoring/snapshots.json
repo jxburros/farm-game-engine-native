@@ -3142,32 +3142,32 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "30bf9186f397b06c",
-    "stable": "444c1a6e1487f56c",
+    "json": "8e174167a7e2bd3e",
+    "stable": "8fa2cde5389305e5",
     "problems": [
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "decd154aa94de133",
-    "cartridge": "89b5ce0e5430ba1b",
+    "content": "48ae1d7ef1a2f1b1",
+    "cartridge": "a42f80c210c8dad0",
     "gameOk": true,
     "gameErrors": [],
-    "game": "444c1a6e1487f56c"
+    "game": "8fa2cde5389305e5"
   },
   "code/quest": {
     "ok": true,
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "cbec933657609e7c",
-    "stable": "99b7c05b7f976f7f",
+    "json": "1678264c7f47baab",
+    "stable": "6bb2d60a284c6938",
     "problems": [
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "fc3c116cde15c65f",
-    "cartridge": "a1adff33dc4c836f",
+    "content": "cf66e4d8d8edc9f0",
+    "cartridge": "619d2407c401d587",
     "gameOk": true,
     "gameErrors": [],
-    "game": "99b7c05b7f976f7f"
+    "game": "6bb2d60a284c6938"
   },
   "code/template-starter": {
     "ok": true,
@@ -3206,31 +3206,31 @@
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "30bf9186f397b06c",
-    "stable": "444c1a6e1487f56c",
+    "json": "8e174167a7e2bd3e",
+    "stable": "8fa2cde5389305e5",
     "problems": [
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "decd154aa94de133",
-    "cartridge": "89b5ce0e5430ba1b",
+    "content": "48ae1d7ef1a2f1b1",
+    "cartridge": "a42f80c210c8dad0",
     "gameOk": true,
     "gameErrors": [],
-    "game": "444c1a6e1487f56c"
+    "game": "8fa2cde5389305e5"
   },
   "code/template-quest": {
     "ok": true,
     "fromVersion": 9,
     "migrated": false,
     "errors": [],
-    "json": "cbec933657609e7c",
-    "stable": "99b7c05b7f976f7f",
+    "json": "1678264c7f47baab",
+    "stable": "6bb2d60a284c6938",
     "problems": [
       "warning|minigame.noTiers|minigames[0].resultTiers|Minigame \"Fishing\" has no result tiers, so its score changes nothing|minigame"
     ],
-    "content": "fc3c116cde15c65f",
-    "cartridge": "a1adff33dc4c836f",
+    "content": "cf66e4d8d8edc9f0",
+    "cartridge": "619d2407c401d587",
     "gameOk": true,
     "gameErrors": [],
-    "game": "99b7c05b7f976f7f"
+    "game": "6bb2d60a284c6938"
   }
 }
