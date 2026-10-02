@@ -4,6 +4,9 @@
 //! - The callback never allocates: every preset is rendered when the stream opens
 //!   ([`SoundBank`]), sounds travel as shared sample buffers through a bounded channel, and the
 //!   bank keeps every buffer alive, so the callback never frees one either.
+//! - Music and ambience loops ([`MusicBank`]) render on a thread of their own when the stream
+//!   opens (a few seconds of work); until they are ready the game plays without them. The
+//!   callback loops them in the mixer's two slots and fades between cues.
 //! - Device loss (headphones unplugged, a Bluetooth device gone) or a new default device reopens
 //!   the stream on the current default device, retrying with a growing delay;
 //!   [`Audio::maintain`] does that and is called every frame.
@@ -15,9 +18,10 @@
 // Wall-clock time paces device checks and retries here; it never reaches the simulation.
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
-use crate::audio::{Mixer, SoundBank, SoundRequest, Voice};
+use crate::audio::{LoopRequest, Mixer, MusicBank, SoundBank, SoundRequest, Voice, LOOP_SLOTS};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, ErrorKind, FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
+use farm_runtime::music::MusicCue;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
@@ -39,11 +43,22 @@ pub fn is_fatal(kind: ErrorKind) -> bool {
     !matches!(kind, ErrorKind::Xrun | ErrorKind::DeviceChanged | ErrorKind::RealtimeDenied)
 }
 
+/// What the game sends the audio callback.
+enum Command {
+    Sound(Voice),
+    Loop(usize, LoopRequest),
+}
+
 /// An open stream and what feeds it.
 struct Output {
     _stream: Stream,
-    sender: SyncSender<Voice>,
+    sender: SyncSender<Command>,
     bank: SoundBank,
+    /// The music loops, once the thread rendering them is done.
+    music: Option<MusicBank>,
+    music_ready: Receiver<MusicBank>,
+    /// The cue the callback was last told about.
+    sent: Option<MusicCue>,
     /// The device the stream plays on (to notice a new default device).
     device: Option<DeviceId>,
     /// Set by the error callback when the stream died.
@@ -53,6 +68,8 @@ struct Output {
 /// A running output stream that follows the default device.
 pub struct Audio {
     output: Option<Output>,
+    /// The music and ambience the game wants (sent again when a stream reopens).
+    cue: MusicCue,
     /// When to check the default device or retry opening it next.
     next_check: Instant,
     retry_delay: Duration,
@@ -68,7 +85,7 @@ impl std::fmt::Debug for Audio {
 fn build<T>(
     device: &cpal::Device,
     config: StreamConfig,
-    receiver: Receiver<Voice>,
+    receiver: Receiver<Command>,
     failed: Arc<AtomicBool>,
 ) -> Result<Stream, cpal::Error>
 where
@@ -80,8 +97,11 @@ where
     device.build_output_stream::<T, _, _>(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            while let Ok(voice) = receiver.try_recv() {
-                mixer.start(voice);
+            while let Ok(command) = receiver.try_recv() {
+                match command {
+                    Command::Sound(voice) => mixer.start(voice),
+                    Command::Loop(slot, request) => mixer.set_loop(slot, request),
+                }
             }
             if scratch.len() < data.len() {
                 // Only when the device asks for a larger buffer than ever before.
@@ -112,7 +132,7 @@ fn open() -> Option<Output> {
     let format = supported.sample_format();
     let config = supported.config();
     let bank = SoundBank::new(config.sample_rate);
-    let (sender, receiver) = mpsc::sync_channel::<Voice>(QUEUE);
+    let (sender, receiver) = mpsc::sync_channel::<Command>(QUEUE);
     let failed = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&failed);
     let stream = match format {
@@ -141,7 +161,21 @@ fn open() -> Option<Output> {
         }
     };
     stream.play().ok()?;
-    Some(Output { _stream: stream, sender, bank, device: device.id().ok(), failed })
+    let (music_sender, music_ready) = mpsc::channel();
+    let rate = config.sample_rate;
+    let _ = std::thread::Builder::new().name("farm-music".to_owned()).spawn(move || {
+        let _ = music_sender.send(MusicBank::new(rate));
+    });
+    Some(Output {
+        _stream: stream,
+        sender,
+        bank,
+        music: None,
+        music_ready,
+        sent: None,
+        device: device.id().ok(),
+        failed,
+    })
 }
 
 /// The current default output device.
@@ -153,16 +187,45 @@ impl Audio {
     /// Opens the default output device; `None` when there is none or it refuses.
     pub fn start() -> Option<Self> {
         let output = open()?;
-        Some(Self { output: Some(output), next_check: Instant::now() + DEVICE_CHECK, retry_delay: RETRY_FIRST })
+        Some(Self {
+            output: Some(output),
+            cue: MusicCue::default(),
+            next_check: Instant::now() + DEVICE_CHECK,
+            retry_delay: RETRY_FIRST,
+        })
     }
 
     /// Plays a sound (silently dropped while the device is gone).
     pub fn play(&self, request: SoundRequest) {
         if let Some(output) = &self.output {
             if let Some(voice) = output.bank.voice(&request) {
-                let _ = output.sender.try_send(voice);
+                let _ = output.sender.try_send(Command::Sound(voice));
             }
         }
+    }
+
+    /// The music and ambience to play (every frame is fine: only a change reaches the device).
+    pub fn set_music(&mut self, cue: MusicCue) {
+        self.cue = cue;
+        self.send_music();
+    }
+
+    fn send_music(&mut self) {
+        let Some(output) = self.output.as_mut() else { return };
+        if output.music.is_none() {
+            output.music = output.music_ready.try_recv().ok();
+        }
+        let Some(music) = &output.music else { return };
+        if output.sent == Some(self.cue) {
+            return;
+        }
+        let slots: [LoopRequest; LOOP_SLOTS] = music.slots(&self.cue);
+        let mut sent = true;
+        for (slot, request) in slots.into_iter().enumerate() {
+            sent &= output.sender.try_send(Command::Loop(slot, request)).is_ok();
+        }
+        // A full queue: try again next frame.
+        output.sent = sent.then_some(self.cue);
     }
 
     /// Whether a stream is open now.
@@ -173,6 +236,7 @@ impl Audio {
     /// Reopens the stream after a device loss, or on the new default device after a change.
     /// Cheap between checks; call it every frame.
     pub fn maintain(&mut self) {
+        self.send_music();
         let failed = self.output.as_ref().is_none_or(|output| output.failed.load(Ordering::Relaxed));
         if failed && self.output.is_some() {
             eprintln!("Audio device lost; trying to reopen it.");
@@ -214,22 +278,32 @@ impl Audio {
 /// when there is no device. Dropping it closes the stream.
 #[derive(Debug)]
 pub struct SpeakerThread {
-    sender: Option<Sender<SoundRequest>>,
+    sender: Option<Sender<SpeakerCommand>>,
     thread: Option<JoinHandle<()>>,
+}
+
+enum SpeakerCommand {
+    Sound(SoundRequest),
+    Music(MusicCue),
 }
 
 impl SpeakerThread {
     pub fn start() -> Self {
-        let (sender, receiver) = mpsc::channel::<SoundRequest>();
+        let (sender, receiver) = mpsc::channel::<SpeakerCommand>();
         let thread = std::thread::Builder::new()
             .name("farm-audio".to_owned())
             .spawn(move || {
                 let mut audio = Audio::start();
                 loop {
                     match receiver.recv_timeout(Duration::from_millis(250)) {
-                        Ok(request) => {
+                        Ok(SpeakerCommand::Sound(request)) => {
                             if let Some(audio) = &audio {
                                 audio.play(request);
+                            }
+                        }
+                        Ok(SpeakerCommand::Music(cue)) => {
+                            if let Some(audio) = audio.as_mut() {
+                                audio.set_music(cue);
                             }
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -246,7 +320,14 @@ impl SpeakerThread {
 
     pub fn play(&self, request: SoundRequest) {
         if let Some(sender) = &self.sender {
-            let _ = sender.send(request);
+            let _ = sender.send(SpeakerCommand::Sound(request));
+        }
+    }
+
+    /// The music and ambience a frame wants (see [`Audio::set_music`]).
+    pub fn set_music(&self, cue: MusicCue) {
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(SpeakerCommand::Music(cue));
         }
     }
 }

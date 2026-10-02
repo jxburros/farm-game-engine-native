@@ -164,9 +164,10 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             let text_width = area.width - 20.0 - width - 10.0;
             let ingredients = ingredient_line(view, recipe);
             let ingredients_height = ui.paragraph_height(&ingredients, 12.5, FontId::Regular, text_width);
-            let blocked = (!status.craftable).then_some(status.message.as_deref()).flatten();
+            let blocked =
+                (!status.craftable).then_some(status.message.as_ref()).flatten().map(|message| lang.message(message));
             let blocked_height =
-                blocked.map_or(0.0, |message| ui.paragraph_height(message, 12.5, FontId::Regular, text_width));
+                blocked.as_ref().map_or(0.0, |message| ui.paragraph_height(message, 12.5, FontId::Regular, text_width));
             let height = (line(ui, 14.0) + ingredients_height + blocked_height + 16.0).max(small + 16.0);
             let (content_rect, buttons) = row(ui, area, y, height, width);
             let mut text_y = content_rect.y;
@@ -189,7 +190,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
                 colors.muted,
                 TextAlign::Left,
             );
-            if let Some(message) = blocked {
+            if let Some(message) = &blocked {
                 let color = if status.reason.as_deref() == Some(craft_block_reasons::STATION) {
                     colors.error
                 } else {

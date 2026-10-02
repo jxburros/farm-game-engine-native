@@ -148,3 +148,31 @@ fn cancel_reports_once_without_a_score() {
     assert_eq!(*cancelled.lock().unwrap(), 1);
     assert!(scores.lock().unwrap().is_empty());
 }
+
+/// The editor offers the built-in kinds and their settings from F# `MinigameKinds`; both lists
+/// must name the same kinds, in the same order, with the same settings.
+#[test]
+fn the_editor_lists_the_same_kinds_and_settings() {
+    let path: std::path::PathBuf =
+        [env!("CARGO_MANIFEST_DIR"), "..", "..", "src", "FarmEngine.Authoring", "MinigameKinds.fs"].iter().collect();
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let quoted = |line: &str| line.split('"').nth(1).map(str::to_owned);
+    let mut fsharp: Vec<(String, Vec<String>)> = Vec::new();
+    for line in source.lines().map(str::trim) {
+        let setting = line.strip_prefix("Settings = [ ").unwrap_or(line);
+        if let Some(rest) = line.strip_prefix("{ Id = ").or_else(|| line.strip_prefix("[ { Id = ")) {
+            fsharp.push((quoted(rest).expect("kind id"), Vec::new()));
+        } else if ["[ number \"", "[ integer \"", "[ text \"", "number \"", "integer \"", "text \""]
+            .iter()
+            .any(|start| setting.starts_with(start))
+        {
+            let (_, settings) = fsharp.last_mut().expect("settings follow a kind");
+            settings.push(quoted(setting).expect("setting key"));
+        }
+    }
+    let rust: Vec<(String, Vec<String>)> = minigames::BUILT_IN_KINDS
+        .iter()
+        .map(|info| (info.kind.to_owned(), info.settings.iter().map(|s| (*s).to_owned()).collect()))
+        .collect();
+    assert_eq!(fsharp, rust, "F# MinigameKinds and farm_runtime::minigames::BUILT_IN_KINDS differ");
+}

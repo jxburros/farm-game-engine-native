@@ -284,7 +284,7 @@ internal sealed class ContentForm
             panel.Children.Add(Label(label));
             var control = StringControl(target, key, name, label, field, nullable,
                 multiline: property.Name is "Description" or "Text" or "Message" or "FailMessage",
-                rebuildOnChange: property.Name == "Type");
+                rebuildOnChange: property.Name == "Type" || (owner == typeof(MinigameDef) && property.Name == "Kind"));
             panel.Children.Add(control is TextBox box && property.Name is "CustomImage" or "CustomAsset" ? WithThumbnail(box, path, label) : control);
             return;
         }
@@ -304,7 +304,8 @@ internal sealed class ContentForm
         }
 
         var body = new StackPanel { Spacing = 8 };
-        if (IsJsonDictionary(type)) AddKeyValues(body, target, key, path);
+        if (IsJsonDictionary(type) && owner == typeof(MinigameDef)) AddMinigameSettings(body, target, key, path);
+        else if (IsJsonDictionary(type)) AddKeyValues(body, target, key, path);
         else if (ListElement(type) is { } element)
         {
             if (element == typeof(string))
@@ -689,6 +690,30 @@ internal sealed class ContentForm
             while (values.ContainsKey($"setting{n}")) n++;
             values[$"setting{n}"] = "";
         })));
+    }
+
+    /// <summary>
+    /// A built-in minigame kind's settings as typed fields (F# <c>MinigameKinds</c>), with a line on
+    /// how the kind plays; a kind the game doesn't have keeps the raw setting rows.
+    /// </summary>
+    private void AddMinigameSettings(Panel panel, JsonObject target, string key, string path)
+    {
+        var kind = StringOf(target[Key<MinigameDef>(nameof(MinigameDef.Kind))]) ?? "";
+        var settings = ContentForms.MinigameSettings(kind);
+        if (settings.Count == 0)
+        {
+            AddKeyValues(panel, target, key, path);
+            return;
+        }
+
+        if (target[key] is not JsonObject config) target[key] = config = new JsonObject();
+        panel.Children.Add(Ui.Text(ContentForms.MinigameHelp(kind), "muted", "small"));
+        panel.Children.Add(VocabularyFields(config, settings, path));
+        // A cleared setting goes away (the game then plays its default) instead of staying as null.
+        _writers.Add(() =>
+        {
+            foreach (var name in config.Where(entry => entry.Value is null).Select(entry => entry.Key).ToList()) config.Remove(name);
+        });
     }
 
     // ---- Compact rows and cards (web NPCEditor's schedule and waypoints, ShopEditor's stock) ----
@@ -1102,7 +1127,7 @@ internal sealed class ContentForm
                     var number = NumberControl(target, field.Key, name, field.Label, field.Kind == "integer", field.Optional,
                         field.HasMin ? field.Min : null, field.HasMax ? field.Max : null);
                     numbers[field.Key] = number;
-                    number.Watermark = field.Optional ? "optional" : null;
+                    number.Watermark = field.Optional ? (field.Placeholder.Length > 0 ? field.Placeholder : "optional") : null;
                     wrap.Children.Add(Labeled(field.Label, number, 130));
                     break;
                 case "bool":

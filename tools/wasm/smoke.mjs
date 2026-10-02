@@ -109,6 +109,9 @@ await test("a player renders project-v8.json and takes input", () => {
   assert.equal(first.pixels.length, 320 * 200 * 4);
   assert.equal(first.info.screen, "playing");
   assert.equal(first.info.modal, false);
+  // The game asks for its music and ambience by name (the page loops musicSamples).
+  assert.ok(["day", "night"].includes(first.info.music.music), JSON.stringify(first.info.music));
+  assert.ok(first.info.music.musicGain > 0);
   assert.ok(first.pixels.some((value, i) => i % 4 !== 3 && value !== 0), "the frame is not black");
   for (let i = 3; i < first.pixels.length; i += 4) assert.equal(first.pixels[i], 255, "frames are opaque");
 
@@ -178,6 +181,8 @@ await test("standalone saves live in exported storage", () => {
   const player = new farm.Player(project, { mode: "standalone", seed: "wasm-storage" });
   const title = frame(player);
   assert.equal(title.info.screen, "title");
+  assert.equal(title.info.music.music, "day");
+  assert.equal(title.info.music.ambience, null);
   assert.equal(title.storageChanged, false);
   assert.deepEqual(JSON.parse(player.exportStorage()).slots, {});
 
@@ -375,6 +380,12 @@ await test("previews, render requests, hashes and sounds", () => {
   const samples = farm.sfxSamples("coin", 48000);
   assert.ok(samples instanceof Float32Array && samples.length > 1000);
   assert.equal(farm.sfxSamples("no-such-cue", 48000), undefined);
+  // The built-in music and ambience loops.
+  for (const name of ["day", "night", "birds", "crickets", "rain"]) {
+    const loop = farm.musicSamples(name, 8000);
+    assert.ok(loop instanceof Float32Array && loop.length > 8000 * 8, name);
+  }
+  assert.equal(farm.musicSamples("no-such-loop", 8000), undefined);
   assert.equal(farm.lastPanic(), undefined);
   assert.match(farm.version(), /^\d+\.\d+\.\d+/);
 });

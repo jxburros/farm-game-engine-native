@@ -2,6 +2,25 @@
 
 ## 0.3.0 (unreleased)
 
+- **Music, more minigames, and the game in one language.**
+  - **Music and ambience.** Games have a soundtrack out of the box: day and
+    night music, birdsong, crickets and rain, composed and synthesized by the
+    engine itself (no audio files to license or ship). The music follows the
+    clock, the weather and indoor scenes, fades between loops, and the Music
+    volume now controls it, in exported games, Play Mode and the web demo.
+  - **The samples look different.** Cozy Garden is a cottage garden with a
+    pond, growing beds and hens; Quest RPG's farm opens onto a village square
+    with a fountain, the elder and a lantern keeper.
+  - **Three more minigames**: Rhythm tap, Moving target and Memory sequence.
+    A minigame's kind is picked from the built-in kinds, each with its own
+    settings as fields, and Problems warns about a kind the game doesn't have
+    (it used to become a silent 0.5 "Go!" button), unused settings and
+    numbers out of range.
+  - **Spanish all the way.** The engine's own messages ("Not enough money!"),
+    the built-in minigames' texts and save-load notices follow the game's
+    language, and the editor's whole menu bar is translated. Replays and
+    logs keep the English text.
+
 - **Calendar, clock and save fixes.**
   - **Games can start in any season.** The clock keeps its own day of season,
     so every season lasts its configured length and festivals, birthdays and

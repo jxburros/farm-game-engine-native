@@ -7,6 +7,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events;
 use crate::inventory;
+use crate::messages;
 use crate::quests;
 use crate::schema::{Dialogue, DialogueOption, DialogueState, GameState, ShopSession};
 use crate::social;
@@ -53,7 +54,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     // fit, does nothing (the conversation stays open).
     let take_money = option.take_money.filter(|money| *money > 0);
     if take_money.is_some_and(|money| state.player.money < money) {
-        return vec![Effect::message(message_levels::ERROR, "Not enough money!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NOT_ENOUGH_MONEY)];
     }
     let mut item_grant = None;
     if let Some(give_item) = non_empty(option.give_item.as_deref()) {
@@ -63,7 +64,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
             let result =
                 inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
             if !result.added {
-                return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+                return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
             }
             item_grant = Some((item, quantity, result.inventory));
         }
@@ -73,7 +74,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     if let Some(take_money) = take_money {
         state.player.money -= take_money;
-        effects.push(Effect::message(message_levels::INFO, format!("Paid ${take_money}")));
+        effects.push(Effect::say(message_levels::INFO, messages::PAID_MONEY.with(&[&take_money])));
     }
 
     // Remember the choice: the option's flag, and the once-only marker (the same flag when the
@@ -87,13 +88,17 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     if let Some(give_money) = option.give_money.filter(|money| *money != 0) {
         state.player.money = state.player.money.saturating_add(give_money);
-        effects.push(Effect::message(message_levels::SUCCESS, format!("Received ${give_money}")));
+        effects.push(Effect::say(message_levels::SUCCESS, messages::RECEIVED_MONEY.with(&[&give_money])));
     }
 
     if let Some((item, quantity, inventory)) = item_grant {
         state.player.inventory = inventory;
-        let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
-        effects.push(Effect::message(message_levels::SUCCESS, format!("Received {}{}", item.name, suffix)));
+        let received = if quantity > 1 {
+            messages::RECEIVED_ITEMS.with(&[&item.name, &quantity])
+        } else {
+            messages::RECEIVED_ITEM.with(&[&item.name])
+        };
+        effects.push(Effect::say(message_levels::SUCCESS, received));
     }
 
     // Quest-giver binding (M3): the option starts a quest if it's available.
@@ -122,7 +127,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
         if shop_exists {
             state.shop = Some(ShopSession { shop_id: open_shop_id.to_owned() });
         } else {
-            effects.push(Effect::message(message_levels::ERROR, "That shop does not exist."));
+            effects.push(Effect::say(message_levels::ERROR, &messages::SHOP_MISSING));
         }
         return effects;
     }

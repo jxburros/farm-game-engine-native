@@ -6,9 +6,12 @@
 //! platform-neutral part of the desktop player's audio thread: it sums the playing voices into an
 //! interleaved output buffer. [`SoundBank`] renders every preset once, up front, so a real-time
 //! audio callback only ever receives ready [`Voice`]s ([`Mixer::start`] neither allocates nor
-//! frees). Music and ambience stay silent: games have no music content yet.
+//! frees). Music and ambience are the built-in loops of `farm_runtime::music`: a frame says which
+//! should play ([`MusicCue`]), a [`MusicBank`] renders them once, and the mixer loops them in two
+//! slots (music, ambience), fading between loops and volumes.
 
 use farm_runtime::audio::{sfx_preset, SFX_PRESETS};
+use farm_runtime::music::{self, MusicCue};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -60,12 +63,78 @@ impl SoundBank {
     }
 }
 
-/// Mixes sound-effect voices (mono presets) into interleaved output frames.
+/// Every built-in music and ambience loop rendered at one sample rate (several seconds of
+/// rendering in all: build it off the audio callback, and off the frame loop where a hitch
+/// shows). Keep it alive while the mixer loops its buffers.
+#[derive(Debug, Clone)]
+pub struct MusicBank {
+    sample_rate: u32,
+    loops: BTreeMap<&'static str, Arc<[f32]>>,
+}
+
+impl MusicBank {
+    pub fn new(sample_rate: u32) -> Self {
+        let sample_rate = sample_rate.max(1);
+        let loops = music::MUSIC_LOOPS
+            .iter()
+            .chain(music::AMBIENCE_LOOPS)
+            .filter_map(|name| music::render_loop(name, sample_rate).map(|samples| (*name, Arc::from(samples))))
+            .collect();
+        Self { sample_rate, loops }
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// The samples of a loop; `None` for an unknown name.
+    pub fn get(&self, name: &str) -> Option<Arc<[f32]>> {
+        self.loops.get(name).cloned()
+    }
+
+    /// The two loop slots' contents for `cue`: (music samples, gain), (ambience samples, gain).
+    pub fn slots(&self, cue: &MusicCue) -> [LoopRequest; 2] {
+        let slot = |name: Option<&str>, gain: f32| LoopRequest { samples: name.and_then(|name| self.get(name)), gain };
+        [slot(cue.music, cue.music_gain), slot(cue.ambience, cue.ambience_gain)]
+    }
+}
+
+/// What a loop slot should play: a loop (shared with a [`MusicBank`]) at a gain, or silence.
+#[derive(Debug, Clone, Default)]
+pub struct LoopRequest {
+    pub samples: Option<Arc<[f32]>>,
+    pub gain: f32,
+}
+
+/// A loop being played, with its gain moving toward a target.
+#[derive(Debug, Clone)]
+struct LoopVoice {
+    samples: Arc<[f32]>,
+    position: usize,
+    gain: f32,
+    target: f32,
+}
+
+/// One loop slot: what plays now and what is fading out.
+#[derive(Debug, Clone, Default)]
+struct LoopSlot {
+    current: Option<LoopVoice>,
+    fading: Option<LoopVoice>,
+}
+
+/// Loop slots: music and ambience.
+pub const LOOP_SLOTS: usize = 2;
+/// Seconds a fade between two loops (or two volumes) takes.
+pub const LOOP_FADE_SECONDS: f32 = 1.2;
+
+/// Mixes sound-effect voices (mono presets) and the two loop slots into interleaved output
+/// frames.
 #[derive(Debug, Clone)]
 pub struct Mixer {
     sample_rate: u32,
     cache: BTreeMap<String, Arc<[f32]>>,
     voices: Vec<Voice>,
+    loops: [LoopSlot; LOOP_SLOTS],
 }
 
 /// Voices mixed at once; the oldest is dropped beyond this.
@@ -74,7 +143,52 @@ pub const MAX_VOICES: usize = 16;
 impl Mixer {
     pub fn new(sample_rate: u32) -> Self {
         // Room for every voice up front: the list must never grow in an audio callback.
-        Self { sample_rate: sample_rate.max(1), cache: BTreeMap::new(), voices: Vec::with_capacity(MAX_VOICES + 1) }
+        Self {
+            sample_rate: sample_rate.max(1),
+            cache: BTreeMap::new(),
+            voices: Vec::with_capacity(MAX_VOICES + 1),
+            loops: Default::default(),
+        }
+    }
+
+    /// Plays `request` in loop slot `slot` (0 music, 1 ambience): the same loop moves to the new
+    /// gain, another loop fades in while the old one fades out, and no loop fades the slot out.
+    /// Never allocates, and frees a buffer only when the caller held no other reference to it
+    /// (a [`MusicBank`] always does).
+    pub fn set_loop(&mut self, slot: usize, request: LoopRequest) {
+        let Some(slot) = self.loops.get_mut(slot) else { return };
+        let gain = if request.gain.is_finite() { request.gain.clamp(0.0, 1.0) } else { 0.0 };
+        let same = match (&slot.current, &request.samples) {
+            (Some(current), Some(samples)) => Arc::ptr_eq(&current.samples, samples),
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            if let Some(current) = slot.current.as_mut() {
+                current.target = gain;
+            }
+            return;
+        }
+        let was_fading = slot.fading.take();
+        if let Some(mut old) = slot.current.take() {
+            old.target = 0.0;
+            slot.fading = Some(old);
+        }
+        slot.current = request.samples.filter(|samples| !samples.is_empty()).map(|samples| {
+            // A loop that was fading out comes back from where it is.
+            match was_fading.filter(|fading| Arc::ptr_eq(&fading.samples, &samples)) {
+                Some(mut back) => {
+                    back.target = gain;
+                    back
+                }
+                None => LoopVoice { samples, position: 0, gain: 0.0, target: gain },
+            }
+        });
+    }
+
+    /// Whether a loop plays (or fades) in `slot`.
+    pub fn loop_playing(&self, slot: usize) -> bool {
+        self.loops.get(slot).is_some_and(|slot| slot.current.is_some() || slot.fading.is_some())
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -118,6 +232,29 @@ impl Mixer {
     pub fn mix(&mut self, out: &mut [f32], channels: usize) {
         out.fill(0.0);
         let channels = channels.max(1);
+        let step = 1.0 / (LOOP_FADE_SECONDS * self.sample_rate as f32);
+        for slot in &mut self.loops {
+            for voice in [slot.current.as_mut(), slot.fading.as_mut()].into_iter().flatten() {
+                for frame in out.chunks_exact_mut(channels) {
+                    voice.gain = if voice.gain < voice.target {
+                        (voice.gain + step).min(voice.target)
+                    } else {
+                        (voice.gain - step).max(voice.target)
+                    };
+                    let value = voice.samples[voice.position] * voice.gain;
+                    for channel in frame {
+                        *channel += value;
+                    }
+                    voice.position += 1;
+                    if voice.position == voice.samples.len() {
+                        voice.position = 0;
+                    }
+                }
+            }
+            if slot.fading.as_ref().is_some_and(|fading| fading.gain <= 0.0) {
+                slot.fading = None;
+            }
+        }
         for voice in &mut self.voices {
             for frame in out.chunks_exact_mut(channels) {
                 let Some(sample) = voice.samples.get(voice.position) else { break };
@@ -157,6 +294,49 @@ mod tests {
         assert_eq!(mixer.active(), 0);
         mixer.mix(&mut out, 2);
         assert!(out.iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn loops_fade_in_repeat_and_cross_fade() {
+        let rate = 1000;
+        let up: Arc<[f32]> = Arc::from(vec![0.5f32; 300]);
+        let down: Arc<[f32]> = Arc::from(vec![-0.25f32; 200]);
+        let mut mixer = Mixer::new(rate);
+        mixer.set_loop(0, LoopRequest { samples: Some(Arc::clone(&up)), gain: 1.0 });
+        assert!(mixer.loop_playing(0) && !mixer.loop_playing(1));
+        // Fades in over LOOP_FADE_SECONDS, then holds: past the loop's end it starts again.
+        let mut out = vec![0.0f32; 2 * 2000];
+        mixer.mix(&mut out, 2);
+        assert!(out[0].abs() < 0.01, "starts silent: {}", out[0]);
+        assert!((out[out.len() - 1] - 0.5).abs() < 1e-6, "full volume, looping: {}", out[out.len() - 1]);
+        // Same loop, new volume: no restart, just a fade.
+        mixer.set_loop(0, LoopRequest { samples: Some(Arc::clone(&up)), gain: 0.5 });
+        mixer.mix(&mut out, 2);
+        assert!((out[out.len() - 1] - 0.25).abs() < 1e-6);
+        // Another loop: the old fades out while the new fades in, then only the new plays.
+        mixer.set_loop(0, LoopRequest { samples: Some(Arc::clone(&down)), gain: 1.0 });
+        mixer.mix(&mut out, 2);
+        assert!((out[out.len() - 1] + 0.25).abs() < 1e-6, "{}", out[out.len() - 1]);
+        // Silence fades the slot out and frees it.
+        mixer.set_loop(0, LoopRequest::default());
+        mixer.mix(&mut out, 2);
+        mixer.mix(&mut out, 2);
+        assert!(!mixer.loop_playing(0));
+        assert!(out.iter().all(|s| *s == 0.0));
+        // Unknown slots are ignored.
+        mixer.set_loop(7, LoopRequest { samples: Some(up), gain: 1.0 });
+    }
+
+    #[test]
+    fn the_music_bank_holds_every_loop() {
+        let bank = MusicBank::new(4000);
+        let cue = MusicCue::new(Some("day"), Some("rain"), 0.5);
+        let [music, ambience] = bank.slots(&cue);
+        assert!(music.samples.is_some() && ambience.samples.is_some());
+        assert_eq!((music.gain, ambience.gain), (0.5, 0.4));
+        assert!(bank.get("night").is_some() && bank.get("crickets").is_some() && bank.get("birds").is_some());
+        let [silent, _] = bank.slots(&MusicCue::default());
+        assert!(silent.samples.is_none());
     }
 
     #[test]

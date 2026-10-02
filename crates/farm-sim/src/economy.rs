@@ -7,6 +7,7 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
+use crate::messages;
 use crate::quests;
 use crate::schema::{crop_qualities, DialogueOption, GameState, Item, ShopDefinition, ShopSession};
 use crate::world::world_movement;
@@ -21,7 +22,7 @@ pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDe
 pub fn handle_open_shop(ctx: &EngineContext, state: &mut GameState, shop_id: &str) -> Effects {
     let shop = find_shop(ctx, shop_id);
     if shop.is_none() {
-        return vec![Effect::message(message_levels::ERROR, "That shop does not exist.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::SHOP_MISSING)];
     }
     state.shop = Some(ShopSession { shop_id: shop_id.to_owned() });
     state.dialogue = None;
@@ -51,7 +52,7 @@ pub fn open_shop_refusal(ctx: &EngineContext, state: &GameState, shop_id: &str) 
     if merchant_faced {
         None
     } else {
-        Some(vec![Effect::message(message_levels::INFO, "Talk to the shopkeeper to shop.")])
+        Some(vec![Effect::say(message_levels::INFO, &messages::TALK_TO_SHOPKEEPER)])
     }
 }
 
@@ -116,47 +117,50 @@ pub fn repair_cost(missing: i64, shop: &ShopDefinition) -> i64 {
 /// money and inventory space permitting).
 pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
     let Some(session) = &state.shop else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
     if quantity == 0 {
         return Vec::new();
     }
 
     let Some(shop) = find_shop(ctx, &session.shop_id) else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
 
     let Some(entry) = shop.stock.iter().find(|stock_entry| stock_entry.item_id == item_id) else {
-        return vec![Effect::message(message_levels::ERROR, "Not sold here.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NOT_SOLD_HERE)];
     };
 
     if let Some(seasons) = entry.seasons.as_ref().filter(|seasons| !seasons.is_empty()) {
         if !seasons.contains(&state.clock.season) {
-            return vec![Effect::message(message_levels::ERROR, format!("Not available in {}.", state.clock.season))];
+            return vec![Effect::say(
+                message_levels::ERROR,
+                messages::NOT_AVAILABLE_IN.with_args(vec![messages::season_noun(&state.clock.season)]),
+            )];
         }
     }
 
     if let Some(remaining) = remaining_daily_stock(state, &shop.id, item_id, entry.daily_limit) {
         if quantity > remaining {
             let text =
-                if remaining == 0 { "Sold out for today!".to_owned() } else { format!("Only {remaining} left today.") };
-            return vec![Effect::message(message_levels::ERROR, text)];
+                if remaining == 0 { messages::SOLD_OUT.with(&[]) } else { messages::ONLY_LEFT.with(&[&remaining]) };
+            return vec![Effect::say(message_levels::ERROR, text)];
         }
     }
 
     let Some(item) = ctx.item(item_id) else {
-        return vec![Effect::message(message_levels::ERROR, "Unknown item.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::UNKNOWN_ITEM)];
     };
 
     let price = entry.price.unwrap_or(item.value);
     let total = price.saturating_mul(i64::from(quantity));
     if state.player.money < total {
-        return vec![Effect::message(message_levels::ERROR, "Not enough money!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NOT_ENOUGH_MONEY)];
     }
 
     let result = inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
     if !result.added {
-        return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
     }
 
     if truthy_number(entry.daily_limit).is_some() {
@@ -175,7 +179,7 @@ pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str
     let quest_effects = quests::progress_quests(ctx, state, "collect", item_id, quantity);
 
     let mut effects =
-        vec![Effect::message(message_levels::SUCCESS, format!("Bought {quantity}x {} for ${total}", item.name))];
+        vec![Effect::say(message_levels::SUCCESS, messages::BOUGHT.with(&[&quantity, &item.name, &total]))];
     effects.extend(quest_effects);
     effects
 }
@@ -191,17 +195,17 @@ pub fn handle_sell_item(
     quality: Option<&str>,
 ) -> Effects {
     let Some(session) = &state.shop else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
     if quantity == 0 {
         return Vec::new();
     }
 
     let Some(shop) = find_shop(ctx, &session.shop_id) else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
     if !shop.buys_items {
-        return vec![Effect::message(message_levels::ERROR, format!("{} doesn't buy items.", shop.name))];
+        return vec![Effect::say(message_levels::ERROR, messages::SHOP_DOESNT_BUY.with(&[&shop.name]))];
     }
 
     // Items routinely span several slots (stack caps, qualities), so count across all of them.
@@ -215,7 +219,7 @@ pub fn handle_sell_item(
         .sum();
     let first = state.player.inventory.iter().find(|s| s.item.id == item_id);
     let Some(first) = first.filter(|_| held >= u64::from(quantity)) else {
-        return vec![Effect::message(message_levels::ERROR, "You don't have that many.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NOT_THAT_MANY)];
     };
     let item_name = match tiers.as_slice() {
         [Some(quality)] => format!("{} ({quality})", first.item.name),
@@ -240,40 +244,40 @@ pub fn handle_sell_item(
 
     state.player.inventory = inventory;
     state.player.money = state.player.money.saturating_add(total);
-    vec![Effect::message(message_levels::SUCCESS, format!("Sold {quantity}x {item_name} for ${total}"))]
+    vec![Effect::say(message_levels::SUCCESS, messages::SOLD.with(&[&quantity, &item_name, &total]))]
 }
 
 /// The `repairTool` command: repair the held tool `item_id` at the open shop, if it repairs tools.
 pub fn handle_repair_tool(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let Some(session) = &state.shop else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
     let Some(shop) = find_shop(ctx, &session.shop_id) else {
-        return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_SHOP_OPEN)];
     };
     if !shop.repairs_tools {
-        return vec![Effect::message(message_levels::ERROR, format!("{} doesn't repair tools.", shop.name))];
+        return vec![Effect::say(message_levels::ERROR, messages::SHOP_DOESNT_REPAIR.with(&[&shop.name]))];
     }
 
     let slot = state.player.inventory.iter().find(|s| s.item.id == item_id);
     let Some((slot, durability, max_durability)) =
         slot.and_then(|slot| Some((slot, slot.item.durability?, slot.item.max_durability?)))
     else {
-        return vec![Effect::message(message_levels::ERROR, "That can't be repaired.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::CANT_REPAIR)];
     };
     let missing = i64::from(max_durability) - i64::from(durability);
     if missing <= 0 {
-        return vec![Effect::message(message_levels::INFO, format!("{} is in perfect shape.", slot.item.name))];
+        return vec![Effect::say(message_levels::INFO, messages::PERFECT_SHAPE.with(&[&slot.item.name]))];
     }
 
     let cost = repair_cost(missing, shop);
     if state.player.money < cost {
-        return vec![Effect::message(message_levels::ERROR, format!("Repair costs ${cost} — not enough money!"))];
+        return vec![Effect::say(message_levels::ERROR, messages::REPAIR_TOO_EXPENSIVE.with(&[&cost]))];
     }
 
     let repaired = crate::schema::Item { durability: Some(max_durability), ..slot.item.clone() };
     let item_name = slot.item.name.clone();
     state.player.inventory = inventory::replace_item(&state.player.inventory, item_id, &repaired);
     state.player.money = state.player.money.saturating_sub(cost);
-    vec![Effect::message(message_levels::SUCCESS, format!("Repaired {item_name} for ${cost}"))]
+    vec![Effect::say(message_levels::SUCCESS, messages::REPAIRED.with(&[&item_name, &cost]))]
 }

@@ -389,6 +389,17 @@ without a Rust toolchain, which reports them as skipped.
   TypeScript reducer, Rust updates state in place. Undo and replay use the command log.
   Snapshots for the debug drawer and playtest "keep changes" are explicit
   copies.
+- **Every sentence the engine shows a player comes from the message catalog**
+  (`farm_sim::messages`): a stable key (`msg.notEnoughMoney`) and an English
+  template with positional arguments. `Effect::say(level, message)` records
+  the English text in the effect, exactly as before, so replays, goldens and
+  the v8 parity tests see no change, and carries the message beside it,
+  outside serialization and equality. The player translates it with the
+  `farm-ui` table of the player's language (`Lang::message`), falling back to
+  English for a key the table lacks. Built-in minigames' default texts and the
+  save-load notices (`LoadedSave::error_messages`) use the same catalog.
+  `Effect::message` is only for text a creator wrote (event and plugin
+  messages); a test fails when engine code passes it a literal or a `format!`.
 
 ## What happened to the C# code
 

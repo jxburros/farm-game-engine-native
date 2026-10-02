@@ -9,6 +9,7 @@
 
 use crate::effects::Effect;
 use crate::engine_types::{Effects, EngineContext};
+use crate::messages;
 use crate::rng::{self, Rng};
 use crate::schema::{GameState, MineBand, MineConfig, MineProgress, Scene, TileNode, MAX_SCENE_SIZE};
 use crate::units;
@@ -151,11 +152,9 @@ pub fn descend_mine(ctx: &EngineContext, state: &mut GameState, to_floor: u32) -
     state.mine = MineProgress { current_floor: floor, deepest_floor: state.mine.deepest_floor.max(floor) };
 
     // `floor % 0` is NaN in JS: never a checkpoint.
-    let checkpoint = if floor.checked_rem(config.elevator_every) == Some(0) { " (elevator checkpoint)" } else { "" };
-    vec![
-        Effect::SceneChanged { scene_id, x: entry_x, y: entry_y },
-        Effect::message("info", format!("Mine — floor {floor}{checkpoint}")),
-    ]
+    let checkpoint = floor.checked_rem(config.elevator_every) == Some(0);
+    let announcement = if checkpoint { &messages::MINE_FLOOR_CHECKPOINT } else { &messages::MINE_FLOOR };
+    vec![Effect::SceneChanged { scene_id, x: entry_x, y: entry_y }, Effect::say("info", announcement.with(&[&floor]))]
 }
 
 /// The deepest floor the mine entrance's elevator reaches: the last checkpoint at or above the
@@ -193,12 +192,12 @@ pub fn descend_refusal(ctx: &EngineContext, state: &GameState, to_floor: u32) ->
     }
     let in_mine = is_mine_floor(state, &state.player.scene_id);
     if !in_mine && !beside_entrance(config, state) {
-        return Some(vec![Effect::message("info", "You need to be at the mine to go down.")]);
+        return Some(vec![Effect::say("info", &messages::MINE_NOT_AT_ENTRANCE)]);
     }
     let reachable =
         elevator_floor(config, state).max(if in_mine { state.mine.current_floor } else { 0 }).saturating_add(1);
     if to_floor > reachable {
-        return Some(vec![Effect::message("info", "You haven't found the way down that far yet.")]);
+        return Some(vec![Effect::say("info", &messages::MINE_NOT_THAT_DEEP)]);
     }
     None
 }
@@ -208,7 +207,7 @@ pub fn exit_refusal(state: &GameState) -> Option<Effects> {
     if is_mine_floor(state, &state.player.scene_id) {
         None
     } else {
-        Some(vec![Effect::message("info", "You're not in the mine.")])
+        Some(vec![Effect::say("info", &messages::MINE_NOT_IN_MINE)])
     }
 }
 
@@ -230,10 +229,7 @@ pub fn exit_mine(ctx: &EngineContext, state: &mut GameState) -> Effects {
     state.player.y = units::tile_center(y);
     state.mine.current_floor = 0;
 
-    vec![
-        Effect::SceneChanged { scene_id: target_scene_id, x, y },
-        Effect::message("info", "You climb back to the surface."),
-    ]
+    vec![Effect::SceneChanged { scene_id: target_scene_id, x, y }, Effect::say("info", &messages::MINE_CLIMB_BACK)]
 }
 
 /// Ladder discovery: called when a node is destroyed inside a mine scene. Rolls the ladder
@@ -258,5 +254,5 @@ pub fn maybe_reveal_ladder(ctx: &EngineContext, state: &mut GameState, scene_id:
         tile.ladder_down = Some(true);
     }
 
-    vec![Effect::message("success", "A ladder to the next floor appears!")]
+    vec![Effect::say("success", &messages::MINE_LADDER)]
 }

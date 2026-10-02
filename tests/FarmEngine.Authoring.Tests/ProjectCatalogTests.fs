@@ -23,21 +23,58 @@ let private build (name: string) =
     | "blank" -> ProjectCatalog.CreateBlankProject fixedTime
     | _ -> invalidArg (nameof name) name
 
+/// Intended divergence from the web samples (#55): the Cozy Garden and Quest RPG samples have
+/// their own maps and set dressing (a garden with growing beds and hens; a village square with
+/// two more NPCs), where the TypeScript samples reuse the starter farm. Those parts are left out
+/// of the comparison; everything else still matches the TypeScript goldens.
+let private ownDressing (name: string) =
+    match name with
+    | "cozy-garden" -> [ "scenes"; "animals" ]
+    | "quest-rpg" -> [ "scenes"; "npcs"; "dialogues" ]
+    | _ -> []
+
 [<Theory; MemberData(nameof samples)>]
 let ``sample projects match TypeScript`` (name: string) =
+    let shared (json: Json) = ownDressing name |> List.fold (fun json key -> Json.remove key json) json
     // The golden is the v8 project; the factories make v9 ones (docs/NUMERICS.md).
     let expected =
         Json.get "project" (readJson [ "Golden"; "content"; name + ".json" ])
         |> Migrations.migrateV8ToV9
         |> Json.set "schemaVersion" (JNumber Migrations.CurrentProjectSchemaVersion)
+        |> shared
         |> Json.stableStringify
+    let stable (project: GameProject) = SchemaJson.encodeGameProject project |> shared |> Json.stableStringify
     let project = build name
     // The factory output is already in the current schema shape…
-    assertSameStable name expected (stableOf SchemaJson.encodeGameProject project)
+    assertSameStable name expected (stable project)
     // …and the migration pipeline leaves it as it is.
     let migrated = ProjectLoad.migrateProject (ProjectLoad.toJson project)
     Assert.True(migrated.Ok, String.concat "; " migrated.Errors)
-    assertSameStable (name + " (migrated)") expected (stableOf SchemaJson.encodeGameProject migrated.Data.Value)
+    assertSameStable (name + " (migrated)") expected (stable migrated.Data.Value)
+    Assert.Equal(stableOf SchemaJson.encodeGameProject project, stableOf SchemaJson.encodeGameProject migrated.Data.Value)
+
+[<Fact>]
+let ``the samples look and play differently`` () =
+    let starter = ProjectCatalog.CreateInitialProject fixedTime
+    let cozy = ProjectCatalog.CreateCozyFarmProject fixedTime
+    let quest = ProjectCatalog.CreateQuestRpgProject fixedTime
+    let farm (project: GameProject) = project.Scenes |> List.find (fun scene -> scene.Id = "scene-farm")
+    let tiles (scene: Scene) = scene.Tiles |> List.concat
+    // The garden: a pond, growing beds (one ready to harvest) and two hens.
+    let garden = farm cozy
+    Assert.Equal("Cottage Garden", garden.Name)
+    Assert.True(tiles garden |> List.exists (fun tile -> tile.Background = "water"))
+    let crops = tiles garden |> List.choose (fun tile -> tile.Crop)
+    Assert.Equal<string list>([ "carrot"; "strawberry"; "wheat" ], crops |> List.map (fun crop -> crop.Type) |> List.distinct |> List.sort)
+    Assert.Equal(2, cozy.Animals |> List.filter (fun animal -> animal.SceneId = "scene-farm") |> List.length)
+    Assert.NotEqual<Tile list>(tiles (farm starter), tiles garden)
+    // The quest: the farm's south door leads to a village square, where the elder waits.
+    let square = quest.Scenes |> List.find (fun scene -> scene.Id = "scene-square")
+    Assert.Equal("scene-square", (farm quest).Transitions |> List.exactlyOne |> fun t -> t.ToSceneId)
+    Assert.Equal("scene-farm", square.Transitions |> List.exactlyOne |> fun t -> t.ToSceneId)
+    Assert.Equal("scene-square", (quest.Npcs |> List.find (fun npc -> npc.Id = "npc-elder")).SceneId)
+    for project in [ cozy; quest ] do
+        Assert.Empty(Problems.collect project |> Problems.errors)
 
 let templates : obj[] seq = seq {
     for id in ProjectCatalog.All do
@@ -178,7 +215,7 @@ let ``sample transformations leave the initial game independent`` () =
     Assert.Equal(10.0, starter.Player.Inventory[0].Quantity)
     Assert.Equal(20.0, cozy.Player.Inventory[0].Quantity)
     Assert.Equal(2, starter.Npcs.Length)
-    Assert.Equal(3, quest.Npcs.Length)
+    Assert.Equal(4, quest.Npcs.Length)
 
 // ── Project list: rename and duplicate ──────────────────────────────────────
 

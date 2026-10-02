@@ -51,7 +51,7 @@ module Patterns =
           { Id = "building"; Kind = Building; Name = "Building & interior"; Tab = "events"; Help = "Donate five wood at the doorway to unlock a furnished-size interior and return door." }
           { Id = "magic"; Kind = Magic; Name = "Watering spell"; Tab = "actions"; Help = "A reusable inventory spell that spends energy and waters nearby soil." }
           { Id = "combat"; Kind = Combat; Name = "Combat encounter"; Tab = "actions"; Help = "A turn-based encounter with attack, guard and magic; winning grants a reward, losing costs energy." }
-          { Id = "fishing"; Kind = Fishing; Name = "Custom fishing challenge"; Tab = "actions"; Help = "Connect the hold-to-catch minigame to fishing casts. Edit its timing or replace its code." }
+          { Id = "fishing"; Kind = Fishing; Name = "Custom fishing challenge"; Tab = "actions"; Help = "Connect the hold-to-catch minigame to fishing casts. Edit its timing, or pick another built-in kind for it." }
           { Id = "insect"; Kind = Insect; Name = "Catchable insect"; Tab = "events"; Help = "An interactable insect location with a scored catching challenge and inventory specimen reward." }
           { Id = "forage"; Kind = Forage; Name = "Forageable"; Tab = "nodes"; Help = "A harvestable resource with a daily respawn and editable drops." }
           { Id = "tree"; Kind = Tree; Name = "Tree"; Tab = "nodes"; Help = "An axe-harvested tree with several hits, wood drops, collision and regrowth." }
@@ -197,10 +197,14 @@ module Patterns =
                     let holdMs = JNumber 1200.0
                     match project.Minigames |> List.tryFind (fun m -> m.Id = ExtensibilitySchema.FishingMinigameId) with
                     | Some existing ->
+                        // Settings of the old kind that hold-to-catch doesn't read go (Problems would
+                        // flag them); the def's other fields stay.
+                        let reads = MinigameKinds.settings "hold-to-catch" |> List.map (fun setting -> setting.Key)
+                        let kept = existing.Config |> List.filter (fun (key, _) -> List.contains key reads)
                         let config =
-                            if existing.Config |> List.exists (fun (key, _) -> key = "holdMs") then
-                                existing.Config |> List.map (fun (key, value) -> if key = "holdMs" then key, holdMs else key, value)
-                            else existing.Config @ [ "holdMs", holdMs ]
+                            if kept |> List.exists (fun (key, _) -> key = "holdMs") then
+                                kept |> List.map (fun (key, value) -> if key = "holdMs" then key, holdMs else key, value)
+                            else kept @ [ "holdMs", holdMs ]
                         Ok [ UpsertMinigame { existing with Kind = "hold-to-catch"; Config = config; Name = name } ]
                     | None ->
                         Ok [ UpsertMinigame { MinigameDef.Default with Id = ExtensibilitySchema.FishingMinigameId; Name = name; Kind = "hold-to-catch"; Config = [ "holdMs", holdMs ] } ]

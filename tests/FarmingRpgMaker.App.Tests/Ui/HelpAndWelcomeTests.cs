@@ -185,6 +185,10 @@ public sealed class HelpAndWelcomeTests
             Assert.Equal("Editando: " + viewModel.ProjectName, Find<TextBlock>(window, "HeaderSubtitle").Text);
             Assert.Equal("Ay_uda", Find<MenuItem>(window, "HelpMenu").Header as string);
             Assert.Equal("Modo _Juego", Find<MenuItem>(window, "PlayModeMenuItem").Header as string);
+            // The whole menu bar follows the language, not only the Help menu.
+            Assert.Equal("_Archivo", Find<MenuItem>(window, "FileMenu").Header as string);
+            Assert.Equal("_Juego", Find<MenuItem>(window, "GameMenu").Header as string);
+            Assert.Equal("Exportar _juego…", Find<MenuItem>(window, "ExportGameMenuItem").Header as string);
             Assert.Equal("es", new AppSettingsStore(Path.Combine(data, "settings.json")).Load().EditorLanguage);
 
             viewModel.ShortcutsCommand.Execute(null);

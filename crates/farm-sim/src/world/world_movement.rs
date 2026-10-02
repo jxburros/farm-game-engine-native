@@ -13,6 +13,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events::{self, EventPosition};
 use crate::inventory::{self, AddItemOptions};
+use crate::messages;
 use crate::mines;
 use crate::quests;
 use crate::schema::{GameState, MachineTypeDefinition, MoveIntent, NodeTypeDefinition, NpcState, Scene};
@@ -191,12 +192,9 @@ pub fn land_player(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x
             Some(tile) if tile == wanted => (tile, Vec::new()),
             Some(tile) => (
                 tile,
-                vec![Effect::message(
+                vec![Effect::say(
                     message_levels::ERROR,
-                    format!(
-                        "({x},{y}) in {} can't be stood on; landed on ({},{}) instead.",
-                        scene.name, tile.x, tile.y
-                    ),
+                    messages::LANDED_ELSEWHERE.with(&[&x, &y, &scene.name, &tile.x, &tile.y]),
                 )],
             ),
             // Nowhere walkable (the scene is all wall): stay inside it at least.
@@ -393,9 +391,9 @@ fn settle_tile_entry(
             if result.added {
                 Some(result.inventory)
             } else if full_inventory == FullInventory::AbortStep {
-                return SettleResult { effects: vec![Effect::message("error", "Inventory is full!")], aborted: true };
+                return SettleResult { effects: vec![Effect::say("error", &messages::INVENTORY_FULL)], aborted: true };
             } else {
-                effects.push(Effect::message("error", "Inventory is full!"));
+                effects.push(Effect::say("error", &messages::INVENTORY_FULL));
                 None
             }
         }
@@ -410,7 +408,7 @@ fn settle_tile_entry(
             let (landed, landing_effects) = land_player(ctx, state, &to_scene_id, to_x, to_y);
             changed_scene = true;
             effects.push(Effect::SceneChanged { scene_id: to_scene_id, x: landed.x, y: landed.y });
-            effects.push(Effect::message("success", format!("Entered {target_name}")));
+            effects.push(Effect::say("success", messages::ENTERED.with(&[&target_name])));
             effects.extend(landing_effects);
         }
     }
@@ -418,7 +416,7 @@ fn settle_tile_entry(
     if let (Some(item), Some(next_inventory)) = (ground_item, picked_up_inventory) {
         state.player.inventory = next_inventory;
         picked_up_item_id = Some(item.id.clone());
-        effects.push(Effect::message("success", format!("Picked up {}", item.name)));
+        effects.push(Effect::say("success", messages::PICKED_UP.with(&[&item.name])));
 
         if let Some(tile) = find_scene_index(state, &entered_scene_id)
             .and_then(|index| state.world.scenes[index].tile_mut(tile_x, tile_y))

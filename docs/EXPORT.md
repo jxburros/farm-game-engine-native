@@ -363,8 +363,8 @@ Differences from this plan, as built:
 - Display settings have no resolution, vsync or frame cap. The window is
   resizable, the player paces itself to 60 frames per second, and fullscreen
   is borderless at the desktop resolution.
-- Audio has no ambience volume (there is no ambience content). Music has a
-  volume but no music content yet.
+- Audio has no separate ambience volume: the built-in music and ambience
+  loops (see [PLAYER.md](PLAYER.md#settings)) share the Music volume.
 - Keyboard keys are rebindable in the Controls tab. The gamepad layout is
   shown there and read from `settings.toml`, but not rebound in the menu.
 - Accessibility has text size and reduced motion (no pops, fades or

@@ -10,6 +10,7 @@ use crate::view_json;
 use farm_player::{
     DebugAction, HostView, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind, SoundRequest,
 };
+use farm_runtime::music::MusicCue;
 use farm_sim::schema::GameProject;
 use farm_sim::{stable_json, Command};
 use serde::{Deserialize, Serialize};
@@ -98,12 +99,23 @@ struct FrameInfo<'a> {
     screen: &'static str,
     /// An in-game panel (inventory, quests, crafting) or an engine modal is open.
     modal: bool,
+    /// The music and ambience loops to play now (`musicSamples(name, rate)`), with their gains.
+    music: MusicInfo,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct SoundInfo<'a> {
     cue: &'a str,
     gain: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MusicInfo {
+    music: Option<&'static str>,
+    music_gain: f32,
+    ambience: Option<&'static str>,
+    ambience_gain: f32,
 }
 
 /// The result of [`HostPlayer::frame`]; the pixels are [`HostPlayer::pixels`].
@@ -118,16 +130,26 @@ pub struct FrameOutcome {
     pub screen: &'static str,
     /// An in-game panel (inventory, quests, crafting) or an engine modal is open.
     pub modal: bool,
+    /// The music and ambience that should play now.
+    pub music: MusicCue,
 }
 
 impl FrameOutcome {
-    /// `{"sounds":[{"cue","gain"}],"requests":[…],"screen":"playing","modal":false}`.
+    /// `{"sounds":[{"cue","gain"}],"requests":[…],"screen":"playing","modal":false,
+    /// "music":{"music":"day","musicGain":0.5,"ambience":"birds","ambienceGain":0.4}}`.
     pub fn info_json(&self) -> String {
+        let cue = self.music;
         view_json::to_json(&FrameInfo {
             sounds: self.sounds.iter().map(|sound| SoundInfo { cue: &sound.cue, gain: sound.gain }).collect(),
             requests: &self.requests,
             screen: self.screen,
             modal: self.modal,
+            music: MusicInfo {
+                music: cue.music,
+                music_gain: cue.music_gain,
+                ambience: cue.ambience,
+                ambience_gain: cue.ambience_gain,
+            },
         })
     }
 }
@@ -255,19 +277,20 @@ impl HostPlayer {
             touch_controls: request.touch_controls,
             inset_bottom: request.inset_bottom,
         });
-        let (sounds, requests, size) = if request.render {
+        let (sounds, requests, music, size) = if request.render {
             let output =
                 self.player.frame(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
             let size = (output.pixels.width(), output.pixels.height());
-            (output.sounds, output.requests, Some(size))
+            (output.sounds, output.requests, output.music, Some(size))
         } else {
             let output =
                 self.player.step(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
-            (output.sounds, output.requests, None)
+            (output.sounds, output.requests, output.music, None)
         };
         Ok(FrameOutcome {
             size,
             sounds,
+            music,
             requests: requests.iter().map(request_name).collect(),
             screen: screen_name(self.player.screen()),
             modal: self.modal(),

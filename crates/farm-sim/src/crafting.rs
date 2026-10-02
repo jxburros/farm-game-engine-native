@@ -8,6 +8,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{HookEvent, RecipeCraftHookPayload};
 use crate::inventory;
+use crate::messages::{self, Message};
 use crate::mines;
 use crate::quests;
 use crate::schema::{
@@ -31,7 +32,8 @@ pub mod craft_block_reasons {
 pub struct CraftableStatus {
     pub craftable: bool,
     pub reason: Option<String>,
-    pub message: Option<String>,
+    /// Why it can't be crafted (serialized as its English text).
+    pub message: Option<Message>,
 }
 
 /// `!string.IsNullOrEmpty(value)`: the string when it is present and non-empty.
@@ -125,22 +127,22 @@ pub fn craftable_status(ctx: &EngineContext, state: &GameState, recipe: &RecipeD
         return CraftableStatus {
             craftable: false,
             reason: Some(craft_block_reasons::LOCKED.to_owned()),
-            message: Some("Recipe not unlocked yet.".to_owned()),
+            message: Some(messages::RECIPE_LOCKED.with(&[])),
         };
     }
     if !has_ingredients(state, recipe) {
         return CraftableStatus {
             craftable: false,
             reason: Some(craft_block_reasons::INGREDIENTS.to_owned()),
-            message: Some("Missing ingredients.".to_owned()),
+            message: Some(messages::MISSING_INGREDIENTS.with(&[])),
         };
     }
     if let Some(category) = non_empty(recipe.requires_station_category.as_deref()) {
         if !nearby_station_categories(ctx, state).contains(category) {
             let station = station_providing(ctx, category);
             let message = match station {
-                Some(station) => format!("You need to be near a {} to craft that.", station.name),
-                None => format!("You need to be near a {category} station to craft that."),
+                Some(station) => messages::NEED_STATION.with(&[&station.name]),
+                None => messages::NEED_STATION_CATEGORY.with(&[&category]),
             };
             return CraftableStatus {
                 craftable: false,
@@ -187,7 +189,7 @@ fn grant_outputs(
             return None;
         }
         inventory = result.inventory;
-        effects.push(Effect::message(message_levels::SUCCESS, format!("Crafted {}x {}", output.quantity, item.name)));
+        effects.push(Effect::say(message_levels::SUCCESS, messages::CRAFTED.with(&[&output.quantity, &item.name])));
     }
     Some(GrantedOutputs { inventory, effects })
 }
@@ -213,23 +215,23 @@ fn progress_craft_quests(
 
 /// The message for outputs that don't fit.
 fn no_room() -> Effect {
-    Effect::message(message_levels::ERROR, "Inventory is full!")
+    Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)
 }
 
 /// Hand-craft an instant recipe. Nothing happens (no ingredients used, no hooks, no quest
 /// progress) unless every output fits in the inventory left after the ingredients are used.
 pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str) -> Effects {
     let Some(recipe) = recipe_by_id(ctx, recipe_id) else {
-        return vec![Effect::message(message_levels::ERROR, "Unknown recipe.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::UNKNOWN_RECIPE)];
     };
     if non_empty(recipe.machine_type_id.as_deref()).is_some() {
-        return vec![Effect::message(message_levels::INFO, "That recipe needs a machine — load it there.")];
+        return vec![Effect::say(message_levels::INFO, &messages::RECIPE_NEEDS_MACHINE)];
     }
     let status = craftable_status(ctx, state, recipe);
     if !status.craftable {
-        return vec![Effect::message(
+        return vec![Effect::say(
             message_levels::ERROR,
-            status.message.unwrap_or_else(|| "Cannot craft that right now.".to_owned()),
+            status.message.unwrap_or_else(|| messages::CANNOT_CRAFT.with(&[])),
         )];
     }
 
@@ -248,16 +250,13 @@ pub fn handle_craft(ctx: &EngineContext, state: &mut GameState, recipe_id: &str)
 /// Place a machine (consumes its item) on the facing tile.
 pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_type_id: &str) -> Effects {
     let Some(machine_type) = ctx.machine_type(machine_type_id) else {
-        return vec![Effect::message(message_levels::ERROR, "Unknown machine.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::UNKNOWN_MACHINE)];
     };
 
     if let Some(item_id) = non_empty(machine_type.item_id.as_deref()) {
         let held = state.player.inventory.iter().any(|slot| slot.item.id == item_id);
         if !held {
-            return vec![Effect::message(
-                message_levels::ERROR,
-                format!("You need a {} in your inventory.", machine_type.name),
-            )];
+            return vec![Effect::say(message_levels::ERROR, messages::NEED_MACHINE_ITEM.with(&[&machine_type.name]))];
         }
     }
 
@@ -270,15 +269,15 @@ pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_
         return Vec::new();
     };
     if tile.collision || tile.crop.is_some() || tile.node.is_some() || tile.machine.is_some() || tile.item.is_some() {
-        return vec![Effect::message(message_levels::ERROR, "No room to place it there.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_ROOM_TO_PLACE)];
     }
     let npc_there =
         state.npcs.values().any(|npc| npc.scene_id == scene.id && npc.x == units::tiles(x) && npc.y == units::tiles(y));
     if npc_there {
-        return vec![Effect::message(message_levels::ERROR, "No room to place it there.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::NO_ROOM_TO_PLACE)];
     }
     if keeps_clear(ctx, state, &scene.id, x, y) {
-        return vec![Effect::message(message_levels::ERROR, "That spot has to stay clear.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::SPOT_MUST_STAY_CLEAR)];
     }
 
     let scene_id = scene.id.clone();
@@ -293,7 +292,7 @@ pub fn handle_place_machine(ctx: &EngineContext, state: &mut GameState, machine_
         state.player.inventory = inventory::remove_item(&state.player.inventory, item_id, 1);
     }
 
-    vec![Effect::message(message_levels::SUCCESS, format!("Placed {}", machine_type.name))]
+    vec![Effect::say(message_levels::SUCCESS, messages::PLACED.with(&[&machine_type.name]))]
 }
 
 /// Tiles a placed machine would make unusable, because the player has to walk onto them or
@@ -332,13 +331,13 @@ pub fn handle_pick_up_machine(ctx: &EngineContext, state: &mut GameState) -> Eff
     };
     let world_movement::TilePoint { x, y } = world_movement::facing_target(state);
     let Some(machine) = scene.tile(x, y).and_then(|tile| tile.machine.as_ref()) else {
-        return vec![Effect::message(message_levels::INFO, "No machine there.")];
+        return vec![Effect::say(message_levels::INFO, &messages::NO_MACHINE)];
     };
     if machine.processing.is_some() {
-        return vec![Effect::message(message_levels::INFO, "It is still working.")];
+        return vec![Effect::say(message_levels::INFO, &messages::MACHINE_STILL_WORKING)];
     }
     if machine.output.as_ref().is_some_and(|output| !output.is_empty()) {
-        return vec![Effect::message(message_levels::INFO, "Collect the finished goods first.")];
+        return vec![Effect::say(message_levels::INFO, &messages::COLLECT_FIRST)];
     }
 
     let scene_id = scene.id.clone();
@@ -351,7 +350,7 @@ pub fn handle_pick_up_machine(ctx: &EngineContext, state: &mut GameState) -> Eff
     if let Some(item) = item {
         let result = inventory::add_item(&state.player.inventory, item, 1, state.player.max_inventory_size, None);
         if !result.added {
-            return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+            return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
         }
         state.player.inventory = result.inventory;
     }
@@ -361,7 +360,7 @@ pub fn handle_pick_up_machine(ctx: &EngineContext, state: &mut GameState) -> Eff
     {
         tile.machine = None;
     }
-    vec![Effect::message(message_levels::SUCCESS, format!("Picked up {name}"))]
+    vec![Effect::say(message_levels::SUCCESS, messages::PICKED_UP.with(&[&name]))]
 }
 
 /// Load a recipe into the machine on the facing tile.
@@ -371,26 +370,26 @@ pub fn handle_machine_load(ctx: &EngineContext, state: &mut GameState, recipe_id
     };
     let world_movement::TilePoint { x, y } = world_movement::facing_target(state);
     let Some(machine) = scene.tile(x, y).and_then(|tile| tile.machine.as_ref()) else {
-        return vec![Effect::message(message_levels::INFO, "No machine there.")];
+        return vec![Effect::say(message_levels::INFO, &messages::NO_MACHINE)];
     };
     if machine.processing.is_some() {
-        return vec![Effect::message(message_levels::INFO, "It is already working.")];
+        return vec![Effect::say(message_levels::INFO, &messages::MACHINE_BUSY)];
     }
     if machine.output.as_ref().is_some_and(|output| !output.is_empty()) {
-        return vec![Effect::message(message_levels::INFO, "Collect the finished goods first.")];
+        return vec![Effect::say(message_levels::INFO, &messages::COLLECT_FIRST)];
     }
 
     let Some(recipe) = recipe_by_id(ctx, recipe_id) else {
-        return vec![Effect::message(message_levels::ERROR, "Unknown recipe.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::UNKNOWN_RECIPE)];
     };
     if recipe.machine_type_id.as_deref() != Some(machine.type_id.as_str()) {
-        return vec![Effect::message(message_levels::ERROR, "This machine cannot run that recipe.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::MACHINE_CANNOT_RUN)];
     }
     if !is_recipe_unlocked(ctx, state, recipe) {
-        return vec![Effect::message(message_levels::ERROR, "Recipe not unlocked yet.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::RECIPE_LOCKED)];
     }
     if !has_ingredients(state, recipe) {
-        return vec![Effect::message(message_levels::ERROR, "Missing ingredients.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::MISSING_INGREDIENTS)];
     }
 
     let scene_id = scene.id.clone();
@@ -403,7 +402,7 @@ pub fn handle_machine_load(ctx: &EngineContext, state: &mut GameState, recipe_id
         machine.processing = Some(MachineProcessing { recipe_id: recipe_id.to_owned(), completes_at_minute });
     }
 
-    vec![Effect::message(message_levels::SUCCESS, format!("Started {}", recipe.name))]
+    vec![Effect::say(message_levels::SUCCESS, messages::STARTED_RECIPE.with(&[&recipe.name]))]
 }
 
 /// Settle machine jobs whose completion time has passed (called from ticks

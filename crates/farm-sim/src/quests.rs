@@ -7,6 +7,7 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
+use crate::messages;
 use crate::schema::{GameState, Quest, QuestObjective, QuestObjectiveProgress, QuestProgress};
 use crate::skills;
 use indexmap::IndexMap;
@@ -50,10 +51,8 @@ fn complete_quest(ctx: &EngineContext, state: &mut GameState, quest_id: &str) ->
             if !result.added {
                 // A dropped reward is a player-visible loss — say so (with what was actually
                 // lost: the part that fit is kept) instead of silently discarding it.
-                effects.push(Effect::message(
-                    message_levels::ERROR,
-                    format!("Inventory full — quest reward lost: {lost}× {}", item.name),
-                ));
+                effects
+                    .push(Effect::say(message_levels::ERROR, messages::QUEST_REWARD_LOST.with(&[&lost, &item.name])));
             }
         }
     }
@@ -207,7 +206,7 @@ pub fn start_quest_by_id(ctx: &EngineContext, state: &mut GameState, quest_id: &
         return vec![];
     }
     activate(state, quest);
-    vec![Effect::message(message_levels::INFO, format!("New quest: {}", quest.name))]
+    vec![Effect::say(message_levels::INFO, messages::NEW_QUEST.with(&[&quest.name]))]
 }
 
 /// TS `{ ...(quests[id] ?? { objectives: {} }), status: 'active' }`.
@@ -231,7 +230,7 @@ pub fn restart_repeatable_quests(ctx: &EngineContext, state: &mut GameState) -> 
             continue;
         }
         activate(state, quest);
-        effects.push(Effect::message(message_levels::INFO, format!("New quest: {}", quest.name)));
+        effects.push(Effect::say(message_levels::INFO, messages::NEW_QUEST.with(&[&quest.name])));
     }
     effects
 }

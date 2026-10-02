@@ -10,8 +10,12 @@ code. The editor shows this guide under **Help → Creator Guide** (F1).
 **File → New Project** (Ctrl+N) asks for a name and a template:
 
 - **Starter Farm**: the full farming loop, with crops, a shop, quests and crafting.
-- **Cozy Garden**: the same farm without energy or collapse, and with slow days.
-- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to remix.
+- **Cozy Garden**: a cottage garden with a pond, beds already growing (one
+  ready to pick), a merchant's stall and two hens; no energy or collapse,
+  and slow days.
+- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to
+  remix; the farm's south gate leads to a village square with a fountain,
+  where the elder and the lantern keeper wait.
 - **Blank**: an empty scene and the default item catalog.
 
 **File → Open Project** (Ctrl+O) lists your projects. They are saved
@@ -111,7 +115,14 @@ to:
 - **Actions** and **Minigames**: an action is a named bundle of effects (give
   an item, set a flag, show a message, start a minigame) that an item's
   **Use** button, a dialogue option, an event or a hotkey can run. A minigame
-  is a short challenge whose score picks the reward.
+  is a short challenge whose score picks the reward. Its **Kind** is one of
+  the games built into the player: **Timing bar**, **Hold to catch**,
+  **Simple battle**, **Rhythm tap**, **Moving target** and **Memory
+  sequence**. Each kind's settings show as fields with their defaults (clear
+  one to play the default). The kinds are part of the engine: a project
+  can't add its own, and a kind the game doesn't have plays as a single
+  "Go!" button that scores 0.5, which Problems warns about, as it does about
+  settings the kind doesn't read or numbers outside their range.
 
 Every nested field also has an **Edit as JSON** box, for pasting or bulk
 changes.
@@ -146,7 +157,10 @@ window size, pixel scale, fullscreen and credits.
 
 The locale also picks the language of the game's own interface when the
 player hasn't chosen one: English and Spanish are built in. Players can
-change it in the game's **Settings → Accessibility → Language**.
+change it in the game's **Settings → Accessibility → Language**. The engine's
+own messages follow it too ("Not enough money!", the built-in minigames'
+prompts and buttons, save-load notices); what you write (names, dialogue,
+event messages, a minigame's own **prompt**) shows as you wrote it.
 
 ### Mods
 

@@ -36,6 +36,7 @@ pub mod gathering;
 pub mod hash;
 pub mod hooks;
 pub mod inventory;
+pub mod messages;
 pub mod mines;
 pub mod npcs;
 pub mod overlay;

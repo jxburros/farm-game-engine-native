@@ -7,6 +7,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::farming::farming_actions;
 use crate::hooks::{ActionHookPayload, HookEvent, RelationshipChangeHookPayload};
+use crate::messages;
 use crate::schema::{
     event_fired_flag, DialogueState, EventCondition, EventOutcome, GameEvent, GameState, MinigameSession,
     NpcSocialState, NpcState, OutcomeKind, MAX_FRIENDSHIP,
@@ -55,11 +56,9 @@ impl ActionBudget {
             return Vec::new();
         }
         self.warned = true;
-        vec![Effect::message(
+        vec![Effect::say(
             message_levels::ERROR,
-            format!(
-                "Action chain limit reached at '{action_id}': actions may perform actions {MAX_ACTION_DEPTH} levels deep and {MAX_ACTION_RUNS} times in all."
-            ),
+            messages::ACTION_CHAIN_LIMIT.with(&[&action_id, &MAX_ACTION_DEPTH, &MAX_ACTION_RUNS]),
         )]
     }
 }
@@ -281,7 +280,7 @@ fn outcome_water_area(ctx: &EngineContext, state: &mut GameState, outcome: &Even
             }
         }
     }
-    vec![Effect::message(message_levels::SUCCESS, "The surrounding soil is watered.")]
+    vec![Effect::say(message_levels::SUCCESS, &messages::SOIL_WATERED)]
 }
 
 fn outcome_give_item(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
@@ -289,11 +288,15 @@ fn outcome_give_item(ctx: &EngineContext, state: &mut GameState, outcome: &Event
     let quantity = outcome.item_quantity.unwrap_or(1);
     let result = inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
     if !result.added {
-        return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
     }
     state.player.inventory = result.inventory;
-    let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
-    vec![Effect::message(message_levels::SUCCESS, format!("Received {}{suffix}", item.name))]
+    let received = if quantity > 1 {
+        messages::RECEIVED_ITEMS.with(&[&item.name, &quantity])
+    } else {
+        messages::RECEIVED_ITEM.with(&[&item.name])
+    };
+    vec![Effect::say(message_levels::SUCCESS, received)]
 }
 
 fn outcome_give_money(state: &mut GameState, outcome: &EventOutcome) -> Effects {
@@ -303,7 +306,7 @@ fn outcome_give_money(state: &mut GameState, outcome: &EventOutcome) -> Effects 
         return vec![];
     }
     state.player.money = state.player.money.saturating_add(amount);
-    vec![Effect::message(message_levels::SUCCESS, format!("Received ${amount}"))]
+    vec![Effect::say(message_levels::SUCCESS, messages::RECEIVED_MONEY.with(&[&amount]))]
 }
 
 fn outcome_take_money(state: &mut GameState, outcome: &EventOutcome) -> Effects {
@@ -312,7 +315,7 @@ fn outcome_take_money(state: &mut GameState, outcome: &EventOutcome) -> Effects 
         return vec![];
     }
     state.player.money -= amount;
-    vec![Effect::message(message_levels::INFO, format!("Paid ${amount}"))]
+    vec![Effect::say(message_levels::INFO, messages::PAID_MONEY.with(&[&amount]))]
 }
 
 fn outcome_spawn_npc(ctx: &EngineContext, state: &mut GameState, outcome: &EventOutcome) -> Effects {
@@ -437,7 +440,7 @@ fn perform_action_detailed(
     }
     let Some(action) = ctx.action(action_id) else {
         return PerformActionResult {
-            effects: vec![Effect::message(message_levels::ERROR, format!("Unknown action '{action_id}'"))],
+            effects: vec![Effect::say(message_levels::ERROR, messages::UNKNOWN_ACTION.with(&[&action_id]))],
             ran: false,
         };
     };
@@ -479,7 +482,7 @@ pub fn start_minigame_session(
     context: Option<&IndexMap<String, Value>>,
 ) -> Effects {
     if ctx.minigame(minigame_id).is_none() {
-        return vec![Effect::message(message_levels::ERROR, format!("Unknown minigame '{minigame_id}'"))];
+        return vec![Effect::say(message_levels::ERROR, messages::UNKNOWN_MINIGAME.with(&[&minigame_id]))];
     }
     if state.minigame.is_some() {
         return vec![];

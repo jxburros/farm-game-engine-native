@@ -354,8 +354,14 @@ and gamepad support ([docs/PLAYER.md](docs/PLAYER.md)).
 
 ## Later
 
-- **Localization** of the rest of the editor UI (forms and menus; the mode
-  names, Play Mode toolbar and help are translated) and of the Creator Guide.
+- **Localization** of the rest of the editor UI (tabs, forms and Problems;
+  the menu bar, mode names, Play Mode toolbar and help are translated) and of
+  the Creator Guide. The game's interface and the engine's own messages are
+  translated already.
+- **Minigames from content packs.** The minigame kinds are compiled into the
+  player (six built in, picked from a list in the editor). Letting a pack
+  define its own needs a plugin API beyond mutations: per-frame update and
+  draw calls into the sandbox, and input routed to it.
 - **Retire the web version's TypeScript engine** once playtesting on
   `farm-wasm` has proven itself, and move its HTML export to `farm-wasm`'s
   standalone player (as the native editor's web demo export does).

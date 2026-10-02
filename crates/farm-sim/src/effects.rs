@@ -2,6 +2,7 @@
 //! never mutate simulation state — they are outputs of a step, consumed by the host (toasts,
 //! sounds, camera snaps, …).
 
+use crate::messages::{Localized, Message};
 use serde::{Deserialize, Serialize};
 
 pub mod message_levels {
@@ -13,9 +14,16 @@ pub mod message_levels {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum Effect {
-    /// `level` is one of [`message_levels`].
+    /// `level` is one of [`message_levels`]. `text` is English (or the creator's own text);
+    /// `localized` is the catalog message it was made from, for players that show another
+    /// language. Serialization and equality skip `localized` (see [`crate::messages`]).
     #[serde(rename = "message")]
-    Message { level: String, text: String },
+    Message {
+        level: String,
+        text: String,
+        #[serde(skip)]
+        localized: Localized,
+    },
     #[serde(rename = "sceneChanged")]
     SceneChanged {
         scene_id: String,
@@ -52,9 +60,17 @@ pub enum Effect {
 }
 
 impl Effect {
-    /// TS `message(level, text)`.
+    /// TS `message(level, text)`: a message with text that is not engine text (an event's or a
+    /// plugin's own message). Engine sentences use [`Effect::say`].
     pub fn message(level: &str, text: impl Into<String>) -> Self {
-        Self::Message { level: level.to_owned(), text: text.into() }
+        Self::Message { level: level.to_owned(), text: text.into(), localized: Localized(None) }
+    }
+
+    /// A message from the catalog ([`crate::messages`]): its English text, plus the message
+    /// itself for players that translate it.
+    pub fn say(level: &str, message: impl Into<Message>) -> Self {
+        let message = message.into();
+        Self::Message { level: level.to_owned(), text: message.english(), localized: Localized(Some(message)) }
     }
 
     /// The discriminator literal (TS `effect.type`).

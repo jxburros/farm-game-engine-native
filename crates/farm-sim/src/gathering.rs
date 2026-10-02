@@ -5,6 +5,7 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{GatherDrop, HookEvent, ResourceGatherHookPayload};
+use crate::messages;
 use crate::rng::Rng;
 use crate::schema::{tool_types, GameState, NodeTypeDefinition, Tile, TileNode};
 use crate::{inventory, mines, quests, skills};
@@ -71,9 +72,9 @@ pub fn strike_node(
         if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
             tile.node = Some(TileNode { remaining_health: remaining, ..node.clone() });
         }
-        effects.push(Effect::message(
+        effects.push(Effect::say(
             message_levels::INFO,
-            format!("{}: {}/{}", definition.name, remaining, definition.health),
+            messages::NODE_HEALTH.with(&[&definition.name, &remaining, &definition.health]),
         ));
         Vec::new()
     } else {
@@ -100,19 +101,17 @@ pub fn strike_node(
 /// Why the tool cannot strike a node of `definition` (the wrong tool, or too low a tier).
 fn tool_refusal(definition: &NodeTypeDefinition, tool_type: &str, tool_tier: i32) -> Option<Effect> {
     if definition.required_tool != tool_type {
-        return Some(Effect::message(
+        return Some(Effect::say(
             message_levels::INFO,
-            format!("{} needs a {}.", definition.name, replace_first_dash(&definition.required_tool)),
+            messages::NODE_NEEDS_TOOL
+                .with_args(vec![messages::Arg::text(&definition.name), messages::tool_noun(&definition.required_tool)]),
         ));
     }
     if tool_tier < definition.required_tool_tier {
-        return Some(Effect::message(
+        return Some(Effect::say(
             message_levels::INFO,
-            format!(
-                "Your {} isn't strong enough for {}.",
-                replace_first_dash(tool_type),
-                definition.name.to_lowercase()
-            ),
+            messages::TOOL_TOO_WEAK
+                .with_args(vec![messages::tool_noun(tool_type), messages::Arg::text(definition.name.to_lowercase())]),
         ));
     }
     None
@@ -167,7 +166,7 @@ fn deplete_node(
             received.push(format!("{}x {}", drop.quantity, item.name));
             added_drops.push(drop.clone());
         } else {
-            effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+            effects.push(Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL));
         }
     }
     state.player.inventory = inventory;
@@ -187,12 +186,12 @@ fn deplete_node(
         }
     }
 
-    effects.push(Effect::message(
+    effects.push(Effect::say(
         message_levels::SUCCESS,
         if received.is_empty() {
-            format!("{} cleared!", definition.name)
+            messages::NODE_CLEARED.with(&[&definition.name])
         } else {
-            format!("{} cleared! Got {}", definition.name, received.join(", "))
+            messages::NODE_CLEARED_GOT.with(&[&definition.name, &received.join(", ")])
         },
     ));
     ctx.emit(HookEvent::ResourceGather(ResourceGatherHookPayload { node_type_id: definition.id.clone(), drops }));

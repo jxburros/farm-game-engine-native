@@ -7,6 +7,7 @@ use crate::engine_types::{Effects, EngineContext};
 use crate::events::EventPosition;
 use crate::farming::{crops, multi_tile};
 use crate::hooks::{CropHarvestHookPayload, HookEvent, NpcInteractHookPayload};
+use crate::messages;
 use crate::rng::Rng;
 use crate::schema::{
     crop_qualities, item_types, soil_states, tile_types, tool_types, Crop, CropDefinition, DialogueState, GameState,
@@ -127,18 +128,14 @@ fn finish(ctx: &EngineContext, state: &mut GameState, tool: &Item, energy_cost: 
 /// water, till, harvest, fish), spending energy and durability when it does something.
 pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &str) -> Effects {
     let Some(tool_slot) = inventory::find_tool_slot(&state.player.inventory, tool_type).cloned() else {
-        let name = if tool_type == tool_types::WATERING_CAN {
-            "watering can".to_owned()
-        } else {
-            gathering::replace_first_dash(tool_type)
-        };
-        return vec![Effect::message(message_levels::ERROR, format!("You need a {name}!"))];
+        // "watering can", or the type with its first dash as a space.
+        return vec![Effect::say(
+            message_levels::ERROR,
+            messages::NEED_TOOL.with_args(vec![messages::tool_noun(tool_type)]),
+        )];
     };
     if tools::is_tool_broken(&tool_slot.item) {
-        return vec![Effect::message(
-            message_levels::ERROR,
-            format!("Your {} is broken! A shop can repair it.", tool_slot.item.name),
-        )];
+        return vec![Effect::say(message_levels::ERROR, messages::TOOL_BROKEN.with(&[&tool_slot.item.name]))];
     }
 
     let Some(target) = facing_tile(state) else {
@@ -176,7 +173,7 @@ pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &s
     match used {
         ToolUse::Used(effects) => finish(ctx, state, tool, energy_cost, effects),
         ToolUse::Refused(effects) => effects,
-        ToolUse::NotHere => vec![Effect::message(message_levels::INFO, format!("Can't use {} here", tool.name))],
+        ToolUse::NotHere => vec![Effect::say(message_levels::INFO, messages::CANT_USE_HERE.with(&[&tool.name]))],
     }
 }
 
@@ -199,7 +196,7 @@ fn water_with_can(ctx: &EngineContext, state: &mut GameState, target: &FacingTil
     for (spot_x, spot_y) in aoe_targets(target, &direction, tier) {
         water_at(ctx, state, index, spot_x as usize, spot_y as usize);
     }
-    ToolUse::Used(vec![Effect::message(message_levels::SUCCESS, "Watered!")])
+    ToolUse::Used(vec![Effect::say(message_levels::SUCCESS, &messages::WATERED)])
 }
 
 /// The hoe on grass or floor: till the tool tier's area in front of the player into dry soil
@@ -223,7 +220,7 @@ fn till_with_hoe(state: &mut GameState, target: &FacingTileResult, tier: i32) ->
             spot_tile.soil_state = Some(soil_states::DRY.to_owned());
         }
     }
-    ToolUse::Used(vec![Effect::message(message_levels::SUCCESS, "Tilled soil!")])
+    ToolUse::Used(vec![Effect::say(message_levels::SUCCESS, &messages::TILLED)])
 }
 
 /// The scythe on a crop: clear a withered crop (a multi-tile one whole) or harvest a mature
@@ -243,14 +240,14 @@ fn harvest_with_scythe(ctx: &EngineContext, state: &mut GameState, target: &Faci
                 tile.crop = None;
             }
         }
-        return ToolUse::Used(vec![Effect::message(message_levels::SUCCESS, "Cleared the withered crop.")]);
+        return ToolUse::Used(vec![Effect::say(message_levels::SUCCESS, &messages::CLEARED_WITHERED)]);
     }
     if let Some(crop_def) = ctx.content.crops.get(&crop.r#type) {
         if crops::is_crop_mature_by_days(crop, crop_def) {
             return ToolUse::Used(harvest_crop(ctx, state, &target.scene_id, target.x, target.y));
         }
     }
-    ToolUse::Refused(vec![Effect::message(message_levels::INFO, "Crop is not ready to harvest yet")])
+    ToolUse::Refused(vec![Effect::say(message_levels::INFO, &messages::CROP_NOT_READY)])
 }
 
 /// The fishing rod on water. A declared 'fishing' minigame gates the catch on player skill; the
@@ -336,11 +333,11 @@ pub fn handle_interact_with(ctx: &EngineContext, state: &mut GameState, choice: 
             return crafting::collect_machine_output(ctx, state, &target.scene_id, target.x, target.y);
         }
         if machine.processing.is_some() {
-            return vec![Effect::message(message_levels::INFO, "Still working…")];
+            return vec![Effect::say(message_levels::INFO, &messages::MACHINE_STILL_WORKING_SHORT)];
         }
         let machine_def = ctx.machine_type(&machine.type_id);
         let name = machine_def.map_or("Machine", |def| def.name.as_str());
-        return vec![Effect::message(message_levels::INFO, format!("{name} is idle — load a recipe."))];
+        return vec![Effect::say(message_levels::INFO, messages::MACHINE_IDLE.with(&[&name]))];
     }
 
     // Mine (M4f): entrance descends (elevator checkpoint when unlocked);
@@ -360,11 +357,11 @@ pub fn handle_interact_with(ctx: &EngineContext, state: &mut GameState, choice: 
 
     if let Some(crop) = &target.tile.crop {
         if crop.withered == Some(true) {
-            return vec![Effect::message(message_levels::INFO, "This crop withered — clear it with a scythe.")];
+            return vec![Effect::say(message_levels::INFO, &messages::CROP_WITHERED)];
         }
         if let Some(definition) = ctx.content.crops.get(&crop.r#type) {
             if !crops::is_crop_mature_by_days(crop, definition) {
-                return vec![Effect::message(message_levels::INFO, "Crop is not ready to harvest yet")];
+                return vec![Effect::say(message_levels::INFO, &messages::CROP_NOT_READY)];
             }
         }
         return harvest_crop(ctx, state, &target.scene_id, target.x, target.y);
@@ -392,7 +389,7 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
         return Vec::new();
     };
     if !crops::is_crop_mature_by_days(&crop, definition) {
-        return vec![Effect::message(message_levels::INFO, "Crop is not ready to harvest yet")];
+        return vec![Effect::say(message_levels::INFO, &messages::CROP_NOT_READY)];
     }
 
     let crop_item = match crops::harvest_item(&ctx.content, definition) {
@@ -400,9 +397,9 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
         // A content mistake (Problems reports it as crop.noHarvestItem): say so instead of
         // silently doing nothing.
         Err(crop_item_id) => {
-            return vec![Effect::message(
+            return vec![Effect::say(
                 message_levels::ERROR,
-                format!("{} can't be harvested: its harvest item '{crop_item_id}' is missing.", definition.name),
+                messages::HARVEST_ITEM_MISSING.with(&[&definition.name, &crop_item_id]),
             )]
         }
     };
@@ -430,7 +427,7 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
     );
     if !add_result.added {
         // Full inventory aborts the harvest; the rng draws are discarded.
-        return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
     }
 
     let Some(index) = scene_index(state, scene_id) else {
@@ -472,12 +469,9 @@ fn harvest_crop(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i
     state.player.inventory = add_result.inventory;
 
     let mut effects: Effects = vec![
-        Effect::message(
+        Effect::say(
             message_levels::SUCCESS,
-            format!(
-                "Harvested {}x {}{}{} (worth ~${})",
-                quantity, definition.name, quality_text, mutation_text, estimated_value
-            ),
+            messages::HARVESTED.with(&[&quantity, &definition.name, &quality_text, &mutation_text, &estimated_value]),
         ),
         Effect::CropHarvested { crop_type: crop.r#type.clone(), quantity },
     ];
@@ -524,26 +518,27 @@ fn plant_seed(
         Err(refused) => return refused,
     };
     let Some(crop_type) = seed_item.crop_type.as_deref().filter(|crop| !crop.is_empty()) else {
-        return vec![Effect::message(message_levels::INFO, "No seeds in inventory")];
+        return vec![Effect::say(message_levels::INFO, &messages::NO_SEEDS)];
     };
     let seed_item_id = seed_item.id.clone();
 
     let Some(definition) = ctx.content.crops.get(crop_type) else {
-        return vec![Effect::message(message_levels::ERROR, "Invalid crop type!")];
+        return vec![Effect::say(message_levels::ERROR, &messages::INVALID_CROP)];
     };
 
     if !crops::can_grow_in_season(Some(definition), &state.clock.season) {
+        let name = messages::Arg::text(&definition.name);
+        let season = messages::season_noun(&state.clock.season);
         let text = if choice.seed_item_id.is_some() {
-            format!(
-                "{} can't grow in {}! It grows in {}.",
-                definition.name,
-                state.clock.season,
-                definition.seasons.join(", ")
-            )
+            messages::CANT_GROW_IN_SEASON.with_args(vec![
+                name,
+                season,
+                messages::Arg::text(definition.seasons.join(", ")),
+            ])
         } else {
-            format!("{} cannot grow in {}!", definition.name, state.clock.season)
+            messages::CANNOT_GROW_IN_SEASON.with_args(vec![name, season])
         };
-        return vec![Effect::message(message_levels::ERROR, text)];
+        return vec![Effect::say(message_levels::ERROR, text)];
     }
 
     let fertilizer_item_id = match choose_fertilizer(ctx, state, choice) {
@@ -554,7 +549,7 @@ fn plant_seed(
     if let Some(multi_tile) = &definition.multi_tile {
         let can_place = crops::can_place_multi_tile_crop(&scene.tiles, x, y, multi_tile.width, multi_tile.height);
         if !can_place {
-            return vec![Effect::message(message_levels::ERROR, "Not enough space for this crop!")];
+            return vec![Effect::say(message_levels::ERROR, &messages::NO_SPACE_FOR_CROP)];
         }
     }
 
@@ -577,14 +572,8 @@ fn plant_seed(
     place_crop(state, index, (x, y), definition, &crop_type, used_fertilizer);
     state.player.inventory = inventory;
 
-    vec![Effect::message(
-        message_levels::SUCCESS,
-        format!(
-            "Planted {}!{} Water it so it grows.",
-            definition.name,
-            if used_fertilizer { " (Fertilized)" } else { "" }
-        ),
-    )]
+    let planted = if used_fertilizer { &messages::PLANTED_FERTILIZED } else { &messages::PLANTED };
+    vec![Effect::say(message_levels::SUCCESS, planted.with(&[&definition.name]))]
 }
 
 /// The seed to plant: the chosen one (refused when not held), or for `interactWith` the first
@@ -593,10 +582,7 @@ fn plant_seed(
 fn choose_seed<'a>(ctx: &EngineContext, state: &'a GameState, choice: PlantChoice<'_>) -> Result<&'a Item, Effects> {
     if let Some(seed_item_id) = choice.seed_item_id {
         return held_of_type(state, seed_item_id, item_types::SEED).ok_or_else(|| {
-            vec![Effect::message(
-                message_levels::INFO,
-                format!("You have no {} to plant.", item_name(ctx, seed_item_id)),
-            )]
+            vec![Effect::say(message_levels::INFO, messages::NO_SEED_TO_PLANT.with(&[&item_name(ctx, seed_item_id)]))]
         });
     }
     let seeds: Vec<&Item> = state
@@ -614,7 +600,7 @@ fn choose_seed<'a>(ctx: &EngineContext, state: &'a GameState, choice: PlantChoic
     in_season
         .or_else(|| seeds.first())
         .copied()
-        .ok_or_else(|| vec![Effect::message(message_levels::INFO, "No seeds in inventory")])
+        .ok_or_else(|| vec![Effect::say(message_levels::INFO, &messages::NO_SEEDS)])
 }
 
 /// The fertilizer the player chose (refused when not held); `None` when none was chosen or for
@@ -629,9 +615,9 @@ fn choose_fertilizer(
     };
     match held_of_type(state, fertilizer_item_id, item_types::FERTILIZER) {
         Some(item) => Ok(Some(item.id.clone())),
-        None => Err(vec![Effect::message(
+        None => Err(vec![Effect::say(
             message_levels::INFO,
-            format!("You have no {} to use.", item_name(ctx, fertilizer_item_id)),
+            messages::NO_FERTILIZER.with(&[&item_name(ctx, fertilizer_item_id)]),
         )]),
     }
 }

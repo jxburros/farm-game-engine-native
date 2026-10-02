@@ -189,8 +189,9 @@ Edit Mode's map and the art studio's previews; mirror `fe_preview_*` and `fe_ren
 - `hashText(text)`: the v8 text hash (FNV-1a over UTF-16, two 32-bit lanes). It no longer
   matches any state hash (`hashText(stateJson()) !== hash()`); it stays for tools that compare
   v8-era text hashes.
-- `sfxCues()`, `sfxSamples(cue, sampleRate)`, `version()`, `lastPanic()`. `start()` installs the
-  panic hook; `init` calls it.
+- `sfxCues()`, `sfxSamples(cue, sampleRate)`, `musicSamples(name, sampleRate)` (the built-in
+  music and ambience loops a frame's `info.music` names), `version()`, `lastPanic()`.
+  `start()` installs the panic hook; `init` calls it.
 
 ## Errors and panics
 
