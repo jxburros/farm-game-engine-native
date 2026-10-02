@@ -17,6 +17,8 @@ using FarmEngine.Schemas;
 using Microsoft.FSharp.Collections;
 using Microsoft.FSharp.Core;
 using Microsoft.FSharp.Reflection;
+using static FarmingRpgMaker.App.Game.ContentFormLayout;
+using static FarmingRpgMaker.App.Game.ContentFormSchema;
 
 namespace FarmingRpgMaker.App.Game;
 
@@ -201,67 +203,7 @@ internal sealed class ContentForm
         return options;
     }
 
-    // ---- Reflection over the schema records (display only) ----
-
-    /// <summary>A record's fields in declaration order, without the undeclared-keys bag.</summary>
-    private static IEnumerable<PropertyInfo> FormProperties(Type type) =>
-        FSharpType.GetRecordFields(type, null).Where(property => property.Name != "Extra");
-
-    private static string JsonKey(Type owner, PropertyInfo property) => RecordJson.JsonKey(owner, property.Name);
-
-    private static bool IsOption(Type type) => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FSharpOption<>);
-
-    /// <summary><c>T option</c> → <c>T</c>; <c>float option option</c> (absent, null or a number) stays as it is.</summary>
-    private static Type Unwrap(Type type) => IsOption(type) && !IsOption(type.GetGenericArguments()[0]) ? type.GetGenericArguments()[0] : type;
-
-    private static bool IsNullable(PropertyInfo property) => IsOption(property.PropertyType);
-
-    /// <summary><c>float option option</c>: absent, null or a number.</summary>
-    private static bool IsOptionalNullableNumber(Type type) => IsOption(type) && IsOption(type.GetGenericArguments()[0]) && IsNumber(type.GetGenericArguments()[0].GetGenericArguments()[0]);
-
-    private static bool IsNumber(Type type) => type == typeof(double) || type == typeof(int) || type == typeof(float) || type == typeof(long);
-
-    private static Type? ListElement(Type type) =>
-        type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FSharpList<>) ? type.GetGenericArguments()[0] : null;
-
-    /// <summary>An ordered map of JSON values: <c>(string * Json) list</c>.</summary>
-    private static bool IsJsonDictionary(Type type) => type == typeof(FSharpList<Tuple<string, Json>>);
-
-    private static bool IsRecord(Type type) =>
-        type.Namespace == typeof(GameProject).Namespace && FSharpType.IsRecord(type, null);
-
-    /// <summary>A record at its schema defaults (<c>Record.Default</c>).</summary>
-    private static object DefaultOf(Type type) =>
-        type.GetProperty("Default", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
-        ?? throw new InvalidOperationException($"Cannot create a {type.Name}.");
-
-    private static string? StringOf(JsonNode? node) =>
-        node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
-
-    private static string NumberText(JsonNode? node) =>
-        node is JsonValue value && value.TryGetValue<double>(out var number) ? number.ToString("R", CultureInfo.InvariantCulture) : "";
-
-    public static string Title(string name)
-    {
-        var text = new StringBuilder();
-        for (var i = 0; i < name.Length; i++)
-        {
-            if (i > 0 && char.IsUpper(name[i]) && char.IsLower(name[i - 1])) text.Append(' ');
-            text.Append(name[i]);
-        }
-        return text.ToString();
-    }
-
-    /// <summary>"Scene Id" → "Scene": a picker already says it holds an id.</summary>
-    private static string TrimId(string label) =>
-        label.EndsWith(" Ids", StringComparison.Ordinal) ? label[..^4] + "s"
-        : label.EndsWith(" Id", StringComparison.Ordinal) ? label[..^3]
-        : label;
-
-    private static string Pascal(string key) => key.Length == 0 ? key : char.ToUpperInvariant(key[0]) + key[1..];
-    private static string Join(string path, string part) => path.Length == 0 ? part : $"{path}_{part}";
-
-    // ---- Record forms ----
+    // ---- Record forms (reflection over the schema records: ContentFormSchema) ----
 
     /// <summary>
     /// The entry itself: one form, or a tab per F# <see cref="FormTab"/> (web CropEditor's Basic /
@@ -310,15 +252,6 @@ internal sealed class ContentForm
             if (ReferenceEquals(e.Source, control) && control.SelectedIndex >= 0) _tab = control.SelectedIndex;
         };
         return control;
-    }
-
-    /// <summary>A record's fields as the form shows them: F# hides some while its <c>type</c> says so (quest objective targets).</summary>
-    private static IEnumerable<PropertyInfo> VisibleProperties(JsonObject target, Type type)
-    {
-        var hidden = type.GetProperty("Type")?.PropertyType == typeof(string)
-            ? ContentForms.HiddenProperties(type.Name, StringOf(target["type"]) ?? "")
-            : [];
-        return FormProperties(type).Where(property => !hidden.Contains(property.Name));
     }
 
     private void AddProperties(Panel panel, JsonObject target, Type type, string path)
@@ -394,35 +327,6 @@ internal sealed class ContentForm
         group.Children.Add(Ui.Text(label.ToUpperInvariant(), "category"));
         group.Children.Add(body);
         panel.Children.Add(new Border { Name = "ContentGroup_" + path, Child = group }.WithClasses("form-group"));
-    }
-
-    private static TextBlock Label(string text) => Ui.Text(text, "muted", "small");
-
-    /// <summary>Gives <paramref name="control"/> the name screen readers announce (its visible label).</summary>
-    private static T Accessible<T>(T control, string name) where T : Control
-    {
-        AutomationProperties.SetName(control, name);
-        return control;
-    }
-
-    /// <summary>Controls side by side in <paramref name="columns"/> (Grid column definitions).</summary>
-    private static Grid Columns(string columns, params Control[] children)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(columns), ColumnSpacing = 6 };
-        for (var i = 0; i < children.Length; i++)
-        {
-            Grid.SetColumn(children[i], i);
-            grid.Children.Add(children[i]);
-        }
-
-        return grid;
-    }
-
-    private static StackPanel Labeled(string label, Control control, double width = 0)
-    {
-        var stack = Ui.VStack(3, Label(label), control);
-        if (width > 0) stack.Width = width;
-        return stack;
     }
 
     // ---- Scalars ----
@@ -507,15 +411,6 @@ internal sealed class ContentForm
         });
         return box;
     }
-
-    /// <summary>"Schedule entry 1 minute must be from 0 to 1560." (or "at least" / "at most").</summary>
-    private static string RangeText(string label, double? min, double? max) => (min, max) switch
-    {
-        ({ } low, { } high) => $"{label} must be from {Ui.Num(low)} to {Ui.Num(high)}.",
-        ({ } low, null) => $"{label} must be at least {Ui.Num(low)}.",
-        (null, { } high) => $"{label} must be at most {Ui.Num(high)}.",
-        _ => $"{label} is out of range.",
-    };
 
     /// <summary>
     /// Registers the writer of the field <paramref name="key"/>: <paramref name="write"/> runs when
@@ -606,30 +501,6 @@ internal sealed class ContentForm
                 array.RemoveAt(index);
                 if (array.Count == 0 && nullable) target[key] = null;
             })));
-
-    private static void Move(JsonArray array, int index, int delta)
-    {
-        var target = index + delta;
-        if (target < 0 || target >= array.Count) return;
-        var node = array[index];
-        array.RemoveAt(index);
-        array.Insert(target, node);
-    }
-
-    private static Border ListRow(Control header, Control body)
-    {
-        var stack = Ui.VStack(6, header, body);
-        return new Border { Child = stack }.WithClasses("row");
-    }
-
-    private static Grid RowHeader(Control title, Control buttons)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        grid.Children.Add(title);
-        Grid.SetColumn(buttons, 1);
-        grid.Children.Add(buttons);
-        return grid;
-    }
 
     private void AddRecordList(Panel panel, JsonObject target, string key, string path, Type element, bool nullable)
     {
@@ -820,32 +691,7 @@ internal sealed class ContentForm
         })));
     }
 
-    /// <summary>A setting value: JSON when it parses (numbers, booleans, quoted text), else text.</summary>
-    private static JsonNode? Literal(string text)
-    {
-        try
-        {
-            return JsonNode.Parse(text);
-        }
-        catch (JsonException)
-        {
-            return JsonValue.Create(text);
-        }
-    }
-
     // ---- Compact rows and cards (web NPCEditor's schedule and waypoints, ShopEditor's stock) ----
-
-    private static string Key<T>(string property) => RecordJson.JsonKey(typeof(T), property);
-
-    private static TextBlock EmptyNote(string path, string text)
-    {
-        var note = Ui.Wrapped(text, "muted", "small");
-        note.Name = $"ContentEmpty_{path}";
-        return note;
-    }
-
-    private static Control NotAnObject(Control buttons) =>
-        Columns("*,Auto", Ui.Wrapped("This entry is not an object; use Edit as JSON.", "muted", "small"), buttons);
 
     /// <summary>A whole-number tile coordinate box.</summary>
     private TextBox Coordinate(JsonObject target, string key, string name, string label, string watermark)
@@ -905,12 +751,6 @@ internal sealed class ContentForm
         if (count == 0) panel.Children.Add(EmptyNote(path, "No schedule — the NPC stays put (or wanders/patrols)."));
         panel.Children.Add(AddElementButton(path, "Add schedule entry", "Add schedule entry", typeof(NpcScheduleEntry), target, key));
     }
-
-    /// <summary>A typed minute of day as a clock time ("8:00 AM"), clamped like the saved value; empty while it is not a number.</summary>
-    private static string ClockText(string? text) =>
-        double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var minute) && double.IsFinite(minute)
-            ? ContentReadouts.Clock(Math.Clamp(minute, 0, 1560))
-            : "";
 
     /// <summary>Web NPCEditor's patrol waypoints: "1. x y" rows; new points start at the NPC's tile (F#).</summary>
     private void AddWaypointRows(Panel panel, JsonObject target, string key, string path, bool nullable)
