@@ -26,7 +26,7 @@ wasmi = { version = "2.0.0", default-features = false, features = ["std", "stabl
 portable-dispatch = ["wasmi/portable-dispatch"]
 
 [dev-dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 # Reads the checked-in guest in tests (the version wasmi already uses).
 wasmparser = { version = "0.228", default-features = false, features = ["std"] }
 
