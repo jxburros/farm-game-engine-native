@@ -10,10 +10,24 @@ namespace FarmingRpgMaker.App.Tests.Ui;
 
 internal static class UiTestHelpers
 {
-    /// <summary>Runs dispatcher jobs until <paramref name="condition"/> holds (or fails after ~5 s).</summary>
+    /// <summary>
+    /// How long <see cref="PumpUntil"/> waits before it fails: 60 s, or
+    /// <c>FARM_TEST_WAIT_SECONDS</c>. A passing wait returns as soon as its condition holds, so
+    /// the budget only decides how long a broken test hangs, never how long a slow machine may take.
+    /// </summary>
+    public static readonly TimeSpan WaitBudget = TimeSpan.FromSeconds(
+        int.TryParse(Environment.GetEnvironmentVariable("FARM_TEST_WAIT_SECONDS"), out var seconds) && seconds > 0 ? seconds : 60);
+
+    /// <summary>
+    /// Runs dispatcher jobs until <paramref name="condition"/> holds. The condition is checked
+    /// after every round of jobs, with no fixed sleep in between (the work it waits for runs on
+    /// the UI thread or on worker threads); it fails after <see cref="WaitBudget"/>.
+    /// </summary>
     public static void PumpUntil(Func<bool> condition, string because = "condition")
     {
-        for (var i = 0; i < 500; i++)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var spin = new SpinWait();
+        while (true)
         {
             Dispatcher.UIThread.RunJobs();
             if (condition())
@@ -21,10 +35,22 @@ internal static class UiTestHelpers
                 return;
             }
 
-            Thread.Sleep(10);
-        }
+            if (clock.Elapsed > WaitBudget)
+            {
+                Assert.Fail($"Timed out after {clock.Elapsed.TotalSeconds:0.0} s waiting for {because}.");
+            }
 
-        Assert.Fail($"Timed out waiting for {because}.");
+            // Yields to worker threads, backing off to 1 ms sleeps while nothing changes.
+            spin.SpinOnce();
+        }
+    }
+
+    /// <summary>Runs dispatcher jobs until <paramref name="task"/> has finished, then rethrows its failure.</summary>
+    public static void PumpUntilDone(Task task, string because = "task")
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        PumpUntil(() => task.IsCompleted, because);
+        task.GetAwaiter().GetResult();
     }
 
     public static void Pump()

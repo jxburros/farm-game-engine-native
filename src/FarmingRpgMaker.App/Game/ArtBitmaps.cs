@@ -9,7 +9,8 @@ namespace FarmingRpgMaker.App.Game;
 /// the image as a base64 <c>data:image/…</c> URL (see <see cref="ArtImport"/>). Art can arrive in
 /// imported projects and content packs without passing <see cref="ArtImport"/>, so every decode
 /// first reads the size from the image header and refuses images over the import limits: a small
-/// file that claims a huge image (a decompression bomb) never gets its pixels allocated.
+/// file that claims a huge image (a decompression bomb) never gets its pixels allocated, and
+/// formats other than PNG, JPEG, GIF, WebP and BMP never reach Skia's codecs.
 /// </summary>
 internal static class ArtBitmaps
 {
@@ -39,11 +40,23 @@ internal static class ArtBitmaps
 
     /// <summary>
     /// The width and height an encoded image declares in its header (nothing is decoded), or
-    /// null when Skia can't read it.
+    /// null when it is not a PNG, JPEG, GIF, WebP or BMP image Skia can read. The header is read
+    /// in managed code first (<see cref="ImageHeaders"/>): Skia's codecs only see images of an
+    /// accepted format and size, and then report the size the decode will allocate.
     /// </summary>
     public static (int Width, int Height)? HeaderSize(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
+        if (ImageHeaders.Read(bytes) is not { } header)
+        {
+            return null;
+        }
+
+        if (!WithinLimits(header.Width, header.Height))
+        {
+            return (header.Width, header.Height);
+        }
+
         using var data = SKData.CreateCopy(bytes);
         using var codec = SKCodec.Create(data);
         return codec is null ? null : (codec.Info.Width, codec.Info.Height);

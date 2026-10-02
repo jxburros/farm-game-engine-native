@@ -65,10 +65,13 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       # On Linux the window smoke test must find Xvfb (it skips only where none is installed).
+      # The proptest seed is the run id, so a failing property replays locally with
+      # PROPTEST_RNG_SEED=<run id> (CONTRIBUTING.md "Property tests").
       - name: Test
         run: cargo test --locked --workspace
         env:
           FARM_REQUIRE_DISPLAY: ${{ runner.os == 'Linux' && '1' || '0' }}
+          PROPTEST_RNG_SEED: ${{ github.run_id }}
 
       - name: The tests left fixtures/ unchanged
         shell: bash

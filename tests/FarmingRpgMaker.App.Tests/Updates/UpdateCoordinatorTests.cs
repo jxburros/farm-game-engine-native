@@ -242,14 +242,17 @@ public sealed class UpdateCoordinatorTests
     [Fact]
     public async Task ChannelChange_DuringCheck_SupersedesTheOldCheck()
     {
-        _service.CheckDelay = TimeSpan.FromMilliseconds(200);
+        // The first check stays in flight until it is cancelled or released: no timing involved.
+        _service.HoldNextCheck = true;
         _service.NextResult = new UpdateCheckResult.UpToDate();
         _service.PrereleaseResult = FakeUpdateService.SampleUpdate("0.3.0-beta.1");
         var coordinator = Create();
 
         var first = coordinator.CheckAsync();
         Assert.Equal(UpdateState.Checking, coordinator.State);
+        Assert.False(first.IsCompleted);
         await coordinator.SetChannelAsync(UpdateChannel.Prerelease);
+        _service.ReleaseCheck();
         await first;
 
         Assert.Equal([UpdateChannel.Stable, UpdateChannel.Prerelease], _service.CheckedChannels);

@@ -56,14 +56,20 @@ module Icons =
     /// The most pixels an icon image may have (the art import limit: 16 megapixels).
     let MaxPixels = 16L * 1024L * 1024L
 
-    /// The icon at every size in `sizes`, from PNG (or any format Skia decodes) bytes. The size
-    /// in the image header is checked against the art import limits before anything is decoded,
-    /// so a small file claiming a huge image (a decompression bomb) is refused cheaply.
-    let render (png: byte[]) : Result<(int * byte[]) list, string> =
+    /// The eight bytes every PNG file starts with.
+    let private pngSignature = [| 0x89uy; byte 'P'; byte 'N'; byte 'G'; 13uy; 10uy; 26uy; 10uy |]
+
+    /// True when `bytes` start with the PNG signature.
+    let isPng (bytes: byte[]) =
+        bytes.Length >= pngSignature.Length
+        && ReadOnlySpan(bytes, 0, pngSignature.Length).SequenceEqual(ReadOnlySpan pngSignature)
+
+    let private renderPng (png: byte[]) : Result<(int * byte[]) list, string> =
         use data = SKData.CreateCopy png
         use codec = SKCodec.Create data
         match codec with
         | null -> Error "The icon image could not be decoded."
+        | codec when codec.EncodedFormat <> SKEncodedImageFormat.Png -> Error "The icon image is not a PNG image."
         | codec when
             codec.Info.Width > MaxSide
             || codec.Info.Height > MaxSide
@@ -82,3 +88,10 @@ module Icons =
             | null -> Error "The icon image could not be decoded."
             | source when source.Width < 1 || source.Height < 1 -> Error "The icon image is empty."
             | source -> Ok [ for size in sizes -> size, renderOne source size ]
+
+    /// The icon at every size in `sizes`, from PNG bytes. Only PNG reaches Skia (the asset is a
+    /// `data:image/png` URL, and Skia would otherwise sniff and decode any format it knows), and
+    /// the size in the image header is checked against the art import limits before anything is
+    /// decoded, so a small file claiming a huge image (a decompression bomb) is refused cheaply.
+    let render (png: byte[]) : Result<(int * byte[]) list, string> =
+        if isPng png then renderPng png else Error "The icon image is not a PNG image."

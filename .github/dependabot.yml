@@ -33,9 +33,10 @@ updates:
         update-types: [minor, patch]
         exclude-patterns: ["Avalonia*", "SkiaSharp*", "Svg.Skia", "Velopack"]
     ignore:
-      # Avalonia 11 renders on SkiaSharp 2.88; Svg.Skia 4 needs SkiaSharp 3 (Directory.Packages.props).
+      # Avalonia 11 renders on SkiaSharp 2.88; Svg.Skia 4.9 and later need SkiaSharp 3 (4.0 to 4.8
+      # still use 2.88). Both rules go with the Avalonia 12 upgrade (docs/SKIA-MIGRATION.md).
       - dependency-name: Svg.Skia
-        versions: [">= 4"]
+        versions: [">= 4.9"]
       - dependency-name: "SkiaSharp*"
         versions: [">= 3"]
     # Velopack updates alone: VPK_VERSION in .github/workflows/release.yml must change with it

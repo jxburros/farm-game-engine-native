@@ -86,6 +86,7 @@ leave `fixtures/` changed (`tools/golden/ci-guard.sh`).
 | `FARM_RECORD_CARTRIDGES=1` | `fixtures/golden/cartridges/*.cart` | `dotnet test tests/FarmEngine.Authoring.Tests --filter "FullyQualifiedName~CartridgeTests\|FullyQualifiedName~ValidationTests"` |
 | `FARM_RECORD_SNAPSHOTS=1` | `fixtures/authoring/snapshots.json` | `dotnet test tests/FarmEngine.Authoring.Tests --filter FullyQualifiedName~SnapshotTests` |
 | `FARM_RECORD_CONTENT_LINTS=1` | `fixtures/projects/content-lints.json` | `dotnet test tests/FarmEngine.Authoring.Tests --filter FullyQualifiedName~ValidationCaseTests` |
+| `FARM_EDITOR_BLESS=1` | `fixtures/editor/*.png` (editor screenshots at half size, compared with a tolerance on Linux) | `dotnet test tests/FarmingRpgMaker.App.Tests --filter "FullyQualifiedName~Screenshot"` |
 
 Never re-record `fixtures/golden/v8/`: those are the frozen TypeScript
 goldens and the v8 outcomes, kept as migration inputs
@@ -94,6 +95,13 @@ goldens and the v8 outcomes, kept as migration inputs
 `tools/golden/generate.sh` either; it regenerates them from the TypeScript
 engine.
 
+The editor screenshot comparison (`tests/FarmingRpgMaker.App.Tests/Ui/ScreenshotGoldens.cs`)
+averages 8×8 blocks of the half-size image, so anti-aliasing and font hinting
+pass while a moved, missing or recoloured control fails. The references are
+Linux renders; on Windows and macOS the capture is checked but not compared.
+A failing comparison saves the capture in `frm-editor-screenshots` under the
+temp folder.
+
 Switches that only write images for a look, never compared:
 
 | Variable | Writes |
@@ -101,6 +109,31 @@ Switches that only write images for a look, never compared:
 | `FARM_PLAYER_SCREENSHOTS=<dir>` | full-size game screens (`cargo test -p farm-player --test screenshots`; `-- --ignored review_screens` for every screen) |
 | `FARM_WASM_SCREENSHOTS=<dir>` | the web demo's frames (`node tools/wasm/smoke.mjs`) |
 | `FRM_SCREENSHOT_DIR=<dir>` | the editor screenshots in `docs/media` (`ScreenshotTests`, `GameScreenshotTests` in the app tests) |
+
+## Property tests
+
+Property tests draw new random cases on every run, and a failure says how
+to get the same cases again:
+
+- **FsCheck** (`PropertyTests.fs` and `FuzzPropertyTests.fs` in
+  `tests/FarmEngine.Authoring.Tests`): the failure message ends with
+  "Replay directly at failing step with (seed,gamma,size)". Rerun with
+  `FARM_FSCHECK_REPLAY="(seed,gamma,size)"`.
+- **proptest** (`crates/farm-sim`, `crates/farm-cart`, `crates/farm-fuzz`):
+  the seed of a failure is saved under the crate's `proptest-regressions/`
+  folder, and every later run tries it first; commit the file to keep the
+  case as a regression test. CI sets `PROPTEST_RNG_SEED` to the workflow run
+  id, so a CI failure replays locally with
+  `PROPTEST_RNG_SEED=<run id> cargo test -p <crate> --test <file>`.
+
+## Waiting in UI tests
+
+The headless app tests wait for asynchronous work with
+`UiTestHelpers.PumpUntil(condition)`, which returns as soon as the condition
+holds and fails after 60 seconds (`FARM_TEST_WAIT_SECONDS` raises that on a
+very slow machine). Time-based behaviour uses a fake clock instead of real
+waiting: `TestTime` is a `TimeProvider` whose timers fire only when the test
+advances it (the autosave debounce in `AutosaveTests`).
 
 ## Regenerating checked-in files
 

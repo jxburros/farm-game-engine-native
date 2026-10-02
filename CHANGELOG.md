@@ -184,6 +184,19 @@
     the editor, and using one after it was closed throws a clear error.
   - Tests that need the Rust library fail when it's missing (also with
     `-p:CargoProfile=dev`); `FARM_ALLOW_MISSING_NATIVE=1` skips them instead.
+- **Image and SVG import, from the 2026-09-30 audit:**
+  - Importing an SVG can no longer make the editor fetch anything. An SVG
+    image inside the SVG (a `data:image/svg+xml` link) is checked like the
+    file itself, at most two levels deep, and so are CSS escapes, DTD
+    declarations and `xml:base`; embedded images must be base64 PNG, JPEG,
+    GIF, WebP, BMP or SVG within the import limits. Even an SVG that got past
+    the check could not load a web address or a local file: the SVG renderer
+    has external loading switched off.
+  - Art import, project and pack art, and images inside SVGs are read only
+    as PNG, JPEG, GIF, WebP or BMP, and their size is checked from the header
+    before the graphics library sees them; the Export Game icon must be a
+    PNG. The plan for the graphics library upgrade (Avalonia 12, SkiaSharp 3)
+    is in [docs/SKIA-MIGRATION.md](docs/SKIA-MIGRATION.md).
 - **License, notices and contributor docs.** The repository has an MIT
   `LICENSE`. The app ships it in its `licenses` folder with notices for its
   .NET packages, the runtime, icons and fonts (`THIRD-PARTY-dotnet.txt`), and

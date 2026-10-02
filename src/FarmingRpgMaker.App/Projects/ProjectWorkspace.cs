@@ -1,4 +1,3 @@
-using Avalonia.Threading;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
@@ -37,7 +36,8 @@ public sealed class ProjectChangedEventArgs(ProjectChangeKind kind) : EventArgs
 public sealed class ProjectWorkspace
 {
     private readonly TimeSpan _autosaveDelay;
-    private DispatcherTimer? _autosaveTimer;
+    private readonly TimeProvider _time;
+    private DebounceTimer? _autosaveTimer;
     private Document? _document;
     private bool _dirty;
     private ProjectLock? _lock;
@@ -45,11 +45,16 @@ public sealed class ProjectWorkspace
     /// <summary>The open project file as this editor last read or wrote it (<see cref="SaveConflict"/>).</summary>
     private FileStamp? _diskStamp;
 
-    public ProjectWorkspace(ProjectStore store, AppSettingsStore settings, TimeSpan? autosaveDelay = null)
+    /// <param name="store">Where projects are saved.</param>
+    /// <param name="settings">The app settings (last project).</param>
+    /// <param name="autosaveDelay">How long edits wait for more edits before they are saved (1 s; zero saves every edit at once).</param>
+    /// <param name="time">The clock the autosave delay runs on (tests pass a fake one).</param>
+    public ProjectWorkspace(ProjectStore store, AppSettingsStore settings, TimeSpan? autosaveDelay = null, TimeProvider? time = null)
     {
         Store = store ?? throw new ArgumentNullException(nameof(store));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _autosaveDelay = autosaveDelay ?? TimeSpan.FromSeconds(1);
+        _time = time ?? TimeProvider.System;
     }
 
     /// <summary>Undo depth (web <c>UNDO_LIMIT</c>), owned by the F# document.</summary>
@@ -549,13 +554,8 @@ public sealed class ProjectWorkspace
             return;
         }
 
-        if (_autosaveTimer is null)
-        {
-            _autosaveTimer = new DispatcherTimer { Interval = _autosaveDelay };
-            _autosaveTimer.Tick += (_, _) => FlushPendingSave();
-        }
-
-        _autosaveTimer.Stop();
+        // Debounced: every edit restarts the delay, so a burst of edits is written once.
+        _autosaveTimer ??= new DebounceTimer(_time, _autosaveDelay, FlushPendingSave);
         _autosaveTimer.Start();
     }
 }

@@ -11,6 +11,21 @@ open FarmEngine.Authoring.Net
 open FarmEngine.Authoring.Tests.TestProjects
 open FarmEngine.Schemas
 
+/// Replays a failing run. A failure message ends with FsCheck's seed ("Replay directly at failing
+/// step with (seed,gamma,size)"); rerun with FARM_FSCHECK_REPLAY set to that tuple to get the same
+/// cases again (CONTRIBUTING.md, "Property tests"). Unset, every run draws a new seed.
+type ReplayFromEnvironmentAttribute() as this =
+    inherit PropertiesAttribute()
+
+    do
+        match System.Environment.GetEnvironmentVariable "FARM_FSCHECK_REPLAY" with
+        | null
+        | "" -> ()
+        | replay -> this.Replay <- replay
+
+[<assembly: ReplayFromEnvironment>]
+do ()
+
 let private farmId = "scene-farm"
 
 let private tileTypes = Gen.elements (List.ofSeq TileTypes.All)

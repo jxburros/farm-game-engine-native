@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using FarmEngine.Interop;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -39,13 +40,14 @@ internal sealed class GameTestHost : IDisposable
 {
     private readonly TempDir _dir = new();
 
-    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null, bool autoRun = false)
+    /// <param name="seed">Seed of the playtests (null: the project's own, which differs per test project).</param>
+    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null, bool autoRun = false, string? seed = null)
     {
         Workspace = new ProjectWorkspace(
             new ProjectStore(_dir.Path),
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
-        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false }, dialogs, Launcher);
+        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false, Player = seed is null ? null : new RustPlayerOptions(Seed: seed) }, dialogs, Launcher);
         var coordinator = new UpdateCoordinator(Updates, new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
         Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };
