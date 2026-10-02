@@ -10,6 +10,11 @@
 //! ([`MinigameSession::press`] / [`MinigameSession::release`] or kind-specific calls) and draws
 //! its public state. Only `on_complete(score)` crosses back into deterministic simulation.
 //!
+//! Built-in kinds: `timing-bar`, `hold-to-catch`, `simple-battle`, `rhythm-tap`, `moving-target`
+//! and `memory-sequence` ([`BUILT_IN_KINDS`] lists them with their settings; the editor offers
+//! the same list). Every default text a kind shows comes from the message catalog
+//! (`farm_sim::messages`), so players can translate it; a def's own `prompt` is shown as written.
+//!
 //! Game code extends this by registering new kinds:
 //!
 //! ```
@@ -30,6 +35,7 @@
 //! assert!(registry.kinds().any(|kind| kind == "my-rhythm-game"));
 //! ```
 
+use farm_sim::messages::{self, Message};
 use farm_sim::schema::MinigameDef;
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -92,8 +98,21 @@ pub trait MinigameSession: Any + Send {
     fn kind(&self) -> &str;
     /// Instruction text for the player.
     fn prompt(&self) -> String;
+    /// The catalog message [`prompt`](Self::prompt) shows, when it is engine text (`None` for a
+    /// def's own `prompt` and for kinds that have none).
+    fn prompt_message(&self) -> Option<Message> {
+        None
+    }
     /// Label of the primary button.
     fn button_text(&self) -> &str;
+    /// The catalog message of the primary button, when it is engine text.
+    fn button_message(&self) -> Option<Message>;
+    /// The choices [`act`](Self::act) takes, as buttons (empty: the kind uses the primary button).
+    fn choices(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// A choice button pressed (one of [`choices`](Self::choices)).
+    fn act(&mut self, _choice: &str) {}
     /// True once the score was reported (or the session was cancelled or disposed).
     fn is_done(&self) -> bool;
     /// The score reported via `on_complete`, if any.
@@ -131,11 +150,24 @@ pub struct SessionCore {
     score: Option<f64>,
     /// Label of the primary button.
     pub button_text: String,
+    /// The catalog message `button_text` was made from (`None` when it is not engine text).
+    pub button_message: Option<Message>,
 }
 
 impl SessionCore {
     pub fn new(options: MinigameMountOptions) -> Self {
-        Self { options, is_done: false, score: None, button_text: String::new() }
+        Self { options, is_done: false, score: None, button_text: String::new(), button_message: None }
+    }
+
+    /// Sets the primary button's label to a catalog message.
+    pub fn set_button(&mut self, message: Message) {
+        self.button_text = message.english();
+        self.button_message = Some(message);
+    }
+
+    /// Cosmetic randomness in [0, 1) (see [`MinigameMountOptions::random`]).
+    pub fn next_random(&mut self) -> f64 {
+        self.options.next_random()
     }
 
     pub fn is_done(&self) -> bool {
@@ -192,6 +224,9 @@ macro_rules! session_core_members {
         fn button_text(&self) -> &str {
             &self.core.button_text
         }
+        fn button_message(&self) -> Option<Message> {
+            self.core.button_message.clone()
+        }
         fn is_done(&self) -> bool {
             self.core.is_done()
         }
@@ -247,6 +282,28 @@ impl fmt::Debug for MinigameRegistry {
 
 pub const TIMING_BAR_KIND: &str = "timing-bar";
 
+/// A built-in kind and the config keys it reads (besides `prompt`, which every kind with a
+/// prompt reads). The editor's kind list and typed settings (F# `MinigameKinds`) match this; a
+/// test compares them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KindInfo {
+    pub kind: &'static str,
+    pub settings: &'static [&'static str],
+}
+
+/// Every built-in kind, in registration order.
+pub const BUILT_IN_KINDS: &[KindInfo] = &[
+    KindInfo { kind: TIMING_BAR_KIND, settings: &["speed", "targetSize", "prompt"] },
+    KindInfo { kind: custom_game::HOLD_TO_CATCH_KIND, settings: &["holdMs"] },
+    KindInfo {
+        kind: custom_game::SIMPLE_BATTLE_KIND,
+        settings: &["playerHealth", "enemyHealth", "attack", "enemyAttack", "enemyName"],
+    },
+    KindInfo { kind: arcade::RHYTHM_TAP_KIND, settings: &["beats", "bpm", "prompt"] },
+    KindInfo { kind: arcade::MOVING_TARGET_KIND, settings: &["seconds", "targetSpeed", "barSize", "prompt"] },
+    KindInfo { kind: arcade::MEMORY_SEQUENCE_KIND, settings: &["length", "showSeconds", "prompt"] },
+];
+
 static TIMING_BAR: LazyLock<Arc<dyn MinigameImpl>> = LazyLock::new(|| Arc::new(TimingBarMinigame));
 static FALLBACK: LazyLock<Arc<dyn MinigameImpl>> = LazyLock::new(|| Arc::new(FallbackMinigame));
 
@@ -266,7 +323,16 @@ pub fn create_default_minigame_registry() -> MinigameRegistry {
     let mut registry = MinigameRegistry::new();
     registry.register(TIMING_BAR_KIND, timing_bar());
     custom_game::register_game_minigames(&mut registry);
+    arcade::register(&mut registry);
     registry
+}
+
+/// A def's `prompt`, else the catalog default: the text and, for the default, its message.
+fn prompt_or(config: &MinigameConfig, default: Message) -> (String, Option<Message>) {
+    match string_config(config, "prompt") {
+        Some(prompt) => (prompt.to_owned(), None),
+        None => (default.english(), Some(default)),
+    }
 }
 
 /// Implementation for a def: the registered kind, or the neutral fallback.
@@ -308,18 +374,19 @@ pub struct TimingBarSession {
     target_size: f64,
     target_center: f64,
     prompt: String,
+    prompt_message: Option<Message>,
 }
 
 impl TimingBarSession {
     pub fn new(mut options: MinigameMountOptions) -> Self {
         let speed = number_config(&options.config, "speed", 0.9).max(0.1);
         let target_size = number_config(&options.config, "targetSize", 0.18).clamp(0.02, 0.9);
-        let prompt = string_config(&options.config, "prompt").unwrap_or("Stop the marker in the zone!").to_owned();
+        let (prompt, prompt_message) = prompt_or(&options.config, messages::TIMING_PROMPT.with(&[]));
         // Cosmetic placement only; the score is what enters the log.
         let target_center = 0.3 + 0.4 * options.next_random();
         let mut core = SessionCore::new(options);
-        core.button_text = "Stop! (Space)".to_owned();
-        Self { core, elapsed_seconds: 0.0, speed, target_size, target_center, prompt }
+        core.set_button(messages::TIMING_BUTTON.with(&[]));
+        Self { core, elapsed_seconds: 0.0, speed, target_size, target_center, prompt, prompt_message }
     }
 
     /// Sweeps per second.
@@ -375,6 +442,10 @@ impl MinigameSession for TimingBarSession {
         self.prompt.clone()
     }
 
+    fn prompt_message(&self) -> Option<Message> {
+        self.prompt_message.clone()
+    }
+
     fn update(&mut self, delta_seconds: f64) {
         if !self.core.is_done() {
             self.elapsed_seconds += delta_seconds;
@@ -400,14 +471,15 @@ impl MinigameImpl for FallbackMinigame {
 pub struct FallbackSession {
     core: SessionCore,
     prompt: String,
+    prompt_message: Option<Message>,
 }
 
 impl FallbackSession {
     pub fn new(options: MinigameMountOptions) -> Self {
-        let prompt = string_config(&options.config, "prompt").unwrap_or("Ready?").to_owned();
+        let (prompt, prompt_message) = prompt_or(&options.config, messages::MINIGAME_READY.with(&[]));
         let mut core = SessionCore::new(options);
-        core.button_text = "Go!".to_owned();
-        Self { core, prompt }
+        core.set_button(messages::MINIGAME_GO.with(&[]));
+        Self { core, prompt, prompt_message }
     }
 }
 
@@ -422,6 +494,10 @@ impl MinigameSession for FallbackSession {
         self.prompt.clone()
     }
 
+    fn prompt_message(&self) -> Option<Message> {
+        self.prompt_message.clone()
+    }
+
     fn press(&mut self) {
         self.core.complete(0.5);
     }
@@ -434,6 +510,7 @@ impl MinigameSession for FallbackSession {
 pub mod custom_game {
     use super::{string_config, MinigameConfig, MinigameImpl, MinigameMountOptions, MinigameRegistry};
     use super::{MinigameSession, SessionCore};
+    use farm_sim::messages::{self, Message};
     use farm_sim::units;
     use std::any::Any;
     use std::sync::{Arc, LazyLock};
@@ -481,24 +558,21 @@ pub mod custom_game {
         }
     }
 
-    const HOLD_BUTTON_TEXT: &str = "Hold to reel (Space)";
-
     #[derive(Debug)]
     pub struct HoldToCatchSession {
         core: SessionCore,
         now_ms: f64,
         started_ms: Option<f64>,
         target_ms: f64,
-        prompt: String,
+        prompt: Message,
     }
 
     impl HoldToCatchSession {
         pub fn new(options: MinigameMountOptions) -> Self {
             let target_ms = number(&options.config, "holdMs", 1200.0, 10000.0);
-            let prompt =
-                format!("Hold for {} seconds, then release to reel in.", units::to_fixed(target_ms / 1000.0, 1));
+            let prompt = messages::HOLD_PROMPT.with(&[&units::to_fixed(target_ms / 1000.0, 1)]);
             let mut core = SessionCore::new(options);
-            core.button_text = HOLD_BUTTON_TEXT.to_owned();
+            core.set_button(messages::HOLD_BUTTON.with(&[]));
             Self { core, now_ms: 0.0, started_ms: None, target_ms, prompt }
         }
 
@@ -514,7 +588,7 @@ pub mod custom_game {
         /// Pointer cancelled mid-hold: reset without scoring.
         pub fn cancel_hold(&mut self) {
             self.started_ms = None;
-            self.core.button_text = HOLD_BUTTON_TEXT.to_owned();
+            self.core.set_button(messages::HOLD_BUTTON.with(&[]));
         }
     }
 
@@ -526,7 +600,11 @@ pub mod custom_game {
         }
 
         fn prompt(&self) -> String {
-            self.prompt.clone()
+            self.prompt.english()
+        }
+
+        fn prompt_message(&self) -> Option<Message> {
+            Some(self.prompt.clone())
         }
 
         fn update(&mut self, delta_seconds: f64) {
@@ -536,7 +614,7 @@ pub mod custom_game {
         fn press(&mut self) {
             if !self.core.is_done() && self.started_ms.is_none() {
                 self.started_ms = Some(self.now_ms);
-                self.core.button_text = "Reeling… release!".to_owned();
+                self.core.set_button(messages::HOLD_REELING.with(&[]));
             }
         }
 
@@ -573,7 +651,10 @@ pub mod custom_game {
         enemy: f64,
         mana: f64,
         enemy_name: String,
+        /// The enemy's name as the status and log say it (the default name is a message).
+        enemy_label: messages::Arg,
         log: String,
+        log_message: Option<Message>,
     }
 
     impl SimpleBattleSession {
@@ -585,7 +666,13 @@ pub mod custom_game {
             let enemy = number(config, "enemyHealth", 24.0, 100.0);
             let power = number(config, "attack", 7.0, 100.0);
             let foe_power = number(config, "enemyAttack", 5.0, 100.0);
-            let enemy_name = string_config(config, "enemyName").unwrap_or("Forest slime").to_owned();
+            let (enemy_name, enemy_label) = match string_config(config, "enemyName") {
+                Some(name) => (name.to_owned(), messages::Arg::text(name)),
+                None => {
+                    let default = messages::BATTLE_ENEMY.with(&[]);
+                    (default.english(), messages::Arg::Message(default))
+                }
+            };
             Self {
                 core: SessionCore::new(options),
                 power,
@@ -595,7 +682,9 @@ pub mod custom_game {
                 enemy,
                 mana: 3.0,
                 enemy_name,
+                enemy_label,
                 log: String::new(),
+                log_message: None,
             }
         }
 
@@ -620,14 +709,23 @@ pub mod custom_game {
             &self.log
         }
 
+        /// The latest narration as a catalog message (`None` before the first turn).
+        pub fn log_message(&self) -> Option<Message> {
+            self.log_message.clone()
+        }
+
         pub fn status(&self) -> String {
-            format!(
-                "You: {} health · {} magic | {}: {} health",
-                units::format_number(self.hp.max(0.0)),
-                units::format_number(self.mana),
-                self.enemy_name,
-                units::format_number(self.enemy.max(0.0))
-            )
+            self.status_message().english()
+        }
+
+        /// Both sides' health and the magic left, as a catalog message.
+        pub fn status_message(&self) -> Message {
+            messages::BATTLE_STATUS.with_args(vec![
+                messages::Arg::text(units::format_number(self.hp.max(0.0))),
+                messages::Arg::text(units::format_number(self.mana)),
+                self.enemy_label.clone(),
+                messages::Arg::text(units::format_number(self.enemy.max(0.0))),
+            ])
         }
 
         /// One turn: `kind` is "attack" | "guard" | "magic".
@@ -647,11 +745,10 @@ pub mod custom_game {
                 self.hp -= if kind == "guard" { 1.0 } else { self.foe_power * if heavy { 2.0 } else { 1.0 } };
             }
             self.turn += 1.0;
-            self.log = if self.turn % 3.0 == 2.0 {
-                format!("{} is preparing a heavy attack. Guard next turn!", self.enemy_name)
-            } else {
-                format!("{} attacks. Choose your next move.", self.enemy_name)
-            };
+            let log = if self.turn % 3.0 == 2.0 { &messages::BATTLE_HEAVY } else { &messages::BATTLE_ATTACKS };
+            let log = log.with_args(vec![self.enemy_label.clone()]);
+            self.log = log.english();
+            self.log_message = Some(log);
             if self.hp <= 0.0 || self.enemy <= 0.0 {
                 self.core.complete(if self.enemy <= 0.0 { 1.0 } else { 0.0 });
             }
@@ -669,12 +766,26 @@ pub mod custom_game {
             self.status()
         }
 
+        fn prompt_message(&self) -> Option<Message> {
+            Some(self.status_message())
+        }
+
+        fn choices(&self) -> &'static [&'static str] {
+            Self::CHOICES
+        }
+
+        fn act(&mut self, choice: &str) {
+            SimpleBattleSession::act(self, choice);
+        }
+
         /// Primary input defaults to a plain attack.
         fn press(&mut self) {
-            self.act("attack");
+            SimpleBattleSession::act(self, "attack");
         }
     }
 }
+
+pub mod arcade;
 
 #[cfg(test)]
 mod tests {
@@ -692,7 +803,14 @@ mod tests {
     #[test]
     fn default_registry_lists_kinds_in_registration_order() {
         let registry = create_default_minigame_registry();
-        assert_eq!(registry.kinds().collect::<Vec<_>>(), ["timing-bar", "hold-to-catch", "simple-battle"]);
+        assert_eq!(
+            registry.kinds().collect::<Vec<_>>(),
+            ["timing-bar", "hold-to-catch", "simple-battle", "rhythm-tap", "moving-target", "memory-sequence"]
+        );
+        assert_eq!(
+            registry.kinds().collect::<Vec<_>>(),
+            BUILT_IN_KINDS.iter().map(|info| info.kind).collect::<Vec<_>>()
+        );
     }
 
     #[test]

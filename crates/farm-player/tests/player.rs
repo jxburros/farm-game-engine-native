@@ -571,6 +571,15 @@ fn spanish_confirmations_and_toasts() {
     idle(&mut player, 30);
     let toasts: Vec<&String> = player.toast_history().iter().map(|(text, _)| text).collect();
     assert!(toasts.iter().any(|text| text.starts_with("Guardado autom\u{e1}tico (ranura 1)")), "{toasts:?}");
+    // The engine's own messages are in Spanish too (the simulation records them in English).
+    assert!(toasts.iter().any(|text| text.starts_with("D\u{ed}a 2 de primavera, a\u{f1}o 1")), "{toasts:?}");
+    assert!(!toasts.iter().any(|text| text.starts_with("Day ")), "{toasts:?}");
+    assert!(player.session().unwrap().recent_commands().iter().any(|command| command.contains("sleep")));
+    // And the built-in minigames' texts.
+    player.run_command(&open_minigame("fishing")).unwrap();
+    idle(&mut player, 2);
+    assert!(shows(&player, "\u{a1}Para! (Espacio)"), "{:?}", ui_texts(&player));
+    click(&mut player, WidgetId::new("minigame-give-up"));
     press(&mut player, "escape");
     assert!(shows(&player, "Pausa") && shows(&player, "Reanudar"), "{:?}", ui_texts(&player));
     click(&mut player, WidgetId::new("pause").with("Quit to title"));

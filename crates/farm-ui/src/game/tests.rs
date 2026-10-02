@@ -331,6 +331,47 @@ fn minigames_press_release_choose_and_give_up() {
 }
 
 #[test]
+fn every_built_in_kind_draws_and_speaks_the_players_language() {
+    for (kind, english, spanish) in [
+        ("rhythm-tap", "Tap! (Space)", "\u{a1}Pulsa! (Espacio)"),
+        ("moving-target", "Hold to move (Space)", "Mant\u{e9}n para mover (Espacio)"),
+        ("memory-sequence", "Watch closely\u{2026}", "Mira con atenci\u{f3}n\u{2026}"),
+        ("simple-battle", "Attack", "Atacar"),
+    ] {
+        for (lang, text) in [(crate::i18n::Lang::En, english), (crate::i18n::Lang::Es, spanish)] {
+            let mut fixture = Fixture::starter();
+            fixture.ui.set_lang(lang);
+            fixture.ctx.content.minigames.push(farm_sim::schema::MinigameDef {
+                id: "game".into(),
+                name: "Game".into(),
+                kind: kind.into(),
+                ..Default::default()
+            });
+            fixture.state.minigame = Some(MinigameSession { minigame_id: "game".into(), ..MinigameSession::default() });
+            fixture.mount_minigame();
+            fixture.idle();
+            fixture.idle();
+            let texts = fixture.texts();
+            assert!(texts.iter().any(|shown| shown == text), "{kind} {lang:?}: {texts:?}");
+        }
+    }
+    // A memory game offers its symbols as choices.
+    let mut fixture = Fixture::starter();
+    fixture.ctx.content.minigames.push(farm_sim::schema::MinigameDef {
+        id: "memory".into(),
+        name: "Memory".into(),
+        kind: "memory-sequence".into(),
+        ..Default::default()
+    });
+    fixture.state.minigame = Some(MinigameSession { minigame_id: "memory".into(), ..MinigameSession::default() });
+    fixture.mount_minigame();
+    fixture.idle();
+    fixture.idle();
+    let moon = WidgetId::new("minigame-choice").with("moon");
+    assert_eq!(fixture.click(moon), [GameAction::Minigame(MinigameInput::Act { choice: "moon".into() })]);
+}
+
+#[test]
 fn timing_bar_draws_its_marker_inside_the_track() {
     let mut fixture = Fixture::starter();
     fixture.state.minigame = Some(MinigameSession { minigame_id: "fishing".into(), ..MinigameSession::default() });
