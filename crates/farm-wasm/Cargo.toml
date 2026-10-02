@@ -20,7 +20,7 @@ farm-runtime = { path = "../farm-runtime" }
 farm-player = { path = "../farm-player", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 # tools/wasm/build.sh installs the wasm-bindgen CLI of the exact version in Cargo.lock.
 wasm-bindgen = "0.2.100"
 js-sys = "0.3.77"
