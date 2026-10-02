@@ -230,9 +230,25 @@ impl FsSaveStore {
     }
 }
 
+/// Largest save file read: the largest state a save may hold plus room for its preview. A
+/// bigger file (a crafted one in a slot folder) is read only that far, so it loads as damaged
+/// instead of filling memory when the slot screens read it at start-up (#80).
+const MAX_SAVE_FILE_BYTES: u64 = farm_cart::save_file::MAX_STATE_BYTES as u64 + 16 * 1024 * 1024;
+
+fn read_save_file(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    fs::File::open(path).ok()?.take(MAX_SAVE_FILE_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > MAX_SAVE_FILE_BYTES {
+        // Too large to be a save: an unreadable slot.
+        bytes.clear();
+    }
+    Some(bytes)
+}
+
 impl SaveStore for FsSaveStore {
     fn read(&self, slot: u32) -> Option<Vec<u8>> {
-        fs::read(self.path(slot)).ok()
+        read_save_file(&self.path(slot))
     }
 
     fn write(&mut self, slot: u32, bytes: &[u8]) -> Result<(), String> {
@@ -256,7 +272,7 @@ impl SaveStore for FsSaveStore {
     }
 
     fn read_backup(&self, slot: u32) -> Option<Vec<u8>> {
-        fs::read(self.backup_path(slot)).ok()
+        read_save_file(&self.backup_path(slot))
     }
 
     fn folder(&self) -> Option<PathBuf> {

@@ -3,9 +3,11 @@
 //! - [`render_json`]: stateless requests. `{"type":"editorSnapshot",…}` returns the decorated
 //!   Edit Mode snapshot as JSON (what `EditModeView` builds with `BuildEditorSnapshot` +
 //!   `ApplyGraphics`); `{"type":"rasterize",…}` returns a PNG of any snapshot (tests).
-//! - [`HostPreview`]: Edit Mode's map. It keeps the project, its compiled content and the image
-//!   caches between frames and rasterizes one scene viewport (or one visual binding, for the art
-//!   studio) per call into premultiplied RGBA8.
+//! - [`HostPreview`]: Edit Mode's map. It keeps the project, its compiled content, the image
+//!   caches and the decorated snapshot of the scene on screen between frames, and rasterizes one
+//!   scene viewport (or one visual binding, for the art studio) per call into premultiplied
+//!   RGBA8. Edits that only change scenes (painting) arrive as those scenes alone
+//!   ([`HostPreview::set_scenes`]), without the rest of the project and its art.
 
 use crate::{view_json, Rgba};
 use farm_render::{apply_graphics, editor_snapshot, GraphicsSource, SnapshotCamera, WorldRenderer, WorldSnapshot};
@@ -240,7 +242,13 @@ pub struct HostPreview {
     content: GameContent,
     graphics: GraphicsSource,
     renderer: WorldRenderer,
+    /// The decorated snapshot of the last scene rendered and its layout (scene id, tile size,
+    /// padding): scrolling only moves the camera over it. Dropped by every project change.
+    snapshot: Option<(SnapshotKey, WorldSnapshot)>,
 }
+
+/// Scene id, tile size and padding (as bits) of a cached snapshot.
+type SnapshotKey = (String, u64, u64);
 
 impl std::fmt::Debug for HostPreview {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -257,6 +265,7 @@ impl HostPreview {
             content: GameContent::default(),
             graphics: GraphicsSource::from_project(&GameProject::default()),
             renderer: WorldRenderer::new(),
+            snapshot: None,
         };
         preview.replace_project(project);
         Ok(preview)
@@ -266,12 +275,38 @@ impl HostPreview {
         self.content = farm_sim::create_content_from_project(&project);
         self.graphics = GraphicsSource::from_project(&project);
         self.project = project;
+        self.snapshot = None;
     }
 
     /// Replaces the previewed project (after an edit). Decoded images stay cached. On failure
     /// the previous project stays.
     pub fn set_project(&mut self, project_json: &[u8]) -> Result<(), String> {
         self.replace_project(parse_project(project_json)?);
+        Ok(())
+    }
+
+    /// Replaces scenes of the previewed project by id (an edit that changed only scenes):
+    /// `scenes_json` is a JSON array of scenes. The art and the rest of the project stay; the
+    /// compiled content is rebuilt from them. A scene the project does not have refuses the
+    /// whole call and the previous project stays (the host then sends the project).
+    pub fn set_scenes(&mut self, scenes_json: &[u8]) -> Result<(), String> {
+        let scenes: Vec<farm_sim::schema::Scene> =
+            serde_json::from_slice(scenes_json).map_err(|e| format!("scenes JSON: {e}"))?;
+        let mut slots = Vec::with_capacity(scenes.len());
+        for scene in &scenes {
+            let slot = self
+                .project
+                .scenes
+                .iter()
+                .position(|known| known.id == scene.id)
+                .ok_or_else(|| format!("Scene {} is not in the previewed project.", scene.id))?;
+            slots.push(slot);
+        }
+        for (slot, scene) in slots.into_iter().zip(scenes) {
+            self.project.scenes[slot] = scene;
+        }
+        self.content = farm_sim::create_content_from_project(&self.project);
+        self.snapshot = None;
         Ok(())
     }
 
@@ -282,17 +317,24 @@ impl HostPreview {
         let request: PreviewRequest = serde_json::from_slice(request).map_err(|e| format!("preview request: {e}"))?;
         check_layout(request.tile_size, request.padding)?;
         check_camera(request.camera.as_ref())?;
-        let mut snapshot = decorated_editor_snapshot(
-            &self.project,
-            &self.content,
-            &self.graphics,
-            &request.scene_id,
-            request.tile_size,
-            request.padding,
-        )?;
+        let key = (request.scene_id, request.tile_size.to_bits(), request.padding.to_bits());
+        let snapshot = match &mut self.snapshot {
+            Some((cached, snapshot)) if *cached == key => snapshot,
+            slot => {
+                let snapshot = decorated_editor_snapshot(
+                    &self.project,
+                    &self.content,
+                    &self.graphics,
+                    &key.0,
+                    request.tile_size,
+                    request.padding,
+                )?;
+                &mut slot.insert((key, snapshot)).1
+            }
+        };
         // Only the camera viewport is culled, translated and rasterized.
         snapshot.camera = request.camera;
-        Ok(rgba(render(&mut self.renderer, &snapshot, request.scale)?))
+        Ok(rgba(render(&mut self.renderer, snapshot, request.scale)?))
     }
 
     /// One frame of a visual binding (the art studio's preview): `{"visual":{"assetId":…,
@@ -422,5 +464,46 @@ mod tests {
         }
         let request = format!(r#"{{"type":"editorSnapshot","project":{project},"sceneId":"{scene}","tileSize":0}}"#);
         assert!(render_json(request.as_bytes()).unwrap_err().contains("Tile size"));
+    }
+
+    #[test]
+    fn scene_edits_replace_scenes_without_the_rest_of_the_project() {
+        let path: std::path::PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", "content", "starter-farm.json"]
+                .iter()
+                .collect();
+        let fixture: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut project = fixture["project"].clone();
+        let scene_id = project["player"]["sceneId"].as_str().unwrap().to_owned();
+        let request = format!(r#"{{"sceneId":"{scene_id}","tileSize":28,"padding":12,"scale":1}}"#);
+        let mut preview = HostPreview::new(project.to_string().as_bytes()).unwrap();
+        let before = preview.render(request.as_bytes()).unwrap();
+        // Scrolling reuses the cached snapshot and draws the same pixels.
+        assert_eq!(preview.render(request.as_bytes()).unwrap(), before);
+
+        // Paint a tile as water, sending only that scene.
+        let scenes = project["scenes"].as_array_mut().unwrap();
+        let scene = scenes.iter_mut().find(|scene| scene["id"] == scene_id.as_str()).unwrap();
+        let tile = &mut scene["tiles"][4][4];
+        tile["type"] = serde_json::json!("water");
+        tile["background"] = serde_json::json!("water");
+        tile["overlay"] = serde_json::Value::Null;
+        tile["object"] = serde_json::Value::Null;
+        let edited = serde_json::Value::Array(vec![scene.clone()]).to_string();
+        let mut stranger = scene.clone();
+        stranger["id"] = serde_json::json!("nowhere");
+        let stranger = serde_json::Value::Array(vec![stranger]).to_string();
+        preview.set_scenes(edited.as_bytes()).unwrap();
+        let painted = preview.render(request.as_bytes()).unwrap();
+        assert_ne!(painted, before, "the cached snapshot was dropped");
+        // The same as sending the whole project.
+        let mut whole = HostPreview::new(project.to_string().as_bytes()).unwrap();
+        assert_eq!(whole.render(request.as_bytes()).unwrap(), painted);
+
+        // An unknown scene changes nothing.
+        let error = preview.set_scenes(stranger.as_bytes());
+        assert!(error.unwrap_err().contains("nowhere"));
+        assert_eq!(preview.render(request.as_bytes()).unwrap(), painted);
+        assert!(preview.set_scenes(b"{oops").is_err());
     }
 }

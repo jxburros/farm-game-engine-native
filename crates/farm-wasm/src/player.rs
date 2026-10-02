@@ -2,7 +2,7 @@
 
 use crate::storage::{StoredDocument, WebStorage};
 use crate::{bytes_arg, enter, host_error, json_arg, set, FrameResult};
-use farm_host::player::{is_engine_failure, FrameRequest, PlayerCreate};
+use farm_host::player::{FrameRequest, PlayerCreate};
 use farm_host::{Guarded, HostPlayer};
 use farm_player::PlayerOptions;
 use js_sys::{Object, Uint8ClampedArray};
@@ -90,7 +90,7 @@ impl WasmPlayer {
         })
         .map_err(host_error)?;
         let reported = storage.revision();
-        Ok(WasmPlayer { player: Guarded::new(player).poisoning_on(is_engine_failure), storage, reported })
+        Ok(WasmPlayer { player: Guarded::new(player).poisoning_when(HostPlayer::stopped), storage, reported })
     }
 
     fn run<R>(&mut self, body: impl FnOnce(&mut HostPlayer) -> Result<R, String>) -> Result<R, JsValue> {

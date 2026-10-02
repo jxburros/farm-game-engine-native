@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using FarmEngine.Authoring.Net;
@@ -14,65 +15,153 @@ public sealed record PreviewFrame(int Width, int Height, byte[] Pixels);
 
 /// <summary>
 /// Edit Mode's map preview drawn by the Rust renderer (<c>fe_preview_*</c>): it keeps the
-/// project, its compiled content and the decoded images between frames and rasterizes one scene
-/// viewport per call. One thread at a time. Dispose it to free the Rust side.
+/// project, its compiled content, the decoded images and the snapshot of the scene on screen
+/// between frames and rasterizes one scene viewport per call. Calls are serialized; dispose it to
+/// free the Rust side (its finalizer does when nobody did).
 /// </summary>
-public sealed class RustPreview : IDisposable
+public sealed unsafe class RustPreview : IDisposable
 {
-    private unsafe NativeMethods.FePreview* _handle;
-    private bool _poisoned;
+    private static readonly PropertyInfo[] ProjectFields = typeof(GameProject)
+        .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        .Where(property => property.GetIndexParameters().Length == 0 && property.Name != nameof(GameProject.Scenes))
+        .ToArray();
 
-    private unsafe RustPreview(NativeMethods.FePreview* handle)
+    private readonly NativeHandle<NativeMethods.PreviewHandle> _native;
+
+    /// <summary>The project Rust has, to send only what an edit changed.</summary>
+    private GameProject _sent;
+
+    private RustPreview(NativeMethods.PreviewHandle handle, GameProject project)
     {
-        _handle = handle;
+        _native = new NativeHandle<NativeMethods.PreviewHandle>(handle, this, prefixMessages: true);
+        _sent = project;
     }
 
     /// <summary>True after a Rust panic: every later call throws.</summary>
-    public bool IsPoisoned => _poisoned;
+    public bool IsPoisoned => _native.IsPoisoned;
+
+    /// <summary>How many <see cref="SetProject"/> calls sent only changed scenes (tests).</summary>
+    public int SceneUpdates { get; private set; }
+
+    /// <summary>How many <see cref="SetProject"/> calls sent the whole project (tests).</summary>
+    public int ProjectUpdates { get; private set; }
 
     /// <summary>Creates a preview of a (migrated) project.</summary>
     public static RustPreview Create(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        if (!FarmFfi.IsAvailable)
-        {
-            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
-        }
-
+        FarmFfi.EnsureAvailable();
         var json = RecordJson.ToUtf8(project);
-        unsafe
+        fixed (byte* ptr = json)
         {
-            fixed (byte* ptr = json)
+            NativeMethods.FeBytes error = default;
+            var result = NativeMethods.fe_preview_new(ptr, (nuint)json.Length, out var handle, &error);
+            var message = Encoding.UTF8.GetString(RustRender.TakeBytes(error));
+            if (result != NativeMethods.FeResult.Ok)
             {
-                NativeMethods.FePreview* handle;
-                NativeMethods.FeBytes error;
-                var result = NativeMethods.fe_preview_new(ptr, (nuint)json.Length, &handle, &error);
-                var message = Encoding.UTF8.GetString(RustRender.TakeBytes(error));
-                if (result != NativeMethods.FeResult.Ok)
-                {
-                    throw new FarmFfiException($"fe_preview_new failed: {result}. {message}");
-                }
-
-                return new RustPreview(handle);
+                handle.Dispose();
+                throw new FarmFfiException($"fe_preview_new failed: {result}. {message}");
             }
+
+            return new RustPreview(handle, project);
         }
     }
 
-    /// <summary>Replaces the previewed project (after an edit); decoded images stay cached.</summary>
+    /// <summary>
+    /// Replaces the previewed project (after an edit); decoded images stay cached. An edit that
+    /// changed only scenes (a paint stroke) sends just those scenes, not the whole project and its
+    /// art: the editor's records share every part an edit did not touch, so the parts are compared
+    /// by reference.
+    /// </summary>
     public void SetProject(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var json = RecordJson.ToUtf8(project);
-        unsafe
+        if (ReferenceEquals(project, _sent))
         {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
+            return;
+        }
+
+        if (ChangedScenes(_sent, project) is { } scenes)
+        {
+            try
             {
-                NativeMethods.FeBytes output;
-                var result = NativeMethods.fe_preview_set_project(_handle, ptr, (nuint)json.Length, &output);
-                Check(result, RustRender.TakeBytes(output), nameof(SetProject));
+                if (scenes.Count > 0)
+                {
+                    _native.Call(nameof(SetProject), ScenesJson(scenes), NativeMethods.fe_preview_set_scenes);
+                }
+
+                _sent = project;
+                SceneUpdates++;
+                return;
+            }
+            catch (FarmFfiException) when (!IsPoisoned)
+            {
+                // Rust refused the scenes (it never saw one of them): send the project.
             }
         }
+
+        _native.Call(nameof(SetProject), RecordJson.ToUtf8(project), NativeMethods.fe_preview_set_project);
+        _sent = project;
+        ProjectUpdates++;
+    }
+
+    /// <summary>
+    /// The scenes of <paramref name="now"/> that are not the same objects as in
+    /// <paramref name="before"/>, when nothing else changed (same fields, same scene ids in the
+    /// same order); null when the whole project must be sent.
+    /// </summary>
+    internal static List<Scene>? ChangedScenes(GameProject before, GameProject now)
+    {
+        foreach (var field in ProjectFields)
+        {
+            var a = field.GetValue(before);
+            var b = field.GetValue(now);
+            if (!ReferenceEquals(a, b) && !(a is ValueType or string && Equals(a, b)))
+            {
+                return null;
+            }
+        }
+
+        var old = before.Scenes.ToList();
+        var current = now.Scenes.ToList();
+        if (old.Count != current.Count)
+        {
+            return null;
+        }
+
+        var changed = new List<Scene>();
+        for (var i = 0; i < current.Count; i++)
+        {
+            if (old[i].Id != current[i].Id)
+            {
+                return null;
+            }
+
+            if (!ReferenceEquals(old[i], current[i]))
+            {
+                changed.Add(current[i]);
+            }
+        }
+
+        return changed;
+    }
+
+    private static byte[] ScenesJson(List<Scene> scenes)
+    {
+        using var buffer = new MemoryStream();
+        buffer.WriteByte((byte)'[');
+        for (var i = 0; i < scenes.Count; i++)
+        {
+            if (i > 0)
+            {
+                buffer.WriteByte((byte)',');
+            }
+
+            buffer.Write(RecordJson.ToUtf8(scenes[i]));
+        }
+
+        buffer.WriteByte((byte)']');
+        return buffer.ToArray();
     }
 
     /// <summary>
@@ -84,19 +173,7 @@ public sealed class RustPreview : IDisposable
     {
         ArgumentNullException.ThrowIfNull(sceneId);
         var request = JsonSerializer.SerializeToUtf8Bytes(new { sceneId, tileSize, padding, camera, scale }, InteropJson.Options);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = request)
-            {
-                NativeMethods.FeBytes output;
-                var result = NativeMethods.fe_preview_render(_handle, ptr, (nuint)request.Length, &output);
-                var bytes = Check(result, RustRender.TakeBytes(output), nameof(Render));
-                var width = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
-                var height = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
-                return new PreviewFrame(width, height, bytes[8..]);
-            }
-        }
+        return _native.Read(nameof(Render), request, NativeMethods.fe_preview_render, ReadFrame);
     }
 
     /// <summary>
@@ -107,45 +184,16 @@ public sealed class RustPreview : IDisposable
     public PreviewFrame RenderVisual(VisualRef? visual, double tick, double size, double scale = 1, string direction = "down", bool moving = true)
     {
         var request = JsonSerializer.SerializeToUtf8Bytes(new { visual, tick, size, scale, direction, moving }, InteropJson.Options);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = request)
-            {
-                NativeMethods.FeBytes output;
-                var result = NativeMethods.fe_preview_render_visual(_handle, ptr, (nuint)request.Length, &output);
-                var bytes = Check(result, RustRender.TakeBytes(output), nameof(RenderVisual));
-                var width = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
-                var height = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
-                return new PreviewFrame(width, height, bytes[8..]);
-            }
-        }
+        return _native.Read(nameof(RenderVisual), request, NativeMethods.fe_preview_render_visual, ReadFrame);
     }
 
-    public void Dispose()
+    public void Dispose() => _native.Dispose();
+
+    /// <summary>Width and height, then the pixels: copied once, straight out of the Rust buffer.</summary>
+    private static PreviewFrame ReadFrame(ReadOnlySpan<byte> bytes)
     {
-        unsafe
-        {
-            if (_handle != null)
-            {
-                NativeMethods.fe_preview_free(_handle);
-                _handle = null;
-            }
-        }
-    }
-
-    private byte[] Check(NativeMethods.FeResult result, byte[] output, string call)
-    {
-        if (result == NativeMethods.FeResult.Ok)
-        {
-            return output;
-        }
-
-        if (result is NativeMethods.FeResult.Panic or NativeMethods.FeResult.Poisoned)
-        {
-            _poisoned = true;
-        }
-
-        throw new FarmFfiException($"{call} failed: {result}. {Encoding.UTF8.GetString(output)}");
+        var width = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[..4]);
+        var height = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..8]);
+        return new PreviewFrame(width, height, bytes[8..].ToArray());
     }
 }

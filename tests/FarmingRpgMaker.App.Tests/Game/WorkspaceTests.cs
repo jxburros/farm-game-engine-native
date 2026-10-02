@@ -141,6 +141,17 @@ public sealed class WorkspaceTests
         Pump();
         Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
         Assert.True(edit.Canvas.RenderCount > before, "an edit redraws the map");
+
+        // The next tile sends only the scene it changed, not the project and its art (#53). (The
+        // first one also selected the brush's tile type in the project, so it sent the project.)
+        var preview = edit.Canvas.Preview!;
+        var (scenes, projects) = (preview.SceneUpdates, preview.ProjectUpdates);
+        point = edit.Canvas.TranslatePoint(edit.Canvas.TileRect(3, 2).Center, host.Window)!.Value;
+        Avalonia.Headless.HeadlessWindowExtensions.MouseDown(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Avalonia.Headless.HeadlessWindowExtensions.MouseUp(host.Window, point, Avalonia.Input.MouseButton.Left);
+        Pump();
+        Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(host.Window)?.Dispose();
+        Assert.Equal((scenes + 1, projects), (preview.SceneUpdates, preview.ProjectUpdates));
     }
 
     [AvaloniaFact]

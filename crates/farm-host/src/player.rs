@@ -145,6 +145,9 @@ enum Query {
     Toasts,
     /// Recent plugin errors, oldest first.
     PluginErrors,
+    /// Panics inside the call, as an engine bug would: hosts' tests drive the boundary's
+    /// poisoning path with it (the handle is poisoned afterwards).
+    Panic,
 }
 
 /// The host-facing name of a screen.
@@ -173,12 +176,6 @@ pub fn request_name(request: &PlayerRequest) -> String {
 
 fn error_text(error: &PlayerError) -> String {
     error.to_string()
-}
-
-/// Whether an error message means the engine failed (the player refuses further frames, so the
-/// host handle should be poisoned too). Pass to [`crate::Guarded::poisoning_on`].
-pub fn is_engine_failure(message: &str) -> bool {
-    message.starts_with("The game stopped")
 }
 
 /// An embedded player (see the module docs).
@@ -223,6 +220,12 @@ impl HostPlayer {
 
     pub fn player(&self) -> &Player {
         &self.player
+    }
+
+    /// Whether the game stopped after an engine failure (the player refuses further frames, so
+    /// the host handle is poisoned too). Pass to [`crate::Guarded::poisoning_when`].
+    pub fn stopped(&self) -> bool {
+        self.player.is_poisoned()
     }
 
     pub fn player_mut(&mut self) -> &mut Player {
@@ -313,7 +316,8 @@ impl HostPlayer {
     }
 
     /// Read-only queries (`{"type":"summary"}`, `{"type":"widgetRect","path":[…]}`,
-    /// `{"type":"toasts"}`, `{"type":"pluginErrors"}`), answered as JSON.
+    /// `{"type":"toasts"}`, `{"type":"pluginErrors"}`; `{"type":"panic"}` for tests), answered
+    /// as JSON.
     pub fn query_json(&self, query: &[u8]) -> Result<String, String> {
         let query: Query = serde_json::from_slice(query).map_err(|e| format!("player query: {e}"))?;
         match query {
@@ -375,6 +379,7 @@ impl HostPlayer {
                 Ok(view_json::to_json(&toasts))
             }
             Query::PluginErrors => Ok(view_json::to_json(&self.player.plugin_errors())),
+            Query::Panic => panic!("A test asked the player to panic."),
         }
     }
 }

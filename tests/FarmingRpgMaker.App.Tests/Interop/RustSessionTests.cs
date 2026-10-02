@@ -9,20 +9,15 @@ namespace FarmingRpgMaker.App.Tests.Interop;
 /// <summary>
 /// The headless Rust session (<c>fe_session_*</c>) and the F# cartridge compiler. The Rust tests
 /// check the engine against the TypeScript goldens; these check the .NET side of the boundary.
-/// They run when the Rust library was built (see <see cref="FarmFfiTests.LibraryLoadsWhenTheBuildProducedIt"/>).
+/// They need the Rust library: a missing one fails them (see <see cref="NativeTests"/>).
 /// </summary>
 public sealed class RustSessionTests
 {
     private static GameProject Starter() => ProjectCatalog.CreateInitialProject(0);
 
-    [Fact]
+    [NativeFact]
     public void CreatedStateHashesLikeTheTypeScriptGolden()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         // The content golden records the state hash of createGameState(project, "content:starter-farm")
         // (xxh3 over the canonical binary state since v9, docs/NUMERICS.md).
         using var golden = JsonDocument.Parse(File.ReadAllText(RepoFile("fixtures", "golden", "content", "starter-farm.json")));
@@ -47,7 +42,7 @@ public sealed class RustSessionTests
         Assert.Equal("3.1.0", cart.Info.Version);
         Assert.NotEmpty(cart.ContentJson);
 
-        if (!FarmFfi.IsAvailable) return;
+        if (!NativeTests.Available()) return;
         using var fromCart = RustSession.CreateCartridge(bytes, "parity");
         using var fromProject = RustSession.Create(project, "parity");
         Assert.Equal(fromProject.StateHash(), fromCart.StateHash());
@@ -76,7 +71,7 @@ public sealed class RustSessionTests
         var content = RecordJson.Parse<GameContent>(cart.ContentJson);
         Assert.Equal(RecordJson.ToStableText(ProjectContent.Compile(project)), RecordJson.ToStableText(content));
         Assert.Equal(bytes, CartridgeCompiler.Compile(project));
-        if (!FarmFfi.IsAvailable) return;
+        if (!NativeTests.Available()) return;
 
         using var compiled = RustSession.CreateCartridge(bytes, "compiled-template");
         using var reference = RustSession.Create(project, "compiled-template");
@@ -108,7 +103,7 @@ public sealed class RustSessionTests
     [InlineData(ProjectTemplates.Quest)]
     public void KeepChangesInFSharpMatchesTheRustWriteBack(string template)
     {
-        if (!FarmFfi.IsAvailable)
+        if (!NativeTests.Available())
         {
             return;
         }
@@ -135,14 +130,9 @@ public sealed class RustSessionTests
         Assert.Throws<FormatException>(() => Playtests.ApplyState(project, "[]"));
     }
 
-    [Fact]
+    [NativeFact]
     public void SavesRoundTripThroughTheRustSession()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         var project = Starter();
         using var session = RustSession.Create(project, "save");
         var before = session.StateHash();
@@ -171,14 +161,9 @@ public sealed class RustSessionTests
         Assert.Equal(4321, (double)session.State()["player"]!["money"]!);
     }
 
-    [Fact]
+    [NativeFact]
     public void RejectsUnparsableProjects()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         // A project whose scenes are not a list cannot be a GameProject.
         var broken = System.Text.Encoding.UTF8.GetBytes("""{"scenes": 5}""");
         var ex = Assert.Throws<FarmFfiException>(() => RustSession.CreateCartridge(broken));
@@ -186,14 +171,9 @@ public sealed class RustSessionTests
     }
 
     /// <summary>A seeded random command stream replays to the same hash (the session is deterministic).</summary>
-    [Fact]
+    [NativeFact]
     public void RandomCommandStreamsReplayIdentically()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         string Run()
         {
             using var session = RustSession.Create(Starter(), "fuzz", autoStartQuests: true);

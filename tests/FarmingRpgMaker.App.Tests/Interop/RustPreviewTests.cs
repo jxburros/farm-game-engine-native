@@ -11,14 +11,9 @@ namespace FarmingRpgMaker.App.Tests.Interop;
 /// </summary>
 public sealed class RustPreviewTests
 {
-    [Fact]
+    [NativeFact]
     public void PreviewRendersTheRequestedViewport()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         var project = ProjectCatalog.CreateInitialProject(0);
         var scene = project.Scenes.First(s => s.Id == project.Player.SceneId);
         using var preview = RustPreview.Create(project);
@@ -38,6 +33,17 @@ public sealed class RustPreviewTests
         var water = preview.Render(scene.Id, 28, 12, camera, 2);
         Assert.Equal((frame.Width, frame.Height), (water.Width, water.Height));
         Assert.False(frame.Pixels.AsSpan().SequenceEqual(water.Pixels));
+        // Only the edited scene went to Rust, and it draws what the whole project draws (#53).
+        Assert.Equal((1, 0), (preview.SceneUpdates, preview.ProjectUpdates));
+        var floodedProject = project.WithScenes([.. project.Scenes.Select(s => s.Id == scene.Id ? flooded : s)]);
+        using (var fresh = RustPreview.Create(floodedProject))
+        {
+            Assert.True(fresh.Render(scene.Id, 28, 12, camera, 2).Pixels.AsSpan().SequenceEqual(water.Pixels));
+        }
+
+        // Anything else changed sends the project.
+        preview.SetProject(floodedProject.WithName("Renamed"));
+        Assert.Equal((1, 1), (preview.SceneUpdates, preview.ProjectUpdates));
         Assert.Throws<FarmFfiException>(() => preview.Render("missing-scene"));
         Assert.False(preview.IsPoisoned);
 
@@ -48,14 +54,9 @@ public sealed class RustPreviewTests
         Assert.Equal((0, 0), (unbound.Width, unbound.Height));
     }
 
-    [Fact]
+    [NativeFact]
     public void BadRequestsThrowWithTheRustMessage()
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            return;
-        }
-
         var error = Assert.Throws<FarmFfiException>(() => RustRender.EditorSnapshotJson(ProjectCatalog.CreateBlankProject(0), "missing-scene"));
         Assert.Contains("Scene missing-scene not found.", error.Message, StringComparison.Ordinal);
         Assert.Throws<FarmFfiException>(() => RustRender.RasterizePng("{}", 0));

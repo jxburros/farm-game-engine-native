@@ -36,7 +36,6 @@ public sealed class PlayModeView : UserControl
     private bool _inFlight;
     private bool _faulted;
     private TimeSpan? _lastFrameTime;
-    private byte[]? _pixels;
 
     public PlayModeView(RustPlayer player, bool autoRun = true)
     {
@@ -201,12 +200,14 @@ public sealed class PlayModeView : UserControl
 
         var events = TakeInput();
         var size = _surface.FrameSize();
-        PlayerFrame frame;
+        PlayerStep frame;
+        RustPlayer player;
         try
         {
             lock (_gate)
             {
-                frame = _player.Frame(deltaSeconds, events, size.Width, size.Height, render: true, reuse: _pixels);
+                player = _player;
+                frame = player.Advance(deltaSeconds, events, size.Width, size.Height);
             }
         }
         catch (FarmFfiException ex)
@@ -215,7 +216,7 @@ public sealed class PlayModeView : UserControl
             return;
         }
 
-        Show(frame);
+        Show(frame, player);
     }
 
     public void ToggleDebug()
@@ -325,20 +326,20 @@ public sealed class PlayModeView : UserControl
         _lastFrameTime = time;
         var events = TakeInput();
         var size = _surface.FrameSize();
-        var reuse = _pixels;
         var player = _player;
         _inFlight = true;
         _ = Task.Run(() =>
         {
             lock (_gate)
             {
-                // A restart swapped the player while this frame waited: skip it.
-                return ReferenceEquals(player, _player) ? _player.Frame(delta, events, size.Width, size.Height, render: true, reuse: reuse) : null;
+                // A restart swapped the player while this frame waited: skip it. The pixels stay
+                // in Rust until the UI thread copies them into the bitmap.
+                return ReferenceEquals(player, _player) ? player.Advance(delta, events, size.Width, size.Height) : null;
             }
-        }).ContinueWith(task => Dispatcher.UIThread.Post(() => OnFrameDone(task)), TaskScheduler.Default);
+        }).ContinueWith(task => Dispatcher.UIThread.Post(() => OnFrameDone(task, player)), TaskScheduler.Default);
     }
 
-    private void OnFrameDone(Task<PlayerFrame?> task)
+    private void OnFrameDone(Task<PlayerStep?> task, RustPlayer player)
     {
         _inFlight = false;
         if (!_running)
@@ -354,17 +355,38 @@ public sealed class PlayModeView : UserControl
 
         if (task.Result is { } frame)
         {
-            Show(frame);
+            Show(frame, player);
+            if (_faulted)
+            {
+                return;
+            }
         }
 
         _topLevel?.RequestAnimationFrame(OnAnimationFrame);
     }
 
-    private void Show(PlayerFrame frame)
+    private void Show(PlayerStep frame, RustPlayer player)
     {
-        _pixels = frame.Pixels;
         LastFrame = frame.Info;
-        _surface.Present(frame);
+        try
+        {
+            lock (_gate)
+            {
+                // A restart since the frame ran: the new player has not drawn it.
+                if (ReferenceEquals(player, _player))
+                {
+                    _surface.Present(frame, player);
+                }
+            }
+        }
+        catch (FarmFfiException ex)
+        {
+            Fault(ex);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Play Mode closed while the frame was on its way.
+        }
     }
 
     private void Fault(Exception exception)

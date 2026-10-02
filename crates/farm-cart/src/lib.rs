@@ -16,7 +16,7 @@ pub use cartridge::{
     inline_assets, is_cartridge, load_cartridge, read_cartridge, Asset, AssetRef, AssetTable, CartPlugin, Cartridge,
     GameInfo, GameInfoOwned, LoadedCartridge, ASSET_URL_PREFIX,
 };
-pub use save::{migrate_game_state, migrate_game_state_json};
+pub use save::{migrate_game_state, migrate_game_state_json, migrate_game_state_owned};
 pub use save_file::{
     is_binary_save, load_save, load_save_bytes, read_save_preview, write_save, write_save_binary, LoadedSave,
     SaveHeader, SavePreview, SaveTarget, SAVE_FORMAT,

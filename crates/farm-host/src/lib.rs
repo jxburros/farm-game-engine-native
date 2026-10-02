@@ -83,8 +83,9 @@ pub struct Guarded<T> {
     inner: T,
     poisoned: bool,
     last_error: String,
-    /// Errors that poison the handle besides panics (the player's "The game stopped…").
-    poisons: fn(&str) -> bool,
+    /// Whether a failed call left the handle unusable besides panics (the player stopped after
+    /// an engine failure). Asked of the handle itself, never of the error's wording.
+    poisons: fn(&T) -> bool,
 }
 
 impl<T> Guarded<T> {
@@ -92,8 +93,8 @@ impl<T> Guarded<T> {
         Self { inner, poisoned: false, last_error: String::new(), poisons: |_| false }
     }
 
-    /// Also poison the handle when an error message satisfies `poisons`.
-    pub fn poisoning_on(mut self, poisons: fn(&str) -> bool) -> Self {
+    /// Also poison the handle when a call fails and `poisons` then says the handle stopped.
+    pub fn poisoning_when(mut self, poisons: fn(&T) -> bool) -> Self {
         self.poisons = poisons;
         self
     }
@@ -109,7 +110,7 @@ impl<T> Guarded<T> {
         match catch_unwind(AssertUnwindSafe(|| body(inner))) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(message)) => {
-                self.poisoned = (self.poisons)(&message);
+                self.poisoned = (self.poisons)(&self.inner);
                 self.last_error.clone_from(&message);
                 let kind = if self.poisoned { ErrorKind::Poisoned } else { ErrorKind::Invalid };
                 Err(HostError { kind, message })
@@ -172,12 +173,18 @@ mod tests {
 
     #[test]
     fn guarded_handles_record_errors_and_poison() {
-        let mut handle = Guarded::new(0).poisoning_on(|message| message.starts_with("fatal"));
+        // The handle says whether it stopped (here: a negative number); the wording does not.
+        let mut handle = Guarded::new(0).poisoning_when(|n| *n < 0);
         assert_eq!(handle.run(|n| Ok(*n + 1)), Ok(1));
-        let error = handle.run(|_| Err::<(), _>("bad input".to_owned())).unwrap_err();
-        assert_eq!((error.kind, handle.last_error()), (ErrorKind::Invalid, "bad input"));
+        let error = handle.run(|_| Err::<(), _>("fatal-sounding input".to_owned())).unwrap_err();
+        assert_eq!((error.kind, handle.last_error()), (ErrorKind::Invalid, "fatal-sounding input"));
         assert!(!handle.is_poisoned());
-        let error = handle.run(|_| Err::<(), _>("fatal: engine".to_owned())).unwrap_err();
+        let error = handle
+            .run(|n| {
+                *n = -1;
+                Err::<(), _>("fatal: engine".to_owned())
+            })
+            .unwrap_err();
         assert_eq!(error.kind, ErrorKind::Poisoned);
         let error = handle.run(|n| Ok(*n)).unwrap_err();
         assert_eq!((error.kind, error.message.as_str()), (ErrorKind::Poisoned, "fatal: engine"));
