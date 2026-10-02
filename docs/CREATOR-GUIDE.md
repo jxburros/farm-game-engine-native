@@ -32,8 +32,22 @@ Pick a scene in the **Scene** list above the map; zoom with **−**, **+** and
 **Fit**. Hover a tile to inspect it. The map works from the keyboard too: click
 it or Tab to it, move the gold editing cursor with the **arrow keys**, and
 press **Enter** or **Space** to use the current tool there (Rectangle and
-Select take two presses, one per corner; **Esc** cancels). Screen readers
-announce the tile under the cursor. The side panel holds the tools:
+Select take two presses, one per corner; **Esc** cancels). While the map has
+focus, letter keys pick the tools: `V` Inspect, `B` Brush, `R` Rectangle,
+`G` Fill area, `I` Pick, `M` Select, `E` Erase layer, `X` Block, `U`
+Unblock, `D` Door and `P` Player start. Screen readers announce the tile
+under the cursor. Picking a brush is not an undo step.
+
+Markers on the map show doors (`D`), where doors from other scenes arrive
+(`A`), event triggers (`!`, with their region outlined), the mine entrance
+(`M`) and the player start (`S`); the **Markers** box above the map hides
+them. With **Inspect**, click a marker to open it: the door form, the event in
+Content, the door an arrival comes from, or the mine settings. Wherever a form
+asks for a tile (a door's arrival, the Workshop's tile, an event's tile, an NPC
+schedule stop or waypoint, the mine entrance), **Pick on map** lets you click
+it instead: the map shows the right scene, and **Esc** cancels.
+
+The side panel holds the tools (drag its edge to make it wider):
 
 - **Tile brush**: the terrain to paint (grass, soil, water, path, wall, door,
   floor, and your own tiles from the Art tab).
@@ -52,7 +66,10 @@ announce the tile under the cursor. The side panel holds the tools:
   **Indoor (no weather)** marks a greenhouse or interior: rain doesn't water its
   soil and storms don't damage its crops.
   Under the size boxes, the calculator shows the tile count and aspect ratio,
-  and warns when a resize would cut tiles off.
+  and warns when a resize would cut tiles off. Shrinking moves the player
+  start, NPCs (with their schedules and waypoints), animals, door arrivals,
+  event tiles and the mine entrance that stood on the cut tiles inside, and
+  removes doors leaving from them; the note lists each one first.
 - **Transitions**: choose **Door**, click the departure tile, then pick the
   destination scene and tile. **Return door** adds the way back. The list
   below shows every door of the scene; **Duplicate** starts a copy of a door
@@ -98,6 +115,13 @@ to:
 
 Every nested field also has an **Edit as JSON** box, for pasting or bulk
 changes.
+
+The filter box above the list narrows it by name or id, and **Ctrl+K** (or
+`Ctrl+P`) finds any entry, scene or art in the whole project. Fields you
+haven't saved stay as typed when you switch tabs or undo something elsewhere;
+choosing another entry asks whether to save them first, and they are saved
+before another project opens or the editor closes. A number outside its range
+is reported by name instead of being changed for you.
 
 ### Problems
 
