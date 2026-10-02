@@ -16,6 +16,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::farming::{crops, multi_tile};
 use crate::hooks::{DayHookPayload, HookEvent, SeasonChangeHookPayload, WeatherRollHookPayload, YearStartHookPayload};
+use crate::messages;
 use crate::quests;
 use crate::rng::Rng;
 use crate::schema::{
@@ -268,7 +269,7 @@ pub fn perform_sleep(ctx: &EngineContext, state: &mut GameState, options: SleepO
 
     if let Some(weather_def) = weather_def {
         if new_weather_id != previous_weather_id {
-            effects.push(Effect::message(message_levels::INFO, format!("Weather: {}", weather_def.name)));
+            effects.push(Effect::say(message_levels::INFO, messages::WEATHER_TODAY.with(&[&weather_def.name])));
         }
     }
     announce_new_day(ctx, &next, &previous_season, previous_year, &mut effects);
@@ -453,7 +454,7 @@ fn wake_energy_and_money(
     }
     let penalty = money.min(settings.collapse_money_penalty);
     money = money.saturating_sub(penalty);
-    effects.push(Effect::message(message_levels::ERROR, format!("You collapsed from exhaustion! Lost ${penalty}.")));
+    effects.push(Effect::say(message_levels::ERROR, messages::COLLAPSED.with(&[&penalty])));
     // A collapse restores round(max × fraction) whole points (the fraction in thousandths).
     let whole_points = units::div_round(
         i64::from(max_energy) * i64::from(settings.collapse_energy_fraction),
@@ -473,7 +474,7 @@ fn announce_new_day(
     let calendar = &ctx.content.settings.calendar;
     if next.season != previous_season {
         let new_season_name = effective_seasons(calendar)[next.season_index].name.clone();
-        effects.push(Effect::message(message_levels::INFO, format!("{new_season_name} has arrived!")));
+        effects.push(Effect::say(message_levels::INFO, messages::SEASON_ARRIVED.with(&[&new_season_name])));
         ctx.emit(HookEvent::SeasonChange(SeasonChangeHookPayload {
             season: next.season.clone(),
             previous_season: previous_season.to_owned(),
@@ -481,18 +482,22 @@ fn announce_new_day(
         }));
     }
     if next.year != previous_year {
-        effects.push(Effect::message(message_levels::INFO, format!("Year {} begins!", next.year)));
+        effects.push(Effect::say(message_levels::INFO, messages::YEAR_BEGINS.with(&[&next.year])));
         ctx.emit(HookEvent::YearStart(YearStartHookPayload { year: next.year }));
     }
 
     effects.push(Effect::DayStarted { day: next.day, season: next.season.clone(), year: next.year });
-    effects.push(Effect::message(
+    effects.push(Effect::say(
         message_levels::SUCCESS,
-        format!("Day {} of {}, Year {}", next.day_of_season, next.season, next.year),
+        messages::DAY_OF_SEASON.with_args(vec![
+            messages::Arg::text(next.day_of_season),
+            messages::season_noun(&next.season),
+            messages::Arg::text(next.year),
+        ]),
     ));
 
     if let Some(festival) = festival_on(calendar, &next.season, next.day_of_season) {
-        effects.push(Effect::message(message_levels::INFO, format!("Today is the {}!", festival.name)));
+        effects.push(Effect::say(message_levels::INFO, messages::FESTIVAL_TODAY.with(&[&festival.name])));
     }
 
     ctx.emit(HookEvent::DayStart(DayHookPayload { day: next.day, season: next.season.clone(), year: next.year }));

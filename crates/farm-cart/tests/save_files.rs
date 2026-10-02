@@ -89,6 +89,7 @@ fn a_save_from_a_newer_game_version_loads_with_a_warning() {
     assert!(loaded.ok);
     assert_eq!(loaded.warnings.len(), 1);
     assert!(loaded.warnings[0].contains("newer version of the game (99"), "{}", loaded.warnings[0]);
+    assert_eq!(loaded.warning_messages.iter().map(|message| message.english()).collect::<Vec<_>>(), loaded.warnings);
 }
 
 #[test]
@@ -100,6 +101,10 @@ fn a_newer_save_format_is_refused() {
     let loaded = load_save(&text, &target, &content);
     assert!(!loaded.ok);
     assert!(loaded.errors[0].starts_with("Save file format 2 is newer"), "{:?}", loaded.errors);
+    // The same reason as a catalog message, for players that translate it.
+    assert_eq!(loaded.error_messages.len(), 1);
+    assert_eq!(loaded.error_messages[0].key(), "msg.save.formatNewer");
+    assert_eq!(loaded.error_messages[0].english(), loaded.errors[0]);
 }
 
 #[test]

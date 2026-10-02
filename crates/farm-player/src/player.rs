@@ -617,12 +617,16 @@ impl Player {
     }
 
     fn drain_session_events(&mut self) {
+        let lang = self.ui.lang();
         let Some(game) = self.game.as_mut() else { return };
         let gain = self.settings.audio.effects_gain();
         let mut autosave = false;
         for event in game.session.drain_events() {
             match event {
-                SessionEvent::Toast { text, kind } => self.game_ui.toasts.push(text, toast_kind(kind)),
+                SessionEvent::Toast { text, kind, message } => {
+                    let text = lang.localize(message.as_ref(), &text);
+                    self.game_ui.toasts.push(text, toast_kind(kind));
+                }
                 SessionEvent::Sound { cue } => {
                     if gain > 0.0 {
                         self.sounds.push(SoundRequest { cue, gain });
@@ -655,6 +659,7 @@ impl Player {
     fn snapshot_of(
         content: &GameContent,
         game: &mut Game,
+        lang: Lang,
         pops: bool,
         view: Option<(u32, u32, bool)>,
     ) -> Option<WorldFrame> {
@@ -682,7 +687,7 @@ impl Player {
                         .map(|pop| SnapshotPop {
                             x: pop.x,
                             y: pop.y,
-                            text: pop.text,
+                            text: pop.key.map_or(pop.text, |key| lang.tr(key).to_owned()),
                             color: Some(pop.color),
                             age: pop.age,
                         })
@@ -699,10 +704,11 @@ impl Player {
     fn build_world(&mut self, width: u32, height: u32) {
         let integer = self.settings.display.integer_scaling;
         let reduced = self.settings.accessibility.reduced_motion;
+        let lang = self.ui.lang();
         self.world = None;
         if let Some(game) = self.game.as_mut() {
             if let Some((snapshot, world, target)) =
-                Self::snapshot_of(&self.def.content, game, !reduced, Some((width, height, integer)))
+                Self::snapshot_of(&self.def.content, game, lang, !reduced, Some((width, height, integer)))
             {
                 self.world = Some((snapshot, world_view(width, height, integer, world, target)));
             }
@@ -1205,10 +1211,15 @@ impl Player {
         match loaded.state.filter(|_| loaded.ok) {
             Some(state) => {
                 let play_seconds = save_file::read_save_preview(bytes).map_or(0.0, |(_, preview)| preview.play_seconds);
-                Ok((state, loaded.warnings, play_seconds))
+                let lang = self.ui.lang();
+                let warnings = loaded.warning_messages.iter().map(|message| lang.message(message)).collect();
+                Ok((state, warnings, play_seconds))
             }
             None if loaded.errors.is_empty() => Err(self.ui.lang().tr("toast.loadFailed").to_owned()),
-            None => Err(loaded.errors.join(" ")),
+            None => {
+                let lang = self.ui.lang();
+                Err(loaded.error_messages.iter().map(|message| lang.message(message)).collect::<Vec<_>>().join(" "))
+            }
         }
     }
 
@@ -1252,7 +1263,7 @@ impl Player {
         preview.farm_name = self.def.info.title.clone();
         preview.play_seconds = game.play_seconds.floor();
         preview.saved_at = (self.clock)();
-        if let Some((mut snapshot, world, target)) = Self::snapshot_of(&self.def.content, game, false, None) {
+        if let Some((mut snapshot, world, target)) = Self::snapshot_of(&self.def.content, game, lang, false, None) {
             let (width, height) = (world.0.min(384.0), world.1.min(240.0));
             snapshot.camera = Some(compute_camera(target.0, target.1, world.0, world.1, width, height));
             preview.thumbnail_png = self.renderer.thumbnail(&snapshot, THUMBNAIL_SIZE.0, THUMBNAIL_SIZE.1, background);

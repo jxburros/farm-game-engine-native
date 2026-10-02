@@ -10,6 +10,7 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{HookEvent, MinigameResolveHookPayload};
+use crate::messages;
 use crate::schema::GameState;
 use crate::units;
 use crate::{events, fishing, inventory};
@@ -65,10 +66,10 @@ pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, score
 /// declares `consumeOnUse`.
 pub fn handle_use_item(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let Some(slot) = state.player.inventory.iter().find(|entry| entry.item.id == item_id) else {
-        return vec![Effect::message(message_levels::ERROR, "You don't have that item.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::DONT_HAVE_ITEM)];
     };
     let Some(use_action_id) = slot.item.use_action_id.clone().filter(|id| !id.is_empty()) else {
-        return vec![Effect::message(message_levels::INFO, format!("{} can't be used like that.", slot.item.name))];
+        return vec![Effect::say(message_levels::INFO, messages::CANT_USE_LIKE_THAT.with(&[&slot.item.name]))];
     };
     let consume_on_use = slot.item.consume_on_use == Some(true);
 

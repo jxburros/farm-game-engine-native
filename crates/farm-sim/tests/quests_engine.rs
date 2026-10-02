@@ -205,7 +205,7 @@ fn announces_item_rewards_that_do_not_fit_instead_of_dropping_them_silently() {
     assert!(state.player.completed_quests.contains(&"q1".to_owned()));
     assert!(effects
         .iter()
-        .any(|e| matches!(e, Effect::Message { level, text } if level == "error" && text.contains("reward lost"))));
+        .any(|e| matches!(e, Effect::Message { level, text, .. } if level == "error" && text.contains("reward lost"))));
 }
 
 // --- completeQuestById ---

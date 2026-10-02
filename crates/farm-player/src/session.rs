@@ -19,6 +19,7 @@ use farm_runtime::input::{self, InputManager, Modifiers, MoveVector};
 use farm_runtime::timestep::FixedTimestep;
 use farm_sim::effects::message_levels;
 use farm_sim::hooks::{EffectHookPayload, HookBus, HookEvent};
+use farm_sim::messages::{self, Message};
 use farm_sim::schema::{GameContent, GameState, Scene};
 use farm_sim::{engine, game_time, inventory, quests, state, units, Command, Effect, EngineContext, StartState};
 use serde_json::Value;
@@ -46,8 +47,14 @@ pub enum ToastKind {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
-    /// A `message` effect (or a session notice) to show.
-    Toast { text: String, kind: ToastKind },
+    /// A `message` effect (or a session notice) to show. `text` is English (or a creator's own
+    /// words); `message` is its catalog message, which the player shows in its language.
+    Toast {
+        text: String,
+        kind: ToastKind,
+        #[serde(skip)]
+        message: Option<Message>,
+    },
     /// A sound cue (`farm_runtime::audio` preset name).
     Sound { cue: String },
     /// The player changed scene (the camera snaps; no interpolation across scenes).
@@ -66,6 +73,9 @@ pub struct Pop {
     pub x: f64,
     pub y: f64,
     pub text: String,
+    /// The interface string `text` is (a `farm_ui::Lang` key), for players that translate it.
+    #[serde(skip)]
+    pub key: Option<&'static str>,
     pub color: String,
     /// 0 (just spawned) → 1 (expired).
     pub age: f64,
@@ -494,8 +504,12 @@ impl PlaySession {
                     self.state.player.inventory = added.inventory;
                 }
                 if !added.added {
-                    self.events
-                        .push(SessionEvent::Toast { text: "Inventory is full!".to_owned(), kind: ToastKind::Error });
+                    let message = Message::from(&messages::INVENTORY_FULL);
+                    self.events.push(SessionEvent::Toast {
+                        text: message.english(),
+                        kind: ToastKind::Error,
+                        message: Some(message),
+                    });
                 }
             }
             DebugAction::Teleport { scene_id } => {
@@ -551,19 +565,19 @@ impl PlaySession {
             }
             match effect {
                 Effect::CropHarvested { quantity, .. } => {
-                    self.add_pop(format!("+{quantity}"), "#8fd06c");
+                    self.add_pop(format!("+{quantity}"), None, "#8fd06c");
                 }
                 Effect::QuestCompleted { quest_id } => {
-                    self.add_pop("Quest ✓".to_owned(), "#ffd94a");
+                    self.add_pop("Quest \u{2713}".to_owned(), Some("pop.questDone"), "#ffd94a");
                     self.events.push(SessionEvent::QuestCompleted { quest_id: quest_id.clone() });
                 }
-                Effect::Message { level, text } => {
+                Effect::Message { level, text, localized } => {
                     let kind = match level.as_str() {
                         message_levels::SUCCESS => ToastKind::Success,
                         message_levels::ERROR => ToastKind::Error,
                         _ => ToastKind::Info,
                     };
-                    self.events.push(SessionEvent::Toast { text: text.clone(), kind });
+                    self.events.push(SessionEvent::Toast { text: text.clone(), kind, message: localized.0.clone() });
                 }
                 Effect::SceneChanged { scene_id, .. } => {
                     // Teleports/transitions never interpolate across scenes.
@@ -592,12 +606,12 @@ impl PlaySession {
         }
     }
 
-    fn add_pop(&mut self, text: String, color: &str) {
+    fn add_pop(&mut self, text: String, key: Option<&'static str>, color: &str) {
         if self.reduced_motion {
             return;
         }
         let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
-        let pop = Pop { x, y, text, color: color.to_owned(), age: 0.0 };
+        let pop = Pop { x, y, text, key, color: color.to_owned(), age: 0.0 };
         self.pops.push((pop, self.elapsed_ms));
     }
 

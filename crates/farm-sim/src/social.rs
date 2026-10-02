@@ -9,6 +9,7 @@ use crate::events;
 use crate::game_time;
 use crate::hooks::{GiftGivenHookPayload, HookEvent};
 use crate::inventory;
+use crate::messages;
 use crate::quests;
 use crate::schema::{
     gift_friendship_delta, gift_reactions, Dialogue, DialogueOption, GameState, Npc, NpcSocialState, NpcState,
@@ -66,15 +67,16 @@ pub fn gift_reaction(npc: &Npc, item_id: &str) -> String {
 }
 
 /// TS `REACTION_LINES[reaction]`.
-fn reaction_line(reaction: &str) -> &'static str {
-    match reaction {
-        gift_reactions::LOVED => "They love it!",
-        gift_reactions::LIKED => "They like it.",
-        gift_reactions::NEUTRAL => "They accept it politely.",
-        gift_reactions::DISLIKED => "They don't seem thrilled…",
-        gift_reactions::HATED => "They hate it!",
-        _ => "",
-    }
+fn reaction_line(reaction: &str) -> messages::Arg {
+    let template = match reaction {
+        gift_reactions::LOVED => &messages::GIFT_LOVED,
+        gift_reactions::LIKED => &messages::GIFT_LIKED,
+        gift_reactions::NEUTRAL => &messages::GIFT_NEUTRAL,
+        gift_reactions::DISLIKED => &messages::GIFT_DISLIKED,
+        gift_reactions::HATED => &messages::GIFT_HATED,
+        _ => return messages::Arg::text(""),
+    };
+    messages::Arg::Message(template.into())
 }
 
 /// `!string.IsNullOrEmpty(value)`: the string when it is present and non-empty.
@@ -86,7 +88,7 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let facing = world_movement::facing_target(state);
     let Some(npc_entry_id) = npc_on_tile(ctx, state, facing.x, facing.y) else {
-        return vec![Effect::message(message_levels::INFO, "No one to give that to.")];
+        return vec![Effect::say(message_levels::INFO, &messages::NO_ONE_TO_GIVE)];
     };
 
     let Some(npc_def) = ctx.npc(&npc_entry_id) else {
@@ -94,7 +96,7 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
     };
 
     if !state.player.inventory.iter().any(|s| s.item.id == item_id) {
-        return vec![Effect::message(message_levels::ERROR, "You don't have that item.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::DONT_HAVE_ITEM)];
     }
 
     let social = state.social.get(&npc_def.id).cloned().unwrap_or(NpcSocialState {
@@ -108,10 +110,7 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
         NpcSocialState { gifts_today: 0, ..social }
     };
     if social_today.gifts_today >= 1 {
-        return vec![Effect::message(
-            message_levels::INFO,
-            format!("{} has already received a gift today.", npc_def.name),
-        )];
+        return vec![Effect::say(message_levels::INFO, messages::ALREADY_GIFTED.with(&[&npc_def.name]))];
     }
 
     let reaction = gift_reaction(npc_def, item_id);
@@ -136,16 +135,16 @@ pub fn handle_give_gift(ctx: &EngineContext, state: &mut GameState, item_id: &st
         },
     );
 
-    let mut effects = vec![Effect::message(
+    let birthday =
+        if is_birthday { messages::Arg::Message((&messages::GIFT_BIRTHDAY).into()) } else { messages::Arg::text("") };
+    let mut effects = vec![Effect::say(
         if delta >= 0 { message_levels::SUCCESS } else { message_levels::INFO },
-        format!(
-            "{}: {}{} ({}{})",
-            npc_def.name,
+        messages::GIFT_REACTION.with_args(vec![
+            messages::Arg::text(&npc_def.name),
             reaction_line(&reaction),
-            if is_birthday { " (Birthday!)" } else { "" },
-            if delta >= 0 { "+" } else { "" },
-            delta
-        ),
+            birthday,
+            messages::Arg::text(format!("{}{delta}", if delta >= 0 { "+" } else { "" })),
+        ]),
     )];
     ctx.emit(HookEvent::GiftGiven(GiftGivenHookPayload {
         npc_id: npc_def.id.clone(),

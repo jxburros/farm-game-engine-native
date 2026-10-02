@@ -60,7 +60,7 @@ fn a_wide_action_fan_out_stops_at_the_run_budget_and_says_so() {
     assert_eq!(state.player.money, money + i64::from(MAX_ACTION_RUNS));
     let warnings = effects
         .iter()
-        .filter(|effect| matches!(effect, Effect::Message { level, text } if level == "error" && text.starts_with("Action chain limit reached")))
+        .filter(|effect| matches!(effect, Effect::Message { level, text, .. } if level == "error" && text.starts_with("Action chain limit reached")))
         .count();
     assert_eq!(warnings, 1, "one warning per command");
 

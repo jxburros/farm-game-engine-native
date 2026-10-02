@@ -321,7 +321,7 @@ fn debug_actions_change_state_without_commands() {
         );
     }
     let full = session.drain_events().into_iter().any(
-        |event| matches!(event, SessionEvent::Toast { text, kind: ToastKind::Error } if text == "Inventory is full!"),
+        |event| matches!(event, SessionEvent::Toast { text, kind: ToastKind::Error, .. } if text == "Inventory is full!"),
     );
     assert!(full, "a full inventory says so");
     // Minutes stop at the end of the day window.

@@ -7,6 +7,7 @@ use crate::engine_types::{CommandRules, Effects, EngineContext};
 use crate::farming::farming_actions;
 use crate::game_time::SleepOptions;
 use crate::hooks::{CommandHookPayload, HookEvent, RelationshipChangeHookPayload};
+use crate::messages;
 use crate::npcs::npc_movement;
 use crate::schema::{EventOutcome, GameState, MoveIntent, NpcSocialState, OutcomeKind, PluginMutation, MAX_FRIENDSHIP};
 use crate::units;
@@ -106,7 +107,7 @@ fn refusal(ctx: &EngineContext, state: &GameState, command: &Command) -> Option<
         Command::OpenShop { shop_id } => economy::open_shop_refusal(ctx, state, shop_id),
         // Minigames open from actions, items, tools and plugins, which decide what they are
         // for; opening one on demand would hand out its rewards for any score.
-        Command::StartMinigame { .. } => Some(vec![Effect::message(message_levels::INFO, "Nothing to play here.")]),
+        Command::StartMinigame { .. } => Some(vec![Effect::say(message_levels::INFO, &messages::NOTHING_TO_PLAY)]),
         _ => None,
     }
 }
@@ -125,8 +126,12 @@ fn apply_plugin_mutation(
     plugin_id: &str,
     mutation: &PluginMutation,
 ) -> Effects {
-    let plugin_error =
-        |text: String| vec![Effect::message(message_levels::ERROR, format!("Plugin {plugin_id}: {text}"))];
+    let plugin_error = |detail: messages::Message| {
+        vec![Effect::say(
+            message_levels::ERROR,
+            messages::PLUGIN_ERROR.with_args(vec![messages::Arg::text(plugin_id), detail.into()]),
+        )]
+    };
     // Mutations sharing the event-outcome executor (identical semantics to the equivalent
     // event/action outcome, including soft failure).
     let run_outcome = |state: &mut GameState, outcome: EventOutcome| events::apply_outcomes(ctx, state, &[outcome], 0);
@@ -134,15 +139,15 @@ fn apply_plugin_mutation(
     match mutation {
         PluginMutation::GiveItem { item_id, quantity } => {
             let Some(item) = ctx.item(item_id) else {
-                return plugin_error(format!("unknown item '{item_id}'"));
+                return plugin_error(messages::PLUGIN_UNKNOWN_ITEM.with(&[item_id]));
             };
             let result =
                 inventory::add_item(&state.player.inventory, item, *quantity, state.player.max_inventory_size, None);
             if !result.added {
-                return vec![Effect::message(message_levels::INFO, "Inventory full!")];
+                return vec![Effect::say(message_levels::INFO, &messages::INVENTORY_FULL_SHORT)];
             }
             state.player.inventory = result.inventory;
-            vec![Effect::message(message_levels::INFO, format!("Received {quantity}× {}", item.name))]
+            vec![Effect::say(message_levels::INFO, messages::RECEIVED_COUNT.with(&[quantity, &item.name]))]
         }
         PluginMutation::SetFlag { flag, value } => {
             // Canonical numbers (`1.0` is `1`) so the flag survives a save/load round trip (#142).
@@ -152,7 +157,7 @@ fn apply_plugin_mutation(
         PluginMutation::Message { text } => vec![Effect::message(message_levels::INFO, text.clone())],
         PluginMutation::SetWeather { weather_id } => {
             if weather::weather_type_by_id(ctx, weather_id).is_none() {
-                return plugin_error(format!("unknown weather '{weather_id}'"));
+                return plugin_error(messages::PLUGIN_UNKNOWN_WEATHER.with(&[weather_id]));
             }
             state.clock.weather_id = weather_id.clone();
             vec![]
@@ -202,7 +207,7 @@ fn apply_plugin_mutation(
 
         PluginMutation::ModifyFriendship { npc_id, delta } => {
             if ctx.npc(npc_id).is_none() {
-                return plugin_error(format!("unknown NPC '{npc_id}'"));
+                return plugin_error(messages::PLUGIN_UNKNOWN_NPC.with(&[npc_id]));
             }
             plugin_modify_friendship(ctx, state, npc_id, *delta)
         }

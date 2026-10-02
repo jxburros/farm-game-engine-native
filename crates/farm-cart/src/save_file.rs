@@ -28,10 +28,11 @@
 //! A bare `GameState` (what the web version writes) also loads: it has no header, so it is
 //! treated as coming from unknown content.
 
-use crate::save::{migrate_game_state_owned, MAX_ERRORS};
+use crate::save::migrate_game_state_owned;
 use farm_cart_schema::farm_engine::save as fb_save;
 use farm_cart_schema::farm_engine::save::save_file_buffer_has_identifier;
 use farm_cart_schema::flatbuffers::FlatBufferBuilder;
+use farm_sim::messages::{self, Message};
 use farm_sim::schema::{
     GameContent, GameProject, GameState, InventorySlot, Item, NpcState, Scene, SceneTransition, Tile,
 };
@@ -124,10 +125,16 @@ pub struct LoadedSave {
     pub state: Option<GameState>,
     /// The header, when the file had one (bare web saves have none).
     pub header: Option<SaveHeader>,
-    /// Why the save was refused (at most 20).
+    /// Why the save was refused (at most 20), in English.
     pub errors: Vec<String>,
-    /// Loaded, but the player should know (a newer game version wrote it, items quarantined).
+    /// Loaded, but the player should know (a newer game version wrote it, items quarantined), in
+    /// English.
     pub warnings: Vec<String>,
+    /// `errors` as catalog messages, in the same order, for players that translate them
+    /// (technical details stay English inside `msg.save.damaged`).
+    pub error_messages: Vec<Message>,
+    /// `warnings` as catalog messages, in the same order.
+    pub warning_messages: Vec<Message>,
     /// Ids of the inventory items moved to quarantine because the content no longer has them.
     pub quarantined: Vec<String>,
     /// Ids of quarantined items that came back because the content has them again.
@@ -142,11 +149,11 @@ pub struct LoadedSave {
 /// `content`. Never panics.
 pub fn load_save(text: &str, target: &SaveTarget, content: &GameContent) -> LoadedSave {
     if text.len() > MAX_STATE_BYTES {
-        return refused(None, "Save file is too large.".to_owned());
+        return refused(None, messages::SAVE_TOO_LARGE.with(&[]));
     }
     let raw: Value = match serde_json::from_str(text) {
         Ok(raw) => raw,
-        Err(error) => return refused(None, format!("Save file is not valid JSON: {error}")),
+        Err(error) => return refused(None, damaged(format!("Save file is not valid JSON: {error}"))),
     };
     let (header, state_raw) = match split_envelope(raw) {
         Ok(parts) => parts,
@@ -160,7 +167,7 @@ pub fn load_save_bytes(bytes: &[u8], target: &SaveTarget, content: &GameContent)
     if !is_binary_save(bytes) {
         return match std::str::from_utf8(bytes) {
             Ok(text) => load_save(text, target, content),
-            Err(error) => refused(None, format!("Save file is neither a save nor UTF-8 JSON: {error}")),
+            Err(error) => refused(None, damaged(format!("Save file is neither a save nor UTF-8 JSON: {error}"))),
         };
     }
     let (header, _preview, state_json) = match read_binary(bytes, true) {
@@ -169,42 +176,32 @@ pub fn load_save_bytes(bytes: &[u8], target: &SaveTarget, content: &GameContent)
     };
     let raw: Value = match serde_json::from_slice(&state_json.unwrap_or_default()) {
         Ok(raw) => raw,
-        Err(error) => return refused(Some(header), format!("Save state is not valid JSON: {error}")),
+        Err(error) => return refused(Some(header), damaged(format!("Save state is not valid JSON: {error}"))),
     };
     load_parts(Some(header), raw, target, content)
 }
 
 fn load_parts(header: Option<SaveHeader>, state_raw: Value, target: &SaveTarget, content: &GameContent) -> LoadedSave {
-    let mut warnings = Vec::new();
+    let mut warnings: Vec<Message> = Vec::new();
     if let Some(header) = &header {
         if header.format > SAVE_FORMAT {
-            return refused(
-                Some(header.clone()),
-                format!(
-                    "Save file format {} is newer than this player supports ({SAVE_FORMAT}). Update the game.",
-                    header.format
-                ),
-            );
+            return refused(Some(header.clone()), format_too_new(header.format));
         }
         if header.game_id != target.game_id {
-            return refused(
-                Some(header.clone()),
-                format!("This save belongs to a different game ('{}', not '{}').", header.game_id, target.game_id),
-            );
+            return refused(Some(header.clone()), messages::SAVE_OTHER_GAME.with(&[&header.game_id, &target.game_id]));
         }
         if compare_versions(&header.game_version, &target.game_version) == Ordering::Greater {
-            warnings.push(format!(
-                "This save was made with a newer version of the game ({}, this is {}). Some progress may not load.",
-                header.game_version, target.game_version
-            ));
+            warnings.push(messages::SAVE_NEWER_VERSION.with(&[&header.game_version, &target.game_version]));
         }
     }
 
     let migration = migrate_game_state_owned(state_raw);
     let Some(mut state) = migration.data.filter(|_| migration.ok) else {
+        let error_messages: Vec<Message> = migration.errors.into_iter().map(damaged).collect();
         return LoadedSave {
             header,
-            errors: migration.errors,
+            errors: error_messages.iter().map(Message::english).collect(),
+            error_messages,
             from_version: migration.from_version,
             migrated: migration.migrated,
             ..LoadedSave::default()
@@ -215,10 +212,8 @@ fn load_parts(header: Option<SaveHeader>, state_raw: Value, target: &SaveTarget,
     // simulation reads it.
     let repaired = farm_sim::state::normalize_world(&mut state);
     if !repaired.is_empty() {
-        warnings.push(format!(
-            "The map of {} in this save did not match its size and was repaired.",
-            repaired.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ")
-        ));
+        let scenes = repaired.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ");
+        warnings.push(messages::SAVE_MAP_REPAIRED.with(&[&scenes]));
     }
 
     let same_content = header.as_ref().is_some_and(|h| h.cart_hash == target.cart_hash);
@@ -237,17 +232,12 @@ fn load_parts(header: Option<SaveHeader>, state_raw: Value, target: &SaveTarget,
     // An all-zero random state draws 0 forever: every chance roll succeeds (#140).
     if state.rng.is_degenerate() {
         state.rng = rng::create_rng_state(&format!("{}:{}", state.meta.engine_seed, state.clock.tick));
-        warnings.push("This save had no random number state; a new one was started.".to_owned());
+        warnings.push(messages::SAVE_NEW_RNG.with(&[]));
     }
     if !quarantined.is_empty() {
-        warnings.push(format!(
-            "{} item{} in this save no longer exist{} in the game and {} set aside: {}.",
-            quarantined.len(),
-            if quarantined.len() == 1 { "" } else { "s" },
-            if quarantined.len() == 1 { "s" } else { "" },
-            if quarantined.len() == 1 { "was" } else { "were" },
-            quarantined.join(", ")
-        ));
+        let set_aside =
+            if quarantined.len() == 1 { &messages::SAVE_ITEM_SET_ASIDE } else { &messages::SAVE_ITEMS_SET_ASIDE };
+        warnings.push(set_aside.with(&[&quarantined.len(), &quarantined.join(", ")]));
     }
 
     LoadedSave {
@@ -255,7 +245,9 @@ fn load_parts(header: Option<SaveHeader>, state_raw: Value, target: &SaveTarget,
         state: Some(state),
         header,
         errors: Vec::new(),
-        warnings,
+        warnings: warnings.iter().map(Message::english).collect(),
+        error_messages: Vec::new(),
+        warning_messages: warnings,
         quarantined,
         restored,
         from_version: migration.from_version,
@@ -357,16 +349,17 @@ pub fn write_save_binary(state: &GameState, target: &SaveTarget, preview: &SaveP
 
 /// The header and slot preview of a binary save, without decompressing the state.
 pub fn read_save_preview(bytes: &[u8]) -> Result<(SaveHeader, SavePreview), String> {
-    read_binary(bytes, false).map(|(header, preview, _)| (header, preview)).map_err(|(_, error)| error)
+    read_binary(bytes, false).map(|(header, preview, _)| (header, preview)).map_err(|(_, error)| error.english())
 }
 
 type BinaryParts = (SaveHeader, SavePreview, Option<Vec<u8>>);
 
-fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<SaveHeader>, String)> {
+fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<SaveHeader>, Message)> {
     if !is_binary_save(bytes) {
-        return Err((None, "Not a Farm Engine save (FGSV identifier missing).".to_owned()));
+        return Err((None, messages::SAVE_NOT_A_SAVE.with(&[])));
     }
-    let file = fb_save::root_as_save_file(bytes).map_err(|error| (None, format!("Save file is damaged: {error}")))?;
+    let file =
+        fb_save::root_as_save_file(bytes).map_err(|error| (None, damaged(format!("Save file is damaged: {error}"))))?;
     let header = SaveHeader {
         format: file.save_format(),
         game_id: file.game_id().to_owned(),
@@ -388,13 +381,7 @@ fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<Sa
         })
         .unwrap_or_default();
     if header.format > SAVE_FORMAT {
-        return Err((
-            Some(header.clone()),
-            format!(
-                "Save file format {} is newer than this player supports ({SAVE_FORMAT}). Update the game.",
-                header.format
-            ),
-        ));
+        return Err((Some(header.clone()), format_too_new(header.format)));
     }
     if !with_state {
         return Ok((header, preview, None));
@@ -402,25 +389,25 @@ fn read_binary(bytes: &[u8], with_state: bool) -> Result<BinaryParts, (Option<Sa
     let data = file.state().bytes();
     let state = match file.compression() {
         COMPRESSION_STORED if data.len() > MAX_STATE_BYTES => {
-            return Err((Some(header), "Save state is too large.".to_owned()))
+            return Err((Some(header), messages::SAVE_STATE_TOO_LARGE.with(&[])))
         }
         COMPRESSION_STORED => data.to_vec(),
         COMPRESSION_ZSTD => decompress(data, MAX_STATE_BYTES).map_err(|error| (Some(header.clone()), error))?,
-        other => return Err((Some(header), format!("Save file uses an unknown compression ({other})."))),
+        other => return Err((Some(header), damaged(format!("Save file uses an unknown compression ({other}).")))),
     };
     Ok((header, preview, Some(state)))
 }
 
 /// The zstd frame `data`, refused once it inflates past `limit` bytes.
-fn decompress(data: &[u8], limit: usize) -> Result<Vec<u8>, String> {
+fn decompress(data: &[u8], limit: usize) -> Result<Vec<u8>, Message> {
     use std::io::Read;
     let mut decoder = ruzstd::decoding::StreamingDecoder::new(data)
-        .map_err(|error| format!("Save state could not be decompressed: {error}"))?;
+        .map_err(|error| damaged(format!("Save state could not be decompressed: {error}")))?;
     let mut out = Vec::new();
     let mut limited = (&mut decoder).take(limit as u64 + 1);
-    limited.read_to_end(&mut out).map_err(|error| format!("Save state could not be decompressed: {error}"))?;
+    limited.read_to_end(&mut out).map_err(|error| damaged(format!("Save state could not be decompressed: {error}")))?;
     if out.len() > limit {
-        return Err("Save state is too large.".to_owned());
+        return Err(messages::SAVE_STATE_TOO_LARGE.with(&[]));
     }
     Ok(out)
 }
@@ -581,22 +568,29 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
 }
 
 /// `{"header", "state"}` → its parts; any other object is a bare `GameState`.
-fn split_envelope(raw: Value) -> Result<(Option<SaveHeader>, Value), String> {
+fn split_envelope(raw: Value) -> Result<(Option<SaveHeader>, Value), Message> {
     let Value::Object(mut map) = raw else {
         return Ok((None, raw));
     };
     if !(map.contains_key("header") && map.contains_key("state")) {
         return Ok((None, Value::Object(map)));
     }
-    let header =
-        SaveHeader::deserialize(&map["header"]).map_err(|error| format!("Save header is not valid: {error}"))?;
+    let header = SaveHeader::deserialize(&map["header"])
+        .map_err(|error| damaged(format!("Save header is not valid: {error}")))?;
     Ok((Some(header), map.swap_remove("state").unwrap_or_default()))
 }
 
-fn refused(header: Option<SaveHeader>, error: String) -> LoadedSave {
-    let mut errors = vec![error];
-    errors.truncate(MAX_ERRORS);
-    LoadedSave { header, errors, ..LoadedSave::default() }
+fn refused(header: Option<SaveHeader>, error: Message) -> LoadedSave {
+    LoadedSave { header, errors: vec![error.english()], error_messages: vec![error], ..LoadedSave::default() }
+}
+
+/// A technical reason a save does not load: shown as it is (English) inside a translated frame.
+fn damaged(detail: String) -> Message {
+    messages::SAVE_DAMAGED.with(&[&detail])
+}
+
+fn format_too_new(format: u32) -> Message {
+    messages::SAVE_FORMAT_NEWER.with(&[&format, &SAVE_FORMAT])
 }
 
 #[cfg(test)]
@@ -610,7 +604,7 @@ mod tests {
         let packed = ruzstd::encoding::compress_to_vec(json.as_bytes(), ruzstd::encoding::CompressionLevel::Fastest);
         assert!(packed.len() * 50 < json.len(), "{} bytes", packed.len());
         assert_eq!(decompress(&packed, json.len()).unwrap(), json.as_bytes());
-        assert_eq!(decompress(&packed, json.len() - 1).unwrap_err(), "Save state is too large.");
+        assert_eq!(decompress(&packed, json.len() - 1).unwrap_err().english(), "Save state is too large.");
     }
 
     #[test]

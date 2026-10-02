@@ -122,7 +122,10 @@ window size, pixel scale, fullscreen and credits.
 
 The locale also picks the language of the game's own interface when the
 player hasn't chosen one: English and Spanish are built in. Players can
-change it in the game's **Settings → Accessibility → Language**.
+change it in the game's **Settings → Accessibility → Language**. The engine's
+own messages follow it too ("Not enough money!", the built-in minigames'
+prompts and buttons, save-load notices); what you write (names, dialogue,
+event messages, a minigame's own **prompt**) shows as you wrote it.
 
 ### Mods
 

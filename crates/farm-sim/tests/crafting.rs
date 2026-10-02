@@ -189,7 +189,7 @@ fn craftable_status_reports_ingredients_when_short_on_inputs() {
         CraftableStatus {
             craftable: false,
             reason: Some("ingredients".to_owned()),
-            message: Some("Missing ingredients.".to_owned()),
+            message: Some(farm_sim::messages::MISSING_INGREDIENTS.with(&[])),
         }
     );
 }
@@ -205,7 +205,7 @@ fn craftable_status_reports_locked_when_unlock_conditions_are_not_met() {
         CraftableStatus {
             craftable: false,
             reason: Some("locked".to_owned()),
-            message: Some("Recipe not unlocked yet.".to_owned()),
+            message: Some(farm_sim::messages::RECIPE_LOCKED.with(&[])),
         }
     );
 }
@@ -220,7 +220,7 @@ fn craftable_status_reports_station_when_ingredients_and_unlocks_are_fine_but_no
         CraftableStatus {
             craftable: false,
             reason: Some("station".to_owned()),
-            message: Some("You need to be near a Test Kitchen to craft that.".to_owned()),
+            message: Some(farm_sim::messages::NEED_STATION.with(&[&"Test Kitchen"])),
         }
     );
 }

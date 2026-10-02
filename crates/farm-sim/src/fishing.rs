@@ -8,6 +8,7 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
+use crate::messages;
 use crate::quests;
 use crate::rng::Rng;
 use crate::schema::{FishTable, GameState};
@@ -60,7 +61,7 @@ pub fn escape_chance(difficulty: u64, rod_tier: i32, score: Option<u64>) -> (u12
 pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32, score: Option<u64>) -> FishingResult {
     let Some(table) = active_fish_table(ctx, state) else {
         return FishingResult {
-            effects: vec![Effect::message(message_levels::INFO, "The water is quiet — nothing seems to live here.")],
+            effects: vec![Effect::say(message_levels::INFO, &messages::WATER_QUIET)],
             caught: false,
         };
     };
@@ -81,9 +82,9 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
             let added = inventory::add_item(&state.player.inventory, junk, 1, state.player.max_inventory_size, None);
             if added.added {
                 state.player.inventory = added.inventory;
-                effects.push(Effect::message(message_levels::INFO, format!("You fished up {}…", junk.name)));
+                effects.push(Effect::say(message_levels::INFO, messages::FISHED_UP.with(&[&junk.name])));
             } else {
-                effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+                effects.push(Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL));
             }
         }
         return FishingResult { effects, caught: false };
@@ -93,7 +94,7 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
     let Some(index) = rng.weighted(&weights) else {
         state.rng = rng.state;
         return FishingResult {
-            effects: vec![Effect::message(message_levels::INFO, "Not even a nibble.")],
+            effects: vec![Effect::say(message_levels::INFO, &messages::NOT_A_NIBBLE)],
             caught: false,
         };
     };
@@ -103,7 +104,7 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
     // down by minigame skill (score 1 → no escape chance at all).
     if rng.chance_below(escape_chance(entry.difficulty, rod_tier, score)) {
         state.rng = rng.state;
-        return FishingResult { effects: vec![Effect::message(message_levels::INFO, "It got away!")], caught: false };
+        return FishingResult { effects: vec![Effect::say(message_levels::INFO, &messages::GOT_AWAY)], caught: false };
     }
 
     state.rng = rng.state;
@@ -112,10 +113,10 @@ pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32
         let added = inventory::add_item(&state.player.inventory, fish, 1, state.player.max_inventory_size, None);
         if added.added {
             state.player.inventory = added.inventory;
-            effects.push(Effect::message(message_levels::SUCCESS, format!("Caught a {}!", fish.name)));
+            effects.push(Effect::say(message_levels::SUCCESS, messages::CAUGHT_FISH.with(&[&fish.name])));
             caught = true;
         } else {
-            effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+            effects.push(Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL));
         }
     }
 

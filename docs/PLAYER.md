@@ -120,7 +120,9 @@ default, so a partial or older file loads; an unreadable file is ignored.
 - **Accessibility:** text size (90–140 %), reduced motion (no floating pops,
   fades or flashes), a readable font (Atkinson Hyperlegible, SIL OFL 1.1, for
   the interface; text drawn in the world stays in Inter) and the language
-  (English or Spanish). Until the player picks a language the game follows
+  (English or Spanish), which covers the engine's messages (toasts, the
+  built-in minigames, save-load notices) as well as the interface. Until the
+  player picks a language the game follows
   the system's, then the game's `settings.locale`, then English; in the
   editor's Play Mode the editor's language comes first.
 

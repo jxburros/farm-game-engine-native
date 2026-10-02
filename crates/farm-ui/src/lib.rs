@@ -23,6 +23,7 @@ pub mod i18n;
 pub mod icons;
 pub mod input;
 pub mod layout;
+pub mod messages;
 pub mod settings;
 pub mod shell;
 pub mod theme;
