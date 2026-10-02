@@ -284,6 +284,13 @@
     are announced, and playtests follow the system's reduced-motion setting.
   - **Undo history shares untouched tile rows**, so a tile edit on a large
     scene no longer copies the whole scene into every undo step.
+  - **Editor structure.** Edit Mode's tabs have names instead of numbers,
+    sizes and "minutes ago" read the same in every window (Open Project now
+    says "5 minutes ago" and "1.5 KB" like the Update Center and Export Game),
+    art studio errors name the field instead of the control, and test-only
+    placeholders no longer ship in the app.
+    [docs/EDITOR-ARCHITECTURE.md](docs/EDITOR-ARCHITECTURE.md) describes the
+    editor's views and the steps towards view models.
 - **One engine for the web and native editors.** The web editor
   (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,

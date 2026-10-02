@@ -499,6 +499,10 @@ or snow), rain, snow and wind particles, and water shimmer on watered soil.
 `FarmingRpgMaker.Updates` stays C# and unchanged. Velopack packaging ships
 `farm_ffi.dll` and the player templates for Export Game.
 
+How the app's views are put together, the shared helpers to use, and the
+move from code-built views towards view models are in
+[EDITOR-ARCHITECTURE.md](EDITOR-ARCHITECTURE.md).
+
 ### Tests
 
 | Was (`FarmEngine.Core.Tests`) | Now |
