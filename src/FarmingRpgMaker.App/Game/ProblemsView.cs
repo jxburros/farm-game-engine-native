@@ -63,6 +63,8 @@ public sealed class ProblemsView : UserControl
             {
                 var go = Ui.Button("Go to", () => _navigate(problem), "tool", "small");
                 go.Name = $"ProblemGo_{index}";
+                // Every row has a "Go to": the name says which problem it opens.
+                Avalonia.Automation.AutomationProperties.SetName(go, $"Go to: {problem.Message}");
                 _rows.Children.Add(Ui.Row(text, go));
             }
             else

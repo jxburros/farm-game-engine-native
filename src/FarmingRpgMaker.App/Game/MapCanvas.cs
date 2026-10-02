@@ -51,12 +51,27 @@ public sealed class MapCanvas : Control, IDisposable
         ClipToBounds = true;
         Focusable = true;
         // Web: focus-visible:ring-2 in --iw-gold-400, shown when focus arrives from the keyboard.
+        // Gold alone is about 1.6:1 on the cream frame; the dark lines on both sides of it give
+        // the ring the 3:1 a focus indicator needs, on light and dark tiles alike.
         FocusAdorner = new FuncTemplate<Control>(() => new Border
         {
-            BorderThickness = new Thickness(2),
-            BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
-            CornerRadius = new CornerRadius(3),
-            Margin = new Thickness(-3),
+            Name = "MapFocusRing",
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.Parse("#2B2A33")),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(-4),
+            Child = new Border
+            {
+                BorderThickness = new Thickness(2),
+                BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
+                CornerRadius = new CornerRadius(3),
+                Child = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.Parse("#2B2A33")),
+                    CornerRadius = new CornerRadius(2),
+                },
+            },
         });
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
     }

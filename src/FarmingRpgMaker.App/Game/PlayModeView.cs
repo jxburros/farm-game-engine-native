@@ -56,10 +56,12 @@ public sealed class PlayModeView : UserControl
         }
 
         // Labels in the editor's language (EditorStrings); a playtest starts a new view.
-        Tool("RestartButton", Ui.IconLabel("IconRefresh", EditorStrings.Get("toolbar.restart")), () => RestartRequested?.Invoke(this, EventArgs.Empty), EditorStrings.Get("toolbar.restartTip"));
+        var restart = Tool("RestartButton", Ui.IconLabel("IconRefresh", EditorStrings.Get("toolbar.restart")), () => RestartRequested?.Invoke(this, EventArgs.Empty), EditorStrings.Get("toolbar.restartTip") + " (Ctrl+R)");
+        Avalonia.Automation.AutomationProperties.SetAcceleratorKey(restart, "Ctrl+R");
         _keepChanges = new ToggleButton { Name = "KeepChangesButton", Content = Ui.IconLabel("IconCheckCircle", EditorStrings.Get("toolbar.keepChanges")), Margin = new Thickness(6, 3, 0, 3), Focusable = false };
         _keepChanges.Classes.Add("tool");
-        ToolTip.SetTip(_keepChanges, EditorStrings.Get("toolbar.keepChangesTip"));
+        ToolTip.SetTip(_keepChanges, EditorStrings.Get("toolbar.keepChangesTip") + " (Ctrl+Shift+K)");
+        Avalonia.Automation.AutomationProperties.SetAcceleratorKey(_keepChanges, "Ctrl+Shift+K");
         _keepChanges.IsCheckedChanged += (_, _) =>
         {
             ShowToast(_keepChanges.IsChecked == true
@@ -67,7 +69,8 @@ public sealed class PlayModeView : UserControl
                 : new ToastMessage(EditorStrings.Get("toolbar.keepOff"), ToastKind.Info));
         };
         toolbar.Children.Add(_keepChanges);
-        Tool("DebugButton", EditorStrings.Get("toolbar.debug"), ToggleDebug, EditorStrings.Get("toolbar.debugTip"));
+        var debug = Tool("DebugButton", EditorStrings.Get("toolbar.debug"), ToggleDebug, EditorStrings.Get("toolbar.debugTip") + " (Ctrl+D)");
+        Avalonia.Automation.AutomationProperties.SetAcceleratorKey(debug, "Ctrl+D");
 
         var hint = Ui.Text(EditorStrings.Get("toolbar.playHint"), "muted", "small");
         hint.VerticalAlignment = VerticalAlignment.Center;
@@ -405,6 +408,28 @@ public sealed class PlayModeView : UserControl
         if (!IsEffectivelyVisible || IsTextInput(e.Source))
         {
             return;
+        }
+
+        // The toolbar never takes focus (Tab and Space belong to the game), so its buttons have
+        // shortcuts: Ctrl+R restarts, Ctrl+Shift+K toggles Keep changes, Ctrl+D opens Debug.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            switch (e.Key)
+            {
+                case Key.R when !shift:
+                    RestartRequested?.Invoke(this, EventArgs.Empty);
+                    e.Handled = true;
+                    return;
+                case Key.K when shift:
+                    _keepChanges.IsChecked = _keepChanges.IsChecked != true;
+                    e.Handled = true;
+                    return;
+                case Key.D when !shift:
+                    ToggleDebug();
+                    e.Handled = true;
+                    return;
+            }
         }
 
         // Editor shortcuts (Ctrl+N, F5/F6, Alt+F4) stay with the editor.

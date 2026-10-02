@@ -36,6 +36,8 @@ internal static class DebugDrawer
         header.Children.Add(Ui.Text("Playtest Debug", "h2"));
         var close = Ui.Button(Ui.Icon("IconClose", 12), onClose, "subtle");
         close.Name = "DebugCloseButton";
+        Avalonia.Automation.AutomationProperties.SetName(close, "Close debug panel");
+        ToolTip.SetTip(close, "Close debug panel");
         close.Padding = new Thickness(6);
         Grid.SetColumn(close, 1);
         header.Children.Add(close);

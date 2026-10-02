@@ -307,7 +307,8 @@ public sealed class GameWorkspaceView : UserControl
         // writes the final state back through F#; see EndPlaytest).
         return RustPlayer.CreateCartridge(
             Playtests.Cartridge(project),
-            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+            // The system's reduced-motion preference reaches the game, as in the web demo.
+            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language, ReducedMotion = options.ReducedMotion || ReducedMotion.SystemPrefers });
     }
 
     private void OnRestartRequested(object? sender, EventArgs e)
