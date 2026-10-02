@@ -2,9 +2,9 @@
 //!
 //! Format 2 splits a project into compiled content, the inputs of a new game
 //! ([`farm_sim::StartState`]) and what presentation reads ([`farm_sim::Presentation`]), so the
-//! player never reads project JSON. The sections are compatibility JSON (JavaScript number
-//! semantics) until the native-numerics cutover. Embedded files live in an asset table and are
-//! referenced from the JSON as `asset:<id>` strings.
+//! player never reads project JSON. The sections are JSON in authoring units, converted to the
+//! simulation's fixed-unit integers as they are read (docs/NUMERICS.md). Embedded files live in
+//! an asset table and are referenced from the JSON as `asset:<id>` strings.
 
 use farm_cart_schema::farm_engine::cart::{cartridge_buffer_has_identifier, root_as_cartridge};
 use farm_sim::schema::GameContent;

@@ -1,20 +1,23 @@
 # Porting guide: TypeScript engine → Rust, F# and C#
 
-This repo is a native port of `jxburros/farm-game-engine`
-(the web version). The TypeScript engine is the **reference implementation**:
-same seed + same command/tick log must produce a state whose stable JSON and
-`hashState` output is byte-identical to the TS `stableStringify`/`hashState`.
-Golden replay fixtures generated from the TS engine (`tools/golden/`) enforce
-that in the Rust tests (`crates/farm-sim/tests`).
+This repo is a native port of `jxburros/farm-game-engine` (the web version).
+The TypeScript engine was the **reference implementation** until schema v9:
+the same seed and command/tick log had to give a state whose stable JSON and
+`hashState` were byte-identical to the TypeScript ones, and golden replays
+generated from it (`tools/golden/`) enforced that. Since v9 the Rust engine is
+the reference, both apps run it, and the goldens are recorded from Rust; the
+TypeScript ones stay in `fixtures/golden/v8` as migration inputs
+([NUMERICS.md](NUMERICS.md)).
 
-Every rule below exists to keep that guarantee. When in doubt, port the TS
-literally and let the golden tests tell you.
+The layout and naming rules below still apply when you port more of the web
+version (one TypeScript module, one Rust module). The numbers follow
+[NUMERICS.md](NUMERICS.md): integers in fixed units in `farm-sim`, authoring
+units in JSON.
 
 > **History.** The first port was a C# engine (`FarmEngine.Core`, `.Runtime`,
 > `.Rendering`, `.Content`). It was the stepping stone to the Rust core and
 > has been retired; [LANGUAGES.md](LANGUAGES.md) describes the split that
-> replaced it. The JavaScript-semantics rules it followed carry over to Rust
-> until the native-numerics switch (phase 7, [NUMERICS.md](NUMERICS.md)).
+> replaced it.
 
 ## Project map
 
@@ -82,30 +85,31 @@ for the F# records:
 
 ## State and numbers (Rust)
 
-- Numbers are **`f64`** everywhere in the compatibility phase: JS has only
-  doubles. Convert to an integer only to index.
+- **Numbers:** every quantity in `farm-sim` is an integer in a fixed unit,
+  with float arithmetic denied outside the JSON adapters. The unit of each
+  quantity, the serde adapters (`farm_sim::units`), randomness and the state
+  hash are in [NUMERICS.md](NUMERICS.md). Read it before you add a field.
 - `z.record(z.string(), T)` → `IndexMap<String, T>` (JS objects iterate in
   insertion order). `HashMap`/`HashSet` are banned by `clippy.toml`.
 - `.optional()` → `Option<T>` with `skip_serializing_if`; `.nullable()` keeps
   the key and writes `null`. Keep absent and `null` apart where TS does.
-- `z.unknown()`/`z.any()` → `serde_json::Value` (`js::truthy`, `js::value`).
-- The engine mutates its own `GameState` in place (`&mut`), but a step must
-  produce exactly the state the TS reducer would; content is immutable.
+- `z.unknown()`/`z.any()` → `serde_json::Value`.
+- The engine mutates its own `GameState` in place (`&mut`); content is
+  immutable.
 
-## JavaScript semantics (the silent-divergence list)
+## Behaviour that must still match the web version
 
-| TS                                  | Rust                                                                  |
-|-------------------------------------|-----------------------------------------------------------------------|
-| `Math.round(x)`                     | `js::round(x)` (`f64::round` is banned — it rounds half away from zero) |
-| `Math.trunc`, `%`                   | `js::trunc`, `js::modulo`                                             |
-| `arr.sort(cmp)` (stable)            | `sort_by` (stable) or `js::stable_sort`; `sort_unstable*` is banned   |
-| default `sort()` / `<` on strings   | `js::compare_strings` (UTF-16 code units)                             |
-| `` `${n}` `` with a number          | `js::num(n)`; `toFixed` → `js::to_fixed`                              |
-| `x \|\| y` on numbers/strings       | respect falsiness: `0`, `NaN`, `""` are falsy                         |
-| `arr[i]` out of range → `undefined` | `get(i)`                                                              |
-| `Number.isInteger(x)`               | `js::is_integer(x)`                                                   |
-| `Math.imul`, `\|0`, `>>> 0`          | `js::to_int32`, `js::to_uint32`, wrapping arithmetic                  |
-| `Math.random`, `Date.now`           | never in the simulation — the seeded `rng` and `state.clock` (`Instant`/`SystemTime` are banned) |
+The JavaScript-semantics helpers (`js::round`, `js::trunc`, the `f64`
+compatibility rules) went away with v9 ([NUMERICS.md](NUMERICS.md#what-goes-away)).
+A few TypeScript behaviours still matter when porting game rules:
+
+| TS | Rust |
+|---|---|
+| `arr.sort(cmp)` (stable) | `sort_by` (stable); `sort_unstable*` is banned (`clippy.toml`) |
+| default `sort()` / `<` on strings | `text::compare_strings` (UTF-16 code units) where the order is observable |
+| `x \|\| y` on numbers/strings | respect falsiness: `0`, `NaN`, `""` are falsy |
+| `arr[i]` out of range → `undefined` | `get(i)` |
+| `Math.random`, `Date.now` | never in the simulation: the seeded `rng` and the game clock (`Instant`/`SystemTime` are banned) |
 
 ## Tests
 

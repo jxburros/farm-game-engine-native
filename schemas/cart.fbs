@@ -36,8 +36,9 @@ table Plugin {
 
 // Format 2. The player never reads project JSON: the compiler splits a project into the
 // compiled content, the inputs of a new game (start) and what the renderer and game panels
-// need (presentation). The JSON sections keep the v8 JavaScript number behaviour until the
-// native-numerics cutover; `data:` URLs inside them are moved to `assets`.
+// need (presentation). The JSON sections keep numbers in authoring units, which the engine
+// converts to fixed-unit integers when it reads them (docs/NUMERICS.md); `data:` URLs inside
+// them are moved to `assets`.
 table Cartridge {
   cart_format:uint;
   project_schema_version:uint;

@@ -5,9 +5,8 @@
 //! Fixture geometry (`make_project`, the C# `EngineTests.MakeProject`): 6×6 scene, player starts
 //! centered on tile (3,4) → position (3.5, 4.5); soil at (3,2); wall tile at (4,4); NPC at (1,1).
 //!
-//! Tests that go through `engine::apply_command` / `engine::advance_tick`, or whose tile change
-//! settles through `GameEvents`, are `#[ignore]`d until those modules are ported; the same cases
-//! are covered here directly wherever the occupied tile does not change.
+//! Some tests go through `engine::apply_command` / `engine::advance_tick` (including tile changes
+//! that settle through `GameEvents`); the others call the movement helpers directly.
 
 use farm_sim::commands::Command;
 use farm_sim::effects::Effect;
