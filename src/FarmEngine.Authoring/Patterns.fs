@@ -36,7 +36,9 @@ type PatternOptions =
       Day: int
       NpcId: string
       Friendship: int
-      Consequences: bool }
+      Consequences: bool
+      /// The scene the pattern's tile is in (the one the Map tab shows); empty is the player's scene.
+      SceneId: string }
 
 /// Port of `creator-patterns.ts` `addCreatorPattern`: each pattern is a pure composition of
 /// ordinary content, expressed as edits so the result stays editable and undoes as one step.
@@ -91,7 +93,8 @@ module Patterns =
     /// The edits for a pattern, or the message the web shows when the form is not ready
     /// ("Select a scene first.", "Choose a tile inside the current scene.", …).
     let edits (kind: PatternKind) (options: PatternOptions) (project: GameProject) : Result<Edit list, string> =
-        match Proj.currentScene project with
+        let chosen = if options.SceneId.Length > 0 then Proj.tryScene options.SceneId project else None
+        match chosen |> Option.orElse (Proj.currentScene project) with
         | None -> Error "Select a scene first."
         | Some scene ->
             let x, y = options.X, options.Y

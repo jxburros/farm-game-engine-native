@@ -50,8 +50,12 @@ internal sealed class ContentForm
     private readonly List<Bitmap> _thumbnails = [];
     private int _tab;
 
-    public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report)
+    /// <summary>"Pick on map" for tile coordinates (scene id, prompt, what to do with the tile); null hides the buttons (#47).</summary>
+    private readonly Action<string, string, Action<int, int>>? _pickOnMap;
+
+    public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report, Action<string, string, Action<int, int>>? pickOnMap = null)
     {
+        _pickOnMap = pickOnMap;
         _project = project;
         _entity = entity;
         _entityType = entityType;
@@ -884,7 +888,16 @@ internal sealed class ContentForm
             scene.MinWidth = 120;
             var x = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
             var y = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
-            var row = Columns("72,118,*,Auto,Auto,Auto", minute, clock, scene, x, y, buttons);
+            string Scene() => scene switch
+            {
+                ComboBox picker => SelectedId(picker) ?? "",
+                TextBox box => box.Text ?? "",
+                _ => "",
+            };
+            var pick = PickButton($"ContentPick_{path}_{i}", $"where schedule entry {i + 1} goes", Scene, x, y);
+            var row = pick is null
+                ? Columns("72,118,*,Auto,Auto,Auto", minute, clock, scene, x, y, buttons)
+                : Columns("72,118,*,Auto,Auto,Auto,Auto", minute, clock, scene, x, y, pick, buttons);
             row.Name = $"ContentRow_{path}_{i}";
             panel.Children.Add(row);
         }
@@ -919,6 +932,10 @@ internal sealed class ContentForm
             var x = Coordinate(point, Key<GridPoint>(nameof(GridPoint.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
             var y = Coordinate(point, Key<GridPoint>(nameof(GridPoint.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
             var row = Ui.HStack(6, number, x, y, buttons);
+            if (PickButton($"ContentPick_{path}_{i}", $"waypoint {i + 1}", () => StringOf(Draft["sceneId"]) ?? "", x, y) is { } pick)
+            {
+                row.Children.Insert(3, pick);
+            }
             row.Name = $"ContentRow_{path}_{i}";
             panel.Children.Add(row);
         }
@@ -1235,6 +1252,7 @@ internal sealed class ContentForm
     {
         var wrap = new WrapPanel();
         var stack = new StackPanel { Spacing = 6 };
+        var numbers = new Dictionary<string, TextBox>(StringComparer.Ordinal);
         foreach (var field in fields)
         {
             var name = $"ContentField_{path}_{Pascal(field.Key)}";
@@ -1243,6 +1261,7 @@ internal sealed class ContentForm
                 case "integer" or "number":
                     var number = NumberControl(target, field.Key, name, field.Label, field.Kind == "integer", field.Optional,
                         field.HasMin ? field.Min : null, field.HasMax ? field.Max : null);
+                    numbers[field.Key] = number;
                     number.Watermark = field.Optional ? "optional" : null;
                     wrap.Children.Add(Labeled(field.Label, number, 130));
                     break;
@@ -1267,9 +1286,34 @@ internal sealed class ContentForm
             }
         }
 
+        // Tile coordinates can be clicked on the map: the outcome's own scene, else the event's.
+        string Scene() => StringOf(target["sceneId"]) is { Length: > 0 } own ? own : StringOf(Draft["sceneId"]) ?? "";
+        foreach (var (xKey, yKey, what) in new[] { ("x", "y", "the tile"), ("tileX", "tileY", "the tile"), ("x2", "y2", "the far corner") })
+        {
+            if (numbers.TryGetValue(xKey, out var x) && numbers.TryGetValue(yKey, out var y)
+                && PickButton($"ContentPick_{path}_{Pascal(xKey)}", what, Scene, x, y) is { } pick)
+            {
+                wrap.Children.Add(pick);
+            }
+        }
+
         foreach (var child in wrap.Children.OfType<Control>()) child.Margin = new Thickness(0, 0, 10, 6);
         if (wrap.Children.Count > 0) stack.Children.Insert(0, wrap);
         return stack;
+    }
+
+    /// <summary>A "Pick on map" button that fills <paramref name="x"/> and <paramref name="y"/> with a clicked tile (#47).</summary>
+    private Button? PickButton(string name, string what, Func<string> scene, TextBox x, TextBox y)
+    {
+        if (_pickOnMap is not { } pickOnMap) return null;
+        var button = SmallButton(name, "Pick on map", $"Pick {what} on the map", () => pickOnMap(scene(), $"Click {what}.", (tileX, tileY) =>
+        {
+            x.Text = tileX.ToString(CultureInfo.InvariantCulture);
+            y.Text = tileY.ToString(CultureInfo.InvariantCulture);
+            _report($"Tile ({tileX}, {tileY}) chosen. Save changes to keep it.");
+        }));
+        button.VerticalAlignment = VerticalAlignment.Bottom;
+        return button;
     }
 
     // ---- Escape hatch ----

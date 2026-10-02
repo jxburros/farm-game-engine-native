@@ -166,9 +166,14 @@ public sealed class ContentEditorView : UserControl, IRetirable
     private ContentForm? _contentForm;
     private TextBlock? _profit;
 
-    public ContentEditorView(ProjectWorkspace workspace)
+    private readonly Action<string, string, Action<int, int>>? _pickOnMap;
+
+    /// <param name="workspace">The open project.</param>
+    /// <param name="pickOnMap">"Pick on map" for the forms' tile coordinates (scene id, prompt, what to do with the tile); null hides it.</param>
+    public ContentEditorView(ProjectWorkspace workspace, Action<string, string, Action<int, int>>? pickOnMap = null)
     {
         _workspace = workspace;
+        _pickOnMap = pickOnMap;
         Name = "ContentEditorView";
         _message.Name = "ContentMessage";
         Ui.Label((_category, "Content type"), (_entities, "Entries"));
@@ -257,7 +262,7 @@ public sealed class ContentEditorView : UserControl, IRetirable
         splitter.DragCompleted += (_, _) =>
         {
             var width = layout.ColumnDefinitions[0].ActualWidth;
-            if (width > 0) _workspace.Settings.Update(settings => settings with { ContentListWidth = Math.Round(width) });
+            if (width > 0) _workspace.Settings.TryUpdate(settings => settings with { ContentListWidth = Math.Round(width) });
         };
         Grid.SetColumn(splitter, 1);
         layout.Children.Add(splitter);
@@ -586,7 +591,7 @@ public sealed class ContentEditorView : UserControl, IRetirable
         }
 
         _message.Text = $"Editing {_selectedCategory.Name.ToLowerInvariant()} · {_selectedId}";
-        _contentForm = new ContentForm(project, _editing, _selectedCategory.EntityType, _form, message => _message.Text = message);
+        _contentForm = new ContentForm(project, _editing, _selectedCategory.EntityType, _form, message => _message.Text = message, _pickOnMap);
         _formFor = (_selectedCategory, _selectedId!);
         if (_selectedCategory.Profit is { } profit)
         {

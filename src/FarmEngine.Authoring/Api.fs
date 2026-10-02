@@ -231,6 +231,61 @@ type Defaults =
     static member MineEnabled(project: GameProject, enabled: bool) : MineConfig = Defaults.mineEnabled project enabled
     static member NewGamePanel(project: GameProject) : GamePanel = Defaults.newGamePanel project
 
+/// Something the Edit Mode map marks on a scene (#47). `Kind` is "door" (a transition leaving
+/// the tile), "arrival" (where a door from another scene lands; `TargetId` is that scene and
+/// `FromX`/`FromY` its door), "event" (an event's tile or region, `X2`/`Y2` the far corner;
+/// `TargetId` is the event), "mine" (the mine entrance) or "start" (the player start).
+type MapMarker =
+    { Kind: string
+      X: int
+      Y: int
+      X2: int
+      Y2: int
+      FromX: int
+      FromY: int
+      TargetId: string
+      Label: string }
+
+/// The markers the Edit Mode map draws over a scene (#47): doors and their arrivals, event
+/// triggers (Workshop encounters are events too), the mine entrance and the player start.
+[<AbstractClass; Sealed>]
+type MapMarkers =
+    static member ForScene(project: GameProject, sceneId: string) : IReadOnlyList<MapMarker> =
+        let sceneName (id: string) =
+            project.Scenes |> List.tryFind (fun s -> s.Id = id) |> Option.map (fun s -> s.Name) |> Option.defaultValue id
+        let marker kind x y label targetId =
+            { Kind = kind; X = int (floor x); Y = int (floor y); X2 = int (floor x); Y2 = int (floor y); FromX = 0; FromY = 0; TargetId = targetId; Label = label }
+        let num (value: float) = JsNumber.format value
+        [ match Proj.tryScene sceneId project with
+          | None -> ()
+          | Some scene ->
+              for t in scene.Transitions do
+                  yield marker "door" t.FromX t.FromY (sprintf "Door to %s (%s, %s)" (sceneName t.ToSceneId) (num t.ToX) (num t.ToY)) t.ToSceneId
+              for other in project.Scenes do
+                  for t in other.Transitions do
+                      if t.ToSceneId = sceneId then
+                          yield { marker "arrival" t.ToX t.ToY (sprintf "Arrival from %s" other.Name) other.Id with FromX = int t.FromX; FromY = int t.FromY }
+              for e in project.Events do
+                  if e.SceneId = sceneId || e.SceneId = "" then
+                      let how = if e.Trigger = EventTriggers.Enter then "step on" else if e.Trigger = EventTriggers.Interact then "interact" else e.Trigger
+                      let where = if e.SceneId = "" then ", every scene" else ""
+                      for c in e.Conditions do
+                          let region (x: float) (y: float) (x2: float option) (y2: float option) =
+                              let x2 = defaultArg x2 x
+                              let y2 = defaultArg y2 y
+                              { marker "event" (min x x2) (min y y2) (sprintf "Event %s (%s%s)" e.Name how where) e.Id with
+                                  X2 = int (floor (max x x2)); Y2 = int (floor (max y y2)) }
+                          match c with
+                          | EventCondition.EnterTile t -> yield region t.X t.Y t.X2 t.Y2
+                          | EventCondition.InteractTile t -> yield region t.X t.Y t.X2 t.Y2
+                          | _ -> ()
+              let mine = project.Mine
+              if mine.Enabled && mine.EntranceSceneId = Some sceneId then
+                  yield marker "mine" (defaultArg mine.EntranceX 0.0) (defaultArg mine.EntranceY 0.0) "Mine entrance" ""
+              if project.Player.SceneId = sceneId then
+                  yield marker "start" project.Player.X project.Player.Y "Player start" "" ]
+        |> Array.ofList :> IReadOnlyList<MapMarker>
+
 /// The map's Place tools for C# (web App.tsx `handleTileClick` placement modes and the Place
 /// buttons of NPCEditor, NodeTypeEditor, ItemEditor and WildlifeEditor): what each tool offers
 /// and the edit a click on a tile makes. Kinds: "npc", "nodeType", "item", "machineType",
@@ -583,6 +638,10 @@ type Patterns =
         | Error message -> PatternResult(None, Some message)
 
     static member Options(name: string, text: string, x: int, y: int, day: int, npcId: string, friendship: int, consequences: bool) : PatternOptions =
-        { Name = name; Text = text; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences }
+        { Name = name; Text = text; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences; SceneId = "" }
+
+    /// The form's options with the pattern's tile in `sceneId` (the scene the Map tab shows).
+    static member Options(name: string, text: string, x: int, y: int, day: int, npcId: string, friendship: int, consequences: bool, sceneId: string) : PatternOptions =
+        { Name = name; Text = text; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences; SceneId = sceneId }
 
     static member SuccessMessage(kind: PatternKind, name: string) : string = Patterns.successMessage kind name

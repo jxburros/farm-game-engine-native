@@ -387,3 +387,18 @@ let ``a resize keeps the rows that keep their width`` () =
     let project = starter ()
     let taller = project |> apply (ResizeScene(farmId, 16, 20))
     Assert.True(Seq.forall2 (fun (a: Tile list) b -> obj.ReferenceEquals(a, b)) (farm project).Tiles ((farm taller).Tiles |> List.truncate 12))
+
+[<Fact>]
+let ``map markers show doors, arrivals, event tiles, the mine entrance and the player start`` () =
+    let project, barnId, _ = crowdedFarm ()
+    let markers = MapMarkers.ForScene(project, farmId) |> List.ofSeq
+    let kinds = markers |> List.map (fun m -> m.Kind) |> List.distinct |> List.sort
+    Assert.Equal<string list>([ "arrival"; "door"; "event"; "mine"; "start" ], kinds)
+    let door = markers |> List.find (fun m -> m.Kind = "door")
+    Assert.Equal((14, 10, barnId), (door.X, door.Y, door.TargetId))
+    let arrival = markers |> List.find (fun m -> m.Kind = "arrival")
+    Assert.Equal((15, 11, barnId, 1, 1), (arrival.X, arrival.Y, arrival.TargetId, arrival.FromX, arrival.FromY))
+    let event = markers |> List.find (fun m -> m.Kind = "event" && m.TargetId = "event-edge")
+    Assert.Equal((12, 10, 15, 11), (event.X, event.Y, event.X2, event.Y2))
+    Assert.Contains("interact", event.Label)
+    Assert.Empty(MapMarkers.ForScene(project, "nope"))

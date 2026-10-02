@@ -241,7 +241,10 @@ public sealed partial class EditModeView
         AutomationProperties.SetName(_doorX, "At X (arrival column)");
         AutomationProperties.SetName(_doorY, "At Y (arrival row)");
         side.Children.Add(Ui.HStack(8, Ui.Text("To", "muted", "small"), _doorDestination));
-        side.Children.Add(Ui.HStack(8, Ui.Text("At", "muted", "small"), _doorX, Ui.Text(","), _doorY));
+        var pickArrival = NamedButton("PickDoorArrivalButton", "Pick on map", PickDoorArrival);
+        AutomationProperties.SetName(pickArrival, "Pick the arrival tile on the map");
+        ToolTip.SetTip(pickArrival, "Click the arrival tile in the destination scene");
+        side.Children.Add(Ui.HStack(8, Ui.Text("At", "muted", "small"), _doorX, Ui.Text(","), _doorY, pickArrival));
         side.Children.Add(_doorReturn);
         side.Children.Add(Ui.HStack(8, NamedButton("SaveDoorButton", "Save door", SaveDoor), _removeDoor));
         _removeDoor.Click += (_, _) => RemoveDoor();
@@ -429,8 +432,12 @@ public sealed partial class EditModeView
     {
         var scene = CurrentScene();
         if (scene is null) return false;
+        // A form's "Pick on map" takes the tile before any tool (#47).
+        if (CompletePick(tile)) return true;
         switch (Tool)
         {
+            case MapTool.Inspect:
+                return OpenMarkerAt(tile);
             case MapTool.Pick:
                 PickAt(tile.X, tile.Y);
                 return true;

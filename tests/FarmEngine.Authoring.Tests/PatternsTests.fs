@@ -6,7 +6,7 @@ open FarmEngine.Authoring.Tests.TestProjects
 open FarmEngine.Schemas
 
 let private options : PatternOptions =
-    { Name = "Willow"; Text = "A quiet spot."; X = 5; Y = 5; Day = 2; NpcId = "npc-farmer"; Friendship = 500; Consequences = true }
+    { Name = "Willow"; Text = "A quiet spot."; X = 5; Y = 5; Day = 2; NpcId = "npc-farmer"; Friendship = 500; Consequences = true; SceneId = "" }
 
 let private build (kind: PatternKind) (opts: PatternOptions) (project: GameProject) : Edit =
     match Patterns.build kind opts project with
@@ -79,3 +79,15 @@ let ``patterns refuse bad tiles with the web messages`` () =
     expectError "That tile already has a doorway." (Patterns.build Building options building)
     let noScenes = { project with Scenes = [] }
     expectError "Select a scene first." (Patterns.build Story options noScenes)
+
+[<Fact>]
+let ``patterns put their tile in the scene the map shows`` () =
+    let first = starter ()
+    let barn = Defaults.newScene first "Barn" 8 6
+    let project = first |> apply (AddScene barn)
+    let mail = project |> apply (build Mail { options with SceneId = barn.Id; X = 3; Y = 2 } project)
+    let event = mail.Events |> Seq.last
+    Assert.Equal(barn.Id, event.SceneId)
+    // An unknown scene falls back to the player's scene.
+    let fallback = project |> apply (build Mail { options with SceneId = "nope" } project)
+    Assert.Equal("scene-farm", (fallback.Events |> Seq.last).SceneId)
