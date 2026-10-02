@@ -1,0 +1,26 @@
+// markdownlint for every Markdown file in the repository (CI runs it; CONTRIBUTING.md).
+//   npx --yes markdownlint-cli2@0.23.3
+{
+  "config": {
+    "default": true,
+    // Prose is wrapped by hand, tables and links run long.
+    "MD013": false,
+    // Changelog and doc sections repeat headings ("Added", "Tests", …).
+    "MD024": false,
+    // Some docs start with a front title and use more than one top-level heading.
+    "MD025": false,
+    "MD041": false,
+    // Tables are written compactly (`|---|---|`), not aligned.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "**/target/**",
+    "**/node_modules/**",
+    "**/bin/**",
+    "**/obj/**",
+    "tools/fable/dist/**",
+    "tools/wasm/dist/**",
+    ".claude/**"
+  ]
+}

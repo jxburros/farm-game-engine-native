@@ -19,7 +19,9 @@
       <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
         <HyperlinkButton Content="Source on GitHub" Command="{Binding OpenRepositoryCommand}" />
         <HyperlinkButton Content="Release notes" Command="{Binding OpenReleasesCommand}" />
+        <HyperlinkButton Name="AboutLicenseLink" Content="License" Command="{Binding OpenLicenseCommand}" />
       </StackPanel>
+      <TextBlock Name="AboutLicenseText" Classes="muted small" Text="{Binding LicenseText}" TextWrapping="Wrap" TextAlignment="Center" />
       <TextBlock Classes="muted small" Text="{Binding RuntimeText}" TextWrapping="Wrap" TextAlignment="Center" />
     </StackPanel>
     <Border Classes="statusbar" Padding="16,10">

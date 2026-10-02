@@ -2,7 +2,8 @@ namespace FarmingRpgMaker.Updates.Testing;
 
 /// <summary>
 /// Scriptable <see cref="IUpdateService"/> for tests, screenshots and UI demos
-/// (run the app with <c>FARMING_RPG_MAKER_FAKE_UPDATES=1</c>).
+/// (run the app with <c>FARMING_RPG_MAKER_FAKE_UPDATES</c> set to <c>available</c>, <c>uptodate</c>,
+/// <c>error</c> or <c>notinstalled</c>; any other value acts like <c>available</c>; docs/RELEASING.md).
 /// </summary>
 public sealed class FakeUpdateService : IUpdateService
 {

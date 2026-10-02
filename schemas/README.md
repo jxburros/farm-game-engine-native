@@ -40,12 +40,14 @@ A `plugins` table carries the sandboxed plugins of the enabled content packs
 in load order, each with the hooks its pack manifest grants, so an exported
 game runs them in `farm-plugins` exactly as the editor does.
 
-The sections are JSON so the v8 engine keeps its JavaScript number behavior.
-Every base64 `data:` URL inside them moves to the `assets` table and is
-replaced by `asset:<id>`, where the id is a hash of the file. The same file is
-stored once. Content keeps its string ids: interning them into indexed tables
-only pays off once the simulation uses interned indices, which is part of the
-native-numerics cutover (phase 7 of `docs/LANGUAGES.md`).
+The sections are JSON with numbers in authoring units (tiles, points,
+minutes); the engine converts them to its fixed-unit integers when it reads
+them ([docs/NUMERICS.md](../docs/NUMERICS.md)). Every base64 `data:` URL
+inside them moves to the `assets` table and is replaced by `asset:<id>`, where
+the id is a hash of the file. The same file is stored once. Content keeps its
+string ids: interning them into indexed tables would only pay off if the
+simulation used interned indices, which it doesn't (see "Future" in
+[docs/LANGUAGES.md](../docs/LANGUAGES.md)).
 
 The same project and editor version always give the same bytes. The
 cross-language golden is regenerated with:

@@ -1,4 +1,3 @@
-using FarmEngine.Authoring.Net;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -6,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;

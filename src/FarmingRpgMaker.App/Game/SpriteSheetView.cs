@@ -3,8 +3,8 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
-using Avalonia.Media.Immutable;
 using Avalonia.Media.Imaging;
+using Avalonia.Media.Immutable;
 
 namespace FarmingRpgMaker.App.Game;
 

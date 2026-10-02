@@ -21,3 +21,10 @@ __pycache__/
 # Agent worktrees
 .claude/worktrees/
 tools/wasm/dist/
+
+# Output of documented commands (README "Export Game", the CI export smoke steps)
+/dist/
+/players/
+/export-smoke/
+/exported.json
+/reference.json

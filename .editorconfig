@@ -14,3 +14,9 @@ indent_size = 2
 [*.cs]
 csharp_style_namespace_declarations = file_scoped:warning
 dotnet_sort_system_directives_first = true
+
+# A guideline for editors and reviews, not enforced: some older C# lines are longer (Rust
+# uses rustfmt.toml's max_width = 120). CI enforces the whitespace and style rules of
+# this file with `dotnet format` (C#) and tools/ci/text-style.py (everything else).
+[*.{cs,fs,fsx,fsi}]
+max_line_length = 160

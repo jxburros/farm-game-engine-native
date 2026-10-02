@@ -1,0 +1,23 @@
+# Text files are LF everywhere (.editorconfig), also in Windows checkouts: the release and CI
+# jobs run bash scripts on windows-latest, goldens and generated files are compared byte for
+# byte, and the plugin guest's inputs hash reads its sources.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.fbs text eol=lf
+*.rs text eol=lf
+*.fs text eol=lf
+*.cs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Binary: never converted or diffed as text.
+*.png binary
+*.ico binary
+*.ttf binary
+*.wasm binary
+*.cart binary
+*.exe binary
+*.dll binary
+*.zip binary
+*.gz binary

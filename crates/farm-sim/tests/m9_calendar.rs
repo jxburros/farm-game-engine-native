@@ -3,8 +3,7 @@
 //!
 //! The C# built its engine from `EngineTests.MakeProject()`; here states come from the
 //! `project` in `fixtures/golden/content/starter-farm.json`. Tests that go through the overnight
-//! pass need `crafting::settle_machines`, and the crop/event ones need the engine dispatch; those
-//! are `#[ignore]`d until the other modules land.
+//! pass use `crafting::settle_machines`, and the crop/event ones the engine dispatch.
 
 use farm_sim::engine::advance_tick;
 use farm_sim::farming::crops;

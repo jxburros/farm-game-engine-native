@@ -246,6 +246,15 @@ jobs:
       - name: Restore
         run: dotnet restore
 
+      # C# whitespace and code style follow .editorconfig; F#, scripts, project files and docs
+      # are LF and UTF-8 with no trailing whitespace (CONTRIBUTING.md "Formatting"). Fantomas is
+      # not enforced: it would reformat almost every F# file.
+      - name: Formatting (C# and text files)
+        run: |
+          dotnet format whitespace FarmingRpgMaker.sln --no-restore --verify-no-changes
+          dotnet format style FarmingRpgMaker.sln --no-restore --verify-no-changes
+          python3 tools/ci/text-style.py
+
       # Coverage needs the real source paths in the PDBs: coverlet leaves out assemblies whose
       # sources it cannot find, so no deterministic /_/ paths here (Directory.Build.props).
       - name: Build
@@ -278,6 +287,10 @@ jobs:
         run: |
           tools/fable/build.sh
           node tools/fable/smoke.mjs
+
+      # The editor ships tools/editor-licenses/THIRD-PARTY-dotnet.txt (its NuGet packages' notices).
+      - name: Editor license notices are current
+        run: node tools/editor-licenses/generate.mjs --check
 
       # farmc finds the linux-x64 template the build put in its players/ folder.
       - name: Export a sample game and run it (linux-x64)
@@ -480,6 +493,23 @@ jobs:
           name: player-linux-x64-${{ github.sha }}
           path: players
           retention-days: 7
+
+  # Markdown style (.markdownlint-cli2.jsonc), with an exact markdownlint-cli2 version.
+  markdown:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: markdownlint
+        run: npx --yes markdownlint-cli2@0.23.3
 
   audit:
     name: Dependency audit

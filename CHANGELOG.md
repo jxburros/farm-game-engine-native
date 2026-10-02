@@ -169,6 +169,15 @@
     the editor, and using one after it was closed throws a clear error.
   - Tests that need the Rust library fail when it's missing (also with
     `-p:CargoProfile=dev`); `FARM_ALLOW_MISSING_NATIVE=1` skips them instead.
+- **License, notices and contributor docs.** The repository has an MIT
+  `LICENSE`. The app ships it in its `licenses` folder with notices for its
+  .NET packages, the runtime, icons and fonts (`THIRD-PARTY-dotnet.txt`), and
+  About links to it. Exported games' `THIRD-PARTY.txt` now also covers the
+  plugin sandbox (QuickJS, wasi-libc) and ends with the engine's own license.
+  The in-app guide opens the docs of the installed version. New:
+  CONTRIBUTING.md (fixture switches, generated files), SECURITY.md, a README
+  Troubleshooting section, and CI checks for C# style, text files, Markdown
+  and the editor's notices.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:
@@ -206,7 +215,7 @@
     single door, dialogue and asset counts in the project stats, and the scene
     size calculator.
 - **One engine for the web and native editors.** The web editor
-  ([jxburros/farm-game-engine](https://github.com/jxburros/farm-game-engine))
+  (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,
   and opening older projects, importing, the Problems panel and a new
   "Download cartridge (.farmcart)" export run the F# authoring core compiled to

@@ -12,6 +12,9 @@
          or their PDBs. Not for the test projects: they find fixtures through __SOURCE_DIRECTORY__. -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' And !$(MSBuildProjectName.EndsWith('.Tests'))">true</ContinuousIntegrationBuild>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The .editorconfig rules set to warning (file-scoped namespaces, …) fail the C# build,
+         like any other warning; CI also runs `dotnet format` (CONTRIBUTING.md "Formatting"). -->
+    <EnforceCodeStyleInBuild Condition="'$(MSBuildProjectExtension)' == '.csproj'">true</EnforceCodeStyleInBuild>
     <!-- The release workflow passes -p:Version from the git tag (vX.Y.Z → X.Y.Z). Keep the
          development version in step with the Cargo workspace version (tools/release/versions.sh). -->
     <Version Condition="'$(Version)' == ''">0.3.0-dev</Version>

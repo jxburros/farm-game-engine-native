@@ -2,9 +2,6 @@
 //! (custom actions, minigames, expanded plugin mutations) — the "customize anything with code"
 //! surface. Port of extensibility.test.ts, plus self-contained checks of the events /
 //! extensibility / dialogue executors that run without the rest of the engine.
-//!
-//! Tests that reach modules other groups are still porting are `#[ignore]`d with the module
-//! named; the self-contained ones must pass.
 
 mod common;
 
