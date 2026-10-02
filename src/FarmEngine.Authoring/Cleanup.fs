@@ -406,3 +406,94 @@ module Cleanup =
                 match List.tryHead p.Settings.Calendar.Seasons with
                 | Some first -> { p with CurrentSeason = first.Id }
                 | None -> p
+
+    /// A scene shrank to `width` × `height` (#44): what stood on, or pointed at, a cut tile moves
+    /// to the nearest tile inside, the way `dropScene` moves the player. That is the player start,
+    /// NPCs with their schedule stops and patrol points, animals, doors landing in the scene,
+    /// event tile conditions, tile-change and warp outcomes, and the mine entrance. Doors leaving
+    /// from a cut tile go with the tile (moving them could stack two doors on one tile). Only
+    /// the cut sides are clamped: a position that was already outside on the other side stays
+    /// for Problems to report. The same instance when nothing stood outside.
+    let clampToScene (sceneId: string) (width: int) (height: int) (project: GameProject) : GameProject =
+        let w = float width
+        let h = float height
+        let cx (x: float) = if x >= w then w - 1.0 else x
+        let cy (y: float) = if y >= h then h - 1.0 else y
+        let cut (x: float) (y: float) = x >= w || y >= h
+        let cxo (x: float option) = Option.map cx x
+        let cyo (y: float option) = Option.map cy y
+        let isHere (id: string option) = id = Some sceneId
+        /// A tile-change or warp outcome aimed at this scene (`eventScene`: the scene a
+        /// tile change without its own scene works in).
+        let clampOutcome (eventScene: string) (o: EventOutcome) : EventOutcome option =
+            let tileScene = match o.SceneId with Some id when id.Length > 0 -> id | _ -> eventScene
+            if o.Type = EventOutcomeTypes.ChangeTile && tileScene = sceneId then
+                let x, y = cxo o.TileX, cyo o.TileY
+                Some(if x = o.TileX && y = o.TileY then o else { o with TileX = x; TileY = y })
+            elif o.Type = EventOutcomeTypes.WarpPlayer && isHere o.SceneId then
+                let x, y = cxo o.X, cyo o.Y
+                Some(if x = o.X && y = o.Y then o else { o with X = x; Y = y })
+            else Some o
+        let clampCondition (c: EventCondition) : EventCondition option =
+            match c with
+            | EventCondition.EnterTile t ->
+                let next = { t with X = cx t.X; Y = cy t.Y }
+                Some(if next = t then c else EventCondition.EnterTile next)
+            | EventCondition.InteractTile t ->
+                let next = { t with X = cx t.X; Y = cy t.Y; X2 = cxo t.X2; Y2 = cyo t.Y2 }
+                Some(if next = t then c else EventCondition.InteractTile next)
+            | _ -> Some c
+        project
+        |> fun p ->
+            let player = p.Player
+            if player.SceneId <> sceneId || not (cut player.X player.Y) then p
+            else { p with Player = { player with X = cx player.X; Y = cy player.Y } }
+        |> mapNpcs (fun n ->
+            let n = if n.SceneId = sceneId && cut n.X n.Y then { n with X = cx n.X; Y = cy n.Y } else n
+            let n =
+                match n.Schedule with
+                | Some stops ->
+                    match Lists.mapChanged (fun (e: NpcScheduleEntry) -> if e.SceneId = sceneId && cut e.X e.Y then { e with X = cx e.X; Y = cy e.Y } else e) stops with
+                    | Some next -> { n with Schedule = Some next }
+                    | None -> n
+                | None -> n
+            match n.PatrolPoints with
+            | Some points when n.SceneId = sceneId ->
+                match Lists.mapChanged (fun (pt: GridPoint) -> if cut pt.X pt.Y then { pt with X = cx pt.X; Y = cy pt.Y } else pt) points with
+                | Some next -> { n with PatrolPoints = Some next }
+                | None -> n
+            | _ -> n)
+        |> fun p ->
+            match Lists.mapChanged (fun (a: AnimalState) -> if a.SceneId = sceneId && cut a.X a.Y then { a with X = cx a.X; Y = cy a.Y } else a) p.Animals with
+            | Some animals -> { p with Animals = animals }
+            | None -> p
+        |> fun p ->
+            let onScene (scene: Scene) =
+                let leaving =
+                    if scene.Id <> sceneId then None
+                    else Lists.filterChanged (fun (t: SceneTransition) -> not (cut t.FromX t.FromY)) scene.Transitions
+                let transitions = Lists.orSame scene.Transitions leaving
+                let landing =
+                    Lists.mapChanged
+                        (fun (t: SceneTransition) -> if t.ToSceneId = sceneId && cut t.ToX t.ToY then { t with ToX = cx t.ToX; ToY = cy t.ToY } else t)
+                        transitions
+                match leaving, landing with
+                | None, None -> scene
+                | _ -> { scene with Transitions = Lists.orSame transitions landing }
+            Proj.mapScenes onScene p
+        |> fun p ->
+            let onEvent (e: GameEvent) =
+                if e.SceneId <> sceneId then e
+                else
+                    let e = withList e (chooseChanged clampCondition e.Conditions) (fun e l -> { e with Conditions = l })
+                    withList e (chooseChanged (clampOutcome sceneId) e.Outcomes) (fun e l -> { e with Outcomes = l })
+            withList p (Lists.mapChanged onEvent p.Events) (fun p l -> { p with Events = l })
+        // Outcomes naming this scene themselves, wherever they run (clamping twice is harmless).
+        |> mapOutcomes (clampOutcome "")
+        |> fun p ->
+            let mine = p.Mine
+            if not (isHere mine.EntranceSceneId) then p
+            else
+                let x, y = cxo mine.EntranceX, cyo mine.EntranceY
+                if x = mine.EntranceX && y = mine.EntranceY then p
+                else { p with Mine = { mine with EntranceX = x; EntranceY = y } }

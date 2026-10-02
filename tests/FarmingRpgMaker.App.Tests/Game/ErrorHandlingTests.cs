@@ -79,7 +79,7 @@ public sealed class ErrorHandlingTests
         Assert.NotNull(screen);
         var text = AllVisibleText(host.Window);
         Assert.Contains("The editor ran into a problem", text, StringComparison.Ordinal);
-        Assert.Contains("every change before the error has been saved", text, StringComparison.Ordinal);
+        Assert.Contains("every change you applied before the error is kept", text, StringComparison.Ordinal);
         Assert.Contains("The map broke.", FindByName<SelectableTextBlock>(host.Window, "EditorErrorDetails").Text, StringComparison.Ordinal);
         Assert.Contains("ran into a problem", host.ViewModel.StatusMessage, StringComparison.Ordinal);
         // An error raised while the screen is up is not caught again.

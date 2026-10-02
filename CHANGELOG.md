@@ -254,6 +254,36 @@
     (`logs/editor-*.log`, Help → About → Log files), unhandled errors on other
     threads are logged, and projects that fail to load at startup are listed
     once the window has opened.
+- **Editor workflow, from the 2026-09-30 audit and the web cross-check:**
+  - **Unsaved form fields are kept.** The Content, Interface and Settings tabs
+    keep what was typed across tab switches, undo and edits elsewhere; another
+    entry or panel asks **Save and continue / Discard changes / Keep editing**
+    first, saving one Settings section no longer reverts the others, and
+    fields still unsaved are applied before another project opens or the
+    editor closes. Season moves and removals are saved with the project
+    settings.
+  - **Errors name the field** ("Day end minute must be a whole number"), and
+    content forms no longer clamp an out-of-range number or reset an emptied
+    one on save.
+  - **Shrinking a scene moves what stood on the cut tiles** (the player start,
+    NPCs with their schedules and waypoints, animals, door arrivals, event
+    tiles and the mine entrance) inside, removes doors leaving from them, and
+    the size note lists all of it first.
+  - **The map shows doors, arrivals, event triggers, the mine entrance and
+    the player start** (with a **Markers** toggle), Inspect on a marker opens
+    it, and **Pick on map** fills door arrivals, Workshop tiles, event tiles,
+    NPC schedules and waypoints and the mine entrance. Workshop patterns use
+    the scene the Map tab shows.
+  - **Find with Ctrl+K**: every content type, scene and art; the Content list
+    has a filter and both side panels a splitter that remembers its width.
+  - **Picking a brush is no longer an undo step**, and undo keeps the brush's
+    art.
+  - **Keyboard and screen readers.** Tab reaches every tool button, letter
+    keys pick the map tools, Play Mode's toolbar has Ctrl+R, Ctrl+Shift+K and
+    Ctrl+D, the map's focus ring has 3:1 contrast, toasts and the status bar
+    are announced, and playtests follow the system's reduced-motion setting.
+  - **Undo history shares untouched tile rows**, so a tile edit on a large
+    scene no longer copies the whole scene into every undo step.
 - **One engine for the web and native editors.** The web editor
   (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,

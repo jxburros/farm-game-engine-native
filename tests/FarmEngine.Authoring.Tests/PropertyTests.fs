@@ -378,7 +378,7 @@ let private author (project: GameProject) (step: AuthoringStep) : GameProject =
         | Pattern(kind, name, x, y, day, friendship, consequences) ->
             let npcId = project.Npcs |> Seq.tryHead |> Option.map (fun n -> n.Id) |> Option.defaultValue ""
             let options =
-                { Name = name; Text = ""; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences }
+                { Name = name; Text = ""; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences; SceneId = "" }
             match Patterns.build kind options project with
             | Ok edit -> run edit
             | Error _ -> project

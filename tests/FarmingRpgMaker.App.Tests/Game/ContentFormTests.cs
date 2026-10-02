@@ -133,6 +133,11 @@ public sealed class ContentFormTests
 
         Choose(host, "ContentAdd_Outcomes", "waterArea");
         FindByName<TextBox>(host.Window, "ContentField_Outcomes_1_Radius").Text = "40";
+        // Out of the web's 0-10 the field is reported by name, not clamped behind the creator's back (#46).
+        Press(host, "SaveContentButton");
+        Assert.Contains("must be from 0 to 10", FindByName<TextBlock>(host.Window, "ContentMessage").Text, StringComparison.Ordinal);
+        Assert.Equal("message", host.Workspace.Current!.Events.First(e => e.Id == eventId).Outcomes.Single().Type);
+        FindByName<TextBox>(host.Window, "ContentField_Outcomes_1_Radius").Text = "10";
 
         Choose(host, "ContentField_Conditions_0_Type", "friendship");
         Assert.Equal("250", FindByName<TextBox>(host.Window, "ContentField_Conditions_0_Min").Text);
@@ -146,7 +151,7 @@ public sealed class ContentFormTests
         Assert.Equal("tool-hoe", saved.Outcomes[0].ItemId);
         Assert.Equal(3, saved.Outcomes[0].ItemQuantity);
         Assert.Null(saved.Outcomes[0].Message);
-        Assert.Equal(10, saved.Outcomes[1].Radius); // clamped to the web's 0-10
+        Assert.Equal(10, saved.Outcomes[1].Radius);
         var friendship = Assert.IsType<EventCondition.Friendship>(saved.Conditions[0]).Item;
         Assert.Equal(("npc-farmer", 250.0), (friendship.NpcId, friendship.Min));
         Assert.Equal(host.Workspace.Current.Settings.Calendar.Seasons[0].Id, Assert.IsType<EventCondition.Season>(saved.Conditions[1]).Item.Seasons.Single());

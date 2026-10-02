@@ -288,6 +288,8 @@ public sealed class GameWorkspaceView : UserControl
             EndPlaytest();
         }
 
+        // Fields typed into a form but not saved yet are applied before the last write (#87).
+        _workspace.ApplyDrafts();
         _workspace.FlushPendingSave();
     }
 
@@ -397,7 +399,8 @@ public sealed class GameWorkspaceView : UserControl
         // writes the final state back through F#; see EndPlaytest).
         return RustPlayer.CreateCartridge(
             Playtests.Cartridge(project),
-            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+            // The system's reduced-motion preference reaches the game, as in the web demo.
+            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language, ReducedMotion = options.ReducedMotion || ReducedMotion.SystemPrefers });
     }
 
     private void OnRestartRequested(object? sender, EventArgs e)

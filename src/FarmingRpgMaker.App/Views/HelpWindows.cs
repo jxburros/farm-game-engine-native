@@ -236,6 +236,9 @@ public sealed class ShortcutsWindow : HelpWindowBase
         ("←↑→↓", "shortcuts.mapCursor"),
         ("Enter / Space", "shortcuts.mapApply"),
         ("Esc", "shortcuts.mapCancel"),
+        ("V B R G I M E X U D P", "shortcuts.mapTools"),
+        ("Ctrl+K", "shortcuts.quickOpen"),
+        ("Ctrl+R · Ctrl+Shift+K · Ctrl+D", "shortcuts.playToolbar"),
         ("F1", "shortcuts.guide"),
         ("Alt+F4", "shortcuts.exit"),
     ];

@@ -33,6 +33,7 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
         var archives = Check("ExportArchivesCheck", "Create archives (.zip for Windows and the web, .tar.gz for Linux)", nameof(ExportGameViewModel.CreateArchives));
 
         var folder = new TextBox { Name = "ExportFolderBox", Watermark = "Output folder" };
+        Avalonia.Automation.AutomationProperties.SetName(folder, "Output folder");
         folder.Bind(TextBox.TextProperty, new Binding(nameof(ExportGameViewModel.OutputFolder)) { Mode = BindingMode.TwoWay });
         var browse = Ui.Button(Ui.IconLabel("IconFolder", "Browse…"), () => { }, "subtle");
         browse.Name = "ExportBrowseButton";

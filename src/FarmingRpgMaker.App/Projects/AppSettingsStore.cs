@@ -20,6 +20,12 @@ public sealed record WorkspaceSettings
 
     /// <summary>The first-run welcome tour was dismissed (Help → Welcome Tour reopens it).</summary>
     public bool? WelcomeSeen { get; init; }
+
+    /// <summary>Width of the Map tab's tool panel, as its splitter left it; null is the default.</summary>
+    public double? MapPanelWidth { get; init; }
+
+    /// <summary>Width of the Content tab's entry list, as its splitter left it; null is the default.</summary>
+    public double? ContentListWidth { get; init; }
 }
 
 /// <summary>

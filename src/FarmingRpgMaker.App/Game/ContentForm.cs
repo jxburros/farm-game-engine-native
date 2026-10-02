@@ -50,8 +50,12 @@ internal sealed class ContentForm
     private readonly List<Bitmap> _thumbnails = [];
     private int _tab;
 
-    public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report)
+    /// <summary>"Pick on map" for tile coordinates (scene id, prompt, what to do with the tile); null hides the buttons (#47).</summary>
+    private readonly Action<string, string, Action<int, int>>? _pickOnMap;
+
+    public ContentForm(GameProject project, object entity, Type entityType, StackPanel root, Action<string> report, Action<string, string, Action<int, int>>? pickOnMap = null)
     {
+        _pickOnMap = pickOnMap;
         _project = project;
         _entity = entity;
         _entityType = entityType;
@@ -60,6 +64,27 @@ internal sealed class ContentForm
         Draft = RecordJson.ToNode(entity, entityType) as JsonObject
             ?? throw new InvalidOperationException("Content did not serialize to an object.");
         Rebuild();
+        _initialJson = Draft.ToJsonString();
+    }
+
+    /// <summary>The draft as the form was built, to tell whether anything was edited since.</summary>
+    private readonly string _initialJson;
+
+    /// <summary>
+    /// True when the fields no longer describe the entry the form was built from (#87): something
+    /// typed, picked, added, removed or moved, a field holding something invalid, or an edited
+    /// "Edit as JSON" box. Typing a value back to what it was is not a change.
+    /// </summary>
+    public bool IsDirty
+    {
+        get
+        {
+            _errors.Clear();
+            foreach (var write in _writers) write();
+            if (_errors.Count > 0) return true;
+            if (_json.Any(escape => (escape.Box.Text ?? "") != escape.Original)) return true;
+            return Draft.ToJsonString() != _initialJson;
+        }
     }
 
     /// <summary>The entry as the form currently holds it.</summary>
@@ -341,7 +366,7 @@ internal sealed class ContentForm
         {
             panel.Children.Add(Label(label));
             panel.Children.Add(NumberControl(target, key, name, label, type == typeof(int) || type == typeof(long),
-                optional: nullable || IsOptionalNullableNumber(type), whenEmpty: 0, min: null, max: null));
+                optional: nullable || IsOptionalNullableNumber(type), min: null, max: null));
             return;
         }
 
@@ -410,10 +435,9 @@ internal sealed class ContentForm
         {
             var picker = Accessible(Picker(name, field, current, optionLabel), label);
             var initial = SelectedId(picker);
-            _writers.Add(() =>
+            Writer(target, key, () => SelectedId(picker) is not { } id || id == initial, () =>
             {
-                var id = SelectedId(picker);
-                if (id is null || id == initial) return;
+                var id = SelectedId(picker)!;
                 target[key] = id.Length == 0 && nullable ? null : JsonValue.Create(id);
             });
             if (rebuildOnChange) picker.SelectionChanged += (_, _) => { if (SelectedId(picker) is { } id && id != initial) Structural(() => { }); };
@@ -430,10 +454,9 @@ internal sealed class ContentForm
         }, label);
         if (field is { Kind: "plain" } && field.Reason.Length > 0) ToolTip.SetTip(box, Ui.Capitalize(field.Reason) + ".");
         var original = box.Text;
-        _writers.Add(() =>
+        Writer(target, key, () => (box.Text ?? "") == original, () =>
         {
             var text = box.Text ?? "";
-            if (text == original) return;
             target[key] = nullable && text.Length == 0 ? null : JsonValue.Create(text);
         });
         return box;
@@ -444,25 +467,26 @@ internal sealed class ContentForm
         var value = target[key] is JsonValue node && node.TryGetValue<bool>(out var flag) ? flag : whenAbsent;
         var check = Accessible(new CheckBox { Name = name, Content = label, IsChecked = value, IsThreeState = whenAbsent is null }, label);
         var original = check.IsChecked;
-        _writers.Add(() =>
-        {
-            if (check.IsChecked == original) return;
-            target[key] = check.IsChecked is { } on ? JsonValue.Create(on) : null;
-        });
+        Writer(target, key, () => check.IsChecked == original, () => target[key] = check.IsChecked is { } on ? JsonValue.Create(on) : null);
         return check;
     }
 
-    private TextBox NumberControl(JsonObject target, string key, string name, string label, bool integer, bool optional, double whenEmpty, double? min, double? max)
+    /// <summary>
+    /// A number box. Saving never changes what was typed behind the creator's back (#46): an
+    /// emptied required field and a value outside <paramref name="min"/>–<paramref name="max"/>
+    /// are reported by name instead of being reset or clamped.
+    /// </summary>
+    private TextBox NumberControl(JsonObject target, string key, string name, string label, bool integer, bool optional, double? min, double? max)
     {
         var box = Accessible(new TextBox { Name = name, Text = NumberText(target[key]), MinWidth = 90 }, label);
         var original = box.Text;
-        _writers.Add(() =>
+        Writer(target, key, () => (box.Text ?? "").Trim() == original, () =>
         {
             var raw = (box.Text ?? "").Trim();
-            if (raw == original) return;
             if (raw.Length == 0)
             {
-                target[key] = optional ? null : JsonValue.Create(whenEmpty);
+                if (optional) target[key] = null;
+                else _errors.Add($"{label} needs a value.");
                 return;
             }
 
@@ -473,11 +497,53 @@ internal sealed class ContentForm
                 return;
             }
 
-            if (min is { } low) value = Math.Max(low, value);
-            if (max is { } high) value = Math.Min(high, value);
+            if ((min is { } low && value < low) || (max is { } high && value > high))
+            {
+                _errors.Add(RangeText(label, min, max));
+                return;
+            }
+
             target[key] = JsonValue.Create(value);
         });
         return box;
+    }
+
+    /// <summary>"Schedule entry 1 minute must be from 0 to 1560." (or "at least" / "at most").</summary>
+    private static string RangeText(string label, double? min, double? max) => (min, max) switch
+    {
+        ({ } low, { } high) => $"{label} must be from {Ui.Num(low)} to {Ui.Num(high)}.",
+        ({ } low, null) => $"{label} must be at least {Ui.Num(low)}.",
+        (null, { } high) => $"{label} must be at most {Ui.Num(high)}.",
+        _ => $"{label} is out of range.",
+    };
+
+    /// <summary>
+    /// Registers the writer of the field <paramref name="key"/>: <paramref name="write"/> runs when
+    /// the control changed. Unchanged, the value the field had when the form was built goes back
+    /// into the draft, since an earlier <see cref="Preview"/> may have written a value the creator
+    /// then typed back: the draft always follows the controls.
+    /// </summary>
+    private void Writer(JsonObject target, string key, Func<bool> unchanged, Action write)
+    {
+        var had = target.ContainsKey(key);
+        var before = target[key]?.DeepClone();
+        _writers.Add(() =>
+        {
+            if (!unchanged())
+            {
+                write();
+                return;
+            }
+
+            if (!had)
+            {
+                target.Remove(key);
+            }
+            else if (!JsonNode.DeepEquals(target[key], before))
+            {
+                target[key] = before?.DeepClone();
+            }
+        });
     }
 
     /// <summary>
@@ -627,9 +693,11 @@ internal sealed class ContentForm
             var index = i;
             var box = Accessible(new TextBox { Name = $"ContentField_{path}_{i}", Text = StringOf(array![i]) ?? array[i]?.ToJsonString() ?? "", MinWidth = 180 }, $"{label} {i + 1}");
             var original = box.Text;
+            var before = array[i]?.DeepClone();
             _writers.Add(() =>
             {
                 if (box.Text != original) array[index] = JsonValue.Create(box.Text ?? "");
+                else if (!JsonNode.DeepEquals(array[index], before)) array[index] = before?.DeepClone();
             });
             panel.Children.Add(Ui.Row(box, SmallButton($"ContentRemove_{path}_{i}", "×", "Remove", () => Structural(() =>
             {
@@ -649,7 +717,7 @@ internal sealed class ContentForm
         {
             var index = i;
             var holder = new JsonObject { ["value"] = array![i]?.DeepClone() };
-            var box = NumberControl(holder, "value", $"ContentField_{path}_{i}", $"{label} {i + 1}", integer: false, optional: false, whenEmpty: 0, min: null, max: null);
+            var box = NumberControl(holder, "value", $"ContentField_{path}_{i}", $"{label} {i + 1}", integer: false, optional: false, min: null, max: null);
             _writers.Add(() =>
             {
                 if (!JsonNode.DeepEquals(holder["value"], array[index])) array[index] = holder["value"]?.DeepClone();
@@ -782,7 +850,7 @@ internal sealed class ContentForm
     /// <summary>A whole-number tile coordinate box.</summary>
     private TextBox Coordinate(JsonObject target, string key, string name, string label, string watermark)
     {
-        var box = NumberControl(target, key, name, label, integer: true, optional: false, whenEmpty: 0, min: null, max: null);
+        var box = NumberControl(target, key, name, label, integer: true, optional: false, min: null, max: null);
         box.MinWidth = 0;
         box.Width = 64;
         box.Watermark = watermark;
@@ -809,7 +877,7 @@ internal sealed class ContentForm
             }
 
             var minute = NumberControl(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.Minute)), $"ContentField_{path}_{i}_Minute", $"{title} minute",
-                integer: true, optional: false, whenEmpty: 0, min: 0, max: 1560);
+                integer: true, optional: false, min: 0, max: 1560);
             minute.MinWidth = 0;
             ToolTip.SetTip(minute, "Minute of day (480 = 8:00 AM)");
             var clock = Ui.Text(ClockText(minute.Text), "muted", "small");
@@ -820,7 +888,16 @@ internal sealed class ContentForm
             scene.MinWidth = 120;
             var x = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
             var y = Coordinate(entry, Key<NpcScheduleEntry>(nameof(NpcScheduleEntry.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
-            var row = Columns("72,118,*,Auto,Auto,Auto", minute, clock, scene, x, y, buttons);
+            string Scene() => scene switch
+            {
+                ComboBox picker => SelectedId(picker) ?? "",
+                TextBox box => box.Text ?? "",
+                _ => "",
+            };
+            var pick = PickButton($"ContentPick_{path}_{i}", $"where schedule entry {i + 1} goes", Scene, x, y);
+            var row = pick is null
+                ? Columns("72,118,*,Auto,Auto,Auto", minute, clock, scene, x, y, buttons)
+                : Columns("72,118,*,Auto,Auto,Auto,Auto", minute, clock, scene, x, y, pick, buttons);
             row.Name = $"ContentRow_{path}_{i}";
             panel.Children.Add(row);
         }
@@ -855,6 +932,10 @@ internal sealed class ContentForm
             var x = Coordinate(point, Key<GridPoint>(nameof(GridPoint.X)), $"ContentField_{path}_{i}_X", $"{title} x", "x");
             var y = Coordinate(point, Key<GridPoint>(nameof(GridPoint.Y)), $"ContentField_{path}_{i}_Y", $"{title} y", "y");
             var row = Ui.HStack(6, number, x, y, buttons);
+            if (PickButton($"ContentPick_{path}_{i}", $"waypoint {i + 1}", () => StringOf(Draft["sceneId"]) ?? "", x, y) is { } pick)
+            {
+                row.Children.Insert(3, pick);
+            }
             row.Name = $"ContentRow_{path}_{i}";
             panel.Children.Add(row);
         }
@@ -887,7 +968,7 @@ internal sealed class ContentForm
             var item = StringControl(entry, itemKey, $"ContentField_{path}_{i}_ItemId", $"{title} item", itemField, nullable: false, multiline: false, rebuildOnChange: false,
                 optionLabel: StockLabel);
             var price = NumberControl(entry, Key<ShopStockEntry>(nameof(ShopStockEntry.Price)), $"ContentField_{path}_{i}_Price", $"{title} price override",
-                integer: false, optional: true, whenEmpty: 0, min: null, max: null);
+                integer: false, optional: true, min: null, max: null);
             price.Watermark = BaseValueText(StringOf(entry[itemKey]));
             if (item is ComboBox picker) picker.SelectionChanged += (_, _) => price.Watermark = BaseValueText(SelectedId(picker));
             var limit = LimitControl(entry, Key<ShopStockEntry>(nameof(ShopStockEntry.DailyLimit)), $"ContentField_{path}_{i}_DailyLimit", $"{title} daily limit");
@@ -922,10 +1003,9 @@ internal sealed class ContentForm
     {
         var box = Accessible(new TextBox { Name = name, Text = NumberText(target[key]), MinWidth = 90, Watermark = "Unlimited" }, label);
         var original = box.Text;
-        _writers.Add(() =>
+        Writer(target, key, () => (box.Text ?? "").Trim() == original, () =>
         {
             var raw = (box.Text ?? "").Trim();
-            if (raw == original) return;
             if (raw.Length == 0)
             {
                 target[key] = null;
@@ -968,9 +1048,8 @@ internal sealed class ContentForm
         }
 
         var original = checks.Select(entry => entry.Check.IsChecked).ToList();
-        _writers.Add(() =>
+        Writer(target, key, () => checks.Select(entry => entry.Check.IsChecked).SequenceEqual(original), () =>
         {
-            if (checks.Select(entry => entry.Check.IsChecked).SequenceEqual(original)) return;
             var chosen = checks.Where(entry => entry.Check.IsChecked == true).Select(entry => (JsonNode?)JsonValue.Create(entry.Id)).ToArray();
             target[key] = chosen.Length == 0 ? null : new JsonArray(chosen);
         });
@@ -1173,14 +1252,16 @@ internal sealed class ContentForm
     {
         var wrap = new WrapPanel();
         var stack = new StackPanel { Spacing = 6 };
+        var numbers = new Dictionary<string, TextBox>(StringComparer.Ordinal);
         foreach (var field in fields)
         {
             var name = $"ContentField_{path}_{Pascal(field.Key)}";
             switch (field.Kind)
             {
                 case "integer" or "number":
-                    var number = NumberControl(target, field.Key, name, field.Label, field.Kind == "integer", field.Optional, field.WhenEmpty,
+                    var number = NumberControl(target, field.Key, name, field.Label, field.Kind == "integer", field.Optional,
                         field.HasMin ? field.Min : null, field.HasMax ? field.Max : null);
+                    numbers[field.Key] = number;
                     number.Watermark = field.Optional ? "optional" : null;
                     wrap.Children.Add(Labeled(field.Label, number, 130));
                     break;
@@ -1205,9 +1286,34 @@ internal sealed class ContentForm
             }
         }
 
+        // Tile coordinates can be clicked on the map: the outcome's own scene, else the event's.
+        string Scene() => StringOf(target["sceneId"]) is { Length: > 0 } own ? own : StringOf(Draft["sceneId"]) ?? "";
+        foreach (var (xKey, yKey, what) in new[] { ("x", "y", "the tile"), ("tileX", "tileY", "the tile"), ("x2", "y2", "the far corner") })
+        {
+            if (numbers.TryGetValue(xKey, out var x) && numbers.TryGetValue(yKey, out var y)
+                && PickButton($"ContentPick_{path}_{Pascal(xKey)}", what, Scene, x, y) is { } pick)
+            {
+                wrap.Children.Add(pick);
+            }
+        }
+
         foreach (var child in wrap.Children.OfType<Control>()) child.Margin = new Thickness(0, 0, 10, 6);
         if (wrap.Children.Count > 0) stack.Children.Insert(0, wrap);
         return stack;
+    }
+
+    /// <summary>A "Pick on map" button that fills <paramref name="x"/> and <paramref name="y"/> with a clicked tile (#47).</summary>
+    private Button? PickButton(string name, string what, Func<string> scene, TextBox x, TextBox y)
+    {
+        if (_pickOnMap is not { } pickOnMap) return null;
+        var button = SmallButton(name, "Pick on map", $"Pick {what} on the map", () => pickOnMap(scene(), $"Click {what}.", (tileX, tileY) =>
+        {
+            x.Text = tileX.ToString(CultureInfo.InvariantCulture);
+            y.Text = tileY.ToString(CultureInfo.InvariantCulture);
+            _report($"Tile ({tileX}, {tileY}) chosen. Save changes to keep it.");
+        }));
+        button.VerticalAlignment = VerticalAlignment.Bottom;
+        return button;
     }
 
     // ---- Escape hatch ----

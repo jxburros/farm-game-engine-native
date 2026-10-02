@@ -135,6 +135,17 @@ module Document =
     let endStroke (document: Document) : Document =
         if document.Stroke.IsNone then document else { document with Stroke = None }
 
+    /// Applies `edit` without an undo entry (#45): for editor state kept in the project that is
+    /// not content, such as the tile brush (`SelectBrush`), so picking a brush never uses up undo
+    /// depth. Redo stays available; any drag stroke ends. The same document when nothing changed.
+    /// Undo still restores the brush an entry was recorded with; the editor, which owns the
+    /// brush, selects its own again afterwards.
+    let applyWithoutHistory (edit: Edit) (document: Document) : Document =
+        let next = run document.Project edit
+        if LanguagePrimitives.PhysicalEquality next document.Project then
+            (if document.Stroke.IsNone then document else { document with Stroke = None })
+        else { document with Project = next; Stroke = None }
+
     let canUndo (document: Document) = not document.Past.IsEmpty
     let canRedo (document: Document) = not document.Future.IsEmpty
 

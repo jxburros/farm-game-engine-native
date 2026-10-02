@@ -183,9 +183,17 @@ public sealed class ContentLayoutTests
         Type(host, "ContentField_Schedule_0_Minute", "8.5");
         Press(host, "SaveContentButton");
         Assert.Contains("Schedule entry 1 minute must be a whole number", Message(host));
+        // Out of the web's 0-1560 the field is named, not clamped behind the creator's back (#46).
         Type(host, "ContentField_Schedule_0_Minute", "2000");
         Press(host, "SaveContentButton");
-        Assert.Equal(1560.0, Current().Schedule.OrEmpty()[0].Minute); // clamped to the web's 0-1560
+        Assert.Contains("Schedule entry 1 minute must be from 0 to 1560.", Message(host));
+        Assert.Equal(1500.0, Current().Schedule.OrEmpty()[0].Minute);
+        Type(host, "ContentField_Schedule_0_Minute", "");
+        Press(host, "SaveContentButton");
+        Assert.Contains("Schedule entry 1 minute needs a value.", Message(host));
+        Type(host, "ContentField_Schedule_0_Minute", "1560");
+        Press(host, "SaveContentButton");
+        Assert.Equal(1560.0, Current().Schedule.OrEmpty()[0].Minute);
 
         Press(host, "ContentRemove_Schedule_1");
         Press(host, "ContentRemove_Schedule_0");
@@ -354,6 +362,7 @@ public sealed class ContentLayoutTests
         Assert.NotSame(image, redrawn);
 
         // Without art the group has no preview; the other NPC has no visual at all.
+        Press(host, "RevertContentButton");
         OpenEntry(host, "NPCs", host.Workspace.Current!.Npcs[1].Id);
         Assert.Null(TryFindByName<Border>(host.Window, "ContentArt_Visual"));
     }

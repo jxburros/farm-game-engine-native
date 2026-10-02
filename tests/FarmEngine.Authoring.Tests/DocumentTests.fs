@@ -115,3 +115,46 @@ let ``run gives a preview without touching history`` () =
     Assert.NotSame(project, preview)
     Assert.Equal("grass", (tile project "scene-farm" 1 1).Type)
     Assert.Equal("water", (tile preview "scene-farm" 1 1).Type)
+
+[<Fact>]
+let ``picking a brush is not an undo step`` () =
+    let art = Some { VisualRef.Default with AssetId = "art-water" }
+    let painted =
+        Document.create (starter ())
+        |> Document.applyWithoutHistory (SelectBrush("soil", None))
+        |> Document.apply (paint 1 1 "soil")
+    let doc = painted |> Document.applyInStroke "s1" (paint 2 2 "soil") |> Document.applyWithoutHistory (SelectBrush("water", art))
+    Assert.Equal(2, doc.Past.Length)
+    Assert.Equal(None, doc.Stroke)
+    Assert.Equal("water", doc.Project.SelectedTileType)
+    Assert.Equal(art, doc.Project.SelectedTileVisual)
+    // Undo undoes the last paint, not the brush pick.
+    let undone = Document.undo doc
+    Assert.Equal("grass", (tile undone.Project "scene-farm" 2 2).Type)
+    Assert.Equal("soil", (tile undone.Project "scene-farm" 1 1).Type)
+    // Picking again keeps redo, and picking the same brush is a no-op.
+    let picked = undone |> Document.applyWithoutHistory (SelectBrush("water", art))
+    Assert.True(Document.canRedo picked)
+    Assert.Equal(1, picked.Past.Length)
+    Assert.Same(picked, picked |> Document.applyWithoutHistory (SelectBrush("water", art)))
+    let repainted = picked |> Document.apply (paint 3 3 "water")
+    Assert.Equal(art, (tile repainted.Project "scene-farm" 3 3).Visuals.Value.Background)
+
+[<Fact>]
+let ``single tile edits on a big scene share the untouched rows with history`` () =
+    let project = starter ()
+    let big = project |> apply (ResizeScene("scene-farm", 256, 256))
+    let mutable doc = Document.create big
+    // Warm up so the measured loop does not count JIT work.
+    doc <- doc |> Document.apply (paint 0 0 "soil")
+    let before = System.GC.GetAllocatedBytesForCurrentThread()
+    for i in 1 .. 100 do
+        doc <- doc |> Document.apply (paint (i % 256) (i * 7 % 256) (if i % 2 = 0 then "water" else "soil"))
+    let allocated = System.GC.GetAllocatedBytesForCurrentThread() - before
+    // A whole-scene copy per edit was ~2.6 MB, so 100 edits were ~260 MB.
+    Assert.True(allocated < 40L * 1024L * 1024L, sprintf "100 single-tile edits allocated %d bytes" allocated)
+    let rows = System.Collections.Generic.HashSet<Tile list>(HashIdentity.Reference)
+    for past in doc.Project :: doc.Past do
+        for row in (farm past).Tiles do rows.Add row |> ignore
+    // 256 shared rows plus at most one new row per remembered edit.
+    Assert.True(rows.Count <= 256 + Document.UndoLimit + 1, sprintf "%d distinct rows" rows.Count)

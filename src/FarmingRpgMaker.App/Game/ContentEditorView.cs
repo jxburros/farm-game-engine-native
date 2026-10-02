@@ -133,8 +133,13 @@ public sealed class ContentEditorView : UserControl, IRetirable
         Of("Minigames", p => p.Minigames, Defaults.NewMinigame, Edits.UpsertMinigame, Edits.RemoveMinigame, Defaults.DuplicateMinigame),
     ];
 
+    /// <summary>The entry list's width until the creator drags the splitter.</summary>
+    public const double DefaultListWidth = 230;
+
     private readonly ProjectWorkspace _workspace;
     private readonly ComboBox _category = new() { Name = "ContentCategory", MinWidth = 175 };
+    private readonly TextBox _filter = new() { Name = "ContentFilter", Watermark = "Filter by name or id" };
+    private readonly DraftBar _draftBar;
     private readonly ListBox _entities = new() { Name = "ContentEntities", MinHeight = 250 };
     private readonly StackPanel _form = new() { Name = "ContentFields", Spacing = 10 };
     private readonly Border _summary = new() { Name = "ContentSummary", IsVisible = false };
@@ -155,13 +160,20 @@ public sealed class ContentEditorView : UserControl, IRetirable
     private bool _attached;
     private bool _readoutsQueued;
     private object? _editing;
+    /// <summary>The category and id the form on show was built for.</summary>
+    private (Category Category, string Id)? _formFor;
     private object? _builtin;
     private ContentForm? _contentForm;
     private TextBlock? _profit;
 
-    public ContentEditorView(ProjectWorkspace workspace)
+    private readonly Action<string, string, Action<int, int>>? _pickOnMap;
+
+    /// <param name="workspace">The open project.</param>
+    /// <param name="pickOnMap">"Pick on map" for the forms' tile coordinates (scene id, prompt, what to do with the tile); null hides it.</param>
+    public ContentEditorView(ProjectWorkspace workspace, Action<string, string, Action<int, int>>? pickOnMap = null)
     {
         _workspace = workspace;
+        _pickOnMap = pickOnMap;
         Name = "ContentEditorView";
         _message.Name = "ContentMessage";
         Ui.Label((_category, "Content type"), (_entities, "Entries"));
@@ -170,19 +182,35 @@ public sealed class ContentEditorView : UserControl, IRetirable
             _category.Items.Add(new ComboBoxItem { Content = category.Name, Tag = category });
         }
 
+        Ui.Label((_filter, "Filter entries"));
+        _draftBar = new DraftBar("Content", SaveDraft, () => BuildForm());
         _category.SelectionChanged += (_, _) =>
         {
-            if (_refreshing || _category.SelectedItem is not ComboBoxItem { Tag: Category category }) return;
-            _selectedCategory = category;
-            _selectedId = null;
-            Refresh();
+            if (_refreshing || _category.SelectedItem is not ComboBoxItem { Tag: Category category } || ReferenceEquals(category, _selectedCategory)) return;
+            // Unsaved fields are not dropped by picking another type (#87): ask first.
+            ShowCategory(_selectedCategory);
+            Navigate(() =>
+            {
+                _selectedCategory = category;
+                _selectedId = null;
+                ShowCategory(category);
+                Refresh();
+            });
         };
         _entities.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;
-            _selectedId = (_entities.SelectedItem as ListBoxItem)?.Tag as string;
-            BuildForm();
+            var id = (_entities.SelectedItem as ListBoxItem)?.Tag as string;
+            if (id == _selectedId) return;
+            ShowSelection();
+            Navigate(() =>
+            {
+                _selectedId = id;
+                ShowSelection();
+                BuildForm();
+            });
         };
+        _filter.TextChanged += (_, _) => RefreshList(_workspace.Current);
         // Readouts follow the fields: any edit inside the form (typing, a picker, a checkbox)
         // bubbles up here. The refresh is posted, so it runs after a rebuild the edit starts.
         _form.AddHandler(TextBox.TextChangedEvent, (_, _) => QueueReadouts(), handledEventsToo: true);
@@ -208,21 +236,38 @@ public sealed class ContentEditorView : UserControl, IRetirable
         var listSide = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 16, 0) };
         listSide.Children.Add(Ui.Text("CONTENT", "section"));
         listSide.Children.Add(_category);
+        listSide.Children.Add(_filter);
         listSide.Children.Add(_entities);
         listSide.Children.Add(Ui.HStack(8, _add, _delete));
         listSide.Children.Add(Ui.HStack(8, _duplicate, _addToInventory));
         listSide.Children.Add(Ui.Wrapped("Select a type, then edit its fields. Every nested field also has an Edit as JSON box.", "muted", "small"));
         var editor = new StackPanel { Spacing = 12 };
         editor.Children.Add(Ui.Text("DETAILS", "section"));
+        editor.Children.Add(_draftBar);
         editor.Children.Add(_message);
         editor.Children.Add(_summary);
         editor.Children.Add(_form);
         editor.Children.Add(_readouts);
         editor.Children.Add(Ui.HStack(8, _customize, _save, _revert));
-        var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("230,*"), Margin = new Thickness(20) };
+        // The list is as wide as the creator dragged it last (#56); the splitter remembers it.
+        var listWidth = Math.Clamp(_workspace.Settings.Load().ContentListWidth ?? DefaultListWidth, 160, 640);
+        var layout = new Grid { Name = "ContentLayout", Margin = new Thickness(20) };
+        layout.ColumnDefinitions.Add(new ColumnDefinition(listWidth, GridUnitType.Pixel) { MinWidth = 160, MaxWidth = 640 });
+        layout.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        layout.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
         layout.Children.Add(listSide);
+        listSide.Margin = new Thickness(0, 0, 8, 0);
+        var splitter = new GridSplitter { Name = "ContentSplitter", Width = 6, ResizeDirection = GridResizeDirection.Columns, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 10, 0) };
+        AutomationProperties.SetName(splitter, "Resize the entry list");
+        splitter.DragCompleted += (_, _) =>
+        {
+            var width = layout.ColumnDefinitions[0].ActualWidth;
+            if (width > 0) _workspace.Settings.TryUpdate(settings => settings with { ContentListWidth = Math.Round(width) });
+        };
+        Grid.SetColumn(splitter, 1);
+        layout.Children.Add(splitter);
         var formScroll = new ScrollViewer { Content = editor, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Grid.SetColumn(formScroll, 1);
+        Grid.SetColumn(formScroll, 2);
         layout.Children.Add(formScroll);
         Content = layout;
         _workspace.ProjectChanged += OnProjectChanged;
@@ -235,6 +280,15 @@ public sealed class ContentEditorView : UserControl, IRetirable
 
     private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
     {
+        // Another project: its entries are not the form's (the fields were saved, if they
+        // could be, before the switch; see EditModeView.SaveDrafts).
+        if (e.Kind == ProjectChangeKind.Opened)
+        {
+            _draftBar.Hide();
+            _formFor = null;
+            _selectedId = null;
+        }
+
         if (IsEffectivelyVisible) Refresh();
     }
 
@@ -257,11 +311,110 @@ public sealed class ContentEditorView : UserControl, IRetirable
         _category.SelectedItem = _category.Items.OfType<ComboBoxItem>().First(item => (string)item.Content! == name);
     }
 
+    /// <summary>Opens <paramref name="id"/> of <paramref name="category"/> (Problems, search), asking first about unsaved fields.</summary>
     public void SelectEntry(string category, string id)
     {
-        SelectCategory(category);
-        _selectedId = id;
-        Refresh();
+        var target = Categories.First(c => c.Name == category);
+        Navigate(() =>
+        {
+            _selectedCategory = target;
+            _selectedId = id;
+            _filter.Text = "";
+            ShowCategory(target);
+            Refresh();
+        });
+    }
+
+    /// <summary>True while the form holds edits that are not saved (#87).</summary>
+    public bool HasUnsavedChanges => _contentForm?.IsDirty == true;
+
+    /// <summary>The selected entry's id (null when none).</summary>
+    public string? SelectedId => _selectedId;
+
+    /// <summary>
+    /// Saves the form's unsaved fields, if any (switching projects, closing the editor). False
+    /// when they could not be saved; the message says why.
+    /// </summary>
+    public bool SaveDraft()
+    {
+        if (!HasUnsavedChanges)
+        {
+            return true;
+        }
+
+        Save();
+        return !HasUnsavedChanges;
+    }
+
+    /// <summary>
+    /// Every entry of every type whose name or id contains <paramref name="query"/> (ignoring
+    /// case), names that start with it first: the quick-open search (#56).
+    /// </summary>
+    public static IReadOnlyList<(string Category, string Id, string Label)> Search(GameProject project, string query, int limit = 50)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var text = (query ?? "").Trim();
+        if (text.Length == 0) return [];
+        var found = new List<(string Category, string Id, string Label, int Rank)>();
+        foreach (var category in Categories)
+        {
+            foreach (var entity in category.Entries(project).Concat(category.Builtins?.Entries(project) ?? []))
+            {
+                var id = IdOf(entity);
+                var name = entity.GetType().GetProperty("Name")?.GetValue(entity) as string ?? "";
+                var rank = Rank(name, text) is { } byName ? byName : Rank(id, text) is { } byId ? byId + 2 : (int?)null;
+                if (rank is { } r && !found.Any(f => f.Category == category.Name && f.Id == id)) found.Add((category.Name, id, LabelOf(entity), r));
+            }
+        }
+
+        return found.OrderBy(f => f.Rank).ThenBy(f => f.Label, StringComparer.OrdinalIgnoreCase).Take(limit).Select(f => (f.Category, f.Id, f.Label)).ToList();
+    }
+
+    /// <summary>0 when <paramref name="value"/> starts with <paramref name="query"/>, 1 when it contains it, else null.</summary>
+    internal static int? Rank(string value, string query) =>
+        value.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 0
+        : value.Contains(query, StringComparison.OrdinalIgnoreCase) ? 1
+        : null;
+
+    /// <summary>Runs <paramref name="next"/> now, or once the creator saved or discarded the form's unsaved fields.</summary>
+    private void Navigate(Action next)
+    {
+        if (!HasUnsavedChanges)
+        {
+            _draftBar.Hide();
+            next();
+            return;
+        }
+
+        _draftBar.Ask(_editing is null ? "this entry" : LabelOf(_editing), next);
+    }
+
+    /// <summary>Shows <paramref name="category"/> in the type picker without reacting to it.</summary>
+    private void ShowCategory(Category category)
+    {
+        _refreshing = true;
+        try
+        {
+            _category.SelectedItem = _category.Items.OfType<ComboBoxItem>().FirstOrDefault(item => ReferenceEquals(item.Tag, category));
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    /// <summary>Shows the selected entry in the list without reacting to it.</summary>
+    private void ShowSelection()
+    {
+        _refreshing = true;
+        try
+        {
+            _entities.SelectedItem = _entities.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedId));
+        }
+        finally
+        {
+            _refreshing = false;
+        }
     }
 
     private static string IdOf(object entity) => (string)(entity.GetType().GetProperty("Id")?.GetValue(entity) ?? "");
@@ -275,20 +428,43 @@ public sealed class ContentEditorView : UserControl, IRetirable
     public void Refresh()
     {
         var project = _workspace.Current;
+        RefreshList(project);
+        // A form with unsaved fields stays as typed when the tab is shown again or the project
+        // changes elsewhere (undo, a map edit), as long as its entry is still there (#87).
+        if (_formFor is { } shown && ReferenceEquals(shown.Category, _selectedCategory) && shown.Id == _selectedId && project is not null
+            && _selectedCategory.Entries(project).FirstOrDefault(entity => IdOf(entity) == _selectedId) is { } stored && HasUnsavedChanges)
+        {
+            if (!Equals(stored, _editing))
+            {
+                _message.Text = $"{LabelOf(stored)} changed elsewhere while you edited it. Save changes keeps what you typed; Revert fields shows the saved entry.";
+            }
+
+            return;
+        }
+
+        BuildForm();
+    }
+
+    /// <summary>The entry list of the selected type, filtered by the filter box (the selected entry always shows).</summary>
+    private void RefreshList(GameProject? project)
+    {
         _refreshing = true;
         try
         {
             _entities.SelectedItem = null;
             _entities.Items.Clear();
             _thumbnails.Clear();
+            var filter = (_filter.Text ?? "").Trim();
+            bool Shown(object entity) => filter.Length == 0 || IdOf(entity) == _selectedId
+                || Rank(LabelOf(entity), filter) is not null;
             if (project is not null)
             {
-                foreach (var entity in _selectedCategory.Entries(project))
+                foreach (var entity in _selectedCategory.Entries(project).Where(Shown))
                 {
                     _entities.Items.Add(ListRow(project, entity, builtin: false));
                 }
 
-                foreach (var entity in _selectedCategory.Builtins?.Entries(project) ?? [])
+                foreach (var entity in (_selectedCategory.Builtins?.Entries(project) ?? []).Where(Shown))
                 {
                     _entities.Items.Add(ListRow(project, entity, builtin: true));
                 }
@@ -305,7 +481,6 @@ public sealed class ContentEditorView : UserControl, IRetirable
         }
 
         DrawThumbnails();
-        BuildForm();
     }
 
     /// <summary>
@@ -363,6 +538,8 @@ public sealed class ContentEditorView : UserControl, IRetirable
 
     private void BuildForm()
     {
+        _draftBar.Hide();
+        _formFor = null;
         _form.Children.Clear();
         _readouts.Children.Clear();
         _readouts.IsVisible = false;
@@ -414,7 +591,8 @@ public sealed class ContentEditorView : UserControl, IRetirable
         }
 
         _message.Text = $"Editing {_selectedCategory.Name.ToLowerInvariant()} · {_selectedId}";
-        _contentForm = new ContentForm(project, _editing, _selectedCategory.EntityType, _form, message => _message.Text = message);
+        _contentForm = new ContentForm(project, _editing, _selectedCategory.EntityType, _form, message => _message.Text = message, _pickOnMap);
+        _formFor = (_selectedCategory, _selectedId!);
         if (_selectedCategory.Profit is { } profit)
         {
             var (box, text) = ContentReadoutCard.Line(profit.Name);
@@ -453,7 +631,9 @@ public sealed class ContentEditorView : UserControl, IRetirable
         });
     }
 
-    private void Add()
+    private void Add() => Navigate(AddNow);
+
+    private void AddNow()
     {
         if (_workspace.Current is not { } project) return;
         var created = _selectedCategory.Create(project);
@@ -467,7 +647,9 @@ public sealed class ContentEditorView : UserControl, IRetirable
     }
 
     /// <summary>The selected built-in becomes a project entry with the same id (it replaces the built-in).</summary>
-    private void Customize()
+    private void Customize() => Navigate(CustomizeNow);
+
+    private void CustomizeNow()
     {
         if (_builtin is not { } builtin || _selectedCategory.Builtins is not { } builtins) return;
         _selectedId = IdOf(builtin);
@@ -475,7 +657,9 @@ public sealed class ContentEditorView : UserControl, IRetirable
             _message.Text = $"Customized {LabelOf(builtin)}. Delete it to use the built-in {builtins.Kind} again.";
     }
 
-    private void Duplicate()
+    private void Duplicate() => Navigate(DuplicateNow);
+
+    private void DuplicateNow()
     {
         if (_editing is null || _selectedCategory.Duplicate is not { } duplicate || _workspace.Current is not { } project) return;
         var copy = duplicate(project, _editing);
@@ -513,7 +697,10 @@ public sealed class ContentEditorView : UserControl, IRetirable
         {
             var updated = _contentForm.Commit();
             if (IdOf(updated) != _selectedId) throw new JsonException("The id cannot be changed here.");
-            if (!_workspace.Apply(_selectedCategory.Upsert(updated))) _message.Text = "No changes were made.";
+            var saved = _workspace.Apply(_selectedCategory.Upsert(updated));
+            // The fields now match the project: show the saved entry.
+            BuildForm();
+            if (!saved) _message.Text = "No changes were made.";
         }
         catch (Exception error) when (error is JsonException or FormatException or OverflowException)
         {

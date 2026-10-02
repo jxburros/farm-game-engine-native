@@ -231,6 +231,7 @@ internal sealed class NewProjectWindow : ProjectDialogWindow
     {
         Name = "NewProjectWindow";
         var nameBox = new TextBox { Name = "NewProjectName", Text = "My Farming Game", Watermark = "Project name" };
+        Avalonia.Automation.AutomationProperties.SetName(nameBox, "Project name");
         var list = new StackPanel { Spacing = 6 };
         RadioButton? first = null;
         foreach (var template in templates)
@@ -337,6 +338,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
         _rename.Name = "RenameProjectButton";
         _duplicate = Ui.Button("Duplicate", DuplicateSelected, "subtle");
         _duplicate.Name = "DuplicateProjectButton";
+        Avalonia.Automation.AutomationProperties.SetName(_renameBox, "New name for the selected project");
         _renameBox.TextChanged += (_, _) => UpdateButtons();
         _renameBox.KeyDown += (_, e) =>
         {

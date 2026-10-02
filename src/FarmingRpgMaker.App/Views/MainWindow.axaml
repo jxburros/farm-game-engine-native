@@ -73,6 +73,7 @@
             </StackPanel>
           </Button>
           <Button Name="ModeToggle" Classes="large"
+                  AutomationProperties.Name="{Binding ModeToggleText}"
                   Classes.accent="{Binding IsPlayMode}"
                   Classes.secondary="{Binding IsEditMode}"
                   Command="{Binding ToggleModeCommand}">
@@ -88,7 +89,8 @@
 
     <Border DockPanel.Dock="Bottom" Classes="statusbar">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Name="StatusText" Classes="muted small" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Name="StatusText" Classes="muted small" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.LiveSetting="Polite" />
         <TextBlock Grid.Column="1" Classes="muted small" Text="{Binding VersionText}" />
       </Grid>
     </Border>
