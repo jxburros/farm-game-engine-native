@@ -149,6 +149,15 @@
     and Export Project JSON replaces the file atomically.
   - The Art tab's preview redraws only while an animation plays, into the same
     bitmap.
+- **License, notices and contributor docs.** The repository has an MIT
+  `LICENSE`. The app ships it in its `licenses` folder with notices for its
+  .NET packages, the runtime, icons and fonts (`THIRD-PARTY-dotnet.txt`), and
+  About links to it. Exported games' `THIRD-PARTY.txt` now also covers the
+  plugin sandbox (QuickJS, wasi-libc) and ends with the engine's own license.
+  The in-app guide opens the docs of the installed version. New:
+  CONTRIBUTING.md (fixture switches, generated files), SECURITY.md, a README
+  Troubleshooting section, and CI checks for C# style, text files, Markdown
+  and the editor's notices.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:
