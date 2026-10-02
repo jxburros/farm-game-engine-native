@@ -236,7 +236,7 @@ public sealed class ProjectWorkspace
     /// <summary>
     /// After the project list renamed the open project on disk: takes the stored name as an
     /// undoable edit, so the open document and the next autosave keep it. False when the names
-    /// already agree (or nothing is open). <paramref name=storedName/> is the name read before
+    /// already agree (or nothing is open). <paramref name="storedName"/> is the name read before
     /// something else rewrote the file (a kept playtest saves the pre-play name); null reads it now.
     /// </summary>
     public bool AdoptStoredName(string? storedName = null)

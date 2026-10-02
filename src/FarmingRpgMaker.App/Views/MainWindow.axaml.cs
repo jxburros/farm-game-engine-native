@@ -303,6 +303,14 @@ public partial class MainWindow : Window
         {
             confirmed = await _viewModel.ResolveUnsavedChangesAsync(discardText).ConfigureAwait(true);
         }
+#pragma warning disable CA1031 // The prompt failed (an export error): stay open, edits and all.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Asking about unsaved changes failed: {ex}");
+            _viewModel.ShowStatus($"Something went wrong: {ex.Message}");
+            confirmed = false;
+        }
         finally
         {
             _askingAboutUnsavedChanges = false;
