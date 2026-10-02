@@ -214,6 +214,31 @@
   - **Smaller things:** the Workshop's "Build your game" links, duplicating a
     single door, dialogue and asset counts in the project stats, and the scene
     size calculator.
+- **Editor data safety.** Edits that exist only in memory are no longer lost:
+  - Closing the window, **Restart & install** or opening another project while
+    saving fails asks first: **Export Project JSON…**, **Retry save**, or go on
+    without the edits.
+  - Project and settings files are flushed to disk before they replace the old
+    file, the previous version is kept (`projects/backups/`,
+    `settings.json.bak`), opening an older project keeps the original file
+    (`backups/<id>.v<from>.json`), and leftover temp files are cleaned up.
+  - A project file changed outside the editor is never overwritten silently:
+    the banner offers **Keep my version** or **Load the file's version**. A
+    project open in one editor window can't be opened (or deleted) in another.
+  - Hand-copied project files keep saving to their own file, whatever id the
+    JSON inside says (web exports all say `project-1`); ids map one-to-one to
+    file names on every platform.
+  - A settings.json that can't be read is never rewritten (so the Update
+    Center's and the editor's settings can't wipe each other), and both live in
+    the data folder `FARMING_RPG_MAKER_DATA_DIR` points to.
+  - Renaming the open project during a playtest with **Keep changes** keeps the
+    new name; "Created"/"Imported" and form confirmations no longer claim a
+    save that failed.
+  - **Try Again** on the error screen can no longer close the app, and replaced
+    editors stop following the project. Errors go to a rolling log
+    (`logs/editor-*.log`, Help → About → Log files), unhandled errors on other
+    threads are logged, and projects that fail to load at startup are listed
+    once the window has opened.
 - **One engine for the web and native editors.** The web editor
   (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,

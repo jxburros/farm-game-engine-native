@@ -7,7 +7,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Creates ordinary editable content from the F# creator patterns in one undo step.</summary>
-public sealed class WorkshopView : UserControl
+public sealed class WorkshopView : UserControl, IRetirable
 {
     /// <summary>"Build your game" shortcuts: web editor tab keys and their labels (web CreatorWorkshop).</summary>
     private static readonly (string Tab, string Label)[] QuickLinks =
@@ -78,11 +78,16 @@ public sealed class WorkshopView : UserControl
         }
         form.Children.Add(links);
         Content = new ScrollViewer { Content = form };
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     public void Refresh()

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using FarmingRpgMaker.Updates;
 
 namespace FarmingRpgMaker.App.Projects;
 
@@ -24,58 +24,46 @@ public sealed record WorkspaceSettings
 
 /// <summary>
 /// Reads/writes the <c>"workspace"</c> section of the shared <c>settings.json</c> (the same file
-/// the Update Center stores its <c>"updates"</c> section in — both stores preserve the other
-/// top-level keys). Writes are atomic. Never throws on read.
+/// the Update Center stores its <c>"updates"</c> section in). Both stores go through
+/// <see cref="SettingsFile"/>: other sections are preserved, writes are atomic with a
+/// <c>.bak</c>, and a file that can't be read is never overwritten. Never throws on read.
 /// </summary>
 public sealed class AppSettingsStore
 {
     public const string SectionName = "workspace";
 
     /// <summary>Shared with the Update Center's store, which writes the same file.</summary>
-    private static JsonSerializerOptions Options => FarmingRpgMaker.Updates.JsonSettingsStore.JsonOptions;
+    private static JsonSerializerOptions Options => JsonSettingsStore.JsonOptions;
 
-    private readonly Lock _gate = new();
+    private readonly SettingsFile _file;
 
     public AppSettingsStore(string filePath)
     {
-        FilePath = filePath;
+        _file = new SettingsFile(filePath);
     }
 
-    public string FilePath { get; }
+    public string FilePath => _file.FilePath;
 
     public WorkspaceSettings Load()
     {
-        lock (_gate)
+        try
         {
-            try
-            {
-                return ReadRoot()?[SectionName]?.Deserialize<WorkspaceSettings>(Options) ?? new WorkspaceSettings();
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
-            {
-                return new WorkspaceSettings();
-            }
+            return _file.ReadSection(SectionName)?.Deserialize<WorkspaceSettings>(Options) ?? new WorkspaceSettings();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or NotSupportedException)
+        {
+            return new WorkspaceSettings();
         }
     }
 
+    /// <summary>
+    /// Saves the section. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>
+    /// when the file can't be read or written (nothing is written then).
+    /// </summary>
     public void Save(WorkspaceSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        lock (_gate)
-        {
-            JsonObject root;
-            try
-            {
-                root = ReadRoot() ?? new JsonObject();
-            }
-            catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
-            {
-                root = new JsonObject();
-            }
-
-            root[SectionName] = JsonSerializer.SerializeToNode(settings, Options);
-            AtomicFile.WriteAllText(FilePath, root.ToJsonString(Options));
-        }
+        _file.WriteSection(SectionName, JsonSerializer.SerializeToNode(settings, Options));
     }
 
     public void Update(Func<WorkspaceSettings, WorkspaceSettings> change)
@@ -84,14 +72,22 @@ public sealed class AppSettingsStore
         Save(change(Load()));
     }
 
-    private JsonObject? ReadRoot()
+    /// <summary>
+    /// <see cref="Update"/> for preferences that are nice to keep but must never stop what the
+    /// creator is doing (the last project, the export folder, the language, the welcome tour):
+    /// a failed write is logged and returns false.
+    /// </summary>
+    public bool TryUpdate(Func<WorkspaceSettings, WorkspaceSettings> change)
     {
-        if (!File.Exists(FilePath))
+        try
         {
-            return null;
+            Update(change);
+            return true;
         }
-
-        var text = File.ReadAllText(FilePath);
-        return string.IsNullOrWhiteSpace(text) ? null : JsonNode.Parse(text) as JsonObject;
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not save the editor settings to {FilePath}: {ex.Message}");
+            return false;
+        }
     }
 }

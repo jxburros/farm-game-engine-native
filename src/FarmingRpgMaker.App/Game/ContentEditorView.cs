@@ -22,7 +22,7 @@ namespace FarmingRpgMaker.App.Game;
 /// customized. Recipe and crop profits and the crop and node type summary cards follow the
 /// fields while they are edited.
 /// </summary>
-public sealed class ContentEditorView : UserControl
+public sealed class ContentEditorView : UserControl, IRetirable
 {
     private const double ThumbnailSize = 28;
 
@@ -225,12 +225,17 @@ public sealed class ContentEditorView : UserControl
         Grid.SetColumn(formScroll, 1);
         layout.Children.Add(formScroll);
         Content = layout;
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         _category.SelectedIndex = 0;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

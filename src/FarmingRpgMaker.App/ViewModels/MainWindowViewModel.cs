@@ -16,6 +16,7 @@ namespace FarmingRpgMaker.App.ViewModels;
 public sealed class MainWindowViewModel : ObservableObject, IShellHost
 {
     private readonly IProjectCommandHandler _projectCommands;
+    private readonly ShellComposition _composition;
     private readonly AppSettingsStore? _settings;
     private string _projectName = "Untitled Game";
     private EditorMode _mode = EditorMode.Edit;
@@ -27,6 +28,7 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
         ArgumentNullException.ThrowIfNull(composition);
         Updates = updates ?? throw new ArgumentNullException(nameof(updates));
         _projectCommands = composition.ProjectCommands;
+        _composition = composition;
         _settings = composition.Workspace?.Settings;
 
         NewProjectCommand = ProjectCommand(() => _projectCommands.NewProjectAsync(this));
@@ -187,14 +189,34 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
 
     public void ShowStatus(string message) => StatusMessage = message;
 
+    /// <summary>
+    /// Before the app exits (window closing, Restart &amp; install): ends a playtest and writes
+    /// pending edits. False when edits could not be saved and would be lost
+    /// (<see cref="ResolveUnsavedChangesAsync"/> then asks what to do).
+    /// </summary>
+    public bool PrepareForExit()
+    {
+        _composition.PrepareForShutdown();
+        return _composition.Workspace is not { HasUnsavedChanges: true };
+    }
+
+    /// <summary>
+    /// Saving failed: asks whether to retry, export a copy, go on without the edits
+    /// (<paramref name="discardText"/>) or stay. True when it is fine to go on.
+    /// </summary>
+    public Task<bool> ResolveUnsavedChangesAsync(string discardText) => _projectCommands.ResolveUnsavedChangesAsync(this, discardText);
+
+    /// <summary>The window has opened: shows startup problems (projects that failed to load).</summary>
+    public Task ShowStartupMessagesAsync() => _composition.ShowStartupMessagesAsync(this);
+
     /// <summary>Remembers that the welcome tour was seen, so it no longer opens at startup.</summary>
-    public void MarkWelcomeSeen() => _settings?.Update(settings => settings with { WelcomeSeen = true });
+    public void MarkWelcomeSeen() => _settings?.TryUpdate(settings => settings with { WelcomeSeen = true });
 
     /// <summary>Switches the editor's language and remembers the choice.</summary>
     public void SetLanguage(string code)
     {
         EditorStrings.SetLanguage(code);
-        _settings?.Update(settings => settings with { EditorLanguage = EditorStrings.Language });
+        _settings?.TryUpdate(settings => settings with { EditorLanguage = EditorStrings.Language });
     }
 
     private void OnLanguageChanged(object? sender, EventArgs e) => OnPropertiesChanged(

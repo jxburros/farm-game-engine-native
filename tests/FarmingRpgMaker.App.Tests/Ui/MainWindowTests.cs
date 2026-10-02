@@ -141,6 +141,9 @@ public sealed class MainWindowTests
         Assert.Contains("MIT License", Find<TextBlock>(window, "AboutLicenseText").Text, StringComparison.Ordinal);
         Find<HyperlinkButton>(window, "AboutLicenseLink").Command!.Execute(null);
         Assert.EndsWith("/LICENSE", Assert.Single(launcher.Opened), StringComparison.Ordinal);
+        // The log files, for bug reports.
+        Click(window, Find<HyperlinkButton>(window, "OpenLogFolderLink"));
+        Assert.Equal([FarmingRpgMaker.App.Projects.AppDataPaths.LogsDirectory()], launcher.OpenedFolders);
         window.Close();
     }
 

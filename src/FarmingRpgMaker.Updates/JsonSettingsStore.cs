@@ -1,6 +1,5 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace FarmingRpgMaker.Updates;
@@ -9,8 +8,8 @@ namespace FarmingRpgMaker.Updates;
 /// Stores settings in <c>%APPDATA%/FarmingRpgMaker/settings.json</c> (on Linux/macOS:
 /// <c>~/.config/FarmingRpgMaker/settings.json</c>). Update settings live under the
 /// <c>"updates"</c> key; any other top-level keys (written by other parts of the app)
-/// are preserved on save. Writes go to a temp file first and are then moved over the
-/// target, so a crash mid-write never leaves a truncated file.
+/// are preserved on save. The file is shared through <see cref="SettingsFile"/>: atomic,
+/// flushed writes with a <c>.bak</c>, and an unreadable file is never overwritten.
 /// </summary>
 public sealed class JsonSettingsStore : ISettingsStore
 {
@@ -30,11 +29,11 @@ public sealed class JsonSettingsStore : ISettingsStore
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    private readonly Lock _gate = new();
+    private readonly SettingsFile _file;
 
     public JsonSettingsStore(string? filePath = null)
     {
-        FilePath = filePath ?? DefaultFilePath;
+        _file = new SettingsFile(filePath ?? DefaultFilePath);
     }
 
     /// <summary><c>&lt;ApplicationData&gt;/FarmingRpgMaker/settings.json</c>.</summary>
@@ -43,73 +42,27 @@ public sealed class JsonSettingsStore : ISettingsStore
         "FarmingRpgMaker",
         "settings.json");
 
-    public string FilePath { get; }
+    public string FilePath => _file.FilePath;
 
     public UpdateSettings Load()
     {
-        lock (_gate)
+        try
         {
-            try
-            {
-                var root = ReadRoot();
-                var section = root?[SectionName];
-                return section?.Deserialize<UpdateSettings>(JsonOptions) ?? new UpdateSettings();
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or NotSupportedException)
-            {
-                return new UpdateSettings();
-            }
+            return _file.ReadSection(SectionName)?.Deserialize<UpdateSettings>(JsonOptions) ?? new UpdateSettings();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or NotSupportedException)
+        {
+            return new UpdateSettings();
         }
     }
 
+    /// <summary>
+    /// Saves the <c>"updates"</c> section. Throws <see cref="IOException"/> (and writes nothing)
+    /// when the existing file can't be read, so the other sections are never lost.
+    /// </summary>
     public void Save(UpdateSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        lock (_gate)
-        {
-            JsonObject root;
-            try
-            {
-                root = ReadRoot() ?? new JsonObject();
-            }
-            catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
-            {
-                root = new JsonObject();
-            }
-
-            root[SectionName] = JsonSerializer.SerializeToNode(settings, JsonOptions);
-
-            var directory = Path.GetDirectoryName(Path.GetFullPath(FilePath))!;
-            Directory.CreateDirectory(directory);
-            var tempPath = Path.Combine(directory, $".{Path.GetFileName(FilePath)}.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                File.WriteAllText(tempPath, root.ToJsonString(JsonOptions));
-                File.Move(tempPath, FilePath, overwrite: true);
-            }
-            finally
-            {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-            }
-        }
-    }
-
-    private JsonObject? ReadRoot()
-    {
-        if (!File.Exists(FilePath))
-        {
-            return null;
-        }
-
-        var text = File.ReadAllText(FilePath);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        return JsonNode.Parse(text) as JsonObject;
+        _file.WriteSection(SectionName, JsonSerializer.SerializeToNode(settings, JsonOptions));
     }
 }

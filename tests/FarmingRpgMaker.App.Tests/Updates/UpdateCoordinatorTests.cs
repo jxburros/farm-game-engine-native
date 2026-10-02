@@ -98,6 +98,13 @@ public sealed class UpdateCoordinatorTests
         Assert.Equal("Restart to update", coordinator.BadgeText);
         Assert.Equal(1, _service.DownloadCount);
 
+        var vetoed = true;
+        coordinator.Restarting += (_, e) => e.Cancel = vetoed;
+        coordinator.ApplyAndRestart();
+        Assert.Equal(0, _service.ApplyAndRestartCount);
+        Assert.Equal(UpdateState.ReadyToInstall, coordinator.State);
+
+        vetoed = false;
         coordinator.ApplyAndRestart();
         Assert.Equal(1, _service.ApplyAndRestartCount);
     }
