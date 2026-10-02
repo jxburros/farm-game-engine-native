@@ -280,8 +280,9 @@ await test("pack plugins run in the player", () => {
   const project = json("golden", "replays", "content-packs-and-plugins.json").project;
   const player = new farm.Player(project);
   player.commands([{ type: "sleep" }]);
-  frame(player, [], [320, 200], false);
-  frame(player, [], [320, 200], false);
+  // Plugin answers apply right before the next game tick (one per 50 ms), so give the answer
+  // to the morning's hooks a few frames to land.
+  for (let i = 0; i < 6; i++) frame(player, [], [320, 200], false);
   assert.deepEqual(JSON.parse(player.queryJson({ type: "pluginErrors" })), []);
   const toasts = JSON.parse(player.queryJson({ type: "toasts" }));
   assert.ok(toasts.some((toast) => toast.text.includes("glowshrooms hum")), JSON.stringify(toasts));
