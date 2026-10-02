@@ -16,6 +16,9 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
     private readonly IProjectDialogs _dialogs;
     private readonly IUrlLauncher _launcher;
 
+    /// <summary>The way out of the unsaved-changes prompt when opening another project.</summary>
+    private const string DiscardAndContinue = "Continue without them";
+
     public ProjectCommandHandler(ProjectWorkspace workspace, IProjectDialogs? dialogs = null, IUrlLauncher? launcher = null)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
@@ -39,10 +42,15 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         }
 
         LeavePlayMode(shell);
+        if (!await ResolveUnsavedChangesAsync(shell, DiscardAndContinue).ConfigureAwait(true))
+        {
+            return;
+        }
+
         var project = _workspace.CreateProject(choice.TemplateId, choice.Name);
         _workspace.Open(project);
         var template = ProjectCatalog.TemplateInfo.FirstOrDefault(t => t.Id == choice.TemplateId)?.Name ?? choice.TemplateId;
-        shell.ShowStatus($"Created \"{project.Name}\" from the {template} template.");
+        ShowOpened(shell, project, $"Created \"{project.Name}\" from the {template} template.");
     }
 
     public async Task OpenProjectAsync(IShellHost shell)
@@ -53,8 +61,11 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         // The list may have renamed the open project on disk; the open document takes that name.
         if (_workspace.Current is { } open && !string.IsNullOrWhiteSpace(open.Name) && _workspace.StoredName(open.Id) is { } stored && stored != open.Name)
         {
+            // The name is read before leaving Play Mode: keeping the playtest's changes saves the
+            // pre-play project, old name included, so the new name is applied after it.
+            _workspace.AcceptStoreChange();
             LeavePlayMode(shell);
-            if (_workspace.AdoptStoredName())
+            if (_workspace.AdoptStoredName(stored))
             {
                 shell.ShowStatus($"Renamed the project to \"{_workspace.Current!.Name}\".");
             }
@@ -66,6 +77,11 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         }
 
         LeavePlayMode(shell);
+        if (!await ResolveUnsavedChangesAsync(shell, DiscardAndContinue).ConfigureAwait(true))
+        {
+            return;
+        }
+
         var loaded = _workspace.OpenById(id);
         if (!loaded.Ok)
         {
@@ -73,7 +89,7 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
             return;
         }
 
-        shell.ShowStatus(loaded.MigratedFrom is { } from
+        ShowOpened(shell, loaded.Project!, loaded.MigratedFrom is { } from
             ? $"Opened \"{loaded.Project!.Name}\" (upgraded from schema v{from})."
             : $"Opened \"{loaded.Project!.Name}\".");
     }
@@ -95,8 +111,13 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         }
 
         LeavePlayMode(shell);
+        if (!await ResolveUnsavedChangesAsync(shell, DiscardAndContinue).ConfigureAwait(true))
+        {
+            return;
+        }
+
         _workspace.Open(imported.Project!);
-        shell.ShowStatus(imported.MigratedFrom is { } from
+        ShowOpened(shell, imported.Project!, imported.MigratedFrom is { } from
             ? $"Imported {file.FileName} as \"{imported.Project!.Name}\" (upgraded from schema v{from})."
             : $"Imported {file.FileName} as \"{imported.Project!.Name}\".");
     }
@@ -104,10 +125,20 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
     public async Task ExportProjectJsonAsync(IShellHost shell)
     {
         ArgumentNullException.ThrowIfNull(shell);
-        if (_workspace.Current is not { } project)
+        if (_workspace.Current is null)
         {
             shell.ShowStatus("There is no project to export.");
             return;
+        }
+
+        await ExportProjectJsonCoreAsync(shell).ConfigureAwait(true);
+    }
+
+    private async Task<string?> ExportProjectJsonCoreAsync(IShellHost shell)
+    {
+        if (_workspace.Current is not { } project)
+        {
+            return null;
         }
 
         var json = ProjectStore.ToJson(project);
@@ -116,7 +147,15 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         {
             shell.ShowStatus($"Exported \"{project.Name}\" to {saved}.");
         }
+
+        return saved;
     }
+
+    /// <summary>After switching projects: the success message, unless the project could not be saved.</summary>
+    private void ShowOpened(IShellHost shell, FarmEngine.Schemas.GameProject project, string success) =>
+        shell.ShowStatus(_workspace.SaveError is { } error
+            ? $"\"{project.Name}\" is open, but it could not be saved: {error}"
+            : success);
 
     public async Task ExportGameAsync(IShellHost shell)
     {
@@ -139,6 +178,41 @@ public sealed class ProjectCommandHandler : IProjectCommandHandler
         {
             shell.ShowStatus(report.Ok ? $"{viewModel.StatusText} Files are in {report.OutputFolder}." : viewModel.StatusText);
         }
+    }
+
+    /// <summary>
+    /// Makes sure nothing is lost by leaving the open project: writes pending edits, and while
+    /// saving still fails asks what to do (Retry, Export Project JSON…, go on without them, or
+    /// stay). True when it is fine to go on. Used before closing the window, installing an
+    /// update and opening another project.
+    /// </summary>
+    public async Task<bool> ResolveUnsavedChangesAsync(IShellHost shell, string discardText)
+    {
+        ArgumentNullException.ThrowIfNull(shell);
+        _workspace.FlushPendingSave();
+        string? note = null;
+        while (_workspace.HasUnsavedChanges)
+        {
+            var choice = await _dialogs.AskUnsavedChangesAsync(shell, _workspace.SaveError!, discardText, note).ConfigureAwait(true);
+            switch (choice)
+            {
+                case UnsavedChangesChoice.Retry:
+                    note = _workspace.RetrySave() ? null : $"Still can't save: {_workspace.SaveError}";
+                    break;
+                case UnsavedChangesChoice.Export:
+                    var exported = await ExportProjectJsonCoreAsync(shell).ConfigureAwait(true);
+                    note = exported is null ? note : $"A copy was exported to {exported}.";
+                    break;
+                case UnsavedChangesChoice.Discard:
+                    System.Diagnostics.Trace.TraceWarning($"Unsaved changes to project {_workspace.Current?.Id} were left behind ({discardText}).");
+                    return true;
+                default:
+                    shell.ShowStatus($"Your project could not be saved: {_workspace.SaveError}");
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>"Sunny Acres" → "sunny-acres.json".</summary>

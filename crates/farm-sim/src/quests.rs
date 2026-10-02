@@ -12,7 +12,7 @@ use crate::skills;
 use indexmap::IndexMap;
 
 fn get_quest_definition<'a>(ctx: &'a EngineContext, quest_id: &str) -> Option<&'a Quest> {
-    ctx.content.quests.iter().find(|quest| quest.id == quest_id)
+    ctx.quest(quest_id)
 }
 
 fn objective_target(objective: &QuestObjective) -> u32 {
@@ -37,7 +37,7 @@ fn complete_quest(ctx: &EngineContext, state: &mut GameState, quest_id: &str) ->
     let mut effects = Vec::new();
     if let Some(rewards) = &quest.rewards.items {
         for reward in rewards {
-            let Some(item) = ctx.content.items.iter().find(|i| i.id == reward.item_id) else { continue };
+            let Some(item) = ctx.item(&reward.item_id) else { continue };
             let result = inventory::add_item(
                 &state.player.inventory,
                 item,

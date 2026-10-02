@@ -30,6 +30,7 @@ pub struct ReplayResult {
     pub effects: Effects,
 }
 
+/// Run a replay's inputs (ticks and commands) in order on `state`.
 pub fn run_replay(ctx: &EngineContext, state: &mut GameState, inputs: &[ReplayInput]) -> ReplayResult {
     let mut effects = Vec::new();
     for input in inputs {

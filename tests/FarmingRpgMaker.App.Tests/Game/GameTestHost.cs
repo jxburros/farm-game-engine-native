@@ -2,9 +2,9 @@ using Avalonia.Controls;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
+using FarmingRpgMaker.App.Tests.Ui;
 using FarmingRpgMaker.App.ViewModels;
 using FarmingRpgMaker.App.Views;
-using FarmingRpgMaker.App.Tests.Ui;
 using FarmingRpgMaker.Updates;
 using FarmingRpgMaker.Updates.Testing;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
@@ -46,7 +46,7 @@ internal sealed class GameTestHost : IDisposable
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
         Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false }, dialogs, Launcher);
-        var coordinator = new UpdateCoordinator(new FakeUpdateService(), new InMemorySettingsStore());
+        var coordinator = new UpdateCoordinator(Updates, new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
         Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };
         Window.Show();
@@ -54,6 +54,9 @@ internal sealed class GameTestHost : IDisposable
     }
 
     public string DataDirectory => _dir.Path;
+
+    /// <summary>The update service behind the window's Update Center.</summary>
+    public FakeUpdateService Updates { get; } = new();
 
     /// <summary>Records links and folders the app asks the OS to open.</summary>
     public RecordingUrlLauncher Launcher { get; } = new();

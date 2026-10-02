@@ -22,6 +22,7 @@ pub const FLOOR_ENTRY: (i32, i32) = (1, 1);
 /// The smallest floor side: a wall ring around at least one tile (the entry).
 pub const MIN_FLOOR_SIZE: i32 = 3;
 
+/// The scene id of mine floor `floor`.
 pub fn mine_floor_scene_id(floor: u32) -> String {
     format!("{MINE_SCENE_PREFIX}{floor}")
 }
@@ -120,7 +121,7 @@ fn place_rock(
         return;
     };
     let node_type_id = &rock.node_type_id;
-    let Some(node_def) = ctx.content.node_types.iter().find(|def| def.id == *node_type_id) else {
+    let Some(node_def) = ctx.node_type(node_type_id) else {
         return;
     };
     if let Some(tile) = scene.tile_mut(x, y) {

@@ -1,11 +1,12 @@
 # Farming RPG Maker — native Windows app
 
-A native desktop rewrite of [Farming RPG Maker](https://github.com/jxburros/farm-game-engine),
-a 2D farming-RPG game engine and maker. The game engine, renderer, in-game UI
-and player are Rust; project edits, validation, the content compiler and
-Export Game are F#; the editor's desktop UI is C# on .NET 10 with
-[Avalonia](https://avaloniaui.net). There is no browser or web view inside. The app updates itself from GitHub Releases through the built-in
-**Update Center**.
+A native desktop rewrite of Farming RPG Maker, a 2D farming-RPG game engine
+and maker that started as a web app (`jxburros/farm-game-engine`, a private
+repository). The game engine, renderer, in-game UI and player are Rust;
+project edits, validation, the content compiler and Export Game are F#; the
+editor's desktop UI is C# on .NET 10 with [Avalonia](https://avaloniaui.net).
+There is no browser or web view inside. The app updates itself from GitHub
+Releases through the built-in **Update Center**.
 
 | Play Mode | Edit Mode |
 |---|---|
@@ -25,7 +26,7 @@ forms with nested editors, reference pickers, profit readouts and thumbnails,
 project and export settings, Problems, mods, an art and animation studio
 (raster and SVG), creator patterns and interface panels. Everything the web
 editor did is ported (see [ROADMAP.md](ROADMAP.md#parity-with-the-web-editor)). Projects move between the native and
-[web version](https://github.com/jxburros/farm-game-engine) through the same
+web version through the same
 project JSON format (schema v9), and both apps now run one engine: the web
 editor plays through `farm-wasm` and loads, checks and compiles projects with
 this repository's F# core compiled to JavaScript. See [ROADMAP.md](ROADMAP.md).
@@ -63,9 +64,8 @@ content packs and plugins), and the Rust tests replay them and require every
 state hash to match byte for byte. Now that the web editor runs this engine
 too, Rust is the reference: since the move to integer numerics (schema v9,
 [docs/NUMERICS.md](docs/NUMERICS.md)) the goldens are recorded from it, and the
-TypeScript ones stay as migration inputs. Same seed
-+ same inputs ⇒ the same game, on the desktop, in exported games and in the
-browser.
+TypeScript ones stay as migration inputs. The same seed and the same inputs
+give the same game, on the desktop, in exported games and in the browser.
 
 ## Install
 
@@ -115,14 +115,19 @@ Projects are saved in `%APPDATA%\FarmingRpgMaker\projects\`.
 ## Export Game
 
 **File → Export Game…** turns the open project into standalone games for
-Windows x64 and Linux x64 (including Steam Deck). Pick the targets and an
-output folder, and export writes one folder per target and, if you like, a
-`.zip` or `.tar.gz`:
+Windows x64 and Linux x64 (including Steam Deck), and into a **Web (browser
+demo)** page for itch.io. Pick the targets and an output folder, and export
+writes one folder per target and, if you like, a `.zip` or `.tar.gz`:
 
-```
+```text
 WillowCreek-windows-x64.zip   WillowCreek/WillowCreek.exe, game.cart, licenses/
 WillowCreek-linux-x64.tar.gz  WillowCreek/WillowCreek, game.cart, .png, .desktop, licenses/
+WillowCreek-web.zip           index.html, game.js, farm_wasm_bg.wasm, game.cart, licenses/
 ```
+
+The web demo runs the same Rust player compiled to WebAssembly, with touch
+controls on phones and tablets; test it from a web server (for example
+`python3 -m http.server` in its folder).
 
 The Windows `.exe` gets the game's icon and version info. Problems errors
 stop the export; warnings are listed in the report. Export needs no compiler:
@@ -137,11 +142,59 @@ Exported games open a window with a title screen, save slots, a pause menu,
 settings and gamepad support. See [docs/EXPORT.md](docs/EXPORT.md) and
 [docs/PLAYER.md](docs/PLAYER.md).
 
+## Troubleshooting
+
+**Windows says "Windows protected your PC" when installing.** The installer
+is not code-signed yet. Choose **More info → Run anyway** (see
+[Install](#install)).
+
+**The Update Center says "Updates are available only in the installed app".**
+You are running a development or source build, which Velopack cannot
+update. Install with `FarmingRpgMaker-win-Setup.exe`
+from the [latest release](https://github.com/jxburros/farm-game-engine-native/releases/latest)
+to get updates; your projects stay where they are.
+
+![The Update Center in a development build](docs/media/update-center-not-installed.png)
+
+**Where are my projects?** In `%APPDATA%\FarmingRpgMaker\projects\`, one
+`.json` file per project. **File → Export Project JSON** writes a copy anywhere,
+and **File → Import Project JSON** reads one back.
+
+**A project doesn't open, or its migration fails.** The editor says why. A
+project saved by a newer version of the editor (its schema version is newer
+than this engine supports) needs that version: update first. Projects from
+older versions and from the web version are migrated when they open; bring
+one in with **File → Import Project JSON**. When a migration fails, keep a
+copy of the file and open an issue with it attached.
+
+**Export Game says "The player template has no … slot. Use the templates that
+came with this editor." or "The … player template has no …".** The player
+templates in `players/` next to the app don't match this editor (a different
+version, or a partial copy). Reinstall the app, or for a source build run
+`dotnet build` again: it puts fresh templates in `players/` next to the app
+and `farmc`. `FARM_PLAYER_TEMPLATES` points the editor and `farmc` at
+another folder.
+
+**A Linux source build fails in `alsa-sys` or `libudev-sys`.** Install the
+[Linux prerequisites](#build-from-source):
+`sudo apt-get install libasound2-dev libudev-dev pkg-config`.
+
 ## Build from source
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and a
 [Rust toolchain](https://rustup.rs) (the version is pinned in
 `rust-toolchain.toml`). `dotnet build` also builds the Rust library.
+
+**Linux prerequisites.** The player links ALSA and libudev, so
+`cargo test --workspace` and `dotnet build` (which builds the Export Game
+template) also need:
+
+```sh
+sudo apt-get install libasound2-dev libudev-dev pkg-config
+sudo apt-get install libxkbcommon-x11-0 xvfb   # to run the window; xvfb for the window test
+```
+
+Without `xvfb`, the player's window test is skipped.
 
 ```sh
 dotnet build FarmingRpgMaker.sln
@@ -169,9 +222,12 @@ x64) in `players/` next to the app and `farmc`, so Export Game works from a
 source build. Export tests need no extra tools; rebuilding the PE test
 fixture needs mingw-w64 (see `tests/FarmEngine.Export.Tests/Fixtures/pe/build.sh`).
 
-Everything builds and tests on Windows, macOS and Linux. The
+CI builds and tests everything on Windows and Linux (macOS is untested, and
+Export Game has no macOS or arm64 host template yet). The
 [CI workflow](.github/workflows/ci.yml) also publishes a self-contained
-`win-x64` build on every push.
+`win-x64` build on every push. [CONTRIBUTING.md](CONTRIBUTING.md) lists the
+checks CI runs and how to re-record test fixtures (the `FARM_RECORD_*` and
+`*_BLESS` switches) and regenerate checked-in files.
 
 ### Projects
 
@@ -222,3 +278,19 @@ Commit the version bump on `main`, wait for CI, then push a version tag
 
 Installed apps find the release in their Update Center. See
 [docs/RELEASING.md](docs/RELEASING.md).
+
+## License
+
+Farming RPG Maker is free software under the [MIT License](LICENSE). The app
+ships the notices of the software it includes in its `licenses` folder
+(`THIRD-PARTY-dotnet.txt` for the .NET packages, the runtime, icons and
+fonts; `THIRD-PARTY-rust.txt` for the engine library), and **Help → About
+Farming RPG Maker**
+links to the license. Every exported game carries
+`licenses/THIRD-PARTY.txt`, which ends with the engine's MIT license: the
+player is free to ship in games you sell, and your project's content stays
+yours (see [docs/EXPORT.md](docs/EXPORT.md)).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and regenerate
+the checked-in files, and [SECURITY.md](SECURITY.md) for reporting
+vulnerabilities.

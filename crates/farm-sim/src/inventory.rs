@@ -88,7 +88,9 @@ pub fn add_item_with_quality(
             if remaining == 0 {
                 break;
             }
-            let take = cap.saturating_sub(slot.quantity).min(remaining);
+            // A held copy can predate a change to the item's stack size: neither cap is passed
+            // (#116). Copies of the current definition have the same cap.
+            let take = cap.min(stack_cap(&slot.item)).saturating_sub(slot.quantity).min(remaining);
             slot.quantity += take;
             remaining -= take;
         }
@@ -171,10 +173,12 @@ pub fn remove_item(inventory: &[InventorySlot], item_id: &str, quantity: u32) ->
     next
 }
 
+/// The first slot matching `predicate`.
 pub fn find_slot(inventory: &[InventorySlot], predicate: impl Fn(&InventorySlot) -> bool) -> Option<&InventorySlot> {
     inventory.iter().find(|slot| predicate(slot))
 }
 
+/// The first slot holding a tool of `tool_type`.
 pub fn find_tool_slot<'a>(inventory: &'a [InventorySlot], tool_type: &str) -> Option<&'a InventorySlot> {
     inventory.iter().find(|slot| slot.item.tool_type.as_deref() == Some(tool_type))
 }

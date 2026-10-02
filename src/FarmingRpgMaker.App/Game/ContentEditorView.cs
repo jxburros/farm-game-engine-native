@@ -22,7 +22,7 @@ namespace FarmingRpgMaker.App.Game;
 /// customized. Recipe and crop profits and the crop and node type summary cards follow the
 /// fields while they are edited.
 /// </summary>
-public sealed class ContentEditorView : UserControl
+public sealed class ContentEditorView : UserControl, IRetirable
 {
     private const double ThumbnailSize = 28;
 
@@ -265,21 +265,26 @@ public sealed class ContentEditorView : UserControl
         Grid.SetColumn(formScroll, 2);
         layout.Children.Add(formScroll);
         Content = layout;
-        _workspace.ProjectChanged += (_, e) =>
-        {
-            // Another project: its entries are not the form's (the fields were saved, if they
-            // could be, before the switch; see EditModeView.SaveDrafts).
-            if (e.Kind == ProjectChangeKind.Opened)
-            {
-                _draftBar.Hide();
-                _formFor = null;
-                _selectedId = null;
-            }
-
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         _category.SelectedIndex = 0;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        // Another project: its entries are not the form's (the fields were saved, if they
+        // could be, before the switch; see EditModeView.SaveDrafts).
+        if (e.Kind == ProjectChangeKind.Opened)
+        {
+            _draftBar.Hide();
+            _formFor = null;
+            _selectedId = null;
+        }
+
+        if (IsEffectivelyVisible) Refresh();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

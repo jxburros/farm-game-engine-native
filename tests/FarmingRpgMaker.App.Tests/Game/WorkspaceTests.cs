@@ -1,4 +1,3 @@
-using FarmEngine.Authoring.Net;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -6,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FarmEngine.Authoring;
+using FarmEngine.Authoring.Net;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
@@ -34,11 +34,93 @@ public sealed class WorkspaceTests
         Assert.True(host.Workspace.Store.Exists(project.Id));
         Assert.Equal(project.Id, host.Workspace.Settings.Load().LastProjectId);
 
-        // A second launch over the same data reopens it instead of creating another.
+        // A second launch over the same data (after the first one closed) reopens it instead of
+        // creating another.
+        host.Workspace.ReleaseLock();
         var again = new ProjectWorkspace(host.Workspace.Store, host.Workspace.Settings);
         Assert.Empty(again.OpenStartupProject());
         Assert.Equal(project.Id, again.Current!.Id);
         Assert.Single(host.Workspace.Store.List());
+        again.ReleaseLock();
+    }
+
+    [AvaloniaFact]
+    public void ASecondWindow_NeverOpensTheProjectTheFirstOneHasOpen()
+    {
+        using var host = new GameTestHost();
+        var project = host.Workspace.Current!;
+        var second = new ProjectWorkspace(new ProjectStore(host.DataDirectory), new AppSettingsStore(host.Workspace.Settings.FilePath));
+
+        // At startup it says why, and opens something else.
+        var errors = second.OpenStartupProject();
+        Assert.Contains(errors, error => error.Contains("open in another Farming RPG Maker window", StringComparison.Ordinal));
+        Assert.NotEqual(project.Id, second.Current!.Id);
+        // From the project list it is refused, and can't be deleted from there either.
+        var refused = second.OpenById(project.Id);
+        Assert.False(refused.Ok);
+        Assert.Contains("open in another Farming RPG Maker window", refused.Errors[0], StringComparison.Ordinal);
+        Assert.Throws<IOException>(() => second.Store.Delete(project.Id));
+
+        // Once the first window lets go, it opens.
+        host.Workspace.ReleaseLock();
+        Assert.True(second.OpenById(project.Id).Ok);
+        second.ReleaseLock();
+    }
+
+    [AvaloniaFact]
+    public void AnExternalChange_IsNeverOverwrittenSilently()
+    {
+        using var host = new GameTestHost();
+        var workspace = host.Workspace;
+        var path = workspace.Store.PathFor(workspace.Current!.Id);
+        // A text editor (or git, or a sync client) changes the file.
+        var external = ProjectStore.ToJson(workspace.Current!.WithName("Changed Outside"));
+        File.WriteAllText(path, external);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+        // The autosave refuses to overwrite it and says so.
+        Assert.True(workspace.Apply(Edits.SetProjectInfo("Edited Inside", workspace.Current!.Version)));
+        Pump();
+        Assert.True(workspace.SaveConflict);
+        Assert.True(workspace.HasUnsavedChanges);
+        Assert.Equal(external, File.ReadAllText(path));
+        Assert.True(FindByName<Border>(host.Window, "SaveErrorBanner").IsVisible);
+        Assert.Contains("changed outside this editor", FindByName<TextBlock>(host.Window, "SaveErrorText").Text, StringComparison.Ordinal);
+        Assert.True(FindByName<Button>(host.Window, "KeepMyVersionButton").IsEffectivelyVisible);
+        Assert.False(FindByName<Button>(host.Window, "RetrySaveButton").IsVisible);
+
+        // "Load the file's version" takes the outside change.
+        Click(host.Window, FindByName<Button>(host.Window, "LoadDiskVersionButton"));
+        Assert.Equal("Changed Outside", workspace.Current!.Name);
+        Assert.False(workspace.SaveConflict);
+        Assert.Null(workspace.SaveError);
+
+        // Another outside change; this time "Keep my version" replaces it.
+        File.WriteAllText(path, ProjectStore.ToJson(workspace.Current!.WithName("Changed Again")));
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(2));
+        workspace.Apply(Edits.SetProjectInfo("Mine Wins", workspace.Current!.Version));
+        Pump();
+        Assert.True(workspace.SaveConflict);
+        Click(host.Window, FindByName<Button>(host.Window, "KeepMyVersionButton"));
+        Assert.False(workspace.SaveConflict);
+        Assert.Equal("Mine Wins", workspace.Store.Load(workspace.Current!.Id).Project!.Name);
+        Assert.False(FindByName<Border>(host.Window, "SaveErrorBanner").IsVisible);
+    }
+
+    [AvaloniaFact]
+    public void ReopeningTheProjectFromTheList_DoesNotOverwriteAnExternalChange()
+    {
+        using var host = new GameTestHost();
+        var workspace = host.Workspace;
+        var id = workspace.Current!.Id;
+        var path = workspace.Store.PathFor(id);
+        File.WriteAllText(path, ProjectStore.ToJson(workspace.Current!.WithName("Changed Outside")));
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+
+        Assert.True(workspace.OpenById(id).Ok);
+
+        Assert.Equal("Changed Outside", workspace.Current!.Name);
+        Assert.Equal("Changed Outside", workspace.Store.Load(id).Project!.Name);
     }
 
     private static double Day(GameTestHost host) => host.Play.Use(player => player.State())["clock"]!["day"]!.GetValue<double>();

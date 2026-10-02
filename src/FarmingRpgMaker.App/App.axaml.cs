@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Localization;
+using FarmingRpgMaker.App.Projects;
 using FarmingRpgMaker.App.Services;
 using FarmingRpgMaker.App.ViewModels;
 using FarmingRpgMaker.App.Views;
@@ -29,7 +30,8 @@ public sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var store = new JsonSettingsStore();
+            // The same settings.json as the editor's settings (and the same data folder override).
+            var store = new JsonSettingsStore(AppDataPaths.SettingsFile());
             var service = CreateUpdateService(store.Load().Channel);
             var coordinator = new UpdateCoordinator(service, store);
             var composition = ShellComposition.CreateDefault();
@@ -39,10 +41,19 @@ public sealed class App : Application
             var window = new MainWindow(new ShellUrlLauncher()) { DataContext = viewModel };
             desktop.MainWindow = window;
 
-            // Nothing a creator did in the last second is lost: flush before any exit path.
-            coordinator.Restarting += (_, _) => composition.PrepareForShutdown();
-            desktop.ShutdownRequested += (_, _) =>
+            // Nothing a creator did in the last second is lost: flush before any exit path. Closing
+            // the window and Restart & install ask first when saving fails (MainWindow.OnClosing).
+            desktop.ShutdownRequested += (_, e) =>
             {
+                if (!window.IsExitConfirmed && !viewModel.PrepareForExit())
+                {
+                    // Shutdown with the window still open (logging off, Quit from the dock): the
+                    // window asks about the edits that could not be saved, then closes.
+                    e.Cancel = true;
+                    Dispatcher.UIThread.Post(window.Close);
+                    return;
+                }
+
                 composition.PrepareForShutdown();
                 coordinator.ApplyOnExitIfReady();
             };

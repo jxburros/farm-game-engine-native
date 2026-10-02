@@ -129,6 +129,9 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
         UpdateState.NotInstalled =>
             $"You're running a development build ({Coordinator.CurrentVersion}). Install Farming RPG Maker with Setup.exe from GitHub Releases to get automatic updates.",
         UpdateState.Checking => $"Looking at GitHub Releases on the {ChannelName} channel.",
+        // Velopack never downgrades: a beta stays until a newer stable release ships.
+        UpdateState.UpToDate when Coordinator.Channel == UpdateChannel.Stable && IsPrerelease(Coordinator.CurrentVersion) =>
+            $"You're on a pre-release ({Coordinator.CurrentVersion}); the next stable update will be offered when it's newer.",
         UpdateState.UpToDate => $"Farming RPG Maker {Coordinator.CurrentVersion} is the newest {ChannelName} version.",
         UpdateState.Available when Coordinator.IsAvailableUpdateSkipped =>
             $"You chose to skip this version. You're on {Coordinator.CurrentVersion}; you can still download it any time.",
@@ -224,6 +227,9 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
     public void Dispose() => Coordinator.PropertyChanged -= OnCoordinatorChanged;
 
     private string ChannelName => Coordinator.Channel == UpdateChannel.Prerelease ? "pre-release" : "stable";
+
+    /// <summary>SemVer pre-release versions carry a <c>-tag</c> ("0.3.0-beta.2").</summary>
+    private static bool IsPrerelease(string version) => version.Contains('-', StringComparison.Ordinal);
 
     private void OnCoordinatorChanged(object? sender, PropertyChangedEventArgs e)
     {

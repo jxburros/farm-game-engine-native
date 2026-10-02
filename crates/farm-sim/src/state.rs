@@ -4,16 +4,17 @@
 use crate::content_builtin;
 use crate::farming::crops;
 use crate::game_time;
+use crate::inventory;
 use crate::packs;
 use crate::rng;
 use crate::schema::{
     center_coordinate, default_weather_config, CalendarConfig, ClockState, GameContent, GameProject, GameState,
-    GameStateMeta, KeptState, MineProgress, MoveIntent, NpcState, PlayerState, ProjectSettings, QuestObjectiveProgress,
-    QuestProgress, WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
+    GameStateMeta, InventorySlot, KeptState, MineProgress, MoveIntent, NpcState, PlayerState, ProjectSettings,
+    QuestObjectiveProgress, QuestProgress, WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
 };
 use crate::start::StartState;
 use crate::units;
-use crate::world::tiles;
+use crate::world::{tiles, world_movement};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -63,11 +64,11 @@ pub fn create_base_content_from_project(project: &GameProject) -> GameContent {
 /// Derive the immutable content view from an editor project: base content, then enabled content
 /// packs layered on top (M5) with explicit override semantics.
 pub fn create_content_from_project(project: &GameProject) -> GameContent {
-    let merged =
-        packs::merge_packs_into_content(&create_base_content_from_project(project), &project.content_packs).content;
-    // Localized game text from pack string tables (M7); authored text is the fallback.
-    let locale = merged.settings.locale.clone();
-    packs::apply_locale_strings(merged, &project.content_packs, &locale)
+    let base = create_base_content_from_project(project);
+    // Localized game text from pack string tables (M7); authored text is the fallback. Packs
+    // merge no settings, so the base content's locale is the merged content's.
+    let locale = base.settings.locale.clone();
+    packs::merge_packs_into_content_localized(&base, &project.content_packs, &locale).content
 }
 
 /// Create a running GameState from a project. The world starts as a deep copy of the project's
@@ -172,6 +173,7 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
     // Grids that don't match their scene's size (a hand-edited project, an import) are fixed
     // before the simulation reads them.
     normalize_world(&mut state);
+    settle_new_player(&mut state);
 
     // Items from missing/disabled packs are quarantined, not dropped; they come back when the
     // pack does.
@@ -182,6 +184,60 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
         kept.apply_to(&mut state);
     }
     state
+}
+
+/// A new game's player within the rules the engine keeps from then on (#116): no negative money,
+/// energy in `0..=maxEnergy`, stacks within their caps and no more slots than the inventory
+/// has, standing on the grid of a scene of the world. The editor never writes anything else, but
+/// hosts take project JSON and cartridges from anywhere. What does not fit the inventory waits
+/// in quarantine (it comes back when there is room); a player outside every scene starts in the
+/// first one, and one beside the grid on its nearest tile. A valid start is left as it is.
+fn settle_new_player(state: &mut GameState) {
+    let player = &mut state.player;
+    player.money = player.money.max(0);
+    player.max_energy = player.max_energy.max(0);
+    player.energy = player.energy.clamp(0, player.max_energy);
+
+    let mut kept = Vec::with_capacity(player.inventory.len());
+    let mut overflow = Vec::new();
+    for slot in std::mem::take(&mut player.inventory) {
+        let cap = inventory::stack_cap(&slot.item);
+        if slot.quantity == 0 {
+            continue;
+        }
+        if slot.quantity > cap {
+            overflow.push(InventorySlot { quantity: slot.quantity - cap, ..slot.clone() });
+            kept.push(InventorySlot { quantity: cap, ..slot });
+        } else {
+            kept.push(slot);
+        }
+    }
+    let max_slots = player.max_inventory_size as usize;
+    if kept.len() > max_slots {
+        let extra: Vec<InventorySlot> = kept.drain(max_slots..).collect();
+        overflow.splice(0..0, extra);
+    }
+    let (inventory, left_over) = packs::restore_slots(kept, &overflow, player.max_inventory_size);
+    player.inventory = inventory;
+    state.quarantined_items.extend(left_over);
+
+    let scenes = &state.world.scenes;
+    let scene = scenes.iter().find(|scene| scene.id == player.scene_id).or_else(|| scenes.first());
+    if let Some(scene) = scene {
+        player.scene_id = scene.id.clone();
+        // The whole collision box on the grid: a box that pokes out of it could walk off the
+        // scene (movement only checks the cells its leading edge enters).
+        let on_grid = |center: i32, half: i32, tiles: i32| {
+            center.checked_sub(half).is_some_and(|edge| edge >= 0)
+                && center.checked_add(half).is_some_and(|edge| edge <= units::tiles(tiles))
+        };
+        if !on_grid(player.x, world_movement::PLAYER_HALF_WIDTH, scene.width) {
+            player.x = units::tile_center(units::tile_of(player.x).clamp(0, scene.width - 1));
+        }
+        if !on_grid(player.y, world_movement::PLAYER_HALF_HEIGHT, scene.height) {
+            player.y = units::tile_center(units::tile_of(player.y).clamp(0, scene.height - 1));
+        }
+    }
 }
 
 /// Make every scene grid of the world match its scene's size (see

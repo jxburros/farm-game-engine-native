@@ -13,7 +13,7 @@ namespace FarmingRpgMaker.App.Game;
 /// Installed pack order, an explicit manifest/permission review before installation, the curated
 /// registry, and "Export selection as pack" (web ModsEditor).
 /// </summary>
-public sealed class ModsEditorView : UserControl
+public sealed class ModsEditorView : UserControl, IRetirable
 {
     private static readonly FilePickerFileType PackFiles = new("Content pack JSON") { Patterns = ["*.json"], MimeTypes = ["application/json"] };
     private readonly ProjectWorkspace _workspace;
@@ -39,7 +39,7 @@ public sealed class ModsEditorView : UserControl
         layout.Children.Add(Ui.Text("INSTALLED PACKS", "section"));
         layout.Children.Add(_installed);
         layout.Children.Add(Ui.Text("ADD PACK", "section"));
-        var choose = Ui.Button("Choose pack JSON", async () => await ChoosePackAsync(), "tool");
+        var choose = Ui.AsyncButton("Choose pack JSON", ChoosePackAsync, error => _message.Text = $"Could not read the pack: {error.Message}", "tool");
         choose.Name = "ChoosePackButton";
         layout.Children.Add(choose);
         layout.Children.Add(_message);
@@ -56,17 +56,22 @@ public sealed class ModsEditorView : UserControl
         Ui.Label((_exportName, "Pack name"));
         layout.Children.Add(Ui.HStack(8, Ui.Text("Pack name", "muted", "small"), _exportName));
         layout.Children.Add(_exportCategories);
-        var export = Ui.Button("Save pack JSON…", async () => await ExportSelectionAsync(), "accent");
+        var export = Ui.AsyncButton("Save pack JSON…", ExportSelectionAsync, error => _exportMessage.Text = $"Could not save the pack: {error.Message}", "accent");
         export.Name = "ExportPackButton";
         layout.Children.Add(export);
         _exportMessage.Name = "ExportPackMessage";
         layout.Children.Add(_exportMessage);
         Content = new ScrollViewer { Content = layout };
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     public void SelectPack(string id)

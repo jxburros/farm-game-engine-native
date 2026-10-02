@@ -60,8 +60,8 @@ public sealed class ExportGameViewModel : ObservableObject
         var settings = workspace.Settings.Load();
         _outputFolder = settings.LastExportFolder ?? DefaultOutputFolder;
         _createArchives = settings.ExportArchives ?? true;
-        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting);
-        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport, OnExportFailed);
+        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting, ex => Fail("The folder could not be chosen", ex));
+        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport, ex => Fail("The export failed unexpectedly", ex));
         OpenFolderCommand = new RelayCommand<string>(path => _launcher.OpenFolder(path));
     }
 
@@ -161,9 +161,10 @@ public sealed class ExportGameViewModel : ObservableObject
     {
         get
         {
+            // A command that threw says what failed (choosing the folder, or the export itself).
             if (_failure is not null)
             {
-                return "The export failed.";
+                return _failure;
             }
 
             if (_report is not { } report)
@@ -263,13 +264,13 @@ public sealed class ExportGameViewModel : ObservableObject
         {
             var token = cancel.Token;
             var report = await Task.Run(() => GameExporter.Export(project, targets, folder, archives, templates, token)).ConfigureAwait(true);
-            _workspace.Settings.Update(s => s with { LastExportFolder = folder, ExportArchives = archives });
+            // The report first: nothing after a finished export may hide how it went.
+            Report = report;
+            _workspace.Settings.TryUpdate(s => s with { LastExportFolder = folder, ExportArchives = archives });
             if (!report.Blocked && GameExporter.TryRememberTargets(project, targets, out var edit))
             {
                 _workspace.Apply(edit);
             }
-
-            Report = report;
         }
         finally
         {
@@ -280,12 +281,13 @@ public sealed class ExportGameViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The exporter reports its own failures; anything else (the settings store, the project
-    /// edit) still ends in a message rather than a blank dialog.
+    /// The exporter reports its own failures; anything else (picking the folder, the project
+    /// edit) still ends in a message, and the log, rather than a blank dialog.
     /// </summary>
-    private void OnExportFailed(Exception error)
+    private void Fail(string what, Exception error)
     {
-        _failure = $"The export failed unexpectedly: {error.Message}";
+        System.Diagnostics.Trace.TraceError($"Export Game: {what}: {error}");
+        _failure = $"{what}: {error.Message}";
         OnPropertiesChanged(nameof(StatusText), nameof(ReportErrors), nameof(Succeeded));
     }
 

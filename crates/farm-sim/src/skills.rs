@@ -7,6 +7,7 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::schema::{GameState, SkillState};
 
+/// The level `xp` reaches on a level curve (the last threshold it meets; 0 below the first).
 pub fn skill_level_for_xp(curve: &[u32], xp: u32) -> u32 {
     let mut level = 0;
     for (i, threshold) in curve.iter().enumerate() {
@@ -26,6 +27,7 @@ fn skill_label(skill: &str) -> String {
     }
 }
 
+/// Grant `xp` in `skill`, announcing a level-up. Nothing happens with skills off.
 pub fn grant_xp(ctx: &EngineContext, state: &mut GameState, skill: &str, xp: u32) -> Effects {
     if !ctx.content.settings.skills_enabled || xp == 0 {
         return Vec::new();
@@ -45,6 +47,7 @@ pub fn grant_xp(ctx: &EngineContext, state: &mut GameState, skill: &str, xp: u32
     effects
 }
 
+/// The player's level in `skill` (0 untrained).
 pub fn skill_level(state: &GameState, skill: &str) -> u32 {
     state.player.skills.get(skill).map_or(0, |s| s.level)
 }

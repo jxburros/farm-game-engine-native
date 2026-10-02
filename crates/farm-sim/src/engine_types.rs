@@ -16,9 +16,13 @@
 //! state untouched). Where the C# builds a candidate state and then discards it, clone first.
 //! Pure helpers that return new values (inventory lists, tiles, crops) stay pure.
 
+use crate::content_index::{self as ids, ContentIndex};
 use crate::effects::Effect;
 use crate::hooks::{HookBus, HookEvent, WeatherRollHookPayload};
-use crate::schema::GameContent;
+use crate::schema::{
+    ActionDef, AnimalSpeciesDefinition, Dialogue, GameContent, Item, MachineTypeDefinition, MinigameDef,
+    NodeTypeDefinition, Npc, Quest, RecipeDefinition, Scene, ShopDefinition,
+};
 use std::cell::RefCell;
 
 /// The effects a step produced, in order (host-facing: toasts, sounds, camera snaps).
@@ -51,15 +55,93 @@ pub struct EngineContext {
     pub hooks: Option<RefCell<HookBus>>,
     /// Which commands apply when (see [`CommandRules`]).
     pub rules: CommandRules,
+    /// Id tables over `content`, built with the context (see [`ContentIndex`]). The lookup
+    /// methods below use them; call [`Self::reindex`] after editing `content` in place.
+    index: ContentIndex,
 }
 
 impl EngineContext {
+    /// A context over `content` under [`CommandRules::Player`], without a hook bus.
     pub fn new(content: GameContent) -> Self {
-        Self { content, hooks: None, rules: CommandRules::Player }
+        let index = ContentIndex::build(&content);
+        Self { content, hooks: None, rules: CommandRules::Player, index }
     }
 
+    /// A context over `content` whose handlers emit into `hooks`.
     pub fn with_hooks(content: GameContent, hooks: HookBus) -> Self {
-        Self { content, hooks: Some(RefCell::new(hooks)), rules: CommandRules::Player }
+        let index = ContentIndex::build(&content);
+        Self { content, hooks: Some(RefCell::new(hooks)), rules: CommandRules::Player, index }
+    }
+
+    /// Rebuild the id tables after `content` was edited in place (lookups stay correct without
+    /// it, only slower).
+    pub fn reindex(&mut self) {
+        self.index = ContentIndex::build(&self.content);
+    }
+
+    /// The id tables over `content`.
+    pub fn index(&self) -> &ContentIndex {
+        &self.index
+    }
+
+    /// The item definition `id` (the first one, like a scan of `content.items`).
+    pub fn item(&self, id: &str) -> Option<&Item> {
+        self.index.items.find(&self.content.items, id, ids::item_id)
+    }
+
+    /// The NPC definition `id`.
+    pub fn npc(&self, id: &str) -> Option<&Npc> {
+        self.index.npcs.find(&self.content.npcs, id, ids::npc_id)
+    }
+
+    /// The standalone dialogue `id`.
+    pub fn dialogue(&self, id: &str) -> Option<&Dialogue> {
+        self.index.dialogues.find(&self.content.dialogues, id, ids::dialogue_id)
+    }
+
+    /// The quest definition `id`.
+    pub fn quest(&self, id: &str) -> Option<&Quest> {
+        self.index.quests.find(&self.content.quests, id, ids::quest_id)
+    }
+
+    /// The shop definition `id`.
+    pub fn shop(&self, id: &str) -> Option<&ShopDefinition> {
+        self.index.shops.find(&self.content.shops, id, ids::shop_id)
+    }
+
+    /// The gathering node type `id`.
+    pub fn node_type(&self, id: &str) -> Option<&NodeTypeDefinition> {
+        self.index.node_types.find(&self.content.node_types, id, ids::node_type_id)
+    }
+
+    /// The crafting recipe `id`.
+    pub fn recipe(&self, id: &str) -> Option<&RecipeDefinition> {
+        self.index.recipes.find(&self.content.recipes, id, ids::recipe_id)
+    }
+
+    /// The machine type `id`.
+    pub fn machine_type(&self, id: &str) -> Option<&MachineTypeDefinition> {
+        self.index.machine_types.find(&self.content.machine_types, id, ids::machine_type_id)
+    }
+
+    /// The animal species `id`.
+    pub fn animal_species(&self, id: &str) -> Option<&AnimalSpeciesDefinition> {
+        self.index.animal_species.find(&self.content.animal_species, id, ids::animal_species_id)
+    }
+
+    /// The creator-defined action `id`.
+    pub fn action(&self, id: &str) -> Option<&ActionDef> {
+        self.index.actions.find(&self.content.actions, id, ids::action_id)
+    }
+
+    /// The declared minigame `id`.
+    pub fn minigame(&self, id: &str) -> Option<&MinigameDef> {
+        self.index.minigames.find(&self.content.minigames, id, ids::minigame_id)
+    }
+
+    /// The authored scene `id` (the template; the running world is in the state).
+    pub fn content_scene(&self, id: &str) -> Option<&Scene> {
+        self.index.scenes.find(&self.content.scenes, id, ids::scene_id)
     }
 
     /// This context under other [`CommandRules`].

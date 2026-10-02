@@ -170,6 +170,8 @@ pub fn npc_town(walled: bool) -> Farm {
             .npcs
             .insert(format!("npc-{i}"), NpcState { x, y, scene_id: scene_id.clone(), ..NpcState::default() });
     }
+    // The NPC definitions changed after the context was built.
+    farm.ctx.reindex();
     farm
 }
 

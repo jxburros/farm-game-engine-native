@@ -3,9 +3,10 @@ namespace FarmEngine.Schemas
 open FarmEngine.Authoring
 
 // Generated once from the C# records of FarmEngine.Schemas (a port of packages/engine-schemas), then
-// kept by hand. JSON: SchemaJson.fs. Numbers are `float` (JS numbers) until the native-numerics
-// cutover; `option` is an optional or nullable field; `Extra` keeps the keys the schema does not
-// declare (zod `.passthrough()`), in order.
+// kept by hand. JSON: SchemaJson.fs. Numbers are `float` in authoring units (tiles, points,
+// minutes; docs/NUMERICS.md): project JSON keeps them, and the Rust engine converts them to
+// fixed-unit integers when it loads a cartridge. `option` is an optional or nullable field;
+// `Extra` keeps the keys the schema does not declare (zod `.passthrough()`), in order.
 //
 // Forward compatibility: a record without `Extra` (zod's default `.strip()`) drops keys it does
 // not declare when it loads, so a key a newer build writes at the same schema version (a new

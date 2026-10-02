@@ -1,7 +1,7 @@
 //! State hashing (docs/NUMERICS.md "State hash").
 //!
 //! The state hash is xxh3-64 over the **canonical binary encoding** of a value: a small serde
-//! [`Serializer`] that writes
+//! [`Serializer`](serde::Serializer) that writes
 //!
 //! - integers little-endian at their own width, booleans as one byte, `char` as a `u32`;
 //! - floats (only JSON values such as flags and pass-through keys carry them) as their IEEE-754
@@ -17,7 +17,7 @@
 //! - enum variants as their `u32` index before the content (internally tagged enums are
 //!   structs with the tag as their first field).
 //!
-//! The encoding is not human-readable ([`Serializer::is_human_readable`] is false), which is
+//! The encoding is not human-readable ([`Serializer::is_human_readable`](serde::Serializer::is_human_readable) is false), which is
 //! how the [`crate::units`] adapters know to write the stored integers instead of authoring
 //! numbers. The hash text is 16 lowercase hex digits.
 //!

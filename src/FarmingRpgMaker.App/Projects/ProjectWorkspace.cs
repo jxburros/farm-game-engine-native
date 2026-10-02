@@ -40,6 +40,10 @@ public sealed class ProjectWorkspace
     private DispatcherTimer? _autosaveTimer;
     private Document? _document;
     private bool _dirty;
+    private ProjectLock? _lock;
+
+    /// <summary>The open project file as this editor last read or wrote it (<see cref="SaveConflict"/>).</summary>
+    private FileStamp? _diskStamp;
 
     public ProjectWorkspace(ProjectStore store, AppSettingsStore settings, TimeSpan? autosaveDelay = null)
     {
@@ -55,7 +59,7 @@ public sealed class ProjectWorkspace
     public static ProjectWorkspace CreateDefault(string? rootDirectory = null)
     {
         var root = rootDirectory ?? AppDataPaths.DefaultRoot;
-        return new ProjectWorkspace(new ProjectStore(root), new AppSettingsStore(Path.Combine(root, "settings.json")));
+        return new ProjectWorkspace(new ProjectStore(root), new AppSettingsStore(AppDataPaths.SettingsFile(root)));
     }
 
     public ProjectStore Store { get; }
@@ -78,12 +82,39 @@ public sealed class ProjectWorkspace
     public bool HasPendingSave => _dirty;
 
     /// <summary>
+    /// True when the last save was refused because the project file changed on disk since this
+    /// editor read or wrote it (a text editor, a sync client, git, another window). Nothing is
+    /// overwritten until the creator chooses: <see cref="OverwriteDiskVersion"/> (keep the
+    /// editor's version) or <see cref="ReloadFromDisk"/> (take the file's).
+    /// </summary>
+    public bool SaveConflict { get; private set; }
+
+    /// <summary>
+    /// After <see cref="FlushPendingSave"/>: edits that exist only in memory because saving
+    /// failed (<see cref="SaveError"/> says why). Closing, installing an update or opening
+    /// another project would lose them.
+    /// </summary>
+    public bool HasUnsavedChanges => _dirty && _document is not null && SaveError is not null;
+
+    /// <summary>
     /// Why the last save failed (disk full, no permission…), or null while saving works. The
     /// edits stay open and pending; the next edit or <see cref="RetrySave"/> tries again.
     /// </summary>
     public string? SaveError { get; private set; }
 
+    /// <summary>
+    /// A form's confirmation: "<paramref name="subject"/> saved<paramref name="detail"/>." while
+    /// saving works, "… applied … (not yet saved to disk)." while it fails, so a form never says
+    /// "saved" under the banner that says nothing can be saved.
+    /// </summary>
+    public string SavedText(string subject, string detail = "") => SaveError is null
+        ? $"{subject} saved{detail}."
+        : $"{subject} applied{detail} (not yet saved to disk).";
+
     public event EventHandler<ProjectChangedEventArgs>? ProjectChanged;
+
+    /// <summary>How many handlers follow <see cref="ProjectChanged"/> (tests check that replaced editors let go).</summary>
+    internal int ProjectChangedHandlerCount => ProjectChanged?.GetInvocationList().Length ?? 0;
 
     /// <summary>
     /// Shows an error a <see cref="ProjectChanged"/> handler (a view refreshing) threw, and
@@ -104,6 +135,13 @@ public sealed class ProjectWorkspace
     /// </summary>
     public IReadOnlyList<string> OpenStartupProject()
     {
+        // Half-written temp files of an editor that was killed mid-save.
+        Store.DeleteStaleTempFiles();
+        if (Path.GetDirectoryName(Path.GetFullPath(Settings.FilePath)) is { } settingsDirectory)
+        {
+            FarmingRpgMaker.Updates.AtomicFile.DeleteStaleTempFiles(settingsDirectory, TimeSpan.FromMinutes(10));
+        }
+
         var errors = new List<string>();
         var candidates = new List<string>();
         if (Settings.Load().LastProjectId is { } last)
@@ -116,6 +154,12 @@ public sealed class ProjectWorkspace
         {
             if (!Store.Exists(id))
             {
+                continue;
+            }
+
+            if (_lock?.Id != id && ProjectLock.IsHeldElsewhere(Store, id))
+            {
+                errors.Add($"{StoredName(id) ?? id}: {OpenElsewhere}");
                 continue;
             }
 
@@ -145,20 +189,38 @@ public sealed class ProjectWorkspace
     {
         ArgumentNullException.ThrowIfNull(project);
         FlushPendingSave();
+        TakeLock(project.Id);
         var opened = project.WithMode(project.Mode == "play" ? "tiles" : project.Mode);
         _document = Documents.Create(opened);
+        // The previous project's state ends here (its unsaved edits were dealt with by the caller).
+        _dirty = false;
+        SaveConflict = false;
+        _diskStamp = Store.Stamp(project.Id);
         if (save || !Store.Exists(project.Id))
         {
             _dirty = !TrySave(opened);
         }
+        else
+        {
+            SetSaveError(null);
+        }
 
-        Settings.Update(s => s with { LastProjectId = project.Id });
+        // Best effort: an unwritable settings.json must not leave the views on the old project.
+        Settings.TryUpdate(s => s with { LastProjectId = project.Id });
         RaiseProjectChanged(ProjectChangeKind.Opened);
     }
 
-    /// <summary>Loads project <paramref name="id"/> from the store and opens it.</summary>
+    /// <summary>Why a project can't be opened while another window has it.</summary>
+    public const string OpenElsewhere = "It is open in another Farming RPG Maker window. Close it there first, or open a copy (Duplicate in the project list).";
+
+    /// <summary>Loads project <paramref name="id"/> from the store and opens it (refused while another window has it open).</summary>
     public ProjectLoadResult OpenById(string id)
     {
+        if (_lock?.Id != id && ProjectLock.IsHeldElsewhere(Store, id))
+        {
+            return ProjectLoadResult.Fail(OpenElsewhere);
+        }
+
         var loaded = Store.Load(id);
         if (loaded.Ok)
         {
@@ -174,16 +236,17 @@ public sealed class ProjectWorkspace
     /// <summary>
     /// After the project list renamed the open project on disk: takes the stored name as an
     /// undoable edit, so the open document and the next autosave keep it. False when the names
-    /// already agree (or nothing is open).
+    /// already agree (or nothing is open). <paramref name="storedName"/> is the name read before
+    /// something else rewrote the file (a kept playtest saves the pre-play name); null reads it now.
     /// </summary>
-    public bool AdoptStoredName()
+    public bool AdoptStoredName(string? storedName = null)
     {
         if (Current is not { } project)
         {
             return false;
         }
 
-        var stored = StoredName(project.Id);
+        var stored = storedName ?? StoredName(project.Id);
         return stored is not null && stored != project.Name && !string.IsNullOrWhiteSpace(project.Name)
             && Apply(Edits.SetProjectInfo(stored, project.Version));
     }
@@ -302,12 +365,97 @@ public sealed class ProjectWorkspace
         return !_dirty;
     }
 
-    private bool TrySave(GameProject project)
+    /// <summary>
+    /// The project file changed on disk (<see cref="SaveConflict"/>) and the creator keeps the
+    /// editor's version: writes it over the file. False when the write fails.
+    /// </summary>
+    public bool OverwriteDiskVersion()
+    {
+        _autosaveTimer?.Stop();
+        if (_document is not { } document)
+        {
+            return false;
+        }
+
+        _dirty = !TrySave(document.Project, overwriteChanges: true);
+        return !_dirty;
+    }
+
+    /// <summary>
+    /// The project file changed on disk (<see cref="SaveConflict"/>) and the creator takes the
+    /// file's version: the editor's unsaved edits are dropped and the file is opened again.
+    /// </summary>
+    public ProjectLoadResult ReloadFromDisk()
+    {
+        if (Current is not { } project)
+        {
+            return ProjectLoadResult.Fail("No project is open.");
+        }
+
+        _autosaveTimer?.Stop();
+        _dirty = false;
+        return OpenById(project.Id);
+    }
+
+    /// <summary>
+    /// The project list rewrote the open project's file (a rename): that version is this
+    /// editor's own, not an outside change, so the next save may replace it.
+    /// </summary>
+    public void AcceptStoreChange()
+    {
+        if (Current is { } project)
+        {
+            _diskStamp = Store.Stamp(project.Id);
+        }
+    }
+
+    /// <summary>
+    /// Lets go of the open project's lock file (the window closed), so another window or the
+    /// next launch can open it. Pending edits are written first.
+    /// </summary>
+    public void ReleaseLock()
+    {
+        FlushPendingSave();
+        _lock?.Dispose();
+        _lock = null;
+    }
+
+    private void TakeLock(string id)
+    {
+        if (_lock?.Id == id)
+        {
+            return;
+        }
+
+        _lock?.Dispose();
+        _lock = null;
+        var (result, taken) = ProjectLock.TryAcquire(Store, id);
+        if (result == LockResult.Busy)
+        {
+            throw new InvalidOperationException(OpenElsewhere);
+        }
+
+        _lock = taken;
+    }
+
+    private bool TrySave(GameProject project, bool overwriteChanges = false)
     {
         string? error = null;
+        var conflict = false;
         try
         {
-            Store.Save(project);
+            // Never silently overwrite a change made outside this editor.
+            if (!overwriteChanges && _diskStamp is { } expected && Store.Stamp(project.Id) is { } actual && actual != expected)
+            {
+                conflict = true;
+                error = "The project file was changed outside this editor (by another program or window).";
+                System.Diagnostics.Trace.TraceWarning($"Not saving project {project.Id}: {Store.PathFor(project.Id)} changed on disk ({expected} → {actual}).");
+            }
+            else
+            {
+                Store.Save(project);
+                _diskStamp = Store.Stamp(project.Id);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -315,14 +463,20 @@ public sealed class ProjectWorkspace
             System.Diagnostics.Trace.TraceError($"Saving project {project.Id} failed: {ex}");
         }
 
-        var changed = (error is null) != (SaveError is null);
+        var conflictChanged = conflict != SaveConflict;
+        SaveConflict = conflict;
+        SetSaveError(error, conflictChanged);
+        return error is null;
+    }
+
+    private void SetSaveError(string? error, bool forceNotify = false)
+    {
+        var changed = forceNotify || (error is null) != (SaveError is null);
         SaveError = error;
         if (changed)
         {
             SaveStatusChanged?.Invoke(this, EventArgs.Empty);
         }
-
-        return error is null;
     }
 
     private bool Commit(Document next, ProjectChangeKind kind)

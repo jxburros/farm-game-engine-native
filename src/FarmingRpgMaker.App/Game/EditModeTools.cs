@@ -748,7 +748,7 @@ public sealed partial class EditModeView
         var old = scene.Transitions.FirstOrDefault(t => t.FromX == from.X && t.FromY == from.Y);
         var transition = (old ?? SceneTransition.Default).WithFromX(from.X).WithFromY(from.Y).WithToSceneId(destinationId).WithToX(x).WithToY(y);
         _workspace.Apply(_doorReturn.IsChecked == true ? Edits.LinkScenes(scene.Id, transition) : Edits.SetTransition(scene.Id, transition));
-        _editorMessage.Text = $"Door saved to {destination.Name} ({x}, {y}).";
+        _editorMessage.Text = _workspace.SavedText("Door", $" to {destination.Name} ({x}, {y})");
     }
 
     private void RemoveDoor()

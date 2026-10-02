@@ -4,7 +4,8 @@
     <Description>Project logic: edits, undo/redo, validation (docs/LANGUAGES.md "F#").</Description>
     <WarnOn>3390;$(WarnOn)</WarnOn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- FS0044: obsolete warnings, FS1182: unused variables. Keep the rest at the C# bar. -->
+    <!-- FS3370: the message that suggests `xs[i]` over `xs.[i]`. Every other warning fails the
+         build, as in C# (TreatWarningsAsErrors), and FS3390 checks the XML doc comments. -->
     <NoWarn>$(NoWarn);FS3370</NoWarn>
   </PropertyGroup>
   <ItemGroup>

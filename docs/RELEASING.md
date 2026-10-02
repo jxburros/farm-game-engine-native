@@ -6,7 +6,7 @@ Windows releases are built by GitHub Actions, packaged with
 (Help → Update Center…) reads those releases, so publishing a release is all
 it takes to ship an update.
 
-```
+```text
 git tag v0.3.0 ──► .github/workflows/release.yml
                      version       on main? CI green? versions agree? not released yet?
                      player-*      templates (Windows, Steam Runtime Linux, web)
@@ -46,7 +46,7 @@ Anything with a `-suffix` is a pre-release.
    run still in progress, up to an hour).
 3. Release notes come from the first of these the workflow finds:
    1. a section in `CHANGELOG.md` whose heading is `## [0.3.0]`, `## 0.3.0`
-      or `## v0.3.0` (everything up to the next `## ` heading);
+      or `## v0.3.0` (everything up to the next `##` heading);
    2. the message of an **annotated** tag (`git tag -a v0.3.0 -m "…"`, or
       `git tag -a v0.3.0` to write it in your editor — Markdown is fine);
    3. otherwise, a list of commit subjects since the previous `v*` tag.
@@ -181,8 +181,14 @@ and the plugin guest's and meter's lock files), on a vulnerable NuGet package
   `GET https://api.github.com/repos/jxburros/farm-game-engine-native/releases`
   (`GitHubReleaseNotesClient`), falling back to the notes inside the package.
 - No token is used, so GitHub allows 60 API requests per hour per IP address.
-  Rate-limit and offline errors appear as a friendly error in the Update Center,
-  never as a crash.
+  Each check makes two of them (Velopack's release lookup and the release notes
+  client), so about 30 checks an hour from one network. Rate-limit and offline
+  errors appear as a friendly error in the Update Center, never as a crash.
+- **What an update is checked against.** Velopack verifies each downloaded
+  package against the SHA-256 in the feed (`releases.<channel>.json`) of the
+  same GitHub release. That catches a corrupt download, not a malicious release:
+  while builds are unsigned (see below), trust rests entirely on who can publish
+  releases on the GitHub repository.
 - On startup the app checks in the background (2 s after the window opens)
   if **Check for updates on startup** is on and the last check was more than
   6 hours ago. **Download updates automatically** downloads right after a
@@ -191,7 +197,13 @@ and the plugin guest's and meter's lock files), on a vulnerable NuGet package
 - A downloaded update is installed by **Restart & install**, or silently when
   the app exits (`UpdateManager.WaitExitThenApplyUpdates`).
 - Preferences live in `%APPDATA%\FarmingRpgMaker\settings.json` under
-  `"updates"`.
+  `"updates"` (next to the editor's `"workspace"` section; with
+  `FARMING_RPG_MAKER_DATA_DIR` set, in that folder instead). Both stores write
+  the file atomically, keep the previous version as `settings.json.bak`, and
+  never rewrite a file they could not read.
+- When the Stable channel is chosen while a pre-release is installed, the
+  Update Center says so ("You're on a pre-release …") instead of calling the
+  beta the newest stable version.
 
 Development builds (`dotnet run`, an IDE, or an unzipped `dotnet publish`
 folder) are not Velopack installs. The Update Center then shows

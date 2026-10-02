@@ -9,7 +9,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Creator-defined in-game panels and their live entries.</summary>
-public sealed class InterfaceEditorView : UserControl
+public sealed class InterfaceEditorView : UserControl, IRetirable
 {
     /// <summary>
     /// One entry: its label, its kind, and the value control that kind needs in
@@ -72,11 +72,16 @@ public sealed class InterfaceEditorView : UserControl
         Grid.SetColumn(scroll, 1);
         grid.Children.Add(scroll);
         Content = grid;
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     public void Refresh()
@@ -236,6 +241,6 @@ public sealed class InterfaceEditorView : UserControl
         var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind(KindOf(row.Kind)).WithValue(ValueOf(row))).ToList();
         var updated = panel.WithTitle(title).WithVisibleFlag(string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim()).WithEntries(entries);
         _workspace.Apply(Edits.SetGamePanels(project.GamePanels.OrEmpty().Select(existing => existing.Id == panel.Id ? updated : existing)));
-        _message.Text = "Panel saved.";
+        _message.Text = _workspace.SavedText("Panel");
     }
 }

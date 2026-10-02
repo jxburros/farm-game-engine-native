@@ -355,6 +355,7 @@ pub fn serialize_opt<U: Unit, S: Serializer>(value: &Option<U::Int>, serializer:
     }
 }
 
+/// `Option<Int>` through a unit (the reader of [`serialize_opt`]).
 pub fn deserialize_opt<'de, U: Unit, D: Deserializer<'de>>(deserializer: D) -> Result<Option<U::Int>, D::Error> {
     Option::<De<U>>::deserialize(deserializer).map(|value| value.map(|De(inner)| inner))
 }
@@ -370,6 +371,8 @@ pub fn serialize_nullable<U: Unit, S: Serializer>(
     }
 }
 
+/// The reader of [`serialize_nullable`], called only for a present key: `null` reads as
+/// `Some(None)`.
 pub fn deserialize_nullable<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<U::Int>>, D::Error> {
@@ -381,6 +384,7 @@ pub fn serialize_vec<U: Unit, S: Serializer>(value: &[U::Int], serializer: S) ->
     serializer.collect_seq(value.iter().map(|inner| Ser::<U>(*inner)))
 }
 
+/// The reader of [`serialize_vec`].
 pub fn deserialize_vec<'de, U: Unit, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<U::Int>, D::Error> {
     Vec::<De<U>>::deserialize(deserializer).map(|values| values.into_iter().map(|De(inner)| inner).collect())
 }
@@ -393,6 +397,7 @@ pub fn serialize_map<U: Unit, S: Serializer>(
     serializer.collect_map(value.iter().map(|(key, inner)| (key, Ser::<U>(*inner))))
 }
 
+/// The reader of [`serialize_map`].
 pub fn deserialize_map<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<indexmap::IndexMap<String, U::Int>, D::Error> {
@@ -404,6 +409,7 @@ pub fn deserialize_map<'de, U: Unit, D: Deserializer<'de>>(
 /// A map of maps keyed by string (shop id → item id → count).
 pub type NestedMap<T> = indexmap::IndexMap<String, indexmap::IndexMap<String, T>>;
 
+/// `NestedMap<Int>` through a unit.
 pub fn serialize_nested_map<U: Unit, S: Serializer>(
     value: &NestedMap<U::Int>,
     serializer: S,
@@ -417,6 +423,7 @@ pub fn serialize_nested_map<U: Unit, S: Serializer>(
     serializer.collect_map(value.iter().map(|(key, inner)| (key, Inner::<U>(inner))))
 }
 
+/// The reader of [`serialize_nested_map`].
 pub fn deserialize_nested_map<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<NestedMap<U::Int>, D::Error> {
@@ -441,10 +448,12 @@ macro_rules! unit_module {
 
             type Int = <$unit as Unit>::Int;
 
+            /// Writes the value as its authoring number (serde `with`).
             pub fn serialize<S: Serializer>(value: &Int, serializer: S) -> Result<S::Ok, S::Error> {
                 super::serialize_unit::<$unit, S>(*value, serializer)
             }
 
+            /// Reads an authoring number into the unit (serde `with`).
             pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Int, D::Error> {
                 super::deserialize_unit::<$unit, D>(deserializer)
             }
@@ -454,10 +463,12 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(value: &Option<Int>, serializer: S) -> Result<S::Ok, S::Error> {
                     super::super::serialize_opt::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Int>, D::Error> {
                     super::super::deserialize_opt::<$unit, D>(deserializer)
                 }
@@ -468,6 +479,7 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(
                     value: &Option<Option<Int>>,
                     serializer: S,
@@ -475,6 +487,7 @@ macro_rules! unit_module {
                     super::super::serialize_nullable::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(
                     deserializer: D,
                 ) -> Result<Option<Option<Int>>, D::Error> {
@@ -487,10 +500,12 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(value: &[Int], serializer: S) -> Result<S::Ok, S::Error> {
                     super::super::serialize_vec::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Int>, D::Error> {
                     super::super::deserialize_vec::<$unit, D>(deserializer)
                 }
@@ -502,6 +517,7 @@ macro_rules! unit_module {
                 use indexmap::IndexMap;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(
                     value: &IndexMap<String, IndexMap<String, Int>>,
                     serializer: S,
@@ -509,6 +525,7 @@ macro_rules! unit_module {
                     super::super::serialize_nested_map::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(
                     deserializer: D,
                 ) -> Result<IndexMap<String, IndexMap<String, Int>>, D::Error> {
@@ -602,10 +619,12 @@ pub mod screen {
         }
     }
 
+    /// Writes the value as its authoring number (serde `with`).
     pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
         write(*value, serializer)
     }
 
+    /// Reads an authoring number into the unit (serde `with`).
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
         f64::deserialize(deserializer)
     }
@@ -622,6 +641,7 @@ pub mod screen {
             }
         }
 
+        /// Writes the value as its authoring number (serde `with`).
         pub fn serialize<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
             if !serializer.is_human_readable() {
                 return serializer.serialize_unit();
@@ -632,6 +652,7 @@ pub mod screen {
             }
         }
 
+        /// Reads an authoring number into the unit (serde `with`).
         pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
             Option::<f64>::deserialize(deserializer)
         }
@@ -644,6 +665,7 @@ pub mod screen {
 pub mod exact {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    /// Writes the value as its authoring number (serde `with`).
     pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() && super::is_integer(*value) && value.abs() < 9_007_199_254_740_992.0 {
             serializer.serialize_i64(*value as i64)
@@ -652,6 +674,7 @@ pub mod exact {
         }
     }
 
+    /// Reads an authoring number into the unit (serde `with`).
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
         f64::deserialize(deserializer)
     }

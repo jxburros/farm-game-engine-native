@@ -8,6 +8,7 @@
 //! Positions are integers in 1/8192 tile ([`units::TILE`]); speed is 1/8192 tile per tick
 //! (docs/NUMERICS.md).
 
+use crate::content_index::ContentIndex;
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events::{self, EventPosition};
@@ -47,6 +48,7 @@ pub struct TilePoint {
     pub y: i32,
 }
 
+/// The unit step of a direction name (`0, 0` for an unknown one).
 pub fn get_direction_vector(direction: &str) -> DirectionVector {
     match direction {
         "up" => DirectionVector { dx: 0, dy: -1 },
@@ -111,10 +113,25 @@ pub fn can_move_to(
     node_types: &[NodeTypeDefinition],
     machine_types: &[MachineTypeDefinition],
 ) -> bool {
+    can_move_to_indexed(scene, x, y, npcs, exclude_npc_id, node_types, machine_types, None)
+}
+
+/// [`can_move_to`], looking node and machine types up through the engine's id tables when given.
+#[allow(clippy::too_many_arguments)]
+fn can_move_to_indexed(
+    scene: &Scene,
+    x: i32,
+    y: i32,
+    npcs: &IndexMap<String, NpcState>,
+    exclude_npc_id: Option<&str>,
+    node_types: &[NodeTypeDefinition],
+    machine_types: &[MachineTypeDefinition],
+    index: Option<&ContentIndex>,
+) -> bool {
     let Some(tile) = scene.tile(x, y) else {
         return false;
     };
-    if pathfinding::tile_blocks(tile, node_types, machine_types) {
+    if pathfinding::tile_blocks_indexed(tile, node_types, machine_types, index) {
         return false;
     }
     // Iterates in insertion order (Object.entries); order doesn't affect the result.
@@ -138,11 +155,7 @@ pub fn can_move_to(
 /// after its doors were placed: landing outside the grid or inside a wall would leave the player
 /// unable to move (a soft-lock that a save then keeps).
 pub fn landing_tile(ctx: &EngineContext, scene: &Scene, x: i32, y: i32) -> Option<TilePoint> {
-    let open = |tx: i32, ty: i32| {
-        scene
-            .tile(tx, ty)
-            .is_some_and(|tile| !pathfinding::tile_blocks(tile, &ctx.content.node_types, &ctx.content.machine_types))
-    };
+    let open = |tx: i32, ty: i32| scene.tile(tx, ty).is_some_and(|tile| !tile_blocks_in(ctx, tile));
     if open(x, y) {
         return Some(TilePoint { x, y });
     }
@@ -199,6 +212,7 @@ pub fn land_player(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x
     (landed, effects)
 }
 
+/// The scene `scene_id` of the running world.
 pub fn find_scene<'a>(state: &'a GameState, scene_id: &str) -> Option<&'a Scene> {
     state.world.scenes.iter().find(|scene| scene.id == scene_id)
 }
@@ -208,33 +222,29 @@ fn find_scene_index(state: &GameState, scene_id: &str) -> Option<usize> {
     state.world.scenes.iter().position(|scene| scene.id == scene_id)
 }
 
-/// TS `byId`: definitions keyed by id, insertion order kept.
-pub fn by_id<T: Clone>(defs: &[T], id: impl Fn(&T) -> &str) -> IndexMap<String, T> {
-    let mut map = IndexMap::new();
-    for def in defs {
-        map.insert(id(def).to_owned(), def.clone());
-    }
-    map
+/// [`pathfinding::tile_blocks`] with the content of `ctx`, through its id tables.
+fn tile_blocks_in(ctx: &EngineContext, tile: &crate::schema::Tile) -> bool {
+    pathfinding::tile_blocks_indexed(tile, &ctx.content.node_types, &ctx.content.machine_types, Some(ctx.index()))
 }
 
 struct CollisionContext<'a> {
+    ctx: &'a EngineContext,
     scene: &'a Scene,
     npcs: &'a IndexMap<String, NpcState>,
-    node_types: &'a [NodeTypeDefinition],
-    machine_types: &'a [MachineTypeDefinition],
 }
 
 fn make_collision_context<'a>(ctx: &'a EngineContext, state: &'a GameState, scene: &'a Scene) -> CollisionContext<'a> {
-    CollisionContext {
-        scene,
-        npcs: &state.npcs,
-        node_types: &ctx.content.node_types,
-        machine_types: &ctx.content.machine_types,
-    }
+    CollisionContext { ctx, scene, npcs: &state.npcs }
+}
+
+/// [`can_move_to`] with the content of `ctx`, through its id tables.
+fn can_move_in(ctx: &EngineContext, scene: &Scene, x: i32, y: i32, npcs: &IndexMap<String, NpcState>) -> bool {
+    let content = &ctx.content;
+    can_move_to_indexed(scene, x, y, npcs, None, &content.node_types, &content.machine_types, Some(ctx.index()))
 }
 
 fn blocked_tile(c: &CollisionContext<'_>, x: i32, y: i32) -> bool {
-    !can_move_to(c.scene, x, y, c.npcs, None, c.node_types, c.machine_types)
+    !can_move_in(c.ctx, c.scene, x, y, c.npcs)
 }
 
 /// The longest step [`move_axis_step`] takes at once: under half a tile, so checking the one
@@ -328,7 +338,7 @@ pub fn ensure_scene(ctx: &EngineContext, state: &mut GameState, scene_id: &str) 
     if let Some(index) = find_scene_index(state, scene_id) {
         return Some(index);
     }
-    let mut scene = ctx.content.scenes.iter().find(|scene| scene.id == scene_id)?.clone();
+    let mut scene = ctx.content_scene(scene_id)?.clone();
     tiles::normalize_scene_grid(&mut scene);
     state.world.scenes.push(scene);
     Some(state.world.scenes.len() - 1)
@@ -336,7 +346,7 @@ pub fn ensure_scene(ctx: &EngineContext, state: &mut GameState, scene_id: &str) 
 
 /// Whether `scene_id` is in the world or can be added to it by [`ensure_scene`].
 pub fn scene_exists(ctx: &EngineContext, state: &GameState, scene_id: &str) -> bool {
-    find_scene(state, scene_id).is_some() || ctx.content.scenes.iter().any(|scene| scene.id == scene_id)
+    find_scene(state, scene_id).is_some() || ctx.content_scene(scene_id).is_some()
 }
 
 /// Everything that happens when the player's occupied TILE changes: unlocked transitions fire,
@@ -463,15 +473,7 @@ pub fn handle_move(ctx: &EngineContext, state: &mut GameState, dir: &str) -> Eff
     let new_x = from.x + dx;
     let new_y = from.y + dy;
 
-    if !can_move_to(
-        &state.world.scenes[scene_index],
-        new_x,
-        new_y,
-        &state.npcs,
-        None,
-        &ctx.content.node_types,
-        &ctx.content.machine_types,
-    ) {
+    if !can_move_in(ctx, &state.world.scenes[scene_index], new_x, new_y, &state.npcs) {
         state.player.direction = dir.to_owned();
         return Vec::new();
     }

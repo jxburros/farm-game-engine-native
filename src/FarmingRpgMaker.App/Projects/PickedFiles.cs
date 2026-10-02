@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Avalonia.Platform.Storage;
+using FarmingRpgMaker.Updates;
 
 namespace FarmingRpgMaker.App.Projects;
 
