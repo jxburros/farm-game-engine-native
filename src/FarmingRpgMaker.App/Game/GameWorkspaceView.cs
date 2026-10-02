@@ -288,6 +288,8 @@ public sealed class GameWorkspaceView : UserControl
             EndPlaytest();
         }
 
+        // Fields typed into a form but not saved yet are applied before the last write (#87).
+        _workspace.ApplyDrafts();
         _workspace.FlushPendingSave();
     }
 

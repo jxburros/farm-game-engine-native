@@ -113,6 +113,21 @@ public sealed class ProjectWorkspace
 
     public event EventHandler<ProjectChangedEventArgs>? ProjectChanged;
 
+    /// <summary>
+    /// Raised before the open project is left (another one opens, the editor closes): forms
+    /// apply the fields the creator typed but did not save yet, so they are not lost (#87).
+    /// </summary>
+    public event EventHandler? Leaving;
+
+    /// <summary>Lets the forms apply their unsaved fields (<see cref="Leaving"/>); call before the project is left.</summary>
+    public void ApplyDrafts()
+    {
+        if (_document is not null)
+        {
+            Leaving?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>How many handlers follow <see cref="ProjectChanged"/> (tests check that replaced editors let go).</summary>
     internal int ProjectChangedHandlerCount => ProjectChanged?.GetInvocationList().Length ?? 0;
 
@@ -188,6 +203,7 @@ public sealed class ProjectWorkspace
     public void Open(GameProject project, bool save = true)
     {
         ArgumentNullException.ThrowIfNull(project);
+        ApplyDrafts();
         FlushPendingSave();
         TakeLock(project.Id);
         var opened = project.WithMode(project.Mode == "play" ? "tiles" : project.Mode);
