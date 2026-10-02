@@ -24,7 +24,15 @@ fn fixture(name: &str) -> Value {
 
 fn reference(key: &str) -> Value {
     static REFERENCE: OnceLock<Value> = OnceLock::new();
-    REFERENCE.get_or_init(|| fixture("packs-project.ts-reference.json"))[key].clone()
+    let mut value = REFERENCE.get_or_init(|| fixture("packs-project.ts-reference.json"))[key].clone();
+    // The fixture's player stands beside its 2×1 scene (x 2, y 0.25 tiles). The TS engine kept
+    // them there, able to walk off the grid; a new game here starts them on the nearest tile of
+    // the grid (#116).
+    if matches!(key, "stateSeeded" | "stateDefault" | "applied") {
+        value["player"]["x"] = Value::from(1.5);
+        value["player"]["y"] = Value::from(0.5);
+    }
+    value
 }
 
 fn load_project() -> GameProject {

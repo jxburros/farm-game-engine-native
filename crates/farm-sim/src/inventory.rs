@@ -88,7 +88,9 @@ pub fn add_item_with_quality(
             if remaining == 0 {
                 break;
             }
-            let take = cap.saturating_sub(slot.quantity).min(remaining);
+            // A held copy can predate a change to the item's stack size: neither cap is passed
+            // (#116). Copies of the current definition have the same cap.
+            let take = cap.min(stack_cap(&slot.item)).saturating_sub(slot.quantity).min(remaining);
             slot.quantity += take;
             remaining -= take;
         }
