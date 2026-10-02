@@ -9,8 +9,8 @@ use crate::farming::{crops, multi_tile};
 use crate::hooks::{CropHarvestHookPayload, HookEvent, NpcInteractHookPayload};
 use crate::rng::Rng;
 use crate::schema::{
-    crop_qualities, item_types, soil_states, tile_types, tool_types, Crop, DialogueState, GameState, Item, Tile,
-    FISHING_MINIGAME_ID,
+    crop_qualities, item_types, soil_states, tile_types, tool_types, Crop, CropDefinition, DialogueState, GameState,
+    Item, Tile, FISHING_MINIGAME_ID,
 };
 use crate::world::world_movement;
 use crate::{
@@ -501,11 +501,7 @@ fn held_of_type<'a>(state: &'a GameState, item_id: &str, item_type: &str) -> Opt
 
 /// An item's name for a message: its content name, else the id.
 fn item_name(ctx: &EngineContext, item_id: &str) -> String {
-    ctx.content
-        .items
-        .iter()
-        .find(|item| item.id == item_id)
-        .map_or_else(|| item_id.to_owned(), |item| item.name.clone())
+    ctx.item(item_id).map_or_else(|| item_id.to_owned(), |item| item.name.clone())
 }
 
 fn plant_seed(
@@ -520,37 +516,9 @@ fn plant_seed(
         return Vec::new();
     };
 
-    let seed_item = match choice.seed_item_id {
-        Some(seed_item_id) => match held_of_type(state, seed_item_id, item_types::SEED) {
-            Some(item) => item,
-            None => {
-                return vec![Effect::message(
-                    message_levels::INFO,
-                    format!("You have no {} to plant.", item_name(ctx, seed_item_id)),
-                )]
-            }
-        },
-        None => {
-            // `interactWith`: the first seed held that grows this season; else (and for plain
-            // `interact`, as recorded games expect) the first seed, whose season message
-            // explains why nothing is planted.
-            let seeds: Vec<&Item> = state
-                .player
-                .inventory
-                .iter()
-                .filter(|slot| slot.item.r#type == item_types::SEED)
-                .map(|slot| &slot.item)
-                .collect();
-            let grows_now = |item: &&&Item| {
-                let definition = item.crop_type.as_deref().and_then(|crop| ctx.content.crops.get(crop));
-                definition.is_some_and(|definition| crops::can_grow_in_season(Some(definition), &state.clock.season))
-            };
-            let in_season = if choice.chosen { seeds.iter().find(grows_now) } else { None };
-            match in_season.or_else(|| seeds.first()).copied() {
-                Some(item) => item,
-                None => return vec![Effect::message(message_levels::INFO, "No seeds in inventory")],
-            }
-        }
+    let seed_item = match choose_seed(ctx, state, choice) {
+        Ok(item) => item,
+        Err(refused) => return refused,
     };
     let Some(crop_type) = seed_item.crop_type.as_deref().filter(|crop| !crop.is_empty()) else {
         return vec![Effect::message(message_levels::INFO, "No seeds in inventory")];
@@ -562,38 +530,22 @@ fn plant_seed(
     };
 
     if !crops::can_grow_in_season(Some(definition), &state.clock.season) {
-        if choice.seed_item_id.is_some() {
-            return vec![Effect::message(
-                message_levels::ERROR,
-                format!(
-                    "{} can't grow in {}! It grows in {}.",
-                    definition.name,
-                    state.clock.season,
-                    definition.seasons.join(", ")
-                ),
-            )];
-        }
-        return vec![Effect::message(
-            message_levels::ERROR,
-            format!("{} cannot grow in {}!", definition.name, state.clock.season),
-        )];
+        let text = if choice.seed_item_id.is_some() {
+            format!(
+                "{} can't grow in {}! It grows in {}.",
+                definition.name,
+                state.clock.season,
+                definition.seasons.join(", ")
+            )
+        } else {
+            format!("{} cannot grow in {}!", definition.name, state.clock.season)
+        };
+        return vec![Effect::message(message_levels::ERROR, text)];
     }
 
-    let fertilizer_item_id = if choice.chosen {
-        match choice.fertilizer_item_id {
-            Some(fertilizer_item_id) => match held_of_type(state, fertilizer_item_id, item_types::FERTILIZER) {
-                Some(item) => Some(item.id.clone()),
-                None => {
-                    return vec![Effect::message(
-                        message_levels::INFO,
-                        format!("You have no {} to use.", item_name(ctx, fertilizer_item_id)),
-                    )]
-                }
-            },
-            None => None,
-        }
-    } else {
-        None
+    let fertilizer_item_id = match choose_fertilizer(ctx, state, choice) {
+        Ok(fertilizer_item_id) => fertilizer_item_id,
+        Err(refused) => return refused,
     };
 
     if let Some(multi_tile) = &definition.multi_tile {
@@ -619,13 +571,83 @@ fn plant_seed(
     let Some(index) = scene_index(state, scene_id) else {
         return Vec::new();
     };
+    place_crop(state, index, (x, y), definition, &crop_type, used_fertilizer);
+    state.player.inventory = inventory;
 
-    let new_crop = crops::create_planted_crop(&crop_type, state.clock.day, used_fertilizer);
+    vec![Effect::message(
+        message_levels::SUCCESS,
+        format!(
+            "Planted {}!{} Water it so it grows.",
+            definition.name,
+            if used_fertilizer { " (Fertilized)" } else { "" }
+        ),
+    )]
+}
+
+/// The seed to plant: the chosen one (refused when not held), or for `interactWith` the first
+/// seed held that grows this season; else (and for plain `interact`, as recorded games expect)
+/// the first seed, whose season message explains why nothing is planted.
+fn choose_seed<'a>(ctx: &EngineContext, state: &'a GameState, choice: PlantChoice<'_>) -> Result<&'a Item, Effects> {
+    if let Some(seed_item_id) = choice.seed_item_id {
+        return held_of_type(state, seed_item_id, item_types::SEED).ok_or_else(|| {
+            vec![Effect::message(
+                message_levels::INFO,
+                format!("You have no {} to plant.", item_name(ctx, seed_item_id)),
+            )]
+        });
+    }
+    let seeds: Vec<&Item> = state
+        .player
+        .inventory
+        .iter()
+        .filter(|slot| slot.item.r#type == item_types::SEED)
+        .map(|slot| &slot.item)
+        .collect();
+    let grows_now = |item: &&&Item| {
+        let definition = item.crop_type.as_deref().and_then(|crop| ctx.content.crops.get(crop));
+        definition.is_some_and(|definition| crops::can_grow_in_season(Some(definition), &state.clock.season))
+    };
+    let in_season = if choice.chosen { seeds.iter().find(grows_now) } else { None };
+    in_season
+        .or_else(|| seeds.first())
+        .copied()
+        .ok_or_else(|| vec![Effect::message(message_levels::INFO, "No seeds in inventory")])
+}
+
+/// The fertilizer the player chose (refused when not held); `None` when none was chosen or for
+/// plain `interact`, which picks its own after the seed is taken.
+fn choose_fertilizer(
+    ctx: &EngineContext,
+    state: &GameState,
+    choice: PlantChoice<'_>,
+) -> Result<Option<String>, Effects> {
+    let (true, Some(fertilizer_item_id)) = (choice.chosen, choice.fertilizer_item_id) else {
+        return Ok(None);
+    };
+    match held_of_type(state, fertilizer_item_id, item_types::FERTILIZER) {
+        Some(item) => Ok(Some(item.id.clone())),
+        None => Err(vec![Effect::message(
+            message_levels::INFO,
+            format!("You have no {} to use.", item_name(ctx, fertilizer_item_id)),
+        )]),
+    }
+}
+
+/// Put a new crop of `crop_type` on (x, y) and, for a multi-tile crop, on every tile it covers
+/// (the placement check kept them inside the scene); fertilizer feeds the soil under the whole
+/// crop.
+fn place_crop(
+    state: &mut GameState,
+    index: usize,
+    (x, y): (i32, i32),
+    definition: &CropDefinition,
+    crop_type: &str,
+    used_fertilizer: bool,
+) {
+    let new_crop = crops::create_planted_crop(crop_type, state.clock.day, used_fertilizer);
     let multi_tile_id = format!("{}-{}-{}-{}", crop_type, state.clock.tick, x, y);
     let scene = &mut state.world.scenes[index];
 
-    // (x, y) and the tiles a multi-tile crop covers (the placement check above kept every
-    // covered tile inside the scene).
     let (width, height) = definition.multi_tile.as_ref().map_or((1, 1), |size| (size.width.max(1), size.height.max(1)));
     for crop_dy in 0..height {
         for crop_dx in 0..width {
@@ -641,24 +663,12 @@ fn plant_seed(
             } else {
                 new_crop.clone()
             });
-            // Fertilizer feeds the soil under the whole crop.
             if used_fertilizer {
                 tile.soil_fertility = 100;
                 tile.soil_state = Some(soil_states::FERTILIZED.to_owned());
             }
         }
     }
-
-    state.player.inventory = inventory;
-
-    vec![Effect::message(
-        message_levels::SUCCESS,
-        format!(
-            "Planted {}!{} Water it so it grows.",
-            definition.name,
-            if used_fertilizer { " (Fertilized)" } else { "" }
-        ),
-    )]
 }
 
 /// Shared fixtures for the ported engine-level tests (`EngineTests.MakeProject` and the
