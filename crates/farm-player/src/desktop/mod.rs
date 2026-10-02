@@ -244,6 +244,7 @@ impl App {
         Self::present(surface, width, height, output.pixels.data());
         if let Some(audio) = self.audio.as_mut() {
             audio.maintain();
+            audio.set_music(output.music);
             for sound in output.sounds {
                 audio.play(sound);
             }

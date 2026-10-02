@@ -37,6 +37,8 @@ impl SpeakerThread {
     }
 
     fn play(&self, _sound: farm_player::SoundRequest) {}
+
+    fn set_music(&self, _cue: farm_player::MusicCue) {}
 }
 
 /// An opaque embedded player.
@@ -178,6 +180,7 @@ fn run_frame(
 ) -> Result<Vec<u8>, String> {
     let outcome = p.frame(&FrameRequest::parse(request)?)?;
     if let Some(speaker) = speaker {
+        speaker.set_music(outcome.music);
         for sound in &outcome.sounds {
             speaker.play(sound.clone());
         }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the web demo's page script (tools/wasm/web-template/game.js) in Node 22 against the real
 // module of tools/wasm/build.sh, with a small stand-in for the browser (elements, events,
-// localStorage, fetch, requestAnimationFrame, WebAudio):
+// localStorage, fetch, requestAnimationFrame, WebAudio with looped music):
 //
 //   node tools/wasm/game-page.mjs [dist folder]    # default tools/wasm/dist
 //
@@ -117,10 +117,11 @@ class MemoryStorage {
 
 const quotaError = () => Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError", code: 22 });
 
-const audio = { buffers: 0, played: 0 };
+const audio = { buffers: 0, played: 0, loops: new Set() };
 class AudioContext {
   state = "running";
   sampleRate = 48000;
+  currentTime = 0;
   destination = {};
   constructor() { audio.contexts = (audio.contexts ?? 0) + 1; }
   resume() { this.state = "running"; return Promise.resolve(); }
@@ -129,8 +130,19 @@ class AudioContext {
     return { length, copyToChannel(samples) { assert.ok(samples instanceof Float32Array); } };
   }
 }
-class GainNode { constructor(context, { gain }) { this.gain = gain; } connect(next) { return next; } }
-class AudioBufferSourceNode { constructor(context, { buffer }) { this.buffer = buffer; } connect(next) { return next; } start() { audio.played++; } }
+class AudioParam {
+  constructor(value) { this.value = value; }
+  setValueAtTime(value) { this.value = value; }
+  linearRampToValueAtTime(value) { this.value = value; }
+  cancelScheduledValues() {}
+}
+class GainNode { constructor(context, { gain }) { this.gain = new AudioParam(gain); } connect(next) { return next; } }
+class AudioBufferSourceNode {
+  constructor(context, { buffer, loop }) { this.buffer = buffer; this.loop = !!loop; }
+  connect(next) { return next; }
+  start() { if (this.loop) audio.loops.add(this.buffer); else audio.played++; }
+  stop() { audio.loops.delete(this.buffer); }
+}
 
 const storage = new MemoryStorage();
 const define = (name, value) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
@@ -308,6 +320,7 @@ await test("the page plays: frames sized by density, keys, touch controls and so
   press(phone, "Enter", "Enter");
   assert.equal(run(phone, 2).info.screen, "playing");
   assert.ok(audio.contexts >= 1 && audio.played >= 1, "the menu sound played");
+  assert.ok(audio.loops.size >= 1, "the music loops");
   const x = state(phone).player.x;
   key(phone, "keydown", "KeyD", "d");
   run(phone, 30);

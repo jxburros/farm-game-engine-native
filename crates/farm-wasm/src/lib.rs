@@ -8,7 +8,8 @@
 //! - [`Player`](player::WasmPlayer): the graphical player (Play Mode, web demo exports);
 //! - [`Session`](session::WasmSession): a headless game;
 //! - [`Preview`](preview::WasmPreview) and [`render_json`]: Edit Mode's map and art previews;
-//! - [`hash_state`], [`hash_text`], [`sfx_cues`], [`sfx_samples`], [`version`], [`last_panic`].
+//! - [`hash_state`], [`hash_text`], [`sfx_cues`], [`sfx_samples`], [`music_samples`], [`version`],
+//!   [`last_panic`].
 //!
 //! The JavaScript API is documented in `crates/farm-wasm/README.md`.
 //!
@@ -92,6 +93,8 @@ export interface FrameInfo {
   screen: "title" | "playing" | "pause" | "settings" | "credits" | "loadSlots" | "saveSlots" | "newGameSlots" | "confirm";
   /** An in-game panel or an engine modal is open. */
   modal: boolean;
+  /** The loops to play now (`musicSamples(name, rate)`, looped) with their gains; null is silence. */
+  music: { music: string | null; musicGain: number; ambience: string | null; ambienceGain: number };
 }
 
 export interface FrameResult {
@@ -219,6 +222,16 @@ pub fn sfx_cues() -> Array {
 pub fn sfx_samples(cue: &str, #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32) -> Option<Float32Array> {
     let preset = farm_runtime::audio::sfx_preset(cue)?;
     Some(Float32Array::from(&preset.render(sample_rate.clamp(3000, 384_000))[..]))
+}
+
+/// The mono samples (-1..1) of a built-in music or ambience loop (`day`, `night`, `birds`,
+/// `crickets`, `rain`: a frame's `info.music`) at `sampleRate` Hz. Play them looped (an
+/// `AudioBufferSourceNode` with `loop`) through a `GainNode` at the frame's gain, fading
+/// between loops. `undefined` for an unknown name. Rendering takes a moment: cache them.
+#[wasm_bindgen(js_name = musicSamples, unchecked_return_type = "Float32Array<ArrayBuffer> | undefined")]
+pub fn music_samples(name: &str, #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32) -> Option<Float32Array> {
+    let samples = farm_runtime::music::render_loop(name, sample_rate.clamp(3000, 384_000))?;
+    Some(Float32Array::from(&samples[..]))
 }
 
 /// A running engine call: see [`enter`].

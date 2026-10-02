@@ -112,8 +112,17 @@ default, so a partial or older file loads; an unreadable file is ignored.
 - **Display:** fullscreen (borderless) or windowed, integer scaling (whole
   pixel steps, letterboxed) or fit, interface size (75–150 %).
 - **Audio:** master, music, sound effects, mute. Sound effects are the
-  synthesized farm-runtime presets, rendered once when the device opens;
-  there is no music content yet. Sound follows the default output device:
+  synthesized farm-runtime presets, rendered once when the device opens.
+  Music and ambience are built-in loops, composed and synthesized by the
+  engine's own code (`farm_runtime::music`: a fixed score, small
+  instruments and seeded noise), so there are no recorded or third-party
+  audio files and nothing extra to license or ship. Day music and birdsong
+  play from 6:00 to 19:00, night music and crickets after that, rain under
+  rainy weather, no ambience in indoor scenes, and day music on the title
+  screens; the Music volume sets both, and the game fades between loops.
+  The loops render on a thread of their own when the device opens; the web
+  demo renders them with `musicSamples` and loops them with WebAudio. Sound
+  follows the default output device:
   when it goes away (headphones unplugged) or another one becomes the default,
   the game reopens the stream on the current default device.
 - **Controls:** keyboard bindings and the gamepad layout.

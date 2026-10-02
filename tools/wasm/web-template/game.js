@@ -2,7 +2,7 @@
 // screen, save slots, settings) drawing into a canvas. Saves and settings live in this browser's
 // localStorage, one entry per game id. See docs/EXPORT.md ("Web demo").
 // tools/wasm/game-page.mjs runs this file in Node against the real module (CI).
-import init, { Player, sfxSamples } from "./farm_wasm.js";
+import init, { Player, musicSamples, sfxSamples } from "./farm_wasm.js";
 
 const canvas = document.getElementById("game");
 const status = document.getElementById("status");
@@ -143,6 +143,55 @@ async function main() {
     const source = new AudioBufferSourceNode(audio, { buffer });
     source.connect(new GainNode(audio, { gain })).connect(audio.destination);
     source.start();
+  };
+
+  // Music and ambience: built-in loops the game names each frame (info.music), rendered once
+  // per name, looped, and faded when the loop or its volume changes.
+  const FADE = 1.2;
+  const loops = new Map();
+  const slots = [{ name: null, gain: 0, node: null }, { name: null, gain: 0, node: null }];
+  const loopBuffer = (name) => {
+    if (!loops.has(name)) {
+      const samples = musicSamples(name, audio.sampleRate);
+      let buffer = null;
+      if (samples) {
+        buffer = audio.createBuffer(1, samples.length, audio.sampleRate);
+        buffer.copyToChannel(samples, 0);
+      }
+      loops.set(name, buffer);
+    }
+    return loops.get(name);
+  };
+  const fadeTo = (node, gain) => {
+    const now = audio.currentTime;
+    node.gain.gain.cancelScheduledValues(now);
+    node.gain.gain.setValueAtTime(node.gain.gain.value, now);
+    node.gain.gain.linearRampToValueAtTime(gain, now + FADE);
+  };
+  const setLoop = (slot, name, gain) => {
+    if (!audio || audio.state !== "running") return;
+    const playing = slots[slot];
+    if (playing.name === name) {
+      if (playing.node && playing.gain !== gain) fadeTo(playing.node, gain);
+      playing.gain = gain;
+      return;
+    }
+    if (playing.node) {
+      const old = playing.node;
+      fadeTo(old, 0);
+      old.source.stop(audio.currentTime + FADE);
+    }
+    const buffer = name ? loopBuffer(name) : null;
+    let node = null;
+    if (buffer) {
+      const source = new AudioBufferSourceNode(audio, { buffer, loop: true });
+      const gainNode = new GainNode(audio, { gain: 0 });
+      source.connect(gainNode).connect(audio.destination);
+      source.start();
+      node = { source, gain: gainNode };
+      fadeTo(node, gain);
+    }
+    slots[slot] = { name, gain, node };
   };
 
   window.addEventListener("keydown", (event) => {
@@ -296,6 +345,11 @@ async function main() {
       context.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
     }
     for (const sound of frame.info.sounds) play(sound.cue, sound.gain);
+    const music = frame.info.music;
+    if (music) {
+      setLoop(0, music.music, music.musicGain);
+      setLoop(1, music.ambience, music.ambienceGain);
+    }
     for (const request of frame.info.requests) handleRequest(request);
     if (frame.storageChanged) persist();
     requestAnimationFrame(tick);

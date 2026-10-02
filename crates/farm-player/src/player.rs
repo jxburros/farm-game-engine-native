@@ -36,6 +36,7 @@ use farm_render::{
     SnapshotOptions, SnapshotPop, TileWindow, WorldSnapshot,
 };
 use farm_runtime::host::{calendar_view, MinigameInput};
+use farm_runtime::music::{self, MusicCue};
 use farm_runtime::panels::{self, PanelState};
 use farm_sim::schema::{GameContent, GameProject, GameState};
 use farm_sim::{overlay, state, units, Presentation, StartState};
@@ -113,6 +114,8 @@ pub struct FrameOutput<'a> {
     pub pixels: &'a Pixmap,
     pub sounds: Vec<SoundRequest>,
     pub requests: Vec<PlayerRequest>,
+    /// The music and ambience that should play now (hosts fade to it).
+    pub music: MusicCue,
 }
 
 /// What a frame produced when not rendered ([`Player::step`]).
@@ -120,6 +123,7 @@ pub struct FrameOutput<'a> {
 pub struct StepOutput {
     pub sounds: Vec<SoundRequest>,
     pub requests: Vec<PlayerRequest>,
+    pub music: MusicCue,
 }
 
 /// Which screen is in front (tests, hosts).
@@ -456,10 +460,12 @@ impl Player {
         height: u32,
     ) -> Result<FrameOutput<'_>, PlayerError> {
         self.run(dt_seconds, events, width, height, true)?;
+        let music = self.music_cue();
         Ok(FrameOutput {
             pixels: self.renderer.frame(),
             sounds: std::mem::take(&mut self.sounds),
             requests: std::mem::take(&mut self.requests),
+            music,
         })
     }
 
@@ -473,7 +479,18 @@ impl Player {
         height: u32,
     ) -> Result<StepOutput, PlayerError> {
         self.run(dt_seconds, events, width, height, false)?;
-        Ok(StepOutput { sounds: std::mem::take(&mut self.sounds), requests: std::mem::take(&mut self.requests) })
+        let music = self.music_cue();
+        Ok(StepOutput { sounds: std::mem::take(&mut self.sounds), requests: std::mem::take(&mut self.requests), music })
+    }
+
+    /// The music and ambience for now: the game's (day or night music, birds, crickets or rain;
+    /// see `farm_runtime::music::cue_for`), or day music without ambience on the title screens.
+    pub fn music_cue(&self) -> MusicCue {
+        let gain = self.settings.audio.music_gain();
+        match self.game.as_ref() {
+            Some(game) => music::cue_for(&self.def.content, game.session.state(), gain),
+            None => MusicCue::new(Some(music::MUSIC_DAY), None, gain),
+        }
     }
 
     fn run(

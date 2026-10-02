@@ -561,6 +561,33 @@ fn the_language_follows_the_setting_then_the_system_then_the_game() {
 }
 
 #[test]
+fn music_follows_the_screen_the_clock_the_weather_and_the_volume() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    let title = player.step(FRAME, &[], SIZE.0, SIZE.1).unwrap().music;
+    assert_eq!((title.music, title.ambience), (Some("day"), None));
+    press(&mut player, "enter");
+    let day = player.music_cue();
+    assert_eq!((day.music, day.ambience), (Some("day"), Some("birds")));
+    // Evening: night music and crickets.
+    let mut state = player.state().unwrap().clone();
+    state.clock.time_minutes = 21 * 60 * farm_sim::units::MINUTE;
+    player.replace_state(state).unwrap();
+    let night = player.music_cue();
+    assert_eq!((night.music, night.ambience), (Some("night"), Some("crickets")));
+    // Rain drowns the crickets out.
+    let mut state = player.state().unwrap().clone();
+    state.clock.weather_id = "rain".into();
+    player.replace_state(state).unwrap();
+    assert_eq!(player.music_cue().ambience, Some("rain"));
+    // The Music volume (and mute) set the gains.
+    let mut settings = player.settings().clone();
+    settings.audio.muted = true;
+    player.set_settings(settings);
+    assert_eq!(player.music_cue(), farm_player::MusicCue::default());
+}
+
+#[test]
 fn spanish_confirmations_and_toasts() {
     let stores = Stores::new();
     let mut player = new_game(&stores);
