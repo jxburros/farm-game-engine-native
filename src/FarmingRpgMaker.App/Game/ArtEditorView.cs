@@ -16,7 +16,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Import, animate and bind creator art through F# project edits.</summary>
-public sealed class ArtEditorView : UserControl
+public sealed class ArtEditorView : UserControl, IRetirable
 {
     private static readonly FilePickerFileType ArtFiles = new("Artwork") { Patterns = ArtImport.FilePatterns };
     private readonly ProjectWorkspace _workspace;
@@ -101,7 +101,7 @@ public sealed class ArtEditorView : UserControl
         var left = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(Ui.Text("ARTWORK", "section"));
         left.Children.Add(Ui.Wrapped("Import PNG, JPEG, WebP, GIF, BMP or SVG. Animated images and SVGs become a still PNG; add clips below.", "muted", "small"));
-        var import = Ui.Button("Import images", async () => await PickImagesAsync(), "accent");
+        var import = Ui.AsyncButton("Import images", PickImagesAsync, error => _message.Text = $"Could not import: {error.Message}", "accent");
         import.Name = "ImportArtButton";
         ToolTip.SetTip(import, "Choose one or more images; they are added as one undo step.");
         left.Children.Add(import);
@@ -181,12 +181,17 @@ public sealed class ArtEditorView : UserControl
         Grid.SetColumn(scroll, 1);
         grid.Children.Add(scroll);
         Content = grid;
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         RefreshCellControls();
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

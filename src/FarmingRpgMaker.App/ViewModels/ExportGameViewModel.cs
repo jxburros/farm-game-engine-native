@@ -39,6 +39,7 @@ public sealed class ExportGameViewModel : ObservableObject
     private bool _isExporting;
     private string _outputFolder;
     private ExportReport? _report;
+    private string? _failure;
 
     /// <param name="workspace">The open project and app settings.</param>
     /// <param name="pickFolder">Shows a folder picker starting at the given folder; null when cancelled.</param>
@@ -58,8 +59,8 @@ public sealed class ExportGameViewModel : ObservableObject
         var settings = workspace.Settings.Load();
         _outputFolder = settings.LastExportFolder ?? DefaultOutputFolder;
         _createArchives = settings.ExportArchives ?? true;
-        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting);
-        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport);
+        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting, ex => Fail("The folder could not be chosen", ex));
+        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport, ex => Fail("The export failed", ex));
         OpenFolderCommand = new RelayCommand<string>(path => _launcher.OpenFolder(path));
     }
 
@@ -161,7 +162,7 @@ public sealed class ExportGameViewModel : ObservableObject
         {
             if (_report is not { } report)
             {
-                return IsExporting ? "Exporting…" : "";
+                return IsExporting ? "Exporting…" : _failure ?? "";
             }
 
             if (report.Blocked)
@@ -227,23 +228,32 @@ public sealed class ExportGameViewModel : ObservableObject
         var templates = _templatesFolder;
         IsExporting = true;
         Report = null;
+        _failure = null;
         OnPropertyChanged(nameof(StatusText));
         try
         {
             var report = await Task.Run(() => GameExporter.Export(project, targets, folder, archives, templates)).ConfigureAwait(true);
-            _workspace.Settings.Update(s => s with { LastExportFolder = folder, ExportArchives = archives });
+            // The report first: nothing after a finished export may hide how it went.
+            Report = report;
+            _workspace.Settings.TryUpdate(s => s with { LastExportFolder = folder, ExportArchives = archives });
             if (!report.Blocked && GameExporter.TryRememberTargets(project, targets, out var edit))
             {
                 _workspace.Apply(edit);
             }
-
-            Report = report;
         }
         finally
         {
             IsExporting = false;
             OnPropertyChanged(nameof(StatusText));
         }
+    }
+
+    /// <summary>A command threw: say so in the dialog (and the log) instead of nothing happening.</summary>
+    private void Fail(string what, Exception error)
+    {
+        System.Diagnostics.Trace.TraceError($"Export Game: {what}: {error}");
+        _failure = $"{what}: {error.Message}";
+        OnPropertyChanged(nameof(StatusText));
     }
 
     private void SetChoice<T>(ref T field, T value)

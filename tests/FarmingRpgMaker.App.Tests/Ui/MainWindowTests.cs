@@ -138,6 +138,9 @@ public sealed class MainWindowTests
 
         Assert.Equal("Version 0.2.0", Find<TextBlock>(window, "AboutVersionText").Text);
         Assert.Contains("Farming RPG Maker", AllVisibleText(window), StringComparison.Ordinal);
+        // The log files, for bug reports.
+        Click(window, Find<HyperlinkButton>(window, "OpenLogFolderLink"));
+        Assert.Equal([FarmingRpgMaker.App.Projects.AppDataPaths.LogsDirectory()], launcher.OpenedFolders);
         window.Close();
     }
 

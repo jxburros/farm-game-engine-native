@@ -34,6 +34,13 @@ public sealed record ShellComposition(IGameSurfaceFactory GameSurfaceFactory, IP
     }
 
     /// <summary>
+    /// Once the main window is open: shows what went wrong at startup (projects that failed to
+    /// load), which needs an open window to own the dialog.
+    /// </summary>
+    public Task ShowStartupMessagesAsync(IShellHost shell) =>
+        (GameSurfaceFactory as GameSurfaceFactory)?.ShowStartupErrorsAsync(shell) ?? Task.CompletedTask;
+
+    /// <summary>
     /// The real app: projects under <paramref name="dataDirectory"/> (default
     /// <see cref="AppDataPaths.DefaultRoot"/>, i.e. <c>%APPDATA%/FarmingRpgMaker</c>).
     /// </summary>

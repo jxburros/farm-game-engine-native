@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
@@ -320,7 +321,16 @@ public sealed partial class EditModeView : UserControl
         Content = root;
 
         _workspace.ProjectChanged += OnProjectChanged;
-        Refresh();
+        try
+        {
+            Refresh();
+        }
+        catch
+        {
+            // A project this editor can't show: the half-built editor must not stay subscribed.
+            Retire();
+            throw;
+        }
     }
 
     /// <summary>The scene shown (defaults to the player's scene).</summary>
@@ -501,6 +511,11 @@ public sealed partial class EditModeView : UserControl
     public void Retire()
     {
         _workspace.ProjectChanged -= OnProjectChanged;
+        foreach (var view in this.GetLogicalDescendants().OfType<IRetirable>().ToList())
+        {
+            view.Retire();
+        }
+
         _canvas.Dispose();
     }
 

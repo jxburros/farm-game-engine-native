@@ -10,7 +10,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Project identity, gameplay settings and calendar, saved as one F# undo step.</summary>
-public sealed class SettingsEditorView : UserControl
+public sealed class SettingsEditorView : UserControl, IRetirable
 {
     private sealed record SeasonRow(TextBox Id, TextBox Name, TextBox Days, Control Control);
     private sealed record FestivalRow(TextBox Id, TextBox Name, TextBox SeasonId, TextBox Day, Control Control);
@@ -151,11 +151,16 @@ public sealed class SettingsEditorView : UserControl
         saveExport.Name = "SaveExportSettingsButton";
         form.Children.Add(saveExport);
         Content = new ScrollViewer { Content = form };
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     private static void Field(StackPanel form, string label, TextBox input)
@@ -369,7 +374,7 @@ public sealed class SettingsEditorView : UserControl
         try
         {
             var weights = _weatherCells.Select(cell => (cell.Key.Season, cell.Key.Weather, string.IsNullOrWhiteSpace(cell.Value.Text) ? 0 : Parse(cell.Value))).ToList();
-            _weatherMessage.Text = _workspace.Apply(SettingsForm.WeatherOdds(project, weights)) ? "Weather odds saved." : "No changes were made.";
+            _weatherMessage.Text = _workspace.Apply(SettingsForm.WeatherOdds(project, weights)) ? _workspace.SavedText("Weather odds") : "No changes were made.";
         }
         catch (FormatException error)
         {
@@ -411,7 +416,7 @@ public sealed class SettingsEditorView : UserControl
             var mine = SettingsForm.Mine(project, true, sceneId, Parse(_mineX), Parse(_mineY), Parse(_mineFloors), Parse(_mineLadder));
             _workspace.Apply(Edits.SetMine(mine));
             RefreshMine(_workspace.Current!);
-            _mineMessage.Text = "Mine saved.";
+            _mineMessage.Text = _workspace.SavedText("Mine");
         }
         catch (FormatException error)
         {
@@ -491,8 +496,8 @@ public sealed class SettingsEditorView : UserControl
             _workspace.Apply(Edits.SetExportSettings(settings));
             ShowExportProblems(problems);
             _exportMessage.Text = problems.Any(problem => problem.IsError)
-                ? "Export settings saved. Fix the errors above before exporting."
-                : "Export settings saved.";
+                ? _workspace.SavedText("Export settings") + " Fix the errors above before exporting."
+                : _workspace.SavedText("Export settings");
         }
         catch (FormatException error)
         {
@@ -531,7 +536,7 @@ public sealed class SettingsEditorView : UserControl
                 || settings.Time.DayStartMinute != Math.Floor(settings.Time.DayStartMinute) || settings.Time.DayEndMinute != Math.Floor(settings.Time.DayEndMinute))
                 throw new FormatException("Name, version, energy, speed and time rate must have valid positive values.");
             _workspace.Apply(Edits.Batch("Project settings", [Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
-            _message.Text = "Settings saved.";
+            _message.Text = _workspace.SavedText("Settings");
         }
         catch (Exception error) when (error is FormatException or OverflowException)
         {

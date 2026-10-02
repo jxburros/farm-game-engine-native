@@ -84,6 +84,39 @@ public sealed class ExportGameTests
     }
 
     [AvaloniaFact]
+    public void ACommandThatThrows_IsReportedInTheDialog()
+    {
+        using var host = new GameTestHost();
+        using var dir = new TempDir();
+        var viewModel = Create(host, dir.Path, _ => throw new InvalidOperationException("No folder picker on this system."));
+
+        viewModel.BrowseCommand.Execute(null);
+        PumpUntil(() => viewModel.StatusText.Length > 0, "error shown");
+
+        Assert.Equal("The folder could not be chosen: No folder picker on this system.", viewModel.StatusText);
+    }
+
+    [AvaloniaFact]
+    public void Export_KeepsTheReport_WhenTheSettingsCannotBeSaved()
+    {
+        using var host = new GameTestHost();
+        using var dir = new TempDir();
+        var settings = host.Workspace.Settings.FilePath;
+        File.Delete(settings);
+        Directory.CreateDirectory(settings);
+        var viewModel = Create(host, FakeTemplates(Path.Combine(dir.Path, "templates")));
+        viewModel.OutputFolder = Path.Combine(dir.Path, "out");
+        viewModel.ExportLinux = false;
+
+        viewModel.ExportCommand.Execute(null);
+        PumpUntil(() => viewModel.HasReport && !viewModel.IsExporting, "export");
+
+        Assert.True(viewModel.Succeeded, viewModel.ReportText);
+        Assert.Equal("Exported Windows x64.", viewModel.StatusText);
+        Directory.Delete(settings);
+    }
+
+    [AvaloniaFact]
     public void Export_WritesTheGame_RemembersFolderAndTargets_AndOpensTheFolder()
     {
         using var host = new GameTestHost();

@@ -19,6 +19,8 @@
       <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
         <HyperlinkButton Content="Source on GitHub" Command="{Binding OpenRepositoryCommand}" />
         <HyperlinkButton Content="Release notes" Command="{Binding OpenReleasesCommand}" />
+        <HyperlinkButton Name="OpenLogFolderLink" Content="Log files" Command="{Binding OpenLogFolderCommand}"
+                         ToolTip.Tip="{Binding LogFolderText}" />
       </StackPanel>
       <TextBlock Classes="muted small" Text="{Binding RuntimeText}" TextWrapping="Wrap" TextAlignment="Center" />
     </StackPanel>

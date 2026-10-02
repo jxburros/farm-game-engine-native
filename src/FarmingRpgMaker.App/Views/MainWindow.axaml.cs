@@ -7,8 +7,16 @@ namespace FarmingRpgMaker.App.Views;
 
 public partial class MainWindow : Window
 {
+    /// <summary>The way out of the unsaved-changes prompt when closing.</summary>
+    internal const string QuitAnyway = "Quit anyway";
+
+    /// <summary>The way out of the unsaved-changes prompt before Restart &amp; install.</summary>
+    internal const string InstallAnyway = "Install anyway";
+
     private readonly IUrlLauncher _launcher;
     private MainWindowViewModel? _viewModel;
+    private bool _exitConfirmed;
+    private bool _askingAboutUnsavedChanges;
 
     public MainWindow()
         : this(new ShellUrlLauncher())
@@ -34,6 +42,7 @@ public partial class MainWindow : Window
             _viewModel.CreatorGuideRequested -= OnCreatorGuideRequested;
             _viewModel.ShortcutsRequested -= OnShortcutsRequested;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.Updates.Restarting -= OnUpdateRestarting;
             _viewModel.TopLevel = null;
         }
 
@@ -47,6 +56,7 @@ public partial class MainWindow : Window
             _viewModel.CreatorGuideRequested += OnCreatorGuideRequested;
             _viewModel.ShortcutsRequested += OnShortcutsRequested;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.Updates.Restarting += OnUpdateRestarting;
             _viewModel.TopLevel = this;
         }
 
@@ -211,4 +221,97 @@ public partial class MainWindow : Window
     }
 
     private void OnExitRequested(object? sender, EventArgs e) => Close();
+
+    /// <summary>True once the window may close (or has closed) without asking about unsaved edits.</summary>
+    public bool IsExitConfirmed => _exitConfirmed;
+
+    /// <summary>
+    /// Closing writes pending edits first. When saving still fails, the close is called off and
+    /// the unsaved-changes prompt offers Export Project JSON…, Retry save or Quit anyway, so edits
+    /// that exist only in memory are never thrown away silently.
+    /// </summary>
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel || _exitConfirmed || _viewModel is null)
+        {
+            return;
+        }
+
+        if (_askingAboutUnsavedChanges || !_viewModel.PrepareForExit())
+        {
+            e.Cancel = true;
+            _ = ConfirmUnsavedThenAsync(QuitAnyway, Close);
+        }
+    }
+
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        if (_viewModel is { } viewModel)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = ShowStartupMessagesAsync(viewModel));
+        }
+    }
+
+    private static async Task ShowStartupMessagesAsync(MainWindowViewModel viewModel)
+    {
+        try
+        {
+            await viewModel.ShowStartupMessagesAsync().ConfigureAwait(true);
+        }
+#pragma warning disable CA1031 // A failed message must not take the editor down; the status line has the gist.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Showing the startup messages failed: {ex}");
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _exitConfirmed = true;
+        base.OnClosed(e);
+    }
+
+    /// <summary>Restart &amp; install ends the process: the same check as closing, before it happens.</summary>
+    private void OnUpdateRestarting(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_exitConfirmed || _viewModel is null)
+        {
+            return;
+        }
+
+        if (_askingAboutUnsavedChanges || !_viewModel.PrepareForExit())
+        {
+            e.Cancel = true;
+            var updates = _viewModel.Updates;
+            _ = ConfirmUnsavedThenAsync(InstallAnyway, updates.ApplyAndRestart);
+        }
+    }
+
+    private async Task ConfirmUnsavedThenAsync(string discardText, Action proceed)
+    {
+        if (_askingAboutUnsavedChanges || _viewModel is null)
+        {
+            return;
+        }
+
+        _askingAboutUnsavedChanges = true;
+        bool confirmed;
+        try
+        {
+            confirmed = await _viewModel.ResolveUnsavedChangesAsync(discardText).ConfigureAwait(true);
+        }
+        finally
+        {
+            _askingAboutUnsavedChanges = false;
+        }
+
+        if (confirmed)
+        {
+            _exitConfirmed = true;
+            proceed();
+        }
+    }
 }
