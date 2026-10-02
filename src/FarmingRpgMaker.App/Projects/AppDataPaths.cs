@@ -25,4 +25,13 @@ public static class AppDataPaths
                 "FarmingRpgMaker");
         }
     }
+
+    /// <summary>
+    /// The shared <c>settings.json</c> in <paramref name="root"/> (default <see cref="DefaultRoot"/>):
+    /// the editor's and the Update Center's settings, so a portable install keeps both together.
+    /// </summary>
+    public static string SettingsFile(string? root = null) => Path.Combine(root ?? DefaultRoot, "settings.json");
+
+    /// <summary>Rolling log files of the editor.</summary>
+    public static string LogsDirectory(string? root = null) => Path.Combine(root ?? DefaultRoot, "logs");
 }

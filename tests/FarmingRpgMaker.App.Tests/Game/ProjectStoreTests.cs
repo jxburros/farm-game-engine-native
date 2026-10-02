@@ -190,12 +190,124 @@ public sealed class ProjectStoreTests
     }
 
     [Theory]
-    [InlineData("con", "con_")]
-    [InlineData("NUL", "NUL_")]
-    [InlineData("com1.backup", "com1.backup_")]
-    [InlineData("a/b:c", "a_b_c")]
-    [InlineData("..", "project")]
+    [InlineData("con", "%63on")]
+    [InlineData("NUL", "%4EUL")]
+    [InlineData("com1.backup", "%63om1.backup")]
+    [InlineData("COM0", "%43OM0")]
+    [InlineData("lpt¹", "%6Cpt¹")]
+    [InlineData("CONOUT$", "%43ONOUT$")]
+    [InlineData("a/b:c", "a%2Fb%3Ac")]
+    [InlineData("a_b", "a_b")]
+    [InlineData("100%", "100%25")]
+    [InlineData("..", "%2E%2E")]
+    [InlineData(".hidden", "%2Ehidden")]
+    [InlineData("trailing. ", "trailing%2E%20")]
     [InlineData("project-1", "project-1")]
-    public void SafeFileName_AvoidsReservedAndInvalidNames(string id, string expected) =>
+    [InlineData("proj-abc - Copy", "proj-abc - Copy")]
+    public void SafeFileName_AvoidsReservedAndInvalidNames(string id, string expected)
+    {
         Assert.Equal(expected, ProjectStore.SafeFileName(id));
+        Assert.Equal(id, ProjectStore.IdForFileName(expected));
+    }
+
+    [Fact]
+    public void SafeFileName_GivesDifferentIdsDifferentFiles()
+    {
+        string[] ids = ["a:b", "a_b", "a%3Ab", "con", "con_", "%63on", "x.", "x", "x%2E"];
+        Assert.Equal(ids.Length, ids.Select(ProjectStore.SafeFileName).Distinct(StringComparer.Ordinal).Count());
+        Assert.Null(ProjectStore.IdForFileName("100% farm"));
+        Assert.Null(ProjectStore.IdForFileName("con"));
+    }
+
+    private static string WebExport(string name) =>
+        ProjectStore.ToJson(FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, name, "project-1", 0));
+
+    [Fact]
+    public void HandCopiedFiles_ThatShareAnId_EachSaveToTheirOwnFile()
+    {
+        using var dir = new TempDir();
+        var store = new ProjectStore(dir.Path);
+        Directory.CreateDirectory(store.ProjectsDirectory);
+        File.WriteAllText(Path.Combine(store.ProjectsDirectory, "farmA.json"), WebExport("Farm A"));
+        File.WriteAllText(Path.Combine(store.ProjectsDirectory, "farmB.json"), WebExport("Farm B"));
+
+        Assert.Equal(["farmA", "farmB"], store.List().Select(p => p.Id).Order(StringComparer.Ordinal));
+        var a = store.Load("farmA").Project!;
+        var b = store.Load("farmB").Project!;
+        Assert.Equal(("farmA", "farmB"), (a.Id, b.Id));
+
+        store.Save(a.WithName("Farm A edited"));
+        store.Save(b.WithName("Farm B edited"));
+
+        Assert.False(store.Exists("project-1"));
+        Assert.Equal("Farm A edited", store.Load("farmA").Project!.Name);
+        Assert.Equal("Farm B edited", store.Load("farmB").Project!.Name);
+        Assert.Equal(2, store.List().Count);
+    }
+
+    [Fact]
+    public void AnExplorerCopy_SavesToTheCopy_NotTheOriginal()
+    {
+        using var dir = new TempDir();
+        var store = new ProjectStore(dir.Path);
+        store.Save(FarmEngine.Authoring.ProjectCatalog.CreateNewProject(ProjectTemplates.Blank, "Original", "proj-abc", 0));
+        File.Copy(store.PathFor("proj-abc"), Path.Combine(store.ProjectsDirectory, "proj-abc - Copy.json"));
+
+        var copy = store.Load("proj-abc - Copy");
+        Assert.True(copy.Ok, string.Join("; ", copy.Errors));
+        Assert.Equal("proj-abc - Copy", copy.Project!.Id);
+        store.Save(copy.Project.WithName("Edited copy"));
+
+        Assert.Equal("Original", store.Load("proj-abc").Project!.Name);
+        Assert.Equal("Edited copy", store.Load("proj-abc - Copy").Project!.Name);
+        Assert.True(File.Exists(Path.Combine(store.ProjectsDirectory, "proj-abc - Copy.json")));
+    }
+
+    [Fact]
+    public void AHandMadeFileName_NoIdMapsTo_IsRenamedWhenAdopted()
+    {
+        using var dir = new TempDir();
+        var store = new ProjectStore(dir.Path);
+        Directory.CreateDirectory(store.ProjectsDirectory);
+        File.WriteAllText(Path.Combine(store.ProjectsDirectory, "100% farm.json"), WebExport("Full Farm"));
+
+        var summary = Assert.Single(store.List());
+        Assert.Equal(("100% farm", "Full Farm"), (summary.Id, summary.Name));
+        Assert.True(File.Exists(store.PathFor("100% farm")));
+        Assert.Equal("Full Farm", store.Load("100% farm").Project!.Name);
+    }
+
+    [Fact]
+    public void Save_KeepsThePreviousVersion_AndTheOriginalOfAMigratedProject()
+    {
+        using var dir = new TempDir();
+        var store = new ProjectStore(dir.Path);
+        Directory.CreateDirectory(store.ProjectsDirectory);
+        File.Copy(FixturePath, store.PathFor("legacy"));
+
+        var loaded = store.Load("legacy");
+        Assert.Equal(1, loaded.MigratedFrom);
+        store.Save(loaded.Project!);
+        store.Save(loaded.Project!.WithName("Renamed"));
+
+        Assert.Equal(File.ReadAllText(FixturePath), File.ReadAllText(store.MigrationBackupPath("legacy", 1)));
+        Assert.Equal(Path.Combine(store.BackupsDirectory, "legacy.v1.json"), store.MigrationBackupPath("legacy", 1));
+        Assert.Equal(loaded.Project!.Name, ProjectStore.Parse(File.ReadAllText(store.PreviousVersionPath("legacy"))).Project!.Name);
+        Assert.Equal("Renamed", store.Load("legacy").Project!.Name);
+        // Backups never show up as projects.
+        Assert.Single(store.List());
+    }
+
+    [Fact]
+    public void DeleteStaleTempFiles_CleansTheProjectsFolder()
+    {
+        using var dir = new TempDir();
+        var time = new TestTime(DateTimeOffset.UtcNow.AddHours(1));
+        var store = new ProjectStore(dir.Path, time);
+        Directory.CreateDirectory(store.ProjectsDirectory);
+        File.WriteAllText(Path.Combine(store.ProjectsDirectory, $".proj-a.json.{Guid.NewGuid():N}.tmp"), "half a project");
+
+        Assert.Equal(1, store.DeleteStaleTempFiles());
+        Assert.Empty(Directory.GetFiles(store.ProjectsDirectory));
+    }
 }
