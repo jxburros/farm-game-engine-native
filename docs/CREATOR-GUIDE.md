@@ -143,7 +143,7 @@ has the permissions, timing and limits.
 
 ### Art
 
-**Import image** takes PNG, JPEG, WebP, GIF, BMP and SVG files; the list shows
+**Import images** takes PNG, JPEG, WebP, GIF, BMP and SVG files; the list shows
 a thumbnail of each. Make **animation clips** by slicing a whole sheet, by
 clicking cells of the sheet (each click adds that cell as the next frame), or
 from separate images (**Add image frame** adds another picture as a frame, so

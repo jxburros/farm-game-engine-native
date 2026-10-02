@@ -6,14 +6,18 @@ namespace FarmingRpgMaker.App.Tests.Ui;
 
 /// <summary>
 /// The Creator Guide is also the in-app help, so the button, tab and menu names it puts in bold must be
-/// names the editor (or the game it plays) actually shows.
+/// labels the editor (or the game it plays) actually shows.
 /// </summary>
 public sealed partial class CreatorGuideNamesTests
 {
-    // Bold text that is a game term or a key name, not a label on screen.
+    // Bold text that is a key, a game term or emphasis, not a label on screen.
     private static readonly HashSet<string> NotUiNames = new(StringComparer.OrdinalIgnoreCase)
     {
+        "Ctrl+Y",
+        "arrow keys",
         "animation clips",
+        "Errors block export",
+        "pauses",
     };
 
     [GeneratedRegex(@"\*\*([^*]+)\*\*")]
@@ -22,7 +26,12 @@ public sealed partial class CreatorGuideNamesTests
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
 
-    private static string Sources()
+    // A string literal in C#, F#, Rust or an XAML attribute.
+    [GeneratedRegex(@"""((?:[^""\\\n]|\\.)*)""")]
+    private static partial Regex StringLiteral();
+
+    /// <summary>Every string literal of the editor, the authoring core, Export Game and the game UI, as a label.</summary>
+    private static HashSet<string> Labels()
     {
         var roots = new[]
         {
@@ -32,35 +41,42 @@ public sealed partial class CreatorGuideNamesTests
             // The game's own menus (Settings → Accessibility …) are drawn by the Rust UI.
             (Path: RustSessionTests.RepoFile("crates", "farm-ui", "src"), Patterns: new[] { "*.rs" }),
         };
-        var text = new System.Text.StringBuilder();
+        var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, patterns) in roots)
         {
             foreach (var pattern in patterns)
             {
                 foreach (var file in Directory.EnumerateFiles(path, pattern, SearchOption.AllDirectories))
                 {
-                    text.AppendLine(File.ReadAllText(file));
+                    if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    foreach (Match literal in StringLiteral().Matches(File.ReadAllText(file)))
+                    {
+                        // "_Open Project…" is the label "Open Project".
+                        labels.Add(literal.Groups[1].Value.Replace("_", "", StringComparison.Ordinal).TrimEnd('…', '.').Trim());
+                    }
                 }
             }
         }
 
-        return text.ToString();
+        return labels;
     }
 
     [Fact]
-    public void BoldUiNames_AppearInTheEditorOrGameSources()
+    public void BoldUiNames_AreLabelsOfTheEditorOrGame()
     {
-        var guide = HelpContent.CreatorGuideMarkdown();
-        var sources = Sources();
-        var missing = Bold().Matches(guide)
+        var labels = Labels();
+        var missing = Bold().Matches(HelpContent.CreatorGuideMarkdown())
             .Select(match => Whitespace().Replace(match.Groups[1].Value, " ").Trim())
-            .Where(name => !NotUiNames.Contains(name))
             // "Help → Update Center" names a menu and its item; each part is a label of its own.
             .SelectMany(name => name.Split(" → ", StringSplitOptions.TrimEntries))
+            .Where(name => !NotUiNames.Contains(name) && !labels.Contains(name))
             .Distinct()
-            .Where(name => !sources.Contains(name, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        Assert.True(missing.Count == 0, "Not found in the editor or game: " + string.Join(", ", missing));
+        Assert.True(missing.Count == 0, "Not a label in the editor or game: " + string.Join(", ", missing));
     }
 
     [Fact]
