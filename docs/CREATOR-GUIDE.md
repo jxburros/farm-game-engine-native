@@ -10,8 +10,12 @@ code. The editor shows this guide under **Help → Creator Guide** (F1).
 **File → New Project** (Ctrl+N) asks for a name and a template:
 
 - **Starter Farm**: the full farming loop, with crops, a shop, quests and crafting.
-- **Cozy Garden**: the same farm without energy or collapse, and with slow days.
-- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to remix.
+- **Cozy Garden**: a cottage garden with a pond, beds already growing (one
+  ready to pick), a merchant's stall and two hens; no energy or collapse,
+  and slow days.
+- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to
+  remix; the farm's south gate leads to a village square with a fountain,
+  where the elder and the lantern keeper wait.
 - **Blank**: an empty scene and the default item catalog.
 
 **File → Open Project** (Ctrl+O) lists your projects. They are saved

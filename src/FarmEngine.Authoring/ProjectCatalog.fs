@@ -6,7 +6,79 @@ open FarmEngine.Schemas
 /// A New Project choice; the desktop host only displays these authored labels.
 type ProjectTemplateInfo = { Id: string; Name: string; Description: string }
 
-/// Sample transformations from src/lib/templates.ts, with time supplied by the host.
+/// Maps drawn as text, one character per tile, for the samples' own scenes.
+module private SampleMaps =
+    /// A scene painted from `rows`: '.' grass, '=' path, '~' water, 's' soil, 'f' floor,
+    /// '#' wall, 'D' door, 'T' tree, 'R' rock, 'w' weeds.
+    let scene (id: string) (name: string) (rows: string list) : Scene =
+        let width = rows.Head.Length
+        if rows |> List.exists (fun row -> row.Length <> width) then invalidArg (nameof rows) "rows differ in length"
+        let blank = AuthoringTiles.CreateEmptyScene(id, name, float width, float rows.Length)
+        let tile (row: string) (tile: Tile) =
+            let paint kind = AuthoringTiles.SetTileLayer(tile, kind)
+            let node kind health = { tile with Node = Some { TypeId = kind; RemainingHealth = health; DepletedOnDay = None; Extra = [] } }
+            match row.[int tile.X] with
+            | '.' -> tile
+            | '=' -> paint "path"
+            | '~' -> paint "water"
+            | 's' -> paint "soil"
+            | 'f' -> paint "floor"
+            | '#' -> paint "wall"
+            | 'D' -> paint "door"
+            | 'T' -> node "node-tree" 4.0
+            | 'R' -> node "node-rock" 3.0
+            | 'w' -> node "node-weeds" 1.0
+            | other -> invalidArg (nameof rows) (sprintf "unknown map character '%c'" other)
+        { blank with Tiles = List.map2 (fun row tiles -> List.map (tile row) tiles) rows blank.Tiles }
+
+    /// Crops already growing: (x, y, crop type, watered days grown, stage).
+    let plant (crops: (int * int * string * float * float) list) (scene: Scene) : Scene =
+        let crop kind grown stage : Crop =
+            { Crop.Default with
+                Type = kind; PlantedOnDay = Some 1.0; DaysGrown = Some grown; Stage = stage; Quality = CropQualities.Normal }
+        let at x y = crops |> List.tryFind (fun (cx, cy, _, _, _) -> cx = x && cy = y)
+        { scene with
+            Tiles =
+                scene.Tiles
+                |> List.map (List.map (fun tile ->
+                    match at (int tile.X) (int tile.Y) with
+                    | Some(_, _, kind, grown, stage) -> { tile with Crop = Some(crop kind grown stage) }
+                    | None -> tile)) }
+
+    /// The Cozy Garden's farm: a hedge of trees, a pond, flower and vegetable beds (some already
+    /// growing, one ready to pick), the merchant's stall and a chicken run.
+    let garden =
+        [ "TTTTTTTTTTTTTTTT"
+          "T~~~......w....T"
+          "T~~~.ss.ss.fff.T"
+          "T~~..ss.ss.f.f.T"
+          "T....========..T"
+          "Tw...=......=..T"
+          "T....=.ssss.=.wT"
+          "T....=.ssss.=..T"
+          "T.ff.=......=..T"
+          "T.ff.====...=..T"
+          "T.......=....RRT"
+          "TTTTTTTTDTTTTTTT" ]
+
+    /// The Quest RPG's village square, south of the farm: houses, a fountain on a paved plaza,
+    /// and the gate back to the farm.
+    let square =
+        [ "########D#######"
+          "#T.....=......T#"
+          "#..###.=.###...#"
+          "#..###.=.###...#"
+          "#......=.......#"
+          "#..fffffffff...#"
+          "#..ff~~~~~ff...#"
+          "#..ff~~~~~ff...#"
+          "#..fffffffff...#"
+          "#T...........T.#"
+          "#TT..R.....w.TT#"
+          "################" ]
+
+/// Sample transformations from src/lib/templates.ts, with time supplied by the host. Each sample
+/// has its own maps and set dressing, so the New Project choices look and play differently.
 module SampleProjects =
     let cozy now : GameProject =
         let project = StarterContent.initial now
@@ -18,9 +90,20 @@ module SampleProjects =
         let inventory =
             project.Player.Inventory
             |> List.map (fun slot -> if slot.Item.Type = "seed" then { slot with Quantity = slot.Quantity + 10.0 } else slot)
+        let garden =
+            SampleMaps.scene "scene-farm" "Cottage Garden" SampleMaps.garden
+            |> SampleMaps.plant
+                [ for x, y in [ 5, 2; 6, 2; 5, 3; 6, 3 ] -> x, y, "strawberry", 2.0, 2.0
+                  for x, y in [ 8, 2; 9, 2; 8, 3; 9, 3 ] -> x, y, "carrot", 2.0, 3.0
+                  for x in 7 .. 10 -> x, 6, "wheat", 1.0, 1.0 ]
+        let hen id name x y : AnimalState =
+            { Id = id; SpeciesId = "animal-chicken"; Name = name; SceneId = "scene-farm"; X = x; Y = y; Mood = 70.0
+              FedToday = false; PettedToday = false; AgeDays = 30.0; DaysSinceProduct = 0.0; ProductReady = false; Extra = [] }
         { project with
             Name = "Cozy Garden"
             Settings = settings
+            Scenes = project.Scenes |> List.map (fun scene -> if scene.Id = "scene-farm" then garden else scene)
+            Animals = project.Animals @ [ hen "hen-clover" "Clover" 2.0 8.0; hen "hen-pip" "Pip" 2.0 9.0 ]
             Player = { project.Player with Money = 250.0; Inventory = inventory } }
 
     let quest now : GameProject =
@@ -34,8 +117,20 @@ module SampleProjects =
               Extra = [] }
         let elder : Npc =
             { Npc.Default with
-                Id = "npc-elder"; Name = "Elder Rowan"; X = 2.0; Y = 3.0; SceneId = "scene-farm"
-                Dialogue = [ dialogue ]; CanMove = false; MovePattern = Some "stationary"; Appearance = "farmer" }
+                Id = "npc-elder"; Name = "Elder Rowan"; X = 8.0; Y = 4.0; SceneId = "scene-square"
+                Dialogue = [ dialogue ]; CanMove = false; MovePattern = Some "stationary"; Appearance = "elder" }
+        let lanterns : Dialogue =
+            { Id = "dialogue-keeper-lanterns"; NpcId = "npc-keeper"
+              Text = "When the square is rebuilt, I will hang the lanterns again. Grow wheat for the feast, and the whole village will come."
+              Options = [ { DialogueOption.Default with Text = "I'll do my part." } ]
+              Extra = [] }
+        let keeper : Npc =
+            { Npc.Default with
+                Id = "npc-keeper"; Name = "Lantern Keeper Ivy"; X = 12.0; Y = 7.0; SceneId = "scene-square"
+                Dialogue = [ lanterns ]; CanMove = false; MovePattern = Some "stationary"; Appearance = "villager" }
+        let gate : SceneTransition = { SceneTransition.Default with FromX = 8.0; FromY = 11.0; ToSceneId = "scene-square"; ToX = 8.0; ToY = 1.0 }
+        let home : SceneTransition = { SceneTransition.Default with FromX = 8.0; FromY = 0.0; ToSceneId = "scene-farm"; ToX = 8.0; ToY = 10.0 }
+        let square = { SampleMaps.scene "scene-square" "Village Square" SampleMaps.square with Transitions = [ home ] }
         // The reference sample writes targetQuantity as an extension field, not
         // targetItemQuantity. Preserve its JSON shape during the compatibility phase.
         let collect id description item (quantity: float) : QuestObjective =
@@ -58,10 +153,14 @@ module SampleProjects =
                           TargetCropType = Some "wheat"; TargetCropQuantity = Some 5.0; Completed = false; Progress = 0.0 } ]
                   Rewards = { QuestRewards.Default with Money = Some 300.0; Items = Some [ { ItemId = "gift-flower"; Quantity = 3.0 } ] }
                   Prerequisites = Some [ "quest-rebuild-square" ]; AutoStart = Some true; Repeatable = Some false } ]
+        let scenes =
+            project.Scenes
+            |> List.map (fun scene -> if scene.Id = "scene-farm" then { scene with Transitions = scene.Transitions @ [ gate ] } else scene)
         { project with
             Name = "Quest RPG"
-            Npcs = project.Npcs @ [ elder ]
-            Dialogues = project.Dialogues @ [ dialogue ]
+            Scenes = scenes @ [ square ]
+            Npcs = project.Npcs @ [ elder; keeper ]
+            Dialogues = project.Dialogues @ [ dialogue; lanterns ]
             Quests = project.Quests @ quests }
 
 /// Project creation boundary for C#. Time is explicit: reading the OS clock belongs to the
@@ -70,8 +169,8 @@ module SampleProjects =
 type ProjectCatalog =
     static member TemplateInfo : IReadOnlyList<ProjectTemplateInfo> =
         [| { Id = "starter"; Name = "Starter Farm"; Description = "The full farming loop: crops, shop, quests, crafting." }
-           { Id = "cozy"; Name = "Cozy Garden"; Description = "Pure-farm relaxation — no energy, no collapse, slow days." }
-           { Id = "quest"; Name = "Quest RPG"; Description = "Story-driven: a quest chain, gated dialogue and an elder NPC." }
+           { Id = "cozy"; Name = "Cozy Garden"; Description = "A cottage garden with a pond, growing beds and hens — no energy, no collapse, slow days." }
+           { Id = "quest"; Name = "Quest RPG"; Description = "Story-driven: a quest chain, gated dialogue and an elder in the village square." }
            { Id = "blank"; Name = "Blank"; Description = "An empty scene and the default catalog. Build from scratch." } |]
 
     static member All : IReadOnlyList<string> = [| "starter"; "blank"; "cozy"; "quest" |]
