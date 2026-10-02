@@ -187,6 +187,7 @@
     "stable": "f2ed67b1aa6d85f8",
     "problems": [
       "warning|action.cycle|actions[3].outcomes|Action \"Loop\" ends up performing itself again; the game stops such a chain after 4 levels or 256 actions|action",
+      "warning|minigame.unknownKind|minigames[0].kind|Minigame \"Orb\" uses kind \"orb-dance\", which the game doesn't have: it plays as a single \"Go!\" button that always scores 0.5. Pick one of the built-in kinds|minigame",
       "warning|minigame.noTiers|minigames[1].resultTiers|Minigame \"Empty\" has no result tiers, so its score changes nothing|minigame"
     ],
     "content": "d2b8c911412fdeab",
