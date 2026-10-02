@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -64,9 +65,16 @@ public sealed partial class EditModeView : UserControl
     private readonly WrapPanel _palette = new() { Name = "TilePalette" };
     private readonly Button _undo;
     private readonly Button _redo;
+    /// <summary>The map tools panel; it shows on the Map tab only.</summary>
+    private readonly Grid _sidePanel;
+    /// <summary>The Edit Mode tabs, in <see cref="EditorTab"/> order.</summary>
     private readonly TabControl _tabs;
     private readonly ContentEditorView _contentEditor;
+    private readonly ProblemsView _problems;
     private readonly SettingsEditorView _settingsEditor;
+    private readonly ModsEditorView _modsEditor;
+    private readonly ArtEditorView _artEditor;
+    private readonly WorkshopView _workshop;
     private readonly InterfaceEditorView _interfaceEditor;
     private GameProject? _projectForCanvas;
     /// <summary>What the project info panel shows, to rebuild it only when that changed (not per painted tile).</summary>
@@ -106,6 +114,67 @@ public sealed partial class EditModeView : UserControl
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             BringIntoViewOnFocusChange = false,
         };
+        var center = BuildMapCenter();
+
+        // Side panel: map tools, scene and transition controls, history.
+        _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
+        _undo.Name = "UndoButton";
+        AutomationProperties.SetName(_undo, "Undo");
+        ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
+        _redo = Ui.Button(Ui.IconLabel("IconRedo", "Redo"), () => _workspace.Redo(), "tool");
+        _redo.Name = "RedoButton";
+        AutomationProperties.SetName(_redo, "Redo");
+        ToolTip.SetTip(_redo, "Redo (Ctrl+Y)");
+        _sidePanel = BuildSidePanel();
+
+        // The tabs, in EditorTab order.
+        _tabs = new TabControl { Name = "EditorTabs" };
+        _contentEditor = new ContentEditorView(workspace, PickOnMap);
+        _settingsEditor = new SettingsEditorView(workspace, PickOnMap);
+        _modsEditor = new ModsEditorView(workspace);
+        _artEditor = new ArtEditorView(workspace, (type, visual) =>
+        {
+            UseBrush(type, visual);
+            SelectedTab = EditorTab.Map;
+        });
+        _workshop = new WorkshopView(workspace, () => _sceneId, PickOnMap, OpenWorkshopLink);
+        _interfaceEditor = new InterfaceEditorView(workspace);
+        _problems = new ProblemsView(workspace, OpenProblem);
+        AddTab(EditorTab.Map, "Map", center);
+        AddTab(EditorTab.Content, "Content", _contentEditor);
+        AddTab(EditorTab.Problems, "Problems", _problems);
+        AddTab(EditorTab.Settings, "Settings", _settingsEditor);
+        AddTab(EditorTab.Mods, "Mods", _modsEditor);
+        AddTab(EditorTab.Art, "Art", _artEditor);
+        AddTab(EditorTab.Workshop, "Workshop", _workshop);
+        AddTab(EditorTab.Interface, "Interface", _interfaceEditor);
+        _tabs.SelectionChanged += OnTabChanged;
+        SelectedTab = EditorTab.Map;
+        var dock = new DockPanel();
+        dock.Children.Add(_sidePanel);
+        dock.Children.Add(_tabs);
+        var root = new Grid();
+        root.Children.Add(dock);
+        root.Children.Add(BuildQuickOpen());
+        Content = root;
+
+        _workspace.ProjectChanged += OnProjectChanged;
+        _workspace.Leaving += OnLeaving;
+        try
+        {
+            Refresh();
+        }
+        catch
+        {
+            // A project this editor can't show: the half-built editor must not stay subscribed.
+            Retire();
+            throw;
+        }
+    }
+
+    /// <summary>The Map tab's page: the toolbar (scene, markers, zoom, hover readout), the framed map and the cursor status line.</summary>
+    private DockPanel BuildMapCenter()
+    {
         var frame = new Border { Child = _scroller, Background = new SolidColorBrush(Color.Parse("#4DE4DDCF")) }.WithClasses("game-frame");
         frame.Background = new SolidColorBrush(Color.Parse("#66E4DDCF"));
 
@@ -175,16 +244,15 @@ public sealed partial class EditModeView : UserControl
         DockPanel.SetDock(_cursorStatus, Dock.Bottom);
         center.Children.Add(_cursorStatus);
         center.Children.Add(frame);
+        return center;
+    }
 
-        // Side panel: map tools, scene and transition controls, history.
-        _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
-        _undo.Name = "UndoButton";
-        AutomationProperties.SetName(_undo, "Undo");
-        ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
-        _redo = Ui.Button(Ui.IconLabel("IconRedo", "Redo"), () => _workspace.Redo(), "tool");
-        _redo.Name = "RedoButton";
-        AutomationProperties.SetName(_redo, "Redo");
-        ToolTip.SetTip(_redo, "Redo (Ctrl+Y)");
+    /// <summary>
+    /// The map tools panel left of the tabs (shown on the Map tab only): tip, project info, tile
+    /// brushes, the tool panels and undo/redo, in a column the creator can resize.
+    /// </summary>
+    private Grid BuildSidePanel()
+    {
         BuildPalette();
 
         var notice = Ui.Wrapped(PortingNotice, "small");
@@ -220,154 +288,89 @@ public sealed partial class EditModeView : UserControl
         Grid.SetColumn(sideSplitter, 1);
         sidePanel.Children.Add(sideSplitter);
         DockPanel.SetDock(sidePanel, Dock.Left);
+        return sidePanel;
+    }
 
-        var tabs = new TabControl { Name = "EditorTabs" };
-        _tabs = tabs;
-        var contentEditor = new ContentEditorView(workspace, PickOnMap);
-        _contentEditor = contentEditor;
-        var settingsEditor = new SettingsEditorView(workspace, PickOnMap);
-        _settingsEditor = settingsEditor;
-        var mods = new ModsEditorView(workspace);
-        var art = new ArtEditorView(workspace, (type, visual) =>
-        {
-            UseBrush(type, visual);
-            tabs.SelectedIndex = 0;
-        });
-        var workshop = new WorkshopView(workspace, () => _sceneId, PickOnMap, tab =>
-        {
-            // The web editor's tab keys: art, the map and the Problems panel have their own tabs.
-            var editorTab = tab switch
-            {
-                "scenes" => 0,
-                "problems" => 2,
-                "assets" => 5,
-                _ => -1,
-            };
-            if (editorTab >= 0)
-            {
-                tabs.SelectedIndex = editorTab;
-                return;
-            }
+    // ---- Tabs ----
 
-            var category = tab switch
-            {
-                "npcs" => "NPCs",
-                "actions" => "Actions",
-                "events" => "Events",
-                "nodes" => "Node types",
-                "craft" => "Recipes",
-                "crops" => "Crops",
-                "wildlife" => "Animal species",
-                "items" => "Items",
-                "quests" => "Quests",
-                _ => null,
-            };
-            if (category is not null)
-            {
-                tabs.SelectedIndex = 1;
-                contentEditor.SelectCategory(category);
-            }
-        });
-        var interfaceEditor = new InterfaceEditorView(workspace);
-        _interfaceEditor = interfaceEditor;
-        var problems = new ProblemsView(workspace, problem =>
-        {
-            if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
-            {
-                tabs.SelectedIndex = 0;
-                SelectScene(sceneId);
-                return;
-            }
+    /// <summary>The Edit Mode tab on show.</summary>
+    public EditorTab SelectedTab
+    {
+        get => (EditorTab)_tabs.SelectedIndex;
+        set => _tabs.SelectedIndex = (int)value;
+    }
 
-            if (problem.TargetKind == "settings")
-            {
-                tabs.SelectedIndex = 3;
-                return;
-            }
-            if (problem.TargetKind == "interface")
-            {
-                tabs.SelectedIndex = 7;
-                return;
-            }
-            if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
-            {
-                tabs.SelectedIndex = 4;
-                mods.SelectPack(packId);
-                return;
-            }
-            if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
-            {
-                tabs.SelectedIndex = 5;
-                art.SelectAsset(assetId);
-                return;
-            }
+    private void AddTab(EditorTab tab, string header, Control content)
+    {
+        Debug.Assert(_tabs.ItemCount == (int)tab, $"The {tab} tab must be added in EditorTab order.");
+        _tabs.Items.Add(new TabItem { Header = header, Content = content });
+    }
 
-            var category = problem.TargetKind switch
-            {
-                "npc" => "NPCs",
-                "item" => "Items",
-                "crop" => "Crops",
-                "quest" => "Quests",
-                "event" => "Events",
-                "shop" => "Shops",
-                "recipe" => "Recipes",
-                "nodeType" => "Node types",
-                "machineType" => "Machine types",
-                "animalSpecies" => "Animal species",
-                "fishTable" => "Fish tables",
-                "action" => "Actions",
-                "minigame" => "Minigames",
-                _ => null,
-            };
-            if (category is not null && problem.TargetId is { } id)
-            {
-                tabs.SelectedIndex = 1;
-                contentEditor.SelectEntry(category, id);
-            }
-        });
-        tabs.Items.Add(new TabItem { Header = "Map", Content = center });
-        tabs.Items.Add(new TabItem { Header = "Content", Content = contentEditor });
-        tabs.Items.Add(new TabItem { Header = "Problems", Content = problems });
-        tabs.Items.Add(new TabItem { Header = "Settings", Content = settingsEditor });
-        tabs.Items.Add(new TabItem { Header = "Mods", Content = mods });
-        tabs.Items.Add(new TabItem { Header = "Art", Content = art });
-        tabs.Items.Add(new TabItem { Header = "Workshop", Content = workshop });
-        tabs.Items.Add(new TabItem { Header = "Interface", Content = interfaceEditor });
-        tabs.SelectionChanged += (_, args) =>
+    /// <summary>The map tools show on the Map tab only; the other tabs catch up with the project when opened.</summary>
+    private void OnTabChanged(object? sender, SelectionChangedEventArgs args)
+    {
+        if (!ReferenceEquals(args.Source, _tabs)) return;
+        var tab = SelectedTab;
+        _sidePanel.IsVisible = tab == EditorTab.Map;
+        switch (tab)
         {
-            if (!ReferenceEquals(args.Source, tabs)) return;
-            sidePanel.IsVisible = tabs.SelectedIndex == 0;
-            if (tabs.SelectedIndex == 2) problems.Refresh();
-            if (tabs.SelectedIndex == 1) contentEditor.Refresh();
-            if (tabs.SelectedIndex == 3) settingsEditor.Refresh();
-            if (tabs.SelectedIndex == 4) mods.Refresh();
-            if (tabs.SelectedIndex == 5) art.Refresh();
-            if (tabs.SelectedIndex == 6) workshop.Refresh();
-            if (tabs.SelectedIndex == 7) interfaceEditor.Refresh();
-        };
-        tabs.SelectedIndex = 0;
-        var dock = new DockPanel();
-        dock.Children.Add(sidePanel);
-        dock.Children.Add(tabs);
-        var root = new Grid();
-        root.Children.Add(dock);
-        root.Children.Add(BuildQuickOpen());
-        Content = root;
-
-        _workspace.ProjectChanged += OnProjectChanged;
-        _workspace.Leaving += OnLeaving;
-        try
-        {
-            Refresh();
-        }
-        catch
-        {
-            // A project this editor can't show: the half-built editor must not stay subscribed.
-            Retire();
-            throw;
+            case EditorTab.Content: _contentEditor.Refresh(); break;
+            case EditorTab.Problems: _problems.Refresh(); break;
+            case EditorTab.Settings: _settingsEditor.Refresh(); break;
+            case EditorTab.Mods: _modsEditor.Refresh(); break;
+            case EditorTab.Art: _artEditor.Refresh(); break;
+            case EditorTab.Workshop: _workshop.Refresh(); break;
+            case EditorTab.Interface: _interfaceEditor.Refresh(); break;
         }
     }
 
+    /// <summary>A Workshop "Build your game" shortcut (a web editor tab key).</summary>
+    private void OpenWorkshopLink(string tabKey)
+    {
+        if (EditorNavigation.WorkshopTarget(tabKey) is not { } target) return;
+        SelectedTab = target.Tab;
+        if (target.Category is { } category) _contentEditor.SelectCategory(category);
+    }
+
+    /// <summary>A Problems row: opens what the problem is about.</summary>
+    private void OpenProblem(Problem problem)
+    {
+        if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
+        {
+            SelectedTab = EditorTab.Map;
+            SelectScene(sceneId);
+            return;
+        }
+
+        if (problem.TargetKind == "settings")
+        {
+            SelectedTab = EditorTab.Settings;
+            return;
+        }
+        if (problem.TargetKind == "interface")
+        {
+            SelectedTab = EditorTab.Interface;
+            return;
+        }
+        if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
+        {
+            SelectedTab = EditorTab.Mods;
+            _modsEditor.SelectPack(packId);
+            return;
+        }
+        if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
+        {
+            SelectedTab = EditorTab.Art;
+            _artEditor.SelectAsset(assetId);
+            return;
+        }
+
+        if (EditorNavigation.ContentCategory(problem.TargetKind) is { } category && problem.TargetId is { } id)
+        {
+            SelectedTab = EditorTab.Content;
+            _contentEditor.SelectEntry(category, id);
+        }
+    }
     /// <summary>The scene shown (defaults to the player's scene).</summary>
     public string? SceneId => _sceneId;
 

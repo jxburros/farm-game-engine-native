@@ -31,7 +31,7 @@ public sealed partial class EditModeView
     private readonly ListBox _quickOpenResults = new() { Name = "QuickOpenResults", MaxHeight = 360 };
     private List<FindResult> _found = [];
     /// <summary>A "Pick on map" waiting for a tile: what to do with it, and where to go back to.</summary>
-    private (Action<int, int> Done, string? ReturnScene, int ReturnTab)? _pick;
+    private (Action<int, int> Done, string? ReturnScene, EditorTab ReturnTab)? _pick;
 
     /// <summary>The markers drawn over the scene on show.</summary>
     public IReadOnlyList<MapMarker> Markers => _markers;
@@ -153,11 +153,11 @@ public sealed partial class EditModeView
                 _editorMessage.Text = $"The door that lands there: edit it below.";
                 return true;
             case "event":
-                _tabs.SelectedIndex = 1;
+                SelectedTab = EditorTab.Content;
                 _contentEditor.SelectEntry("Events", marker.TargetId);
                 return true;
             case "mine":
-                _tabs.SelectedIndex = 3;
+                SelectedTab = EditorTab.Settings;
                 return true;
             default:
                 _editorMessage.Text = marker.Label;
@@ -175,9 +175,9 @@ public sealed partial class EditModeView
     public void PickOnMap(string sceneId, string prompt, Action<int, int> done)
     {
         ArgumentNullException.ThrowIfNull(done);
-        var returnTab = _tabs.SelectedIndex;
+        var returnTab = SelectedTab;
         var returnScene = _sceneId;
-        _tabs.SelectedIndex = 0;
+        SelectedTab = EditorTab.Map;
         if (_workspace.Current?.Scenes.Any(s => s.Id == sceneId) == true && sceneId != _sceneId) SelectScene(sceneId);
         _pick = (done, returnScene, returnTab);
         _editorMessage.Text = $"{prompt} Escape cancels.";
@@ -192,7 +192,7 @@ public sealed partial class EditModeView
         if (pick.ReturnScene is { } scene && scene != _sceneId) SelectScene(scene);
         // The form gets the tile before its tab is shown again, so it keeps it as unsaved fields.
         pick.Done(tile.X, tile.Y);
-        _tabs.SelectedIndex = pick.ReturnTab;
+        SelectedTab = pick.ReturnTab;
         return true;
     }
 
@@ -201,7 +201,7 @@ public sealed partial class EditModeView
         if (_pick is not { } pick) return;
         _pick = null;
         if (pick.ReturnScene is { } scene && scene != _sceneId) SelectScene(scene);
-        _tabs.SelectedIndex = pick.ReturnTab;
+        SelectedTab = pick.ReturnTab;
         _editorMessage.Text = "Pick cancelled.";
     }
 
@@ -315,7 +315,7 @@ public sealed partial class EditModeView
                 var id = scene.Id;
                 results.Add((rank, new FindResult("Scene", $"{scene.Name}  ·  {id}", () =>
                 {
-                    _tabs.SelectedIndex = 0;
+                    SelectedTab = EditorTab.Map;
                     SelectScene(id);
                 })));
             }
@@ -326,7 +326,7 @@ public sealed partial class EditModeView
             var name = label.Split("  ·  ")[0];
             results.Add((ContentEditorView.Rank(name, text) ?? 2, new FindResult(category, label, () =>
             {
-                _tabs.SelectedIndex = 1;
+                SelectedTab = EditorTab.Content;
                 _contentEditor.SelectEntry(category, id);
             })));
         }
@@ -338,8 +338,8 @@ public sealed partial class EditModeView
                 var id = asset.Id;
                 results.Add((rank, new FindResult("Art", $"{asset.Name}  ·  {id}", () =>
                 {
-                    _tabs.SelectedIndex = 5;
-                    ((_tabs.Items[5] as TabItem)?.Content as ArtEditorView)?.SelectAsset(id);
+                    SelectedTab = EditorTab.Art;
+                    _artEditor.SelectAsset(id);
                 })));
             }
         }
