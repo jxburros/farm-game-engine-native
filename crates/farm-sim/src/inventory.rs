@@ -171,10 +171,12 @@ pub fn remove_item(inventory: &[InventorySlot], item_id: &str, quantity: u32) ->
     next
 }
 
+/// The first slot matching `predicate`.
 pub fn find_slot(inventory: &[InventorySlot], predicate: impl Fn(&InventorySlot) -> bool) -> Option<&InventorySlot> {
     inventory.iter().find(|slot| predicate(slot))
 }
 
+/// The first slot holding a tool of `tool_type`.
 pub fn find_tool_slot<'a>(inventory: &'a [InventorySlot], tool_type: &str) -> Option<&'a InventorySlot> {
     inventory.iter().find(|slot| slot.item.tool_type.as_deref() == Some(tool_type))
 }

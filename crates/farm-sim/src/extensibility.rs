@@ -15,10 +15,12 @@ use crate::units;
 use crate::{events, fishing, inventory};
 use serde_json::Value;
 
+/// The `startMinigame` command (and the plugin mutation): open the minigame `minigame_id`.
 pub fn handle_start_minigame(ctx: &EngineContext, state: &mut GameState, minigame_id: &str) -> Effects {
     events::start_minigame_session(ctx, state, minigame_id, None)
 }
 
+/// The `cancelMinigame` command: close the open minigame without a result.
 pub fn handle_cancel_minigame(state: &mut GameState) -> Effects {
     if state.minigame.is_none() {
         return vec![];

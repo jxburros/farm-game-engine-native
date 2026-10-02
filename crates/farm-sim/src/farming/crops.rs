@@ -176,6 +176,8 @@ pub fn roll_mutation(definition: Option<&CropDefinition>, quality: &str, rng: &m
     None
 }
 
+/// How many crops a harvest yields: the definition's yield range, plus the quality and mutation
+/// bonuses.
 pub fn roll_yield(
     definition: Option<&CropDefinition>,
     quality: &str,
@@ -206,6 +208,8 @@ pub fn roll_yield(
     u32::try_from(quantity.max(0)).unwrap_or(u32::MAX)
 }
 
+/// The value of `quantity` crops of a quality and mutation (`None` for an unknown quality or
+/// mutation, which reads NaN in the reference).
 pub fn calculate_harvest_value(
     definition: Option<&CropDefinition>,
     quality: &str,
@@ -229,6 +233,7 @@ pub fn calculate_harvest_value(
     Some(i64::try_from(value.div_euclid(1_000_000)).unwrap_or(i64::MAX))
 }
 
+/// Whether a crop grows in `season` (an unknown crop never does).
 pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> bool {
     let Some(definition) = definition else {
         return false;

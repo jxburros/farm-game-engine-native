@@ -34,10 +34,12 @@ pub fn npc_on_tile(ctx: &EngineContext, state: &GameState, x: i32, y: i32) -> Op
         .or_else(|| state.npcs.iter().filter(|(_, npc)| here(npc)).map(|(id, _)| id).min().cloned())
 }
 
+/// The player's friendship points with `npc_id` (0 when never met).
 pub fn friendship_with(state: &GameState, npc_id: &str) -> i32 {
     state.social.get(npc_id).map(|social| social.friendship).unwrap_or(0)
 }
 
+/// Whole hearts of a friendship score.
 pub fn hearts(friendship: i32) -> i32 {
     friendship.div_euclid(FRIENDSHIP_PER_HEART)
 }

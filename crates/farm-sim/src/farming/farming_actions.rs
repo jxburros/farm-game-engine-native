@@ -123,6 +123,8 @@ fn finish(ctx: &EngineContext, state: &mut GameState, tool: &Item, energy_cost: 
     effects
 }
 
+/// The `useTool` command: use the held tool of `tool_type` on the faced tile (strike a node,
+/// water, till, harvest, fish), spending energy and durability when it does something.
 pub fn handle_use_tool(ctx: &EngineContext, state: &mut GameState, tool_type: &str) -> Effects {
     let Some(tool_slot) = inventory::find_tool_slot(&state.player.inventory, tool_type).cloned() else {
         let name = if tool_type == tool_types::WATERING_CAN {
@@ -281,6 +283,7 @@ pub struct PlantChoice<'a> {
     pub chosen: bool,
 }
 
+/// The `interact` command: [`handle_interact_with`] with the default planting choice.
 pub fn handle_interact(ctx: &EngineContext, state: &mut GameState) -> Effects {
     handle_interact_with(ctx, state, PlantChoice::default())
 }

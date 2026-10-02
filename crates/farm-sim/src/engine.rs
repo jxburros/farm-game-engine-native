@@ -19,6 +19,8 @@ use crate::{
 /// Simulation runs at a fixed rate; rendering interpolates between ticks.
 pub const TICKS_PER_SECOND: u32 = units::TICKS_PER_SECOND;
 
+/// Apply one command to the state. Under [`CommandRules::Player`] a command that does not apply
+/// now is refused first (see `refusal`); otherwise it emits `onCommand` and runs its handler.
 pub fn apply_command(ctx: &EngineContext, state: &mut GameState, command: &Command) -> Effects {
     if ctx.rules == CommandRules::Player {
         if let Some(refused) = refusal(ctx, state, command) {

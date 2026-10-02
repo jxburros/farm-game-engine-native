@@ -33,7 +33,7 @@ pub struct PerformActionResult {
 }
 
 /// Actions may perform actions; cap the chain so cycles terminate.
-const MAX_ACTION_DEPTH: u32 = 4;
+pub const MAX_ACTION_DEPTH: u32 = 4;
 
 /// The most actions one top-level call (a command, a dialogue option, an event, a minigame tier,
 /// a plugin mutation) may run in all. The depth cap alone bounds a chain, not its breadth: an
@@ -84,6 +84,8 @@ fn position_matches(x: i32, y: i32, x2: Option<i32>, y2: Option<i32>, pos: Event
     pos.x >= min_x && pos.x <= max_x && pos.y >= min_y && pos.y <= max_y
 }
 
+/// Whether `condition` holds now; `pos` is the tile entered or interacted with (for the tile
+/// conditions).
 pub fn condition_met(
     ctx: &EngineContext,
     state: &GameState,
@@ -487,6 +489,7 @@ pub fn start_minigame_session(
     vec![]
 }
 
+/// Run an event's outcomes and mark a non-repeatable event as fired.
 pub fn fire_event(ctx: &EngineContext, state: &mut GameState, event: &GameEvent) -> Effects {
     let effects = apply_outcomes(ctx, state, &event.outcomes, 0);
     if !event.repeatable {

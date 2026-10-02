@@ -22,6 +22,7 @@ pub const FLOOR_ENTRY: (i32, i32) = (1, 1);
 /// The smallest floor side: a wall ring around at least one tile (the entry).
 pub const MIN_FLOOR_SIZE: i32 = 3;
 
+/// The scene id of mine floor `floor`.
 pub fn mine_floor_scene_id(floor: u32) -> String {
     format!("{MINE_SCENE_PREFIX}{floor}")
 }

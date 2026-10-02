@@ -21,6 +21,7 @@ pub struct FishingResult {
     pub caught: bool,
 }
 
+/// The first fish table that applies where and when the player is (scene, season, weather).
 pub fn active_fish_table<'a>(ctx: &'a EngineContext, state: &GameState) -> Option<&'a FishTable> {
     ctx.content.fish_tables.iter().find(|table| {
         if let Some(scene_ids) = table.scene_ids.as_ref().filter(|ids| !ids.is_empty()) {
@@ -53,6 +54,9 @@ pub fn escape_chance(difficulty: u64, rod_tier: i32, score: Option<u64>) -> (u12
     (scaled * skill, 20 * units::PROBABILITY_ONE as u128)
 }
 
+/// Resolve a cast with a rod of `rod_tier`: roll the catch from the active fish table (junk, or
+/// a fish that may escape; a minigame `score` lowers the escape chance), add it to the inventory
+/// and grant fishing XP.
 pub fn resolve_fishing(ctx: &EngineContext, state: &mut GameState, rod_tier: i32, score: Option<u64>) -> FishingResult {
     let Some(table) = active_fish_table(ctx, state) else {
         return FishingResult {

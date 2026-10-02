@@ -17,6 +17,7 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|s| !s.is_empty())
 }
 
+/// The dialogue `dialogue_id`: the NPC's own dialogue of that id first, then the standalone one.
 pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str) -> Option<&'a Dialogue> {
     // NPC-owned dialogues first (interaction entry point), then the global list.
     let npc = ctx.npc(npc_id);
@@ -27,6 +28,8 @@ pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str
     ctx.dialogue(dialogue_id)
 }
 
+/// The `chooseDialogueOption` command: pick the `index`-th visible option of the open dialogue
+/// and apply it (its outcomes, item, shop, next dialogue).
 pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: i32) -> Effects {
     let Some(dialogue_ref) = state.dialogue.clone() else {
         return Vec::new();
@@ -135,6 +138,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     effects
 }
 
+/// The `closeDialogue` command.
 pub fn handle_close_dialogue(state: &mut GameState) -> Effects {
     if state.dialogue.is_none() {
         return Vec::new();

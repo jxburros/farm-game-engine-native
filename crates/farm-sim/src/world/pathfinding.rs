@@ -71,6 +71,8 @@ pub(crate) fn tile_blocks_indexed(
     false
 }
 
+/// Whether an NPC may step on `(x, y)`: inside the scene, not blocked by the tile, a node or a
+/// machine, and not taken by another NPC or the player.
 pub fn is_walkable(w: &Walkability<'_>, x: i32, y: i32) -> bool {
     let Some(tile) = w.scene.tile(x, y) else {
         return false;

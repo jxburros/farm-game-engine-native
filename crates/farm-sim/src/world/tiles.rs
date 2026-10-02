@@ -15,6 +15,7 @@ pub fn classify_tile_type(tile_type: &str) -> String {
     }
 }
 
+/// A plain tile of `tile_type`, the type routed to its layer (`classify_tile_type`).
 pub fn create_empty_tile(x: i32, y: i32, tile_type: &str) -> Tile {
     let layer = classify_tile_type(tile_type);
     Tile {
@@ -31,6 +32,8 @@ pub fn create_empty_tile(x: i32, y: i32, tile_type: &str) -> Tile {
     }
 }
 
+/// `tile` with `new_type` on its layer (and `visual` as that layer's art), keeping the other
+/// layers.
 pub fn set_tile_layer(tile: &Tile, new_type: &str, visual: Option<&VisualRef>) -> Tile {
     let layer = classify_tile_type(new_type);
     let mut updated = tile.clone();
@@ -62,6 +65,7 @@ pub fn set_tile_layer(tile: &Tile, new_type: &str, visual: Option<&VisualRef>) -
     updated
 }
 
+/// A `width` × `height` scene of grass.
 pub fn create_empty_scene(id: &str, name: &str, width: i32, height: i32) -> Scene {
     let tiles =
         (0..height.max(0)).map(|y| (0..width.max(0)).map(|x| create_empty_tile(x, y, "grass")).collect()).collect();

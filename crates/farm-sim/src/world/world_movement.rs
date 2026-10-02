@@ -48,6 +48,7 @@ pub struct TilePoint {
     pub y: i32,
 }
 
+/// The unit step of a direction name (`0, 0` for an unknown one).
 pub fn get_direction_vector(direction: &str) -> DirectionVector {
     match direction {
         "up" => DirectionVector { dx: 0, dy: -1 },
@@ -211,6 +212,7 @@ pub fn land_player(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x
     (landed, effects)
 }
 
+/// The scene `scene_id` of the running world.
 pub fn find_scene<'a>(state: &'a GameState, scene_id: &str) -> Option<&'a Scene> {
     state.world.scenes.iter().find(|scene| scene.id == scene_id)
 }

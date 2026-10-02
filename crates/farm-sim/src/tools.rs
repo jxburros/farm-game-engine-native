@@ -37,6 +37,7 @@ pub fn can_use_tool(tool: &Item, target_tile: &Tile) -> bool {
     definition.valid_targets.contains(&target_tile.r#type)
 }
 
+/// The built-in definition of the tool `item` is, if it is one.
 pub fn get_tool_from_item(item: &Item) -> Option<ToolDefinition> {
     let tool_type = tool_type_of(item)?;
     try_get_tool_definition(tool_type)
@@ -48,6 +49,7 @@ fn truthy_number(value: Option<i32>) -> Option<i32> {
     value.filter(|v| *v != 0)
 }
 
+/// `tool` with `amount` less durability (not below 0); a tool without durability is unchanged.
 pub fn damage_tool_durability(tool: &Item, amount: i32) -> Item {
     let (Some(durability), Some(_)) = (truthy_number(tool.durability), truthy_number(tool.max_durability)) else {
         return tool.clone();
@@ -55,6 +57,7 @@ pub fn damage_tool_durability(tool: &Item, amount: i32) -> Item {
     Item { durability: Some(durability.saturating_sub(amount).max(0)), ..tool.clone() }
 }
 
+/// Whether a breakable tool is at 0 durability.
 pub fn is_tool_broken(tool: &Item) -> bool {
     // M2 fix: a tool at exactly 0 durability IS broken (the old falsy check
     // meant tools could never break; repair shops make breakage meaningful).

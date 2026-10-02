@@ -14,6 +14,7 @@ use crate::inventory;
 use crate::schema::{AnimalSpeciesDefinition, AnimalState, GameState};
 use crate::units;
 
+/// The animal species `species_id`.
 pub fn species_by_id<'a>(ctx: &'a EngineContext, species_id: &str) -> Option<&'a AnimalSpeciesDefinition> {
     ctx.animal_species(species_id)
 }

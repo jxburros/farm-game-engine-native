@@ -45,10 +45,13 @@ pub fn absolute_minute(state: &GameState) -> i64 {
         + i64::from(state.clock.time_minutes)
 }
 
+/// The crafting recipe `recipe_id`.
 pub fn recipe_by_id<'a>(ctx: &'a EngineContext, recipe_id: &str) -> Option<&'a RecipeDefinition> {
     ctx.recipe(recipe_id)
 }
 
+/// Whether the player meets every requirement of the recipe's `unlock` (skill level, completed
+/// quest, season); a recipe without one is always available.
 pub fn is_recipe_unlocked(ctx: &EngineContext, state: &GameState, recipe: &RecipeDefinition) -> bool {
     let _ = ctx;
     let Some(unlock) = &recipe.unlock else {
@@ -72,6 +75,7 @@ pub fn is_recipe_unlocked(ctx: &EngineContext, state: &GameState, recipe: &Recip
     true
 }
 
+/// Whether the inventory holds every input of `recipe` in its quantity (summed over stacks).
 pub fn has_ingredients(state: &GameState, recipe: &RecipeDefinition) -> bool {
     recipe.inputs.iter().all(|input| {
         let mut held: u64 = 0;

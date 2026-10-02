@@ -17,10 +17,12 @@ pub struct NodeStrikeOutcome {
     pub struck: bool,
 }
 
+/// The gathering node type `type_id`.
 pub fn node_type_by_id<'a>(ctx: &'a EngineContext, type_id: &str) -> Option<&'a NodeTypeDefinition> {
     ctx.node_type(type_id)
 }
 
+/// Whether the tile has a node that is not depleted.
 pub fn is_node_active(tile: &Tile) -> bool {
     tile.node.as_ref().is_some_and(|node| node.remaining_health > 0)
 }

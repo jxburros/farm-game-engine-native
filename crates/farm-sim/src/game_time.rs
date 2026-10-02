@@ -136,6 +136,7 @@ pub fn day_of_season(calendar: &CalendarConfig, absolute_day: u32) -> u32 {
     position_for_day(calendar, absolute_day).day_of_season
 }
 
+/// The season id of an absolute day, in a calendar that started on day 1 of the first season.
 pub fn season_for_day(calendar: &CalendarConfig, absolute_day: u32) -> String {
     position_for_day(calendar, absolute_day).season.id.clone()
 }

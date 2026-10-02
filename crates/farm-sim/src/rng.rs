@@ -130,6 +130,7 @@ impl Rng {
         Self { state }
     }
 
+    /// The next 32-bit draw.
     pub fn next_u32(&mut self) -> u32 {
         let (value, next) = next_u32(&self.state);
         self.state = next;
@@ -147,6 +148,7 @@ impl Rng {
         u128::from(self.next_u32()) * denominator < numerator
     }
 
+    /// A uniform integer in `min..=max`.
     pub fn int(&mut self, min: i64, max: i64) -> i64 {
         let (value, next) = next_int(&self.state, min, max);
         self.state = next;

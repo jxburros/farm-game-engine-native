@@ -12,10 +12,12 @@ use crate::schema::{crop_qualities, DialogueOption, GameState, Item, ShopDefinit
 use crate::world::world_movement;
 use crate::{content_builtin, units};
 
+/// The shop definition `shop_id`.
 pub fn find_shop<'a>(ctx: &'a EngineContext, shop_id: &str) -> Option<&'a ShopDefinition> {
     ctx.shop(shop_id)
 }
 
+/// The `openShop` command: open `shop_id` (closing any dialogue).
 pub fn handle_open_shop(ctx: &EngineContext, state: &mut GameState, shop_id: &str) -> Effects {
     let shop = find_shop(ctx, shop_id);
     if shop.is_none() {
@@ -53,6 +55,7 @@ pub fn open_shop_refusal(ctx: &EngineContext, state: &GameState, shop_id: &str) 
     }
 }
 
+/// The `closeShop` command.
 pub fn handle_close_shop(state: &mut GameState) -> Effects {
     if state.shop.is_none() {
         return Vec::new();
@@ -109,6 +112,8 @@ pub fn repair_cost(missing: i64, shop: &ShopDefinition) -> i64 {
     units::div_ceil(missing.saturating_mul(i64::from(shop.repair_cost_per_point)), i64::from(units::MILLI_ONE))
 }
 
+/// The `buyItem` command: buy `quantity` of `item_id` from the open shop (stock, daily limits,
+/// money and inventory space permitting).
 pub fn handle_buy_item(ctx: &EngineContext, state: &mut GameState, item_id: &str, quantity: u32) -> Effects {
     let Some(session) = &state.shop else {
         return vec![Effect::message(message_levels::ERROR, "No shop is open.")];
@@ -238,6 +243,7 @@ pub fn handle_sell_item(
     vec![Effect::message(message_levels::SUCCESS, format!("Sold {quantity}x {item_name} for ${total}"))]
 }
 
+/// The `repairTool` command: repair the held tool `item_id` at the open shop, if it repairs tools.
 pub fn handle_repair_tool(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let Some(session) = &state.shop else {
         return vec![Effect::message(message_levels::ERROR, "No shop is open.")];

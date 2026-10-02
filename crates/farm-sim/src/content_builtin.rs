@@ -224,6 +224,8 @@ fn plain(id: &str, name: &str, description: &str, r#type: &str, max_stack: u32, 
     }
 }
 
+/// The built-in items: a seed and a crop item per built-in crop, then the tools and their
+/// upgrades, materials, gifts, fishing, animal and mining items.
 pub fn create_default_items() -> Vec<Item> {
     let mut items = Vec::new();
 
