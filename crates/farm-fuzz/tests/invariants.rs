@@ -64,12 +64,14 @@ fn content_edit() -> impl Strategy<Value = ContentEdit> {
         prop_oneof![-1000..=0i64, 0..=100_000i64].prop_map(ContentEdit::Money),
         (0..=40u32).prop_map(ContentEdit::InventorySize),
         (any::<usize>(), 0..=2500u32).prop_map(|(index, quantity)| ContentEdit::StartItem { index, quantity }),
-        (any::<usize>(), 0..=5u32, any::<bool>())
-            .prop_map(|(index, max_stack, stackable)| ContentEdit::ItemStack { index, max_stack, stackable }),
-        (any::<usize>(), -500..=100_000i64).prop_map(|(index, value)| ContentEdit::ItemValue { index, value }),
-        (any::<usize>(), -500..=100_000i64, 0..=5000u32).prop_map(|(index, price, sell_multiplier)| {
-            ContentEdit::ShopPrice { index, price, sell_multiplier }
+        (any::<usize>(), 0..=5u32, any::<bool>()).prop_map(|(index, max_stack, stackable)| ContentEdit::ItemStack {
+            index,
+            max_stack,
+            stackable
         }),
+        (any::<usize>(), -500..=100_000i64).prop_map(|(index, value)| ContentEdit::ItemValue { index, value }),
+        (any::<usize>(), -500..=100_000i64, 0..=5000u32)
+            .prop_map(|(index, price, sell_multiplier)| ContentEdit::ShopPrice { index, price, sell_multiplier }),
         (any::<usize>(), -2..=48i32, -2..=48i32).prop_map(|(index, width, height)| ContentEdit::SceneSize {
             index,
             width,
@@ -137,7 +139,8 @@ fn edit(project: &mut GameProject, edit: &ContentEdit) {
             }
         }
         ContentEdit::PlayerAt { scene, x, y } => {
-            project.player.scene_id = pick(&project.scenes, scene).map_or_else(|| "nowhere".to_owned(), |s| s.id.clone());
+            project.player.scene_id =
+                pick(&project.scenes, scene).map_or_else(|| "nowhere".to_owned(), |s| s.id.clone());
             project.player.x = x;
             project.player.y = y;
         }

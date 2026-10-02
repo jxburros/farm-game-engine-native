@@ -459,8 +459,12 @@ New tests:
   grids of their scene's size). Its tests run every target on stable over
   its seed corpus, random bytes and edited seeds, and the invariants under
   generated content; `fuzz/` wraps the same targets for cargo-fuzz (nightly,
-  the optional weekly `Fuzz` workflow). A proptest failure prints its shrunk
-  input; `PROPTEST_RNG_SEED` replays a run and `PROPTEST_CASES` lengthens it.
+  the optional weekly `Fuzz` workflow). On the F# side, FsCheck properties
+  (`FuzzPropertyTests.fs`) feed the JSON parser near-JSON and arbitrary text
+  and the cartridge reader edited and arbitrary bytes. A proptest failure
+  prints its shrunk input (and is kept in a `.proptest-regressions` file that
+  reruns it first); `PROPTEST_RNG_SEED` replays a run and `PROPTEST_CASES`
+  lengthens it. FsCheck prints a `Replay` seed.
 - **Benchmarks** (`farm-bench`, criterion), with budgets checked in CI once
   measured. Starting targets for a mid-range laptop:
 
