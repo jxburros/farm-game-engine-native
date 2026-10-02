@@ -2,9 +2,11 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 
+// Test doubles for the shell's pluggable parts. They keep the app's Hosting namespace (they
+// used to ship in the app), so the shell tests read as before.
 namespace FarmingRpgMaker.App.Hosting;
 
-/// <summary>Stand-in for the game view until the engine integration plugs in its own factory.</summary>
+/// <summary>Stand-in game view: a shell with no engine behind it (the shell tests' embedder).</summary>
 public sealed class PlaceholderGameSurfaceFactory : IGameSurfaceFactory
 {
     public object CreateGameSurface(IShellHost shell)
@@ -49,7 +51,7 @@ public sealed class PlaceholderGameSurfaceFactory : IGameSurfaceFactory
     }
 }
 
-/// <summary>Stand-in for the project manager until the engine integration provides one.</summary>
+/// <summary>Stand-in project commands that only report in the status bar.</summary>
 public sealed class PlaceholderProjectCommandHandler : IProjectCommandHandler
 {
     public Task NewProjectAsync(IShellHost shell)
