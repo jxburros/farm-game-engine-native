@@ -205,7 +205,7 @@ fn announces_item_rewards_that_do_not_fit_instead_of_dropping_them_silently() {
     assert!(state.player.completed_quests.contains(&"q1".to_owned()));
     assert!(effects
         .iter()
-        .any(|e| matches!(e, Effect::Message { level, text } if level == "error" && text.contains("reward lost"))));
+        .any(|e| matches!(e, Effect::Message { level, text, .. } if level == "error" && text.contains("reward lost"))));
 }
 
 // --- completeQuestById ---
@@ -282,4 +282,80 @@ fn completing_a_quest_without_a_progress_entry_writes_no_objectives_key() {
     assert_eq!(state.quests["q1"].status, "completed");
     assert_eq!(state.quests["q1"].objectives, None);
     assert_eq!(farm_sim::stable_stringify(&state.quests), r#"{"q1":{"status":"completed"}}"#);
+}
+
+// --- rewards.experience, repeatable, partial rewards (#33) ---
+
+#[test]
+fn experience_rewards_go_to_the_named_skill_or_farming() {
+    let quest = Quest {
+        rewards: QuestRewards { experience: Some(60), skill: Some("mining".to_owned()), ..QuestRewards::default() },
+        ..make_quest("q1")
+    };
+    let plain = Quest { rewards: QuestRewards { experience: Some(20), ..QuestRewards::default() }, ..make_quest("q2") };
+    let (ctx, mut state) = make_engine(|p| {
+        activate(quest, None)(p);
+        activate(plain, None)(p);
+    });
+    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2);
+    assert_eq!(state.player.skills.get("mining").map(|skill| skill.xp), Some(60));
+    assert_eq!(state.player.skills.get("farming").map(|skill| skill.xp), Some(20));
+    assert!(has_message(&effects, |t| t == "Mining level 1!"));
+}
+
+#[test]
+fn a_repeatable_quest_starts_again_with_its_objectives_reset() {
+    let quest = Quest { repeatable: Some(true), ..make_quest("q1") };
+    let once = make_quest("q2");
+    let (ctx, mut state) = make_engine(with_quests(vec![quest, once]));
+    quests::start_quest_by_id(&ctx, &mut state, "q1");
+    quests::start_quest_by_id(&ctx, &mut state, "q2");
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2);
+    assert_eq!(state.player.completed_quests, vec!["q1".to_owned(), "q2".to_owned()]);
+
+    // The one-off quest stays done; the repeatable one restarts from zero.
+    assert!(quests::start_quest_by_id(&ctx, &mut state, "q2").is_empty());
+    let effects = quests::start_quest_by_id(&ctx, &mut state, "q1");
+    assert!(has_message(&effects, |t| t.contains("New quest")));
+    assert_eq!(state.player.active_quests, vec!["q1".to_owned()]);
+    assert_eq!(state.quests["q1"].status, "active");
+    assert!(state.quests["q1"].objectives.as_ref().is_some_and(|objectives| objectives.is_empty()));
+
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 1);
+    assert_eq!(objective_progress(&state, "q1", "obj-1"), 1);
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 1);
+    // Completed twice, listed once.
+    assert_eq!(state.player.completed_quests, vec!["q1".to_owned(), "q2".to_owned()]);
+    assert!(state.player.active_quests.is_empty());
+}
+
+#[test]
+fn repeatable_auto_start_quests_restart_the_next_morning() {
+    let daily = Quest { repeatable: Some(true), auto_start: Some(true), ..make_quest("daily") };
+    let (ctx, mut state) = make_engine(with_quests(vec![daily]));
+    quests::auto_start_quests(&ctx, &mut state);
+    quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2);
+    assert!(state.player.active_quests.is_empty());
+    // Nothing restarts the same day; the nightly pass restarts it.
+    let effects = farm_sim::game_time::perform_sleep(&ctx, &mut state, farm_sim::game_time::SleepOptions::default());
+    assert_eq!(state.player.active_quests, vec!["daily".to_owned()]);
+    assert!(has_message(&effects, |t| t == "New quest: daily"));
+}
+
+#[test]
+fn a_reward_that_partly_fits_reports_only_the_lost_part() {
+    let items = content_builtin::create_default_items();
+    let quest = Quest {
+        rewards: QuestRewards {
+            items: Some(vec![QuestRewardItem { item_id: "seed-wheat".to_owned(), quantity: 10 }]),
+            ..QuestRewards::default()
+        },
+        ..make_quest("q1")
+    };
+    // seed-wheat stacks to 99: 95 held leaves room for 4 of the 10.
+    let inventory = vec![slot(&items, "seed-wheat", 95), slot(&items, "tool-axe", 1), slot(&items, "tool-pickaxe", 1)];
+    let (ctx, mut state) = make_engine(activate(quest, Some(inventory)));
+    let effects = quests::progress_quests(&ctx, &mut state, "collect", "material-wood", 2);
+    assert_eq!(state.player.inventory[0].quantity, 99);
+    assert!(has_message(&effects, |t| t == "Inventory full — quest reward lost: 6× Wheat Seeds"), "{effects:?}");
 }

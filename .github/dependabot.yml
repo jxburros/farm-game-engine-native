@@ -1,0 +1,56 @@
+# Dependency updates (docs/RELEASING.md "Dependencies"). Minor and patch updates come grouped,
+# one pull request per group and week; majors come one by one. CI decides whether a bump is
+# safe: the pinned actions, the lock files and the generated code all have checks.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # The generated accessors (crates/farm-cart-schema) come from flatc of the same version;
+      # bump the crate, flatc and the accessors together (schemas/README.md).
+      - dependency-name: flatbuffers
+    # crates/farm-plugin-guest and tools/plugin-guest/meter pin their dependencies exactly:
+    # any change there means rebuilding the checked-in guest (crates/farm-plugins/guest).
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # SkiaSharp must stay the version Avalonia.Skia depends on, and Svg.Skia renders on it
+      # (Directory.Packages.props), so they move with Avalonia.
+      avalonia:
+        patterns: ["Avalonia*", "SkiaSharp*", "Svg.Skia"]
+      tests:
+        patterns: ["Microsoft.NET.Test.Sdk", "xunit*", "coverlet.collector", "FsCheck*"]
+        update-types: [minor, patch]
+      nuget-minor-and-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["Avalonia*", "SkiaSharp*", "Svg.Skia", "Velopack"]
+    ignore:
+      # Avalonia 11 renders on SkiaSharp 2.88; Svg.Skia 4.9 and later need SkiaSharp 3 (4.0 to 4.8
+      # still use 2.88). Both rules go with the Avalonia 12 upgrade (docs/SKIA-MIGRATION.md).
+      - dependency-name: Svg.Skia
+        versions: [">= 4.9"]
+      - dependency-name: "SkiaSharp*"
+        versions: [">= 3"]
+    # Velopack updates alone: VPK_VERSION in .github/workflows/release.yml must change with it
+    # (tools/release/versions.sh fails CI until it does).
+
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]

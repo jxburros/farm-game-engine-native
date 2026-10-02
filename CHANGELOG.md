@@ -1,7 +1,230 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (unreleased)
 
+- **Music, more minigames, and the game in one language.**
+  - **Music and ambience.** Games have a soundtrack out of the box: day and
+    night music, birdsong, crickets and rain, composed and synthesized by the
+    engine itself (no audio files to license or ship). The music follows the
+    clock, the weather and indoor scenes, fades between loops, and the Music
+    volume now controls it, in exported games, Play Mode and the web demo.
+  - **The samples look different.** Cozy Garden is a cottage garden with a
+    pond, growing beds and hens; Quest RPG's farm opens onto a village square
+    with a fountain, the elder and a lantern keeper.
+  - **Three more minigames**: Rhythm tap, Moving target and Memory sequence.
+    A minigame's kind is picked from the built-in kinds, each with its own
+    settings as fields, and Problems warns about a kind the game doesn't have
+    (it used to become a silent 0.5 "Go!" button), unused settings and
+    numbers out of range.
+  - **Spanish all the way.** The engine's own messages ("Not enough money!"),
+    the built-in minigames' texts and save-load notices follow the game's
+    language, and the editor's whole menu bar is translated. Replays and
+    logs keep the English text.
+
+- **Calendar, clock and save fixes.**
+  - **Games can start in any season.** The clock keeps its own day of season,
+    so every season lasts its configured length and festivals, birthdays and
+    the HUD date follow it, also after season lengths change under a save.
+    Problems says which day a start that doesn't line up with the calendar
+    becomes.
+  - **Day window checks.** A day that ends before it starts (or within an
+    hour of it), ends after minute 4294, or a clock faster than 1440 minutes
+    per second is an error; the engine no longer collapses the player on
+    every tick when one slips through. One invalid setting now replaces only
+    itself instead of every setting.
+  - **Indoor scenes.** Mark a scene **Indoor (no weather)** and rain and storms
+    leave it alone; mine floors are indoor.
+  - **The clock pauses in dialogue, shops, minigames and menus** (Project
+    Settings, on by default). Sleeping closes an open minigame, time-of-day
+    conditions work after midnight and may wrap past it, and NPCs keep up at
+    fast clock rates.
+  - **Keep changes keeps everything.** Number and text flags, the tick, an
+    open dialogue, shop or minigame, today's purchases, walking NPCs and the
+    mine floor carry into the next playtest, and project keys keep their
+    order.
+  - **Game updates reach old saves.** A save from another version of the game
+    takes its fixed maps, new doors and scenes while keeping the player's
+    crops, soil, nodes and machines, and NPCs added in the update join the
+    world. A save without a random state gets a new one, and a save/load round
+    trip no longer changes which NPC you talk to or the state hash.
+
+- **Authoring core hardening.**
+  - **Hostile project files are refused, not crashes.** Deeply nested JSON is
+    an error instead of a stack overflow that killed `farmc` and the editor,
+    and a number like `1e400` is refused when the project loads instead of
+    being saved as `null` (after which the project no longer opened). Loaders,
+    the cartridge reader and the web API report every failure in their
+    results.
+  - **Deleting things no longer unlocks what they gated.** Removing an item,
+    NPC, quest or season keeps the conditions, required items, prerequisites,
+    unlocks and season lists that named it: the gated content stays locked and
+    Problems lists each reference to fix. Before, winter-only stock became
+    available all year when "winter" was deleted.
+  - **Dialogue copies are reconciled.** Projects whose NPC dialogue and project
+    dialogue list differ (the web Romance pattern) load with the NPC's copy,
+    the one the game plays, and saving in the Dialogue editor no longer drops
+    options that only the NPC's copy had.
+  - **Problems** also lists empty ids, inverted regions and day or year
+    ranges as warnings, reports each dangling dialogue link once, and gives
+    numeric weather-table seasons readable paths. Reordering content packs
+    with a duplicated id no longer throws or loses a pack.
+  - **`farmc`** takes options in any order, has `--help` and `--version`,
+    exits 2 with a specific message for a wrong command line and 1 (never a
+    stack trace) for any failure.
+  - **F# and Rust stay in step.** New parity tests check that the Rust engine
+    reads every field the F# records write and that the editor's previews and
+    exported cartridges compile the same content; they found and fixed pack
+    scenes whose grids only Rust repaired.
+
+- **A world that can't be broken from outside.** Doors and warps land on the
+  nearest walkable tile, tile grids that don't match their scene are repaired
+  when a game or save loads, action chains stop after 256 actions, mine floors
+  are at most 256 tiles a side, fast players no longer pass through walls, and
+  a full inventory no longer swallows a door. Players can pick machines back
+  up, and machines stay off doors and the mine entrance. Commands apply only
+  where a player could give them (hosts and scripts can opt out), and scenes
+  of enabled content packs join the world. Problems reports the grids, loops,
+  blocked landings and sizes the game would have to fix.
+
+- **Fuzz targets and invariant tests, from the 2026-09-30 audit.** The new
+  `farm-fuzz` crate feeds arbitrary and edited bytes to every place where
+  outside input reaches the engine (cartridges, saves, save migrations,
+  images, project JSON, render, preview and session requests, plugin
+  mutations) and checks after every command and tick that money stays
+  non-negative, energy in range, stacks and slots within their caps and the
+  player on the grid, under generated content. `cargo test` runs it on
+  stable; `fuzz/` runs the same targets under cargo-fuzz (an optional weekly
+  workflow). What it found is fixed: a new game whose project starts the
+  player beside the scene (or with a collision box over its edge) could walk
+  off the map, so the player now starts on the nearest tile; a starting
+  inventory over its stack sizes or slot count goes to quarantine and comes
+  back when there is room; negative starting money and energy above the
+  maximum are clamped; and an item stack held from before its stack size
+  shrank no longer grows past the new size.
+- **Exported games, from the 2026-09-30 audit:**
+  - Windows games open no console window: Export marks the executable as a
+    GUI program (the template stays a console program for `--headless`).
+    Windows builds link the C runtime statically, so games and the editor's
+    engine library start without the VC++ redistributable; CI checks both.
+  - Saves are flushed to disk before they replace the old file, use a
+    temporary file of their own per running copy, and keep the previous save
+    as `slot<N>.bak`, which loads (with a message) when a save is damaged.
+  - Closing the window during a game asks first, like Quit. When the game
+    stops with an error or its cartridge doesn't load, the window shows what
+    happened and where the crash log is instead of vanishing.
+  - Crash logs are never written through an existing file or link, get their
+    own name per run, say how old their game report is, and only the newest
+    ten are kept.
+  - Sound comes back after headphones are unplugged or the default output
+    device changes, the audio callback no longer allocates, and every sample
+    format a device offers works.
+  - A gamepad can cancel the key-rebind prompt (B or Start), and the game
+    ignores the gamepad while its window is in the background.
+  - Toasts stay long enough to read (longer for long text and errors; point
+    at one to hold it, click to dismiss), a long dialogue scrolls inside its
+    card, and Play Mode warns when the game's text has characters the fonts
+    can't draw.
+  - A frame builds only the tiles the camera shows (a 256×256 farm costs
+    about what the starter farm does), text that fades no longer re-renders
+    its glyphs every frame, and clips no longer rebuild a full-screen mask.
+  - Smaller fixes: a NaN frame time can't stall the simulation, save folders
+    avoid Windows device names (`Con`) and overlong names, and scripted input
+    at the last frame index no longer overflows.
+
+- **Safer pack plugins** ([docs/PLUGINS.md](docs/PLUGINS.md)):
+  - **Mutation capabilities.** A pack manifest declares what its plugins may
+    do (`permissions.mutations`: `message`, `giveItem`, `giveItem:any`, `*`,
+    …), and the install review shows it. Plugins name only their own pack's
+    items, quests, flags and so on unless a capability says `:any`; plain ids
+    resolve to the pack (`setFlag` `met` sets `pack:met`). No plugin may
+    write `event:` flags. Packs that declare nothing can show messages, play
+    sounds and use their own flags and items, and their answers to
+    `onEffect`/`onCommand` are ignored.
+  - **No feedback loops.** Steps caused by plugin mutations no longer fire
+    `onCommand` or `onEffect`, chains of plugin reactions stop after three
+    links, and an answer keeps at most 64 mutations. A plugin that echoed its
+    own effects could freeze the game and the editor.
+  - **Frame-rate independent.** Play advances one tick at a time and plugin
+    answers apply right before the next tick, so the same input gives the
+    same game at any frame rate.
+  - **Budgets.** Each plugin has a fuel budget per second of game time;
+    strikes no longer reset on a success (three within 100 calls disable a
+    plugin), restarts are capped and cheaper, and a game runs at most 32
+    plugins within a startup fuel and memory budget. Ids, flag values, new
+    flags and skills, answers and error messages have size limits.
+  - **Pack permissions that work.** `contentInject: false` now keeps a pack's
+    content out (with a Problems warning); `uiPanels` is marked as reserved.
+    The Problems panel warns about unknown capabilities and about plugins
+    listening to `onWeatherRoll`, which they cannot answer in time.
+- **NPC birthdays follow the calendar.** A birthday in a custom season no
+  longer stops the project from loading; the Problems panel warns when the
+  season is not in the calendar or the day is past its end.
+- **Export Game and imports, from the 2026-09-30 audit:**
+  - Export never throws: every failure, expected or not, is a sentence in the
+    report for the target it hit, the dialog shows it, and `farmc export`
+    prints it. Executable names are at most 64 characters and can't be
+    `licenses`; a name made from the title avoids reserved names (`con-game`).
+  - Each target is written under temporary names and renamed into place, so
+    a failed or cancelled export leaves the previous one intact. Export never
+    writes through a link in the output folder, and `.DS_Store`, `Thumbs.db`,
+    `desktop.ini` and `.directory` no longer block a re-export.
+  - Closing the Export Game window during an export cancels it and closes
+    once it has stopped; the result is never lost.
+  - A signed Windows template has its signature removed rather than shipping a
+    broken one. Patching only ever rewrites the resource section, and every
+    template file (the web page files too) is checked against `template.json`
+    and exported from the checked bytes.
+  - Content packs exported from the Mods view carry the art their entries use,
+    and installing a pack adds it to the project's art.
+  - Images inside imported projects and packs, and the export icon, are
+    checked against the art import limits from their header before they are
+    decoded; content form thumbnails decode small, once per image, and are
+    freed. Picked project files over 256 MB and packs over 64 MB are refused,
+    and Export Project JSON replaces the file atomically.
+  - The Art tab's preview redraws only while an animation plays, into the same
+    bitmap.
+  - Shared save files can't exhaust memory: a save's state may be at most
+    64 MiB (it was 256 MiB), slot files are read only that far, and loading
+    no longer copies the state several times. Save-slot thumbnails larger
+    than 512 pixels aren't decoded, and refreshing the slots no longer adds a
+    thumbnail to the image cache every time.
+- **The editor's engine library, from the 2026-09-30 audit:**
+  - The editor loads `farm_ffi` from its own folder only, refuses a library
+    built from other sources (it checks the library's ABI version), and says
+    why the engine isn't available (a missing system library, for example)
+    instead of "not available in this build". On Linux, `dotnet build
+    -p:FarmFfiAudio=false` builds an engine library that runs without ALSA
+    (Play Mode is then silent).
+  - Play Mode copies each frame once, straight into the screen bitmap (it was
+    copied three times). Painting the map sends only the changed scene to the
+    renderer, and only when the map is on screen; scrolling reuses the drawn
+    scene.
+  - Every engine handle reports errors the same way, freeing one can't crash
+    the editor, and using one after it was closed throws a clear error.
+  - Tests that need the Rust library fail when it's missing (also with
+    `-p:CargoProfile=dev`); `FARM_ALLOW_MISSING_NATIVE=1` skips them instead.
+- **Image and SVG import, from the 2026-09-30 audit:**
+  - Importing an SVG can no longer make the editor fetch anything. An SVG
+    image inside the SVG (a `data:image/svg+xml` link) is checked like the
+    file itself, at most two levels deep, and so are CSS escapes, DTD
+    declarations and `xml:base`; embedded images must be base64 PNG, JPEG,
+    GIF, WebP, BMP or SVG within the import limits. Even an SVG that got past
+    the check could not load a web address or a local file: the SVG renderer
+    has external loading switched off.
+  - Art import, project and pack art, and images inside SVGs are read only
+    as PNG, JPEG, GIF, WebP or BMP, and their size is checked from the header
+    before the graphics library sees them; the Export Game icon must be a
+    PNG. The plan for the graphics library upgrade (Avalonia 12, SkiaSharp 3)
+    is in [docs/SKIA-MIGRATION.md](docs/SKIA-MIGRATION.md).
+- **License, notices and contributor docs.** The repository has an MIT
+  `LICENSE`. The app ships it in its `licenses` folder with notices for its
+  .NET packages, the runtime, icons and fonts (`THIRD-PARTY-dotnet.txt`), and
+  About links to it. Exported games' `THIRD-PARTY.txt` now also covers the
+  plugin sandbox (QuickJS, wasi-libc) and ends with the engine's own license.
+  The in-app guide opens the docs of the installed version. New:
+  CONTRIBUTING.md (fixture switches, generated files), SECURITY.md, a README
+  Troubleshooting section, and CI checks for C# style, text files, Markdown
+  and the editor's notices.
 - **The last web editor features, ported.** Everything the web editor did that
   the native one didn't:
   - **Keyboard map editing and screen readers.** The map takes the keyboard:
@@ -38,8 +261,70 @@
   - **Smaller things:** the Workshop's "Build your game" links, duplicating a
     single door, dialogue and asset counts in the project stats, and the scene
     size calculator.
+- **Editor data safety.** Edits that exist only in memory are no longer lost:
+  - Closing the window, **Restart & install** or opening another project while
+    saving fails asks first: **Export Project JSON…**, **Retry save**, or go on
+    without the edits.
+  - Project and settings files are flushed to disk before they replace the old
+    file, the previous version is kept (`projects/backups/`,
+    `settings.json.bak`), opening an older project keeps the original file
+    (`backups/<id>.v<from>.json`), and leftover temp files are cleaned up.
+  - A project file changed outside the editor is never overwritten silently:
+    the banner offers **Keep my version** or **Load the file's version**. A
+    project open in one editor window can't be opened (or deleted) in another.
+  - Hand-copied project files keep saving to their own file, whatever id the
+    JSON inside says (web exports all say `project-1`); ids map one-to-one to
+    file names on every platform.
+  - A settings.json that can't be read is never rewritten (so the Update
+    Center's and the editor's settings can't wipe each other), and both live in
+    the data folder `FARMING_RPG_MAKER_DATA_DIR` points to.
+  - Renaming the open project during a playtest with **Keep changes** keeps the
+    new name; "Created"/"Imported" and form confirmations no longer claim a
+    save that failed.
+  - **Try Again** on the error screen can no longer close the app, and replaced
+    editors stop following the project. Errors go to a rolling log
+    (`logs/editor-*.log`, Help → About → Log files), unhandled errors on other
+    threads are logged, and projects that fail to load at startup are listed
+    once the window has opened.
+- **Editor workflow, from the 2026-09-30 audit and the web cross-check:**
+  - **Unsaved form fields are kept.** The Content, Interface and Settings tabs
+    keep what was typed across tab switches, undo and edits elsewhere; another
+    entry or panel asks **Save and continue / Discard changes / Keep editing**
+    first, saving one Settings section no longer reverts the others, and
+    fields still unsaved are applied before another project opens or the
+    editor closes. Season moves and removals are saved with the project
+    settings.
+  - **Errors name the field** ("Day end minute must be a whole number"), and
+    content forms no longer clamp an out-of-range number or reset an emptied
+    one on save.
+  - **Shrinking a scene moves what stood on the cut tiles** (the player start,
+    NPCs with their schedules and waypoints, animals, door arrivals, event
+    tiles and the mine entrance) inside, removes doors leaving from them, and
+    the size note lists all of it first.
+  - **The map shows doors, arrivals, event triggers, the mine entrance and
+    the player start** (with a **Markers** toggle), Inspect on a marker opens
+    it, and **Pick on map** fills door arrivals, Workshop tiles, event tiles,
+    NPC schedules and waypoints and the mine entrance. Workshop patterns use
+    the scene the Map tab shows.
+  - **Find with Ctrl+K**: every content type, scene and art; the Content list
+    has a filter and both side panels a splitter that remembers its width.
+  - **Picking a brush is no longer an undo step**, and undo keeps the brush's
+    art.
+  - **Keyboard and screen readers.** Tab reaches every tool button, letter
+    keys pick the map tools, Play Mode's toolbar has Ctrl+R, Ctrl+Shift+K and
+    Ctrl+D, the map's focus ring has 3:1 contrast, toasts and the status bar
+    are announced, and playtests follow the system's reduced-motion setting.
+  - **Undo history shares untouched tile rows**, so a tile edit on a large
+    scene no longer copies the whole scene into every undo step.
+  - **Editor structure.** Edit Mode's tabs have names instead of numbers,
+    sizes and "minutes ago" read the same in every window (Open Project now
+    says "5 minutes ago" and "1.5 KB" like the Update Center and Export Game),
+    art studio errors name the field instead of the control, and test-only
+    placeholders no longer ship in the app.
+    [docs/EDITOR-ARCHITECTURE.md](docs/EDITOR-ARCHITECTURE.md) describes the
+    editor's views and the steps towards view models.
 - **One engine for the web and native editors.** The web editor
-  ([jxburros/farm-game-engine](https://github.com/jxburros/farm-game-engine))
+  (`jxburros/farm-game-engine`, private)
   now runs this repository's engine: its Play Mode plays through `farm-wasm`,
   and opening older projects, importing, the Problems panel and a new
   "Download cartridge (.farmcart)" export run the F# authoring core compiled to
@@ -60,8 +345,8 @@
   as the editor's Play Mode. `farm-wasm` is a wasm-bindgen package that mirrors
   `farm-ffi`: `Player` (frames with RGBA pixels for `ImageData`, sound cues,
   debug actions, keep changes, queries), `Session` (headless replays),
-  `Preview` and `renderJson`, `hashText`, and `sfxSamples` to play the
-  synthesized sound effects with WebAudio. Save slots and settings are kept in
+  `Preview` and `renderJson`, `hashState` (the state hash of a state as JSON),
+  and `sfxSamples` to play the synthesized sound effects with WebAudio. Save slots and settings are kept in
   memory and move to browser storage through `exportStorage`/`importStorage`.
   Pack plugins run inside the module. The player, session and preview protocol
   now lives in the new `farm-host` crate, shared by `farm-ffi` (unchanged C ABI)
@@ -72,9 +357,13 @@
   a folder and a flat zip ready for an itch.io page, with `index.html`, the
   `farm-wasm` player and the game's cartridge and icon. It runs the same title
   screen, save slots, settings and game UI as the desktop game, keeps saves in
-  the browser's storage, and plays sounds through WebAudio. `farmc export
-  --target web` does the same, and releases ship the web template with the
-  app.
+  the browser's storage, and plays sounds through WebAudio. The page sets a
+  Content-Security-Policy (nothing inline, only its own files), lays the game
+  interface out in CSS pixels on high-density phones, keeps the HUD, panels and
+  dialogue above its touch controls (which show no keyboard hints), and says
+  when the browser's storage is full instead of losing saves quietly.
+  `farmc export --target web` does the same, and releases ship the web
+  template with the app.
 - **Play Mode runs the exported cartridge.** A playtest now runs the cartridge
   the F# compiler makes, exactly what Export Game ships (it still starts while
   Problems lists errors). Keep changes writes the final game state back
@@ -133,6 +422,22 @@
   until the stable-JSON serializer is rewritten. Property tests now cover
   replay determinism and save round trips (proptest), and project migration
   and compiling (FsCheck). The sample games also ship as test cartridges.
+- **Safer releases and builds.** A release must come from a commit on `main`
+  that passed CI and carries the release version, and a published version is
+  never overwritten. Only the final publish step can write to the repository,
+  after a reviewer approves it; it attaches `SHA256SUMS` and a build
+  provenance attestation. Before publishing, a sample game is exported and
+  replayed with the very Windows and Linux templates the release ships.
+  Actions, the Steam Runtime image, rustup, the Rust toolchain and the .NET
+  SDK are pinned; shipped binaries are built from `Cargo.lock` and contain no
+  build machine paths; the checked-in plugin sandbox builds byte-identically
+  anywhere and CI rebuilds it. CI also runs the .NET tests on Windows,
+  measures coverage, checks generated code and dependency advisories, and
+  Dependabot keeps dependencies current. Golden re-records can no longer pass
+  as test runs (docs/NUMERICS.md "Goldens").
+
+## 0.2.0
+
 - **Play Mode is the real game.** The editor's Play Mode now runs the same Rust
   player as exported games: the world, HUD, dialogue, shops, crafting,
   inventory, quests, minigames, toasts and pause menu look and behave exactly
@@ -349,6 +654,33 @@
     like the web version.
   - Saving the last-opened project no longer rewrites the Update Center's
     settings.
+- **Gameplay fixes (inventory, crafting, farming, quests, dialogue):**
+  - Stacks respect `maxStack` everywhere (0 means no cap): adds top up every
+    slot of the item, then open capped slots while there is room, and say how
+    much fit. Selling, pack starting items, restored save items and the
+    debug drawer's "give" buttons follow the same rules.
+  - Crafting is all or nothing: a craft whose outputs don't fit uses no
+    ingredients and counts for nothing. Craft objectives count the items made,
+    by hand or collected from a machine.
+  - Planting: the inventory's **Hold** button picks the seed and fertilizer
+    to plant with (`interactWith`); fertilizer is no longer used unasked.
+  - Multi-tile crops (pumpkin, cauliflower) are one crop: one harvest, one
+    watering, fertilizer under every tile, cleared and storm-damaged whole,
+    and they no longer fit over machines, items or rocks.
+  - Harvest quality rises with farming skill and stays on the items: a
+    silver, gold or iridium stack sells at its quality's price, which the
+    harvest message now shows. Crops can name their harvest item
+    (`harvestItemId`); Problems reports a crop without one.
+  - Dialogue options can be once-only (`once`) or hidden by a flag
+    (`hiddenIfFlag`); `eventFlag` and `takeMoney` now work, the editor makes
+    new reward options once-only, and Problems warns about repeatable
+    rewards. An option's action can open another conversation.
+  - Quests: `rewards.experience` grants skill XP (to `rewards.skill`,
+    farming by default), repeatable quests can be started again (auto-start
+    ones restart the next morning), and a partly lost reward says how much.
+  - Saves keep tool wear across game updates and refresh items lying on the
+    ground; `waterArea` waters like the watering can; `modifyEnergy`
+    saturates.
 
 ## 0.1.0
 

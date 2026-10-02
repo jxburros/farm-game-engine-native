@@ -7,11 +7,11 @@ open FarmEngine.Schemas
 /// The deterministic F# cartridge compiler (format 2, `schemas/cart.fbs`). A project is split
 /// into the compiled content, the inputs of a new game (`start`, Rust `StartState`) and what
 /// presentation reads (`presentation`, Rust `Presentation`); the player never reads project
-/// JSON. The sections stay compatibility JSON until the native-numerics cutover. Every base64
-/// `data:` URL inside them moves to the asset table and is replaced by `asset:<id>`, where the
-/// id is a content hash, so equal files are stored once and ids never depend on order. Plain F#
-/// throughout (`FlatBufferBuilder`, `Bytes`), so the web version compiles cartridges with the
-/// same code.
+/// JSON. The sections are JSON in authoring units (docs/NUMERICS.md); the engine converts their
+/// numbers to its fixed-unit integers when it reads them. Every base64 `data:` URL inside them
+/// moves to the asset table and is replaced by `asset:<id>`, where the id is a content hash, so
+/// equal files are stored once and ids never depend on order. Plain F# throughout
+/// (`FlatBufferBuilder`, `Bytes`), so the web version compiles cartridges with the same code.
 [<AbstractClass; Sealed>]
 type CartridgeCompiler =
     /// The cartridge format this compiler writes (Rust `farm_cart::CART_FORMAT`).
@@ -48,10 +48,11 @@ type CartridgeCompiler =
               yield "player", SchemaJson.encodePlayer project.Player
               yield "quests", JArray quests
               yield "npcs", JArray npcs
-              yield "eventFlags", Encode.dict JBool project.EventFlags
+              yield "eventFlags", Encode.dict id project.EventFlags
               yield "currentTimeMinutes", JNumber project.CurrentTimeMinutes
               yield "currentDay", JNumber project.CurrentDay
               yield "currentSeason", JString project.CurrentSeason
+              yield! optional "currentDayOfSeason" project.CurrentDayOfSeason JNumber
               yield "currentYear", JNumber project.CurrentYear
               yield! optional "currentWeatherId" project.CurrentWeatherId JString
               yield "scenes", Encode.list SchemaJson.encodeScene project.Scenes
@@ -60,7 +61,8 @@ type CartridgeCompiler =
               yield "animals", Encode.list SchemaJson.encodeAnimalState project.Animals
               yield! optional "mineDeepestFloor" project.MineDeepestFloor JNumber
               yield! optional "quarantinedItems" project.QuarantinedItems (Encode.list SchemaJson.encodeInventorySlot)
-              yield! optional "rngState" project.RngState SchemaJson.encodeRngState ]
+              yield! optional "rngState" project.RngState SchemaJson.encodeRngState
+              yield! optional "keptState" project.KeptState id ]
 
     /// What the renderer and the game panels read (Rust `Presentation::from_project`).
     static member PresentationSection(project: GameProject) : Json =
@@ -120,6 +122,17 @@ type CartridgeCompiler =
     /// a project that still has errors (a playtest of unfinished work is allowed, as on the web).
     static member CompileForPlaytest(project: GameProject) : byte[] = CartridgeCompiler.Build project
 
+    /// A window side inside the range Export accepts (`ChecksExport`), so a playtest of a
+    /// project with an out-of-range size still gets a usable window.
+    static member WindowSide(value: int, low: int) : uint32 = uint32 (max low (min 8192 value))
+
+    /// A number as an unsigned field: clamped and truncated first, because .NET saturates a
+    /// float conversion where JavaScript's `>>> 0` wraps, and the bytes must be the same in both.
+    static member UInt32Of(value: float) : uint32 =
+        if Double.IsNaN value || value <= 0.0 then 0u
+        elif value >= 4294967295.0 then UInt32.MaxValue
+        else uint32 (Math.Truncate value)
+
     static member private Build(project: GameProject) : byte[] =
         let settings = defaultArg project.Export (Defaults.newExportSettings project)
         let title = defaultArg settings.Title project.Name
@@ -155,7 +168,8 @@ type CartridgeCompiler =
                    builder.EndTable() |]
         let assetsOffset = builder.CreateOffsetVector assetOffsets
         // Plugins of the enabled packs in load order, each with the hooks its manifest grants
-        // (Rust `farm_plugins::plugin_specs_from_project`).
+        // and the mutation capabilities it declares, if any (Rust
+        // `farm_plugins::plugin_specs_from_project`).
         let pluginOffsets =
             [| for install in project.ContentPacks do
                    if install.Enabled then
@@ -164,10 +178,16 @@ type CartridgeCompiler =
                        for plugin in pack.Plugins do
                            let hooks = plugin.Hooks |> List.filter granted.Contains |> List.map builder.CreateString |> Array.ofList
                            let hooksOffset = builder.CreateOffsetVector hooks
+                           // Absent (not empty) when the manifest declares none: the player then
+                           // applies the default capabilities.
+                           let mutationsOffset =
+                               pack.Manifest.Permissions.Mutations
+                               |> Option.map (fun mutations -> builder.CreateOffsetVector(mutations |> List.map builder.CreateString |> Array.ofList))
                            let idOffset = builder.CreateString(pack.Manifest.Id + ":" + plugin.Id)
                            let packOffset = builder.CreateString pack.Manifest.Id
                            let sourceOffset = builder.CreateString plugin.Source
-                           builder.StartTable 4
+                           builder.StartTable 5
+                           mutationsOffset |> Option.iter (fun offset -> builder.AddOffsetField(4, offset))
                            builder.AddOffsetField(3, hooksOffset)
                            builder.AddOffsetField(2, sourceOffset)
                            builder.AddOffsetField(1, packOffset)
@@ -185,8 +205,8 @@ type CartridgeCompiler =
         builder.StartTable 11
         builder.AddOffsetField(10, creditsOffset)
         builder.AddOffsetField(9, scaleOffset)
-        builder.AddUInt32Field(7, uint32 settings.Window.Height, 800u)
-        builder.AddUInt32Field(6, uint32 settings.Window.Width, 1280u)
+        builder.AddUInt32Field(7, CartridgeCompiler.WindowSide(settings.Window.Height, 240), 800u)
+        builder.AddUInt32Field(6, CartridgeCompiler.WindowSide(settings.Window.Width, 320), 1280u)
         builder.AddOffsetField(5, executableOffset)
         builder.AddOffsetField(4, companyOffset)
         builder.AddOffsetField(3, authorOffset)
@@ -205,7 +225,7 @@ type CartridgeCompiler =
         builder.AddOffsetField(5, startOffset)
         builder.AddOffsetField(4, contentOffset)
         builder.AddOffsetField(2, info)
-        builder.AddUInt32Field(1, uint32 project.SchemaVersion, 0u)
+        builder.AddUInt32Field(1, CartridgeCompiler.UInt32Of project.SchemaVersion, 0u)
         builder.AddUInt32Field(0, CartridgeCompiler.Format, 0u)
         let cart = builder.EndTable()
         builder.Finish(cart, "FGCT")

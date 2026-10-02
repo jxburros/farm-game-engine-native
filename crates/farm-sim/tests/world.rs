@@ -5,9 +5,8 @@
 //! Fixture geometry (`make_project`, the C# `EngineTests.MakeProject`): 6×6 scene, player starts
 //! centered on tile (3,4) → position (3.5, 4.5); soil at (3,2); wall tile at (4,4); NPC at (1,1).
 //!
-//! Tests that go through `engine::apply_command` / `engine::advance_tick`, or whose tile change
-//! settles through `GameEvents`, are `#[ignore]`d until those modules are ported; the same cases
-//! are covered here directly wherever the occupied tile does not change.
+//! Some tests go through `engine::apply_command` / `engine::advance_tick` (including tile changes
+//! that settle through `GameEvents`); the others call the movement helpers directly.
 
 use farm_sim::commands::Command;
 use farm_sim::effects::Effect;
@@ -27,7 +26,7 @@ use farm_sim::world::world_movement::{
     PLAYER_HALF_WIDTH,
 };
 use farm_sim::{content_builtin, hash_state, state, EngineContext, GameState};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 
 /// A position in tiles, for comparing with authoring numbers.
 fn t(position: i32) -> f64 {
@@ -35,7 +34,7 @@ fn t(position: i32) -> f64 {
 }
 
 fn slot(items: &[Item], id: &str, quantity: u32) -> InventorySlot {
-    InventorySlot { item: items.iter().find(|item| item.id == id).expect("built-in item").clone(), quantity }
+    InventorySlot::new(items.iter().find(|item| item.id == id).expect("built-in item").clone(), quantity)
 }
 
 /// The C# `EngineTests.MakeProject`.
@@ -217,7 +216,7 @@ fn p(x: i32, y: i32) -> PathPoint {
 }
 
 fn walkability(scene: &farm_sim::schema::Scene) -> Walkability<'_> {
-    Walkability { scene, node_types: None, blocked: None }
+    Walkability { scene, node_types: &[], machine_types: &[], blocked: &[], index: None }
 }
 
 // --- tiles ---
@@ -291,66 +290,6 @@ fn set_tile_layer_updates_one_layer_and_keeps_the_others() {
 }
 
 #[test]
-fn paint_rect_clamps_to_the_grid_and_clears_crops_and_nodes() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    scene.tiles[1][1].node = Some(TileNode { type_id: "tree".to_owned(), remaining_health: 3, ..TileNode::default() });
-    let painted = tiles::paint_rect(&scene.tiles, 2, 2, -5, -5, "wall", None);
-    for (y, row) in painted.iter().enumerate() {
-        for (x, tile) in row.iter().enumerate() {
-            if x <= 2 && y <= 2 {
-                assert_eq!(tile.r#type, "wall", "({x},{y})");
-                assert!(tile.collision);
-                assert_eq!(tile.node, None);
-            } else {
-                assert_eq!(tile.r#type, "grass", "({x},{y})");
-            }
-        }
-    }
-    // Pure: the input grid is untouched.
-    assert_eq!(scene.tiles[0][0].r#type, "grass");
-    assert!(scene.tiles[1][1].node.is_some());
-}
-
-#[test]
-fn flood_fill_replaces_the_contiguous_region_of_the_source_type() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    for y in 0..4 {
-        scene.tiles[y][2] = tiles::set_tile_layer(&scene.tiles[y][2], "wall", None);
-    }
-    let filled = tiles::flood_fill(&scene.tiles, 0, 0, "soil", None);
-    for row in &filled {
-        assert_eq!(row[0].r#type, "soil");
-        assert_eq!(row[1].r#type, "soil");
-        assert_eq!(row[2].r#type, "wall");
-        assert_eq!(row[3].r#type, "grass", "the wall column stops the fill");
-    }
-    // No-op when the types already match, and outside the grid.
-    assert_eq!(tiles::flood_fill(&scene.tiles, 0, 0, "grass", None), scene.tiles);
-    assert_eq!(tiles::flood_fill(&scene.tiles, 9, 0, "soil", None), scene.tiles);
-}
-
-#[test]
-fn copy_and_paste_tile_region_round_trip_with_rewritten_coordinates() {
-    let mut scene = tiles::create_empty_scene("s", "S", 4, 4);
-    scene.tiles[1][1] = tiles::set_tile_layer(&scene.tiles[1][1], "soil", None);
-    scene.tiles[2][2] = tiles::set_tile_layer(&scene.tiles[2][2], "wall", None);
-    let region = tiles::copy_tile_region(&scene.tiles, 2, 2, 1, 1);
-    assert_eq!(region.len(), 2);
-    assert_eq!(region[0][0].r#type, "soil");
-    assert_eq!(region[1][1].r#type, "wall");
-
-    let pasted = tiles::paste_tile_region(&scene.tiles, &region, 3, 3);
-    assert_eq!(pasted[3][3].r#type, "soil");
-    assert_eq!((pasted[3][3].x, pasted[3][3].y), (3, 3));
-    // The rest of the region falls outside the grid and is skipped.
-    assert_eq!(pasted[3][2].r#type, "grass");
-    let empty = tiles::copy_tile_region(&scene.tiles, 10, 10, 12, 12);
-    assert!(empty.is_empty());
-}
-
-// --- pathfinding (M3SystemsTests) ---
-
-#[test]
 fn routes_around_obstacles() {
     let mut scene = tiles::create_empty_scene("s", "S", 5, 5);
     // wall across row 2 except (4,2)
@@ -394,10 +333,8 @@ fn same_tile_is_an_empty_path_and_blocked_tiles_are_avoided() {
     let scene = tiles::create_empty_scene("s", "S", 3, 3);
     assert_eq!(find_path(&walkability(&scene), p(1, 1), p(1, 1)), Some(Vec::new()));
 
-    let mut blocked = IndexSet::new();
-    blocked.insert("1,0".to_owned());
-    blocked.insert("1,1".to_owned());
-    let w = Walkability { scene: &scene, node_types: None, blocked: Some(&blocked) };
+    let blocked = [p(1, 0), p(1, 1)];
+    let w = Walkability { scene: &scene, node_types: &[], machine_types: &[], blocked: &blocked, index: None };
     assert!(!is_walkable(&w, 1, 0));
     assert!(!is_walkable(&w, -1, 0));
     assert!(!is_walkable(&w, 0, 3));
@@ -416,12 +353,9 @@ fn gathering_nodes_block_unless_their_type_says_otherwise() {
     // Depleted nodes never block.
     assert!(is_walkable(&walkability(&scene), 2, 0));
 
-    let mut node_types = IndexMap::new();
-    node_types.insert(
-        "weeds".to_owned(),
-        NodeTypeDefinition { id: "weeds".to_owned(), blocks_movement: false, ..NodeTypeDefinition::default() },
-    );
-    let w = Walkability { scene: &scene, node_types: Some(&node_types), blocked: None };
+    let node_types =
+        [NodeTypeDefinition { id: "weeds".to_owned(), blocks_movement: false, ..NodeTypeDefinition::default() }];
+    let w = Walkability { scene: &scene, node_types: &node_types, machine_types: &[], blocked: &[], index: None };
     assert!(is_walkable(&w, 1, 0));
 }
 
@@ -468,17 +402,17 @@ fn player_tile_and_facing_target_floor_the_box_center() {
 fn can_move_to_checks_bounds_walls_machines_and_npcs() {
     let (_, state) = make_engine("collision");
     let scene = &state.world.scenes[0];
-    assert!(!can_move_to(scene, 4, 4, &state.npcs, None, None, None), "wall");
-    assert!(!can_move_to(scene, -1, 0, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 6, 0, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 0, 6, &state.npcs, None, None, None));
-    assert!(!can_move_to(scene, 1, 1, &state.npcs, None, None, None), "npc");
-    assert!(can_move_to(scene, 1, 1, &state.npcs, Some("npc-test"), None, None), "excluded npc");
-    assert!(can_move_to(scene, 0, 0, &state.npcs, None, None, None));
+    assert!(!can_move_to(scene, 4, 4, &state.npcs, None, &[], &[]), "wall");
+    assert!(!can_move_to(scene, -1, 0, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 6, 0, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 0, 6, &state.npcs, None, &[], &[]));
+    assert!(!can_move_to(scene, 1, 1, &state.npcs, None, &[], &[]), "npc");
+    assert!(can_move_to(scene, 1, 1, &state.npcs, Some("npc-test"), &[], &[]), "excluded npc");
+    assert!(can_move_to(scene, 0, 0, &state.npcs, None, &[], &[]));
 
     let mut with_machine = scene.clone();
     with_machine.tiles[0][0].machine = Some(TileMachine { type_id: "furnace".to_owned(), ..TileMachine::default() });
-    assert!(!can_move_to(&with_machine, 0, 0, &state.npcs, None, None, None), "unknown machine types block");
+    assert!(!can_move_to(&with_machine, 0, 0, &state.npcs, None, &[], &[]), "unknown machine types block");
 }
 
 // --- discrete moves (EngineTests movement) ---

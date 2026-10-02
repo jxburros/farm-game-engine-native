@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Threading;
@@ -78,6 +79,9 @@ public sealed class ToastHost : StackPanel
         var text = Ui.Wrapped(message.Text);
         text.FontSize = 13.5;
         var toast = new Border { Tag = message, Child = Ui.HStack(10, Ui.Icon(iconKey, 16), text) }.WithClasses("toast", kindClass);
+        // Screen readers announce each toast: errors right away, the rest when they are idle.
+        AutomationProperties.SetName(toast, message.Text);
+        AutomationProperties.SetLiveSetting(toast, message.Kind == ToastKind.Error ? AutomationLiveSetting.Assertive : AutomationLiveSetting.Polite);
         // Newest on top (the stack grows downward from the top-right corner).
         Children.Insert(0, toast);
         while (Children.Count > MaxVisible)

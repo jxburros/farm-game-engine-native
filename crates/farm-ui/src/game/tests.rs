@@ -80,6 +80,36 @@ fn long_dialogue_text_wraps_inside_the_card() {
 }
 
 #[test]
+fn a_dialogue_taller_than_the_screen_scrolls_to_the_focused_option() {
+    let mut fixture = Fixture::starter();
+    fixture.size = (1280.0, 400.0);
+    let npc = fixture.ctx.content.npcs.iter_mut().find(|npc| npc.id == "npc-merchant").unwrap();
+    let dialogue = npc.dialogue.iter_mut().find(|dialogue| dialogue.id == "dialogue-merchant-greeting").unwrap();
+    dialogue.text = "word ".repeat(120);
+    let option = dialogue.options[0].clone();
+    dialogue.options = (0..6)
+        .map(|index| farm_sim::schema::DialogueOption { text: format!("Option {index}"), ..option.clone() })
+        .collect();
+    with_dialogue(&mut fixture, "npc-merchant", "dialogue-merchant-greeting");
+    fixture.idle();
+    let scroll = WidgetId::new("dialogue-scroll").with("dialogue-merchant-greeting");
+    let (offset, content, view) = fixture.ui.scroll_metrics(scroll).expect("the card scrolls");
+    assert!(content > view && view <= 400.0, "{content} in {view}");
+    assert_eq!(offset, 0.0);
+    // The last option starts out of view; moving the focus down to it scrolls it in.
+    let last = WidgetId::new("dialogue-option").with("dialogue-merchant-greeting").with(5usize);
+    for _ in 0..5 {
+        fixture.nav(&[NavAction::Down]);
+    }
+    fixture.idle();
+    let (offset, _, _) = fixture.ui.scroll_metrics(scroll).unwrap();
+    assert!(offset > 0.0, "scrolled to the focused option");
+    let rect = fixture.ui.last_rect(last).unwrap();
+    assert!(rect.y >= 0.0 && rect.bottom() <= 400.0, "{rect:?}");
+    assert_eq!(command(&fixture.nav(&[NavAction::Accept])), Some(&Command::ChooseDialogueOption { index: 5 }));
+}
+
+#[test]
 fn shop_buys_sells_and_repairs_through_commands() {
     let mut fixture = Fixture::starter();
     fixture.state.shop = Some(ShopSession { shop_id: "shop-general".into() });
@@ -102,10 +132,13 @@ fn shop_buys_sells_and_repairs_through_commands() {
     assert_eq!(fixture.game_ui.shop_tab, ShopTab::Sell);
     fixture.idle();
     let sell = WidgetId::new("shop-sell").with("seed-wheat");
-    assert_eq!(command(&fixture.click(sell)), Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1 }));
+    assert_eq!(
+        command(&fixture.click(sell)),
+        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 1, quality: Some("normal".into()) })
+    );
     assert_eq!(
         command(&fixture.click(sell.with("all"))),
-        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10 })
+        Some(&Command::SellItem { item_id: "seed-wheat".into(), quantity: 10, quality: Some("normal".into()) })
     );
 
     // Repair a worn hoe.
@@ -153,7 +186,7 @@ fn crafting_crafts_loads_machines_and_places_them() {
     fixture.game_ui.panel = Some(Panel::Crafting);
     let item = |id: &str, quantity: u32| {
         let item = fixture_item(id);
-        InventorySlot { item, quantity }
+        InventorySlot::new(item, quantity)
     };
     fn fixture_item(id: &str) -> farm_sim::schema::Item {
         let project = super::test_support::starter_project();
@@ -192,6 +225,10 @@ fn crafting_crafts_loads_machines_and_places_them() {
     fixture.scroll_to(load);
     assert_eq!(command(&fixture.click(load)), Some(&Command::MachineLoad { recipe_id: "recipe-smelt-copper".into() }));
     assert!(fixture.ui.last_rect(WidgetId::new("craft-load").with("recipe-smelt-iron")).is_none(), "no iron ore");
+    // An idle machine can be picked back up.
+    let pick_up = WidgetId::new("craft-pick-up");
+    fixture.scroll_to(pick_up);
+    assert_eq!(command(&fixture.click(pick_up)), Some(&Command::PickUpMachine));
     assert_eq!(fixture.click(WidgetId::new("crafting").with("close")), [GameAction::ClosePanel]);
 }
 
@@ -291,6 +328,47 @@ fn minigames_press_release_choose_and_give_up() {
     // Focus starts on the first choice; accept picks it.
     let actions = fixture.nav(&[NavAction::Accept]);
     assert!(matches!(actions.as_slice(), [GameAction::Minigame(MinigameInput::Act { .. })]), "{actions:?}");
+}
+
+#[test]
+fn every_built_in_kind_draws_and_speaks_the_players_language() {
+    for (kind, english, spanish) in [
+        ("rhythm-tap", "Tap! (Space)", "\u{a1}Pulsa! (Espacio)"),
+        ("moving-target", "Hold to move (Space)", "Mant\u{e9}n para mover (Espacio)"),
+        ("memory-sequence", "Watch closely\u{2026}", "Mira con atenci\u{f3}n\u{2026}"),
+        ("simple-battle", "Attack", "Atacar"),
+    ] {
+        for (lang, text) in [(crate::i18n::Lang::En, english), (crate::i18n::Lang::Es, spanish)] {
+            let mut fixture = Fixture::starter();
+            fixture.ui.set_lang(lang);
+            fixture.ctx.content.minigames.push(farm_sim::schema::MinigameDef {
+                id: "game".into(),
+                name: "Game".into(),
+                kind: kind.into(),
+                ..Default::default()
+            });
+            fixture.state.minigame = Some(MinigameSession { minigame_id: "game".into(), ..MinigameSession::default() });
+            fixture.mount_minigame();
+            fixture.idle();
+            fixture.idle();
+            let texts = fixture.texts();
+            assert!(texts.iter().any(|shown| shown == text), "{kind} {lang:?}: {texts:?}");
+        }
+    }
+    // A memory game offers its symbols as choices.
+    let mut fixture = Fixture::starter();
+    fixture.ctx.content.minigames.push(farm_sim::schema::MinigameDef {
+        id: "memory".into(),
+        name: "Memory".into(),
+        kind: "memory-sequence".into(),
+        ..Default::default()
+    });
+    fixture.state.minigame = Some(MinigameSession { minigame_id: "memory".into(), ..MinigameSession::default() });
+    fixture.mount_minigame();
+    fixture.idle();
+    fixture.idle();
+    let moon = WidgetId::new("minigame-choice").with("moon");
+    assert_eq!(fixture.click(moon), [GameAction::Minigame(MinigameInput::Act { choice: "moon".into() })]);
 }
 
 #[test]
@@ -409,4 +487,35 @@ fn readable_font_draws_the_interface_in_atkinson_hyperlegible() {
     let width = fixture.ui.last_rect(WidgetId::new("hud").with("quests")).unwrap().width;
     assert_ne!(width, default_width);
     assert_eq!(command(&fixture.click(WidgetId::new("hud").with("sleep"))), Some(&Command::Sleep));
+}
+
+#[test]
+fn inventory_holds_seeds_and_fertilizer_for_planting() {
+    let mut fixture = Fixture::starter();
+    fixture.game_ui.panel = Some(Panel::Inventory);
+    fixture.idle();
+    fixture.idle();
+    let slot_id = |fixture: &Fixture, id: &str| {
+        let index = fixture.state.player.inventory.iter().position(|slot| slot.item.id == id).unwrap();
+        WidgetId::new("inventory").with(index).with(id)
+    };
+    let seed = slot_id(&fixture, "seed-tomato");
+    assert_eq!(fixture.click(seed.with("hold")), [GameAction::Hold("seed-tomato".into())]);
+    // The host toggles what is held; the button then reads "Held".
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "seed-tomato");
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "fertilizer-basic");
+    fixture.idle();
+    assert!(fixture.texts().iter().any(|text| text == "Held"));
+    assert_eq!(fixture.game_ui.planting.seed.as_deref(), Some("seed-tomato"));
+    assert_eq!(fixture.game_ui.planting.fertilizer.as_deref(), Some("fertilizer-basic"));
+    // Tools can't be held; toggling again puts the seed away.
+    let hoe = slot_id(&fixture, "tool-hoe");
+    assert!(fixture.ui.last_rect(hoe.with("hold")).is_none());
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "tool-hoe");
+    fixture.game_ui.planting.toggle(&fixture.ctx.content, "seed-tomato");
+    assert_eq!(fixture.game_ui.planting.seed, None);
+    // Running out puts it away.
+    fixture.state.player.inventory.retain(|slot| slot.item.id != "fertilizer-basic");
+    fixture.idle();
+    assert_eq!(fixture.game_ui.planting.fertilizer, None);
 }

@@ -1,14 +1,19 @@
 //! Screenshot goldens of the graphical player at 1280×800 (Steam Deck, 16:10) and 1920×1080
-//! (16:9): the title screen, settings, the gameplay HUD, a dialogue and a shop.
+//! (16:9): the title screen, settings, the gameplay HUD, a dialogue and a shop; and the start of
+//! the Cozy Garden and Quest RPG samples at 1280×800.
 //!
 //! Frames are rendered at full size, then halved (2×2 box filter) and compared with the PNGs in
 //! `fixtures/player/` within a small tolerance, so the checked-in images stay small.
 //!
 //! - Bless after an intended change: `FARM_PLAYER_BLESS=1 cargo test -p farm-player --test screenshots`,
-//!   then look at the images before committing.
+//!   then look at the images before committing. A blessing run always fails; rerun without the switch.
 //! - Full-size frames for a closer look: `FARM_PLAYER_SCREENSHOTS=<dir>`.
 
 mod common;
+#[path = "../../farm-sim/tests/recording/mod.rs"]
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_PLAYER_BLESS", "player screenshots");
 
 use common::{press, Stores, FRAME};
 use farm_player::{Player, PlayerMode};
@@ -61,6 +66,24 @@ fn scene(name: &str) -> Player {
             player.replace_state(state).unwrap();
             player
         }
+        // The sample games (compiled by the authoring core): each starts on its own map.
+        "sample-cozy" | "sample-quest" => {
+            let file = if name == "sample-cozy" { "cozy-garden.cart" } else { "quest-rpg.cart" };
+            let path = common::root().join("fixtures").join("golden").join("cartridges").join(file);
+            let bytes = std::fs::read(path).unwrap();
+            let mut player = Player::from_cartridge_bytes(&bytes, stores.options(PlayerMode::Standalone)).unwrap();
+            common::idle(&mut player, 1);
+            press(&mut player, "enter");
+            if name == "sample-quest" {
+                // Through the farm's south gate to the village square.
+                let mut state = player.state().unwrap().clone();
+                state.player.scene_id = "scene-square".into();
+                state.player.x = farm_sim::units::tile_center(8);
+                state.player.y = farm_sim::units::tile_center(5);
+                player.replace_state(state).unwrap();
+            }
+            player
+        }
         other => panic!("unknown scene {other}"),
     }
 }
@@ -104,10 +127,9 @@ fn check(name: &str, width: u32, height: u32) -> Result<(), String> {
     let (w, h, pixels) = half(&pixmap);
     let small = Pixmap::from_vec(pixels.clone(), farm_render::tiny_skia::IntSize::from_wh(w, h).unwrap()).unwrap();
     let path = golden_path(name, width, height);
-    if std::env::var_os("FARM_PLAYER_BLESS").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, farm_render::encode_png(&small)).unwrap();
-        return Ok(());
+    if RECORDER.enabled() {
+        RECORDER.write(&path, &farm_render::encode_png(&small))?;
+        return Err(format!("{name} {width}×{height}: blessed. {}", RECORDER.summary()));
     }
     let bytes = std::fs::read(&path)
         .map_err(|e| format!("{name}: {e}; run with FARM_PLAYER_BLESS=1 to create {}", path.display()))?;
@@ -155,6 +177,14 @@ fn dialogue() {
 #[test]
 fn shop() {
     check_all("shop");
+}
+
+/// The samples look different from the starter farm and from each other (one size each).
+#[test]
+fn sample_games() {
+    let failures: Vec<String> =
+        ["sample-cozy", "sample-quest"].iter().filter_map(|name| check(name, 1280, 800).err()).collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
@@ -222,7 +252,9 @@ fn review_screens() {
         press(&mut sleep, "z");
         write("toasts", sleep, width, height);
         let mut minigame = new_game(&Stores::new());
-        minigame.run_command(&farm_sim::Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+        // Opened as a plugin can (the `startMinigame` command is refused under the player's rules).
+        let open = farm_sim::schema::PluginMutation::StartMinigame { minigame_id: "fishing".into() };
+        minigame.run_command(&farm_sim::Command::PluginMutation { plugin_id: "shots".into(), mutation: open }).unwrap();
         write("minigame", minigame, width, height);
     }
     // Slots and credits with a save on disk.

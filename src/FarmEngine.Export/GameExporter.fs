@@ -2,6 +2,7 @@ namespace FarmEngine.Export
 
 open System.Collections.Generic
 open System.Runtime.InteropServices
+open System.Threading
 open FarmEngine.Authoring
 open FarmEngine.Schemas
 
@@ -48,7 +49,7 @@ type GameExporter =
           WarningCount = warnings.Length }
 
     /// Exports `project` for `targets` into `outputFolder`. Pass null `templatesFolder` for the
-    /// default. Never throws for project, template or file problems: read the report.
+    /// default. Never throws: project, template, file and unexpected failures are in the report.
     static member Export
         (
             project: GameProject,
@@ -57,7 +58,21 @@ type GameExporter =
             createArchives: bool,
             [<Optional; DefaultParameterValue(null: string | null)>] templatesFolder: string | null
         ) : ExportReport =
-        Exporter.run
+        GameExporter.Export(project, targets, outputFolder, createArchives, templatesFolder, CancellationToken.None)
+
+    /// `Export` that `cancel` can stop between files (`ExportReport.Cancelled`); targets not
+    /// finished by then are left as they were. Never throws.
+    static member Export
+        (
+            project: GameProject,
+            targets: seq<string>,
+            outputFolder: string,
+            createArchives: bool,
+            templatesFolder: string | null,
+            cancel: CancellationToken
+        ) : ExportReport =
+        Exporter.runCancellable
+            cancel
             { Targets = List.ofSeq targets
               OutputFolder = outputFolder
               TemplatesFolder = Option.ofObj templatesFolder

@@ -133,6 +133,11 @@ public sealed class ContentFormTests
 
         Choose(host, "ContentAdd_Outcomes", "waterArea");
         FindByName<TextBox>(host.Window, "ContentField_Outcomes_1_Radius").Text = "40";
+        // Out of the web's 0-10 the field is reported by name, not clamped behind the creator's back (#46).
+        Press(host, "SaveContentButton");
+        Assert.Contains("must be from 0 to 10", FindByName<TextBlock>(host.Window, "ContentMessage").Text, StringComparison.Ordinal);
+        Assert.Equal("message", host.Workspace.Current!.Events.First(e => e.Id == eventId).Outcomes.Single().Type);
+        FindByName<TextBox>(host.Window, "ContentField_Outcomes_1_Radius").Text = "10";
 
         Choose(host, "ContentField_Conditions_0_Type", "friendship");
         Assert.Equal("250", FindByName<TextBox>(host.Window, "ContentField_Conditions_0_Min").Text);
@@ -146,7 +151,7 @@ public sealed class ContentFormTests
         Assert.Equal("tool-hoe", saved.Outcomes[0].ItemId);
         Assert.Equal(3, saved.Outcomes[0].ItemQuantity);
         Assert.Null(saved.Outcomes[0].Message);
-        Assert.Equal(10, saved.Outcomes[1].Radius); // clamped to the web's 0-10
+        Assert.Equal(10, saved.Outcomes[1].Radius);
         var friendship = Assert.IsType<EventCondition.Friendship>(saved.Conditions[0]).Item;
         Assert.Equal(("npc-farmer", 250.0), (friendship.NpcId, friendship.Min));
         Assert.Equal(host.Workspace.Current.Settings.Calendar.Seasons[0].Id, Assert.IsType<EventCondition.Season>(saved.Conditions[1]).Item.Seasons.Single());
@@ -218,12 +223,14 @@ public sealed class ContentFormTests
         using var host = new GameTestHost();
         OpenEntry(host, "Minigames", "fishing");
         MinigameDef Fishing() => host.Workspace.Current!.Minigames.First(m => m.Id == "fishing");
-        Assert.Equal("speed", FindByName<TextBox>(host.Window, "ContentKey_Config_0").Text);
-        FindByName<TextBox>(host.Window, "ContentValue_Config_0").Text = "1.5";
-        Press(host, "ContentAdd_Config");
-        Assert.Equal("1.5", FindByName<TextBox>(host.Window, "ContentValue_Config_0").Text);
-        FindByName<TextBox>(host.Window, "ContentKey_Config_3").Text = "hard";
-        FindByName<TextBox>(host.Window, "ContentValue_Config_3").Text = "true";
+        // The kind is picked from the built-in kinds; its settings are typed fields with their defaults as hints.
+        Assert.Equal("timing-bar", Chosen(host, "ContentField_Kind"));
+        Assert.Contains(Picker(host, "ContentField_Kind").Items.OfType<ComboBoxItem>(), item => (string)item.Tag! == "memory-sequence");
+        var speed = FindByName<TextBox>(host.Window, "ContentField_Config_Speed");
+        Assert.Equal("0.9", speed.Text);
+        Assert.Equal("default: 0.9", speed.Watermark);
+        speed.Text = "1.5";
+        FindByName<TextBox>(host.Window, "ContentField_Config_TargetSize").Text = "";
         Press(host, "ContentAdd_ResultTiers");
         FindByName<TextBox>(host.Window, "ContentField_ResultTiers_0_MinScore").Text = "0.5";
         Choose(host, "ContentAdd_ResultTiers_0_Outcomes", "giveMoney");
@@ -232,15 +239,19 @@ public sealed class ContentFormTests
 
         var saved = Fishing();
         Assert.Equal(1.5, ((Json.JNumber)saved.Config.ToDictionary()["speed"]).Item);
-        Assert.Equal(Json.NewJBool(true), saved.Config.ToDictionary()["hard"]);
+        // A cleared setting goes away: the game plays its default.
+        Assert.Equal(["speed", "prompt"], saved.Config.Select(pair => pair.Item1));
         Assert.StartsWith("Hook the fish", ((Json.JString)saved.Config.ToDictionary()["prompt"]).Item, StringComparison.Ordinal);
         var tier = Assert.Single(saved.ResultTiers);
         Assert.Equal(0.5, tier.MinScore);
         Assert.Equal(("giveMoney", 25.0), (tier.Outcomes[0].Type, tier.Outcomes[0].Amount!.Value));
 
-        Press(host, "ContentRemove_Config_1");
+        // Another kind shows its own settings.
+        Choose(host, "ContentField_Kind", "rhythm-tap");
+        FindByName<TextBox>(host.Window, "ContentField_Config_Beats").Text = "12";
         Press(host, "SaveContentButton");
-        Assert.Equal(["speed", "prompt", "hard"], Fishing().Config.Select(pair => pair.Item1));
+        Assert.Equal("rhythm-tap", Fishing().Kind);
+        Assert.Equal(12.0, ((Json.JNumber)Fishing().Config.ToDictionary()["beats"]).Item);
     }
 
     [AvaloniaFact]

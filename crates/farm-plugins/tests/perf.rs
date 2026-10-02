@@ -21,7 +21,7 @@ fn host(options: PluginHostOptions, sources: &[&str]) -> WasmPluginHost {
 }
 
 fn unlimited() -> PluginHostOptions {
-    PluginHostOptions { fuel_per_call: 1 << 50, ..PluginHostOptions::default() }
+    PluginHostOptions { fuel_per_call: 1 << 50, fuel_per_window: u64::MAX, ..PluginHostOptions::default() }
 }
 
 /// Fuel and seconds of one warm call.

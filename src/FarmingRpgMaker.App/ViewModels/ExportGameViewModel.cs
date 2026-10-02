@@ -39,6 +39,8 @@ public sealed class ExportGameViewModel : ObservableObject
     private bool _isExporting;
     private string _outputFolder;
     private ExportReport? _report;
+    private string? _failure;
+    private CancellationTokenSource? _cancel;
 
     /// <param name="workspace">The open project and app settings.</param>
     /// <param name="pickFolder">Shows a folder picker starting at the given folder; null when cancelled.</param>
@@ -58,8 +60,8 @@ public sealed class ExportGameViewModel : ObservableObject
         var settings = workspace.Settings.Load();
         _outputFolder = settings.LastExportFolder ?? DefaultOutputFolder;
         _createArchives = settings.ExportArchives ?? true;
-        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting);
-        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport);
+        BrowseCommand = new AsyncRelayCommand(BrowseAsync, () => !IsExporting, ex => Fail("The folder could not be chosen", ex));
+        ExportCommand = new AsyncRelayCommand(ExportAsync, () => CanExport, ex => Fail("The export failed unexpectedly", ex));
         OpenFolderCommand = new RelayCommand<string>(path => _launcher.OpenFolder(path));
     }
 
@@ -159,9 +161,20 @@ public sealed class ExportGameViewModel : ObservableObject
     {
         get
         {
+            // A command that threw says what failed (choosing the folder, or the export itself).
+            if (_failure is not null)
+            {
+                return _failure;
+            }
+
             if (_report is not { } report)
             {
-                return IsExporting ? "Exporting…" : "";
+                return IsExporting ? (IsCancelling ? "Cancelling…" : "Exporting…") : "";
+            }
+
+            if (report.Cancelled)
+            {
+                return "Export cancelled. Targets it had not finished were left as they were.";
             }
 
             if (report.Blocked)
@@ -177,8 +190,24 @@ public sealed class ExportGameViewModel : ObservableObject
         }
     }
 
-    /// <summary>Errors that stopped the whole export.</summary>
-    public IReadOnlyList<string> ReportErrors => _report is { } report ? [.. report.Errors] : [];
+    /// <summary>Errors that stopped the whole export (or the exception that broke it).</summary>
+    public IReadOnlyList<string> ReportErrors => _failure is { } failure ? [failure] : _report is { } report ? [.. report.Errors] : [];
+
+    /// <summary>True after <see cref="CancelExport"/> until the running export stops.</summary>
+    public bool IsCancelling => _cancel?.IsCancellationRequested == true;
+
+    /// <summary>
+    /// Asks the running export to stop (between files). Targets it has not finished are left as
+    /// they were; the report says it was cancelled.
+    /// </summary>
+    public void CancelExport()
+    {
+        if (_cancel is { IsCancellationRequested: false } cancel)
+        {
+            cancel.Cancel();
+            OnPropertyChanged(nameof(StatusText));
+        }
+    }
 
     /// <summary>Warnings about the project (Problems and unused assets).</summary>
     public IReadOnlyList<string> ReportWarnings => _report is { } report ? [.. report.Warnings] : [];
@@ -225,25 +254,41 @@ public sealed class ExportGameViewModel : ObservableObject
         var folder = OutputFolder.Trim();
         var archives = CreateArchives;
         var templates = _templatesFolder;
+        using var cancel = new CancellationTokenSource();
+        _cancel = cancel;
+        _failure = null;
         IsExporting = true;
         Report = null;
         OnPropertyChanged(nameof(StatusText));
         try
         {
-            var report = await Task.Run(() => GameExporter.Export(project, targets, folder, archives, templates)).ConfigureAwait(true);
-            _workspace.Settings.Update(s => s with { LastExportFolder = folder, ExportArchives = archives });
+            var token = cancel.Token;
+            var report = await Task.Run(() => GameExporter.Export(project, targets, folder, archives, templates, token)).ConfigureAwait(true);
+            // The report first: nothing after a finished export may hide how it went.
+            Report = report;
+            _workspace.Settings.TryUpdate(s => s with { LastExportFolder = folder, ExportArchives = archives });
             if (!report.Blocked && GameExporter.TryRememberTargets(project, targets, out var edit))
             {
                 _workspace.Apply(edit);
             }
-
-            Report = report;
         }
         finally
         {
+            _cancel = null;
             IsExporting = false;
             OnPropertyChanged(nameof(StatusText));
         }
+    }
+
+    /// <summary>
+    /// The exporter reports its own failures; anything else (picking the folder, the project
+    /// edit) still ends in a message, and the log, rather than a blank dialog.
+    /// </summary>
+    private void Fail(string what, Exception error)
+    {
+        System.Diagnostics.Trace.TraceError($"Export Game: {what}: {error}");
+        _failure = $"{what}: {error.Message}";
+        OnPropertiesChanged(nameof(StatusText), nameof(ReportErrors), nameof(Succeeded));
     }
 
     private void SetChoice<T>(ref T field, T value)

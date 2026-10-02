@@ -1,0 +1,105 @@
+# cargo-fuzz targets (#116): one per `farm_fuzz::Target`, each a thin libFuzzer wrapper around
+# the entry point in crates/farm-fuzz, whose stable tests run the same code in `cargo test`.
+# Outside the workspace (the root Cargo.toml excludes it): libFuzzer needs a nightly toolchain.
+#
+#   cargo install cargo-fuzz
+#   cargo run -p farm-fuzz --example write_corpus     # seeds fuzz/corpus/<target>/ from fixtures
+#   cargo +nightly fuzz run commands -- -max_total_time=300
+#   cargo +nightly fuzz list
+[package]
+name = "farm-fuzz-targets"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# farm-plugins is listed only to switch on its portable-dispatch feature for the copy farm-fuzz
+# builds (cargo unifies features), so no code here names it.
+[package.metadata.cargo-machete]
+ignored = ["farm-plugins"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+farm-fuzz = { path = "../crates/farm-fuzz" }
+# wasmi's tail-call dispatch relies on optimizations sanitizer builds may not do (see the root
+# Cargo.toml and docs/PLUGINS.md "Sandbox hardening").
+farm-plugins = { path = "../crates/farm-plugins", features = ["portable-dispatch"] }
+
+# Its own workspace, so the main one never builds it.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "cartridge"
+path = "fuzz_targets/cartridge.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "save"
+path = "fuzz_targets/save.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "save_migration"
+path = "fuzz_targets/save_migration.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image"
+path = "fuzz_targets/image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "project"
+path = "fuzz_targets/project.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "commands"
+path = "fuzz_targets/commands.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "render_request"
+path = "fuzz_targets/render_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "preview"
+path = "fuzz_targets/preview.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session"
+path = "fuzz_targets/session.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin_mutations"
+path = "fuzz_targets/plugin_mutations.rs"
+test = false
+doc = false
+bench = false

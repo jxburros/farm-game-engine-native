@@ -94,6 +94,9 @@ fn plugin_mutation(ids: &Ids) -> impl Strategy<Value = PluginMutation> {
             prop_oneof![
                 any::<bool>().prop_map(Value::from),
                 (0..100i32).prop_map(Value::from),
+                // Doubles, whole ones too: a save writes `2.0` as `2` (#142).
+                (0..100i32).prop_map(|n| Value::from(f64::from(n))),
+                (-1000.0..1000.0f64).prop_map(Value::from),
                 Just(Value::from("text")),
             ]
         )
@@ -121,6 +124,8 @@ pub fn command(ids: &Ids) -> impl Strategy<Value = Command> {
         6 => direction().prop_map(|dir| Command::Move { dir }),
         6 => select(tool_types::ALL.to_vec()).prop_map(|tool| Command::UseTool { tool: tool.to_owned() }),
         4 => Just(Command::Interact),
+        2 => (proptest::option::of(select(ids.items.clone())), proptest::option::of(select(ids.items.clone())))
+            .prop_map(|(seed_item_id, fertilizer_item_id)| Command::InteractWith { seed_item_id, fertilizer_item_id }),
         2 => int(0..=3).prop_map(|index| Command::ChooseDialogueOption { index }),
         1 => Just(Command::CloseDialogue),
         1 => Just(Command::Sleep),
@@ -128,8 +133,12 @@ pub fn command(ids: &Ids) -> impl Strategy<Value = Command> {
         1 => Just(Command::CloseShop),
         2 => (select(ids.items.clone()), count(1..=5))
             .prop_map(|(item_id, quantity)| Command::BuyItem { item_id, quantity }),
-        2 => (select(ids.items.clone()), count(1..=5))
-            .prop_map(|(item_id, quantity)| Command::SellItem { item_id, quantity }),
+        2 => (select(ids.items.clone()), count(1..=5), proptest::option::of(select(vec!["silver", "gold"])))
+            .prop_map(|(item_id, quantity, quality)| Command::SellItem {
+                item_id,
+                quantity,
+                quality: quality.map(str::to_owned)
+            }),
         1 => select(ids.tools.clone()).prop_map(|item_id| Command::RepairTool { item_id }),
         2 => select(ids.recipes.clone()).prop_map(|recipe_id| Command::Craft { recipe_id }),
         1 => select(ids.machines.clone()).prop_map(|machine_type_id| Command::PlaceMachine { machine_type_id }),

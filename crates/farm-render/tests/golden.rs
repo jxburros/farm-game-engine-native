@@ -2,7 +2,8 @@
 //! Edit Mode (editor) snapshots, must match the PNGs in `fixtures/render/`.
 //!
 //! Regenerate them after an intended change with `FARM_RENDER_BLESS=1 cargo test -p farm-render
-//! --test golden`, then look at the images before committing.
+//! --test golden`, then look at the images before committing. A blessing run always fails; rerun
+//! without the switch.
 
 use farm_render::{
     apply_graphics, editor_snapshot, encode_png, images::decode_image, shell_snapshot, GraphicsSource, SnapshotOptions,
@@ -10,6 +11,11 @@ use farm_render::{
 };
 use farm_sim::{GameProject, Presentation};
 use std::path::PathBuf;
+
+#[path = "../../farm-sim/tests/recording/mod.rs"]
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_RENDER_BLESS", "render goldens");
 
 /// Small tiles keep the checked-in images small; the art is drawn at half its native scale.
 const TILE_SIZE: f64 = 16.0;
@@ -55,10 +61,9 @@ fn editor(project: &GameProject) -> WorldSnapshot {
 fn check(name: &str, snapshot: &WorldSnapshot) -> Result<(), String> {
     let pixmap = WorldRenderer::new().render(snapshot, 1.0);
     let path = root().join("fixtures").join("render").join(format!("{name}.png"));
-    if std::env::var_os("FARM_RENDER_BLESS").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, encode_png(&pixmap)).unwrap();
-        return Ok(());
+    if RECORDER.enabled() {
+        RECORDER.write(&path, &encode_png(&pixmap))?;
+        return Err(format!("{name}: blessed. {}", RECORDER.summary()));
     }
     let bytes = std::fs::read(&path)
         .map_err(|e| format!("{name}: {e}; run with FARM_RENDER_BLESS=1 to create {}", path.display()))?;

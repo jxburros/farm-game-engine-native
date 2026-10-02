@@ -59,7 +59,48 @@ public sealed class JsonSettingsStoreTests : IDisposable
         store.Save(new UpdateSettings { SkippedVersion = "1.0.1" });
 
         Assert.Equal("1.0.1", store.Load().SkippedVersion);
-        Assert.Equal(["settings.json"], Directory.GetFiles(Path.GetDirectoryName(SettingsPath)!).Select(Path.GetFileName));
+        // No temp files; the version before the last save is kept as settings.json.bak.
+        Assert.Equal(["settings.json", "settings.json.bak"], Directory.GetFiles(Path.GetDirectoryName(SettingsPath)!).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Contains("1.0.0", File.ReadAllText(SettingsPath + ".bak"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFileThatCannotBeRead_IsNeverOverwritten()
+    {
+        var updates = new JsonSettingsStore(SettingsPath);
+        var workspace = new FarmingRpgMaker.App.Projects.AppSettingsStore(SettingsPath);
+        workspace.Save(new FarmingRpgMaker.App.Projects.WorkspaceSettings { LastProjectId = "proj-keep" });
+
+        // Antivirus or a sync client holds the file: reads fail, so nothing may be written.
+        using (new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Equal(new UpdateSettings(), updates.Load());
+            Assert.ThrowsAny<IOException>(() => updates.Save(new UpdateSettings { AutoDownload = true }));
+            Assert.False(workspace.TryUpdate(s => s with { EditorLanguage = "de" }));
+        }
+
+        Assert.Equal("proj-keep", workspace.Load().LastProjectId);
+        updates.Save(new UpdateSettings { AutoDownload = true });
+        Assert.Equal("proj-keep", workspace.Load().LastProjectId);
+        Assert.True(updates.Load().AutoDownload);
+    }
+
+    [Fact]
+    public void ACorruptFile_IsReadFromTheBackup_AndKeptForInspection()
+    {
+        var updates = new JsonSettingsStore(SettingsPath);
+        var workspace = new FarmingRpgMaker.App.Projects.AppSettingsStore(SettingsPath);
+        workspace.Save(new FarmingRpgMaker.App.Projects.WorkspaceSettings { LastProjectId = "proj-keep" });
+        updates.Save(new UpdateSettings { SkippedVersion = "0.4.0" });
+        File.WriteAllText(SettingsPath, """{ "workspace": { trunc""");
+
+        // The backup holds the workspace section (written before the last save).
+        Assert.Equal("proj-keep", workspace.Load().LastProjectId);
+        updates.Save(new UpdateSettings { AutoDownload = true });
+
+        Assert.Equal("proj-keep", workspace.Load().LastProjectId);
+        Assert.True(updates.Load().AutoDownload);
+        Assert.Equal("""{ "workspace": { trunc""", File.ReadAllText(SettingsPath + ".corrupt"));
     }
 
     [Fact]

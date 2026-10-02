@@ -38,6 +38,7 @@ public sealed class MapCanvas : Control, IDisposable
     private const double MaxUnclippedSide = 4096;
 
     private RustPreview? _preview;
+    private GameProject? _pending;
     private int _projectVersion;
     private MapGeometry? _geometry;
     private WriteableBitmap? _bitmap;
@@ -50,12 +51,27 @@ public sealed class MapCanvas : Control, IDisposable
         ClipToBounds = true;
         Focusable = true;
         // Web: focus-visible:ring-2 in --iw-gold-400, shown when focus arrives from the keyboard.
+        // Gold alone is about 1.6:1 on the cream frame; the dark lines on both sides of it give
+        // the ring the 3:1 a focus indicator needs, on light and dark tiles alike.
         FocusAdorner = new FuncTemplate<Control>(() => new Border
         {
-            BorderThickness = new Thickness(2),
-            BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
-            CornerRadius = new CornerRadius(3),
-            Margin = new Thickness(-3),
+            Name = "MapFocusRing",
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.Parse("#2B2A33")),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(-4),
+            Child = new Border
+            {
+                BorderThickness = new Thickness(2),
+                BorderBrush = new SolidColorBrush(Color.Parse("#E7BA4B")),
+                CornerRadius = new CornerRadius(3),
+                Child = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.Parse("#2B2A33")),
+                    CornerRadius = new CornerRadius(2),
+                },
+            },
         });
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
     }
@@ -91,10 +107,32 @@ public sealed class MapCanvas : Control, IDisposable
     /// <summary>The last rasterized region in world pixels (tests).</summary>
     public Rect RenderedRegion => _bitmapRect;
 
-    /// <summary>Hands the current project to the renderer (after every edit).</summary>
+    /// <summary>The renderer's preview once the map was drawn (tests).</summary>
+    internal RustPreview? Preview => _preview;
+
+    /// <summary>
+    /// Hands the current project to the renderer (after every edit). It reaches Rust when the map
+    /// is next drawn: edits made while another tab shows send nothing, and the tiles a paint
+    /// stroke changes between two frames go over once. The preview then sends only the scenes an
+    /// edit changed (<see cref="RustPreview.SetProject"/>).
+    /// </summary>
     public void SetProject(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
+        _pending = project;
+        _projectVersion++;
+        InvalidateVisual();
+    }
+
+    /// <summary>Sends the project <see cref="SetProject"/> received last, if it has not gone yet.</summary>
+    private void ApplyPendingProject()
+    {
+        if (_pending is not { } project)
+        {
+            return;
+        }
+
+        _pending = null;
         try
         {
             if (_preview is null || _preview.IsPoisoned)
@@ -115,9 +153,6 @@ public sealed class MapCanvas : Control, IDisposable
             _preview?.Dispose();
             _preview = null;
         }
-
-        _projectVersion++;
-        InvalidateVisual();
     }
 
     /// <summary>The tile under a control point, or null outside the map.</summary>
@@ -143,6 +178,7 @@ public sealed class MapCanvas : Control, IDisposable
         _bitmap = null;
         _preview?.Dispose();
         _preview = null;
+        _pending = null;
     }
 
     /// <summary>A focusable control element, so screen readers read its AutomationProperties.Name.</summary>
@@ -176,6 +212,7 @@ public sealed class MapCanvas : Control, IDisposable
         ArgumentNullException.ThrowIfNull(context);
         // A transparent fill keeps the whole map hit-testable for pointer input.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
+        ApplyPendingProject();
         if (_geometry is not { } g || _preview is null)
         {
             return;

@@ -7,6 +7,7 @@ using FarmingRpgMaker.App.Controls;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Localization;
 using FarmingRpgMaker.App.Services;
+using FarmingRpgMaker.Updates;
 
 namespace FarmingRpgMaker.App.Views;
 
@@ -16,8 +17,20 @@ public static class HelpContent
     /// <summary>Manifest name of the embedded creator guide (see the app's .csproj).</summary>
     public const string CreatorGuideResource = "FarmingRpgMaker.App.CreatorGuide.md";
 
-    /// <summary>Where relative links of the guide point (the repository's docs folder).</summary>
-    public const string DocsBaseUrl = "https://github.com/jxburros/farm-game-engine-native/blob/main/docs/";
+    /// <summary>
+    /// Where relative links of the guide point: the repository's docs folder at this release's tag, so an
+    /// older install reads the docs of its own version (development builds read <c>main</c>).
+    /// </summary>
+    public static string DocsBaseUrl { get; } = DocsBaseUrlFor(AppVersion.Current);
+
+    /// <summary>The docs folder for an app version: its <c>v</c> tag, or <c>main</c> for a <c>-dev</c> build.</summary>
+    public static string DocsBaseUrlFor(string version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        var dev = version.Length == 0 || version == "0.0.0" || version.EndsWith("-dev", StringComparison.OrdinalIgnoreCase);
+        var reference = dev ? "main" : "v" + Uri.EscapeDataString(version);
+        return $"https://github.com/jxburros/farm-game-engine-native/blob/{reference}/docs/";
+    }
 
     /// <summary>The creator guide's Markdown.</summary>
     public static string CreatorGuideMarkdown()
@@ -223,6 +236,9 @@ public sealed class ShortcutsWindow : HelpWindowBase
         ("←↑→↓", "shortcuts.mapCursor"),
         ("Enter / Space", "shortcuts.mapApply"),
         ("Esc", "shortcuts.mapCancel"),
+        ("V B R G I M E X U D P", "shortcuts.mapTools"),
+        ("Ctrl+K", "shortcuts.quickOpen"),
+        ("Ctrl+R · Ctrl+Shift+K · Ctrl+D", "shortcuts.playToolbar"),
         ("F1", "shortcuts.guide"),
         ("Alt+F4", "shortcuts.exit"),
     ];

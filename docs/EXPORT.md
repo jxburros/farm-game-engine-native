@@ -30,7 +30,7 @@ the same Rust player compiled to WebAssembly, reading the same `game.cart`.
 
 ## How export works
 
-```
+```text
 project ──▶ F# compiler ──▶ game.cart ──┐
                                         ├──▶ export folder ──▶ zip / tar.gz
 player template for the target ─────────┘    (renamed exe, icon, version info,
@@ -85,7 +85,7 @@ player template for the target ─────────┘    (renamed exe, i
 Each target gets its own folder under the output folder, and an archive next
 to it:
 
-```
+```text
 dist/
   windows-x64/WillowCreek/        the Windows game folder (below)
   linux-x64/WillowCreek/          the Linux game folder (below)
@@ -95,11 +95,24 @@ dist/
 
 Export refuses to write into a game folder that holds files it wouldn't
 write (a creator's notes, say), so a mistyped output folder loses nothing.
-Exporting again over its own earlier output replaces it.
+Files a file manager leaves behind (`.DS_Store`, `Thumbs.db`, `desktop.ini`,
+KDE's `.directory`) don't count. Exporting again over its own earlier output
+replaces it.
+
+Each target is written atomically: the folder and the archive are written
+under hidden temporary names next to where they go (`.WillowCreek.export-…`),
+then renamed into place, the old folder moved aside first. A failure part-way
+(a full disk, the game still running with its executable locked) or a
+cancelled export leaves the previous export as it was. Export never writes
+through a link: a symbolic link (or junction) in the game folder, as the
+target folder or where the archive goes fails that target, so a link planted
+in a shared output folder can't redirect a write. A failure of any kind fails
+only its own target, with a sentence in the report; `Exporter.run` never
+throws, and `farmc export` prints the report.
 
 Windows:
 
-```
+```text
 WillowCreek/
   WillowCreek.exe          farm-player, renamed; export sets its icon and version info
   game.cart
@@ -108,7 +121,7 @@ WillowCreek/
 
 Linux:
 
-```
+```text
 WillowCreek/
   WillowCreek              farm-player, renamed; executable bit set in the archive
   game.cart
@@ -120,8 +133,9 @@ WillowCreek/
 Web demo (`web/WillowCreek/`, and `WillowCreek-web.zip` with the files at its
 root, which is what itch.io expects):
 
-```
+```text
 index.html            the page (the game's title filled in)
+style.css             its styles
 game.js               canvas loop, input, sound, saves in localStorage
 farm_wasm.js          farm-wasm's bindings
 farm_wasm_bg.wasm     the player
@@ -136,7 +150,22 @@ settings live in the browser's `localStorage`, one entry per game id. On a
 phone or tablet (a coarse pointer, or after the first touch) the page shows
 touch controls over the game: a D-pad, Interact, Sleep, Inventory and Menu.
 They send the player `action` events, so they keep working when a player
-rebinds the keys, and taps on the game's own buttons work as clicks. Browsers
+rebinds the keys, and taps on the game's own buttons work as clicks. While
+they show, the game names no keys in its prompts and keeps its bottom row,
+panels and dialogue box above them. The page passes the screen's pixel
+density with every frame, so the interface keeps its size in CSS pixels on
+high-density phones. If the browser's storage is full (itch.io pages share
+one quota), a notice says progress is not being saved until a later save
+works; stored settings the game can no longer read are reset with the saves
+kept, and a stored document it cannot read at all is kept aside under
+`<key>:unreadable`.
+
+The page sets a Content-Security-Policy in a `<meta>` tag: `default-src
+'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src
+'self'; style-src 'self'; base-uri 'none'; form-action 'none'`. It loads only
+its own files and runs nothing inline (its styles are in `style.css`), so a
+later change that put text into the page could not run script through it.
+Export adds the policy to a template page that has none. Browsers
 only load WebAssembly modules from a web server, so the export report reminds
 you to test it with `python3 -m http.server` in the folder (itch.io serves it
 for you).
@@ -150,7 +179,13 @@ art.
 `licenses/THIRD-PARTY.txt` lists the Rust crates in the player with their
 license texts. [cargo-about](https://github.com/EmbarkStudios/cargo-about)
 generates it (`tools/player-licenses/generate.sh`, checked in; CI fails when
-it is stale). Every template ships it and export copies it.
+it is stale). Every template ships it and export copies it. The script appends
+what cargo-about can't see: the embedded fonts, the plugin sandbox's QuickJS,
+rquickjs-sys and wasi-libc (`tools/player-licenses/plugin-guest`), and the
+player's own license. The engine in an exported game is Farming RPG Maker's
+code under the MIT License, so a game may be sold or given away under any
+terms as long as that file ships with it; the game's content (its project,
+art, text and sounds) belongs to its creator.
 
 The `.desktop` file starts the game from the folder it sits in
 (`Exec=sh -c "exec \\"\\$(dirname \\"\\$0\\")/WillowCreek\\"" %k`), which works in
@@ -162,15 +197,19 @@ game is installed with its `.png`. The file passes `desktop-file-validate`.
 A template is a folder per target with the player, its manifest and the
 license notices:
 
-```
+```text
 players/windows-x64/farm-player.exe   players/linux-x64/farm-player
 players/windows-x64/template.json     players/linux-x64/template.json
 players/windows-x64/THIRD-PARTY.txt   players/linux-x64/THIRD-PARTY.txt
 ```
 
-`template.json` is `{ "target": "linux-x64", "version": "0.2.0", "sha256": "…" }`.
-Export refuses a template for another target, another editor version, or with
-an executable that doesn't match the checksum. A missing template fails that
+`template.json` is `{ "target": "linux-x64", "version": "0.2.0", "sha256": "…",
+"files": { "THIRD-PARTY.txt": "…" } }`: `sha256` is the executable's (for the
+web, the module's) and `files` has every other file export uses (the license
+notices, and for the web `index.html`, `game.js`, `style.css` and
+`farm_wasm.js`). Export refuses a template for another target, another editor
+version, or with any file that doesn't match its checksum or has none. It reads
+each file once and writes those checked bytes. A missing template fails that
 target only; the other targets still export.
 
 Export looks in `--templates` (farmc) or `ProjectCommandHandler.PlayerTemplatesFolder`
@@ -180,9 +219,8 @@ the Steam Runtime "sniper" SDK container, the web one with
 `tools/wasm/build.sh`), ships them in the app's `players/` folder through
 `-p:FarmPlayerTemplatesDir`, and attaches them to the release as
 `player-windows-x64.zip`, `player-linux-x64.tar.gz` and `player-web.tar.gz`
-(`tools/player-templates/package.sh` stages them; the web template's checksum
-covers `farm_wasm_bg.wasm`, and its page files come from
-`tools/wasm/web-template`). Development builds get the
+(`tools/player-templates/package.sh` stages them and hashes every file; the
+web template's page files come from `tools/wasm/web-template`). Development builds get the
 host template from the `FarmPlayerTemplates` target in
 `src/FarmEngine.Export/FarmEngine.Export.fsproj`, which runs
 `cargo build -p farm-player` and writes `template.json` with the build's
@@ -204,14 +242,27 @@ without moving anything in the file:
    room for any 8-bit RGBA PNG of that size. That reserves about 281 KB.
 2. **Patch in place.** `PeResources` (F#) parses the PE headers and the
    `.rsrc` tree (type → name → language → data entry). The room for each
-   resource is the gap to the next resource structure or the section end. It
+   resource is the gap to the next resource structure or the end of the
+   resource section (and of the file). Resource data outside the resource
+   section, or a directory table reached twice, makes the template unusable,
+   so patching only ever rewrites bytes of the resource section. It
    writes Skia's PNGs into the icon slots, updates the icon group entries
    (size, 32 bits, byte count), writes a fresh `VS_VERSIONINFO` (`VersionInfo`)
    into the version slot, shrinks each data entry's size, zeroes the rest of
-   the slot, and recomputes the PE checksum.
+   the slot, sets the optional header's `Subsystem` from console (3) to GUI
+   (2), and recomputes the PE checksum. The template is a console program, so
+   `--headless` and `--screenshot` print to a terminal; the exported game is a
+   GUI program, so double-clicking it opens no console window behind the game
+   (closing that window used to kill the game). Its error screen replaces the
+   console's messages (docs/PLAYER.md "Crash logs").
 3. **Clear failures.** A template without the slots, data larger than its slot
    (a very long title, say) or a file that isn't a PE gives one sentence in
    the report, never a broken executable.
+4. **Signed templates.** Changing the executable breaks an Authenticode
+   signature, and Windows treats an invalid signature worse than none, so a
+   signed template's certificate table is cut off the end of the file and its
+   Security directory cleared before the checksum is computed. The report says
+   so; sign the exported game again if it needs a signature.
 
 The version info has `ProductName` and `FileDescription` (the title; Task
 Manager shows the description), `FileVersion`/`ProductVersion` (the version
@@ -225,7 +276,18 @@ a 56 KB program built by mingw's gcc and windres with the same layout and
 smaller slots (`build.sh` next to it rebuilds it), and read everything back.
 `wrestool`/`icotool`, `objdump -p` and Python's `pefile` read the patched files
 correctly, and pefile agrees with the checksum. CI exports a game on the Windows
-runner and checks its version info with PowerShell.
+runner and checks its version info and its GUI subsystem with PowerShell.
+
+### The C runtime
+
+`.cargo/config.toml` builds every Windows target with
+`-C target-feature=+crt-static`: the Visual C++ runtime is linked into
+`farm-player.exe` and `farm_ffi.dll`, so exported games and the editor's Play
+Mode work on a clean Windows install without the VC++ redistributable
+(`VCRUNTIME140.dll`). The CI runners have the redistributable installed, so CI
+checks the binaries' imports with `dumpbin /dependents` instead and fails on
+`VCRUNTIME`, `MSVCP` or `api-ms-win-crt-` DLLs. A `RUSTFLAGS` environment
+variable would replace the config's flags, so release builds don't set one.
 
 ## Export settings
 
@@ -239,7 +301,7 @@ F# Problems pipeline validates the block and blocks export on errors.
 | Field | Example | Notes |
 |---|---|---|
 | `title` | `Willow Creek Farm` | Window title and title screen. Defaults to the project name. |
-| `executableName` | `WillowCreek` | Must be a valid file name on every target. |
+| `executableName` | `WillowCreek` | 1–64 letters, digits, `-` or `_`, starting with a letter or digit; not a device name (`CON`, `COM1`, …) or `licenses`. Without one, export uses the title's slug (cut to 64 characters, `-game` added to a reserved name). |
 | `version` | `1.2.0` | Shown on the title screen, written to the exe's version info, and stored in saves. |
 | `gameId` | `com.example.willowcreek` | Names the save folder. It is generated once and **never** changes, even when the game is renamed. |
 | `author`, `company` | | Version info and credits. |
@@ -301,13 +363,14 @@ Differences from this plan, as built:
 - Display settings have no resolution, vsync or frame cap. The window is
   resizable, the player paces itself to 60 frames per second, and fullscreen
   is borderless at the desktop resolution.
-- Audio has no ambience volume (there is no ambience content). Music has a
-  volume but no music content yet.
+- Audio has no separate ambience volume: the built-in music and ambience
+  loops (see [PLAYER.md](PLAYER.md#settings)) share the Music volume.
 - Keyboard keys are rebindable in the Controls tab. The gamepad layout is
   shown there and read from `settings.toml`, but not rebound in the menu.
 - Accessibility has text size and reduced motion (no pops, fades or
   flashes). There is no text speed, because dialogue shows at once.
-- A crash writes the log and prints its path. It shows no message box.
+- A crash writes the log and prints its path, and the game window shows an
+  error screen with that path instead of a native message box.
 
 ## What earlier phases must get right
 
@@ -317,7 +380,7 @@ expensive to change after games have shipped:
 | Phase | Decision |
 |---|---|
 | **1. Scaffolding** | `cart.fbs` has a `GameInfo` table (title, version, `gameId`, author, window defaults, pixel scale) and an embedded-asset table keyed by id from the start. The player never reads project JSON. The `wasm32-unknown-unknown` CI check keeps the web demo possible. |
-| **2. Rust core** | **Saves store content by stable string id, never by the cartridge's interned indices.** Every compile re-interns ids, and a save from version 1.0 of a game must still load in 1.1 after the creator adds an item. Loading a save maps ids to indices. Ids that no longer exist go to the existing quarantine path (`QuarantinedItems`) instead of failing. |
+| **2. Rust core** | **Saves store content by stable string id, never by the cartridge's interned indices.** Every compile re-interns ids, and a save from version 1.0 of a game must still load in 1.1 after the creator adds an item. Loading a save maps ids to indices. Ids that no longer exist go to the existing quarantine path (`QuarantinedItems`) instead of failing. A save from another version of the game also takes that version's maps (tiles, doors, new scenes) while keeping what the player did on them, and NPCs new in the game join the world. |
 | **2. Rust core** | The save header carries `gameId`, the game version, the cartridge content hash and the save format version. The player refuses a save from a different `gameId`, loads saves from older game versions, and warns about saves from newer ones. |
 | **2. Rust core** | `farm-sim` does no file, environment or clock access (already a rule). The web demo depends on it. |
 | **3. F# authoring** | The `export` settings schema and its validation. |
@@ -394,9 +457,15 @@ gameplay HUD, dialogue and shop at 1280×800 and 1920×1080, in
 `fixtures/player/`), the shell flow from New Game to Continue, and the real
 window under Xvfb in CI. The standalone and embedded players draw with the
 same code, and so does the web player (`farm-wasm` builds the same `Player`).
-`tests/FarmEngine.Export.Tests` checks the web demo's files, its escaped title
-and the flat zip; a manual run in headless Chromium played an exported sample
-from the title screen into the game.
+`tests/FarmEngine.Export.Tests` checks the web demo's files, its escaped title,
+its Content-Security-Policy and the flat zip. `tools/wasm/game-page.mjs` (CI)
+runs the page's `game.js` in Node against the real module with a stand-in for
+the browser: frames sized by pixel density, keys, the touch controls (also
+when pointer capture is refused), sound, saves through `localStorage` and a
+reload, a full storage, unreadable stored settings, and a missing
+`game.cart`; it also checks that `index.html` has nothing inline. Manual runs
+in headless Chromium played an exported sample from the title screen into
+the game, under the page's policy without violations.
 
 ## Notes for creators
 

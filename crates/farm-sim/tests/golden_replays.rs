@@ -14,12 +14,16 @@
 
 use farm_sim::replay::ReplayInput;
 use farm_sim::schema::GameProject;
-use farm_sim::{engine, hash, quests, stable_json, state, EngineContext};
+use farm_sim::{engine, hash, quests, stable_json, state, CommandRules, EngineContext};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "replays");
 
 fn golden_dir(relative: &str) -> PathBuf {
     [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect()
@@ -46,7 +50,7 @@ fn fixture_names(folder: &str) -> Vec<String> {
 }
 
 fn recording() -> bool {
-    std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1")
+    RECORDER.enabled()
 }
 
 /// A value as the fixtures store it: its stable JSON, parsed (keys sorted, JS numbers).
@@ -60,7 +64,8 @@ fn play(source: &Value) -> Result<Value, String> {
         serde_json::from_value(source["project"].clone()).map_err(|e| format!("project does not parse: {e}"))?;
     let content = state::create_content_from_project(&project);
     let content_hash = hash::hash_state(&content);
-    let ctx = EngineContext::new(content);
+    // The replays script commands wherever the player stands (as the reference engines allowed).
+    let ctx = EngineContext::new(content).with_rules(CommandRules::Scripted);
 
     let seed = source["seed"].as_str();
     let mut game = state::create_game_state(&project, seed);
@@ -151,8 +156,7 @@ fn check(name: &str) -> Result<(), String> {
     let path = golden_dir(&format!("replays/{name}.json"));
     if recording() {
         let text = serde_json::to_string(&actual).map_err(|e| e.to_string())? + "\n";
-        std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))?;
-        return Ok(());
+        return RECORDER.write(&path, text.as_bytes());
     }
     let recorded = golden(&format!("replays/{name}.json"));
     match first_difference(&recorded, &actual) {
@@ -212,4 +216,7 @@ fn replays_match_the_recorded_goldens() {
         names.len(),
         failures.join("\n\n")
     );
+    if recording() {
+        RECORDER.finish();
+    }
 }

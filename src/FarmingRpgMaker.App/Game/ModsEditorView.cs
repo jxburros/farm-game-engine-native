@@ -13,7 +13,7 @@ namespace FarmingRpgMaker.App.Game;
 /// Installed pack order, an explicit manifest/permission review before installation, the curated
 /// registry, and "Export selection as pack" (web ModsEditor).
 /// </summary>
-public sealed class ModsEditorView : UserControl
+public sealed class ModsEditorView : UserControl, IRetirable
 {
     private static readonly FilePickerFileType PackFiles = new("Content pack JSON") { Patterns = ["*.json"], MimeTypes = ["application/json"] };
     private readonly ProjectWorkspace _workspace;
@@ -39,7 +39,7 @@ public sealed class ModsEditorView : UserControl
         layout.Children.Add(Ui.Text("INSTALLED PACKS", "section"));
         layout.Children.Add(_installed);
         layout.Children.Add(Ui.Text("ADD PACK", "section"));
-        var choose = Ui.Button("Choose pack JSON", async () => await ChoosePackAsync(), "tool");
+        var choose = Ui.AsyncButton("Choose pack JSON", ChoosePackAsync, error => _message.Text = $"Could not read the pack: {error.Message}", "tool");
         choose.Name = "ChoosePackButton";
         layout.Children.Add(choose);
         layout.Children.Add(_message);
@@ -56,17 +56,22 @@ public sealed class ModsEditorView : UserControl
         Ui.Label((_exportName, "Pack name"));
         layout.Children.Add(Ui.HStack(8, Ui.Text("Pack name", "muted", "small"), _exportName));
         layout.Children.Add(_exportCategories);
-        var export = Ui.Button("Save pack JSON…", async () => await ExportSelectionAsync(), "accent");
+        var export = Ui.AsyncButton("Save pack JSON…", ExportSelectionAsync, error => _exportMessage.Text = $"Could not save the pack: {error.Message}", "accent");
         export.Name = "ExportPackButton";
         layout.Children.Add(export);
         _exportMessage.Name = "ExportPackMessage";
         layout.Children.Add(_exportMessage);
         Content = new ScrollViewer { Content = layout };
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     public void SelectPack(string id)
@@ -117,13 +122,29 @@ public sealed class ModsEditorView : UserControl
         _review.Children.Add(Ui.Text($"{manifest.Name} · {manifest.Version}", "h2"));
         _review.Children.Add(Ui.Wrapped($"{manifest.Description.OrNull() ?? "No description"} · by {manifest.Author.OrNull() ?? "unknown author"}", "muted", "small"));
         _review.Children.Add(Ui.Wrapped($"Engine: {manifest.EngineCompatibility} · ID: {manifest.Id}", "muted", "small"));
-        _review.Children.Add(Ui.Wrapped($"Permissions: content injection {(manifest.Permissions.ContentInject ? "requested" : "off")}; UI panels {(manifest.Permissions.UiPanels ? "requested" : "off")}; hooks {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}", "small"));
+        // contentInject off means the pack's content is not loaded; packs cannot add UI panels
+        // yet, so uiPanels grants nothing.
+        _review.Children.Add(Ui.Wrapped($"Permissions: content {(manifest.Permissions.ContentInject ? "added to your game" : "off (none of the pack's content loads)")}; hooks {(manifest.Permissions.Hooks.Length == 0 ? "none" : string.Join(", ", manifest.Permissions.Hooks))}{(manifest.Permissions.UiPanels ? "; UI panels requested (not supported, grants nothing)" : "")}", "small"));
+        if (pack.Plugins.Length > 0)
+            _review.Children.Add(Ui.Wrapped($"Plugins may: {PackRules.describeMutations(manifest.Permissions)}", "small"));
         if (manifest.Dependencies.Length > 0)
             _review.Children.Add(Ui.Wrapped($"Dependencies: {string.Join(", ", manifest.Dependencies.Select(dep => $"{dep.PackId} {dep.Version.OrNull() ?? "*"}"))}", "muted", "small"));
         if (manifest.Overrides.Length > 0)
             _review.Children.Add(Ui.Wrapped($"Overrides: {string.Join(", ", manifest.Overrides)}", "muted", "small"));
         var content = pack.Content;
         _review.Children.Add(Ui.Wrapped($"Content: {content.Items.Length} items, {content.Npcs.Length} NPCs, {content.Scenes.Length} scenes, {content.Recipes.Length} recipes, {content.Quests.Length} quests, {pack.Plugins.Length} plugins", "small"));
+        if (Mods.PackAssets(pack) is { Count: > 0 } assets)
+        {
+            var art = Ui.Wrapped($"Art: {assets.Count} image{(assets.Count == 1 ? "" : "s")}, added to this project's art when you install.", "small");
+            art.Name = "PackReviewArt";
+            _review.Children.Add(art);
+            if (_workspace.Current is { } current && Mods.PackAssetConflicts(current, pack) is { Count: > 0 } conflicts)
+            {
+                var clash = Ui.Wrapped($"This project already has different art named {string.Join(", ", conflicts)}; it keeps its own, so the pack's entries using those ids look different here.", "small");
+                clash.Name = "PackReviewArtConflicts";
+                _review.Children.Add(clash);
+            }
+        }
         foreach (var plugin in pack.Plugins)
         {
             _review.Children.Add(Ui.Text($"Plugin: {plugin.Name.OrNull() ?? plugin.Id} · hooks {string.Join(", ", plugin.Hooks)}", "section"));
@@ -146,11 +167,9 @@ public sealed class ModsEditorView : UserControl
         if (files.Count == 0) return;
         try
         {
-            await using var stream = await files[0].OpenReadAsync();
-            using var reader = new StreamReader(stream);
-            ReviewPackJson(await reader.ReadToEndAsync());
+            ReviewPackJson(await PickedFiles.ReadTextAsync(files[0], PickedFiles.MaxPackBytes, "content packs"));
         }
-        catch (IOException error)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             _message.Text = $"Could not open pack: {error.Message}";
         }
@@ -248,17 +267,22 @@ public sealed class ModsEditorView : UserControl
                 ShowOverwritePrompt = true,
             });
             if (file is null) return;
-            await using var stream = await file.OpenWriteAsync();
-            stream.SetLength(0);
-            await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
-            await writer.WriteAsync(result.Text);
-            _exportMessage.Text = $"Saved {file.Name}.";
+            await PickedFiles.WriteTextAsync(file, result.Text);
+            _exportMessage.Text = ExportedText(file.Name, result);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             _exportMessage.Text = $"Could not save the pack: {error.Message}";
         }
     }
+
+    /// <summary>"Saved my-pack.json with 2 images (the art its entries use)."</summary>
+    internal static string ExportedText(string fileName, PackExportResult result) => result.Assets.Count switch
+    {
+        0 => $"Saved {fileName}.",
+        1 => $"Saved {fileName} with 1 image (the art its entries use).",
+        var count => $"Saved {fileName} with {count} images (the art its entries use).",
+    };
 
     private void InstallReviewed()
     {

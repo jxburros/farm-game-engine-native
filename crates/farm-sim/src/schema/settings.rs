@@ -53,9 +53,21 @@ pub struct TimeConfig {
     /// Minute-of-day the player collapses if still awake (26:00 = 2am). int.
     #[serde(with = "crate::units::count")]
     pub day_end_minute: u32,
-    /// In-game minutes that pass per real-time second. positive.
+    /// In-game minutes that pass per real-time second. positive, at most 1440.
     #[serde(with = "crate::units::minute_rate")]
     pub minutes_per_real_second: u32,
+    /// Whether the clock stops while a dialogue, shop or minigame is open (and, in the player,
+    /// while a menu such as the inventory or quest log is open), so reading costs no daytime.
+    /// Absent means on ([`TimeConfig::pauses_in_modals`]); v8 ran the clock on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause_in_modals: Option<bool>,
+}
+
+impl TimeConfig {
+    /// [`TimeConfig::pause_in_modals`], on unless a project turns it off.
+    pub fn pauses_in_modals(&self) -> bool {
+        self.pause_in_modals != Some(false)
+    }
 }
 
 impl Default for TimeConfig {
@@ -64,6 +76,7 @@ impl Default for TimeConfig {
             day_start_minute: 6 * 60,
             day_end_minute: 26 * 60,
             minutes_per_real_second: units::MINUTE / units::TICKS_PER_SECOND,
+            pause_in_modals: None,
         }
     }
 }

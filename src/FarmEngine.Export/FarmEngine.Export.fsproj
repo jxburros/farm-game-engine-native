@@ -44,12 +44,16 @@
     <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">$(FarmFfiSkipCargo)</FarmPlayerSkipCargo>
     <FarmPlayerSkipCargo Condition="'$(FarmPlayerSkipCargo)' == ''">false</FarmPlayerSkipCargo>
     <CargoProfile Condition="'$(CargoProfile)' == ''">release</CargoProfile>
+    <!-- Cargo puts the dev and test profiles in target/debug and bench in target/release. -->
+    <CargoProfileDir>$(CargoProfile)</CargoProfileDir>
+    <CargoProfileDir Condition="'$(CargoProfile)' == 'dev' Or '$(CargoProfile)' == 'test'">debug</CargoProfileDir>
+    <CargoProfileDir Condition="'$(CargoProfile)' == 'bench'">release</CargoProfileDir>
     <FarmPlayerCargoTargetDir>$(MSBuildThisFileDirectory)../../target/</FarmPlayerCargoTargetDir>
     <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">windows-x64</FarmPlayerHostTarget>
     <FarmPlayerHostTarget Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</FarmPlayerHostTarget>
     <FarmPlayerExecutableName Condition="'$(FarmPlayerHostTarget)' == 'windows-x64'">farm-player.exe</FarmPlayerExecutableName>
     <FarmPlayerExecutableName Condition="'$(FarmPlayerExecutableName)' == ''">farm-player</FarmPlayerExecutableName>
-    <FarmPlayerExecutablePath>$(FarmPlayerCargoTargetDir)$(CargoProfile)/$(FarmPlayerExecutableName)</FarmPlayerExecutablePath>
+    <FarmPlayerExecutablePath>$(FarmPlayerCargoTargetDir)$(CargoProfileDir)/$(FarmPlayerExecutableName)</FarmPlayerExecutablePath>
     <FarmPlayerLicenses>$(MSBuildThisFileDirectory)../../tools/player-licenses/THIRD-PARTY.txt</FarmPlayerLicenses>
   </PropertyGroup>
 
@@ -72,17 +76,22 @@
     </Exec>
     <Message Importance="high" Text="FarmEngine.Export: cargo not found; building without a player template (set FarmPlayerSkipCargo=true to silence this)."
              Condition="'$(FarmPlayerCargoProbe)' != '' And '$(FarmPlayerCargoProbe)' != '0'" />
-    <Exec Command="cargo build --profile $(CargoProfile) -p farm-player" WorkingDirectory="$(MSBuildThisFileDirectory)../.."
+    <Exec Command="cargo build --locked --profile $(CargoProfile) -p farm-player" WorkingDirectory="$(MSBuildThisFileDirectory)../.."
           Condition="'$(FarmPlayerCargoProbe)' == '0'" />
     <GetFileHash Files="$(FarmPlayerExecutablePath)" Algorithm="SHA256" HashEncoding="hex"
                  Condition="'$(FarmPlayerCargoProbe)' == '0' And Exists('$(FarmPlayerExecutablePath)')">
       <Output TaskParameter="Hash" PropertyName="FarmPlayerSha256" />
     </GetFileHash>
+    <!-- template.json "files": the SHA-256 of every other file export uses (Templates.find). -->
+    <GetFileHash Files="$(FarmPlayerLicenses)" Algorithm="SHA256" HashEncoding="hex"
+                 Condition="'$(FarmPlayerSha256)' != ''">
+      <Output TaskParameter="Hash" PropertyName="FarmPlayerLicensesSha256" />
+    </GetFileHash>
     <PropertyGroup>
       <FarmPlayerStatus Condition="'$(FarmPlayerTemplatesDir)' != ''">prebuilt</FarmPlayerStatus>
       <FarmPlayerStatus Condition="'$(FarmPlayerStatus)' == '' And '$(FarmPlayerSha256)' != ''">built</FarmPlayerStatus>
       <FarmPlayerStatus Condition="'$(FarmPlayerStatus)' == ''">skipped</FarmPlayerStatus>
-      <FarmPlayerTemplateText>{ "target": "$(FarmPlayerHostTarget)", "version": "$(Version)", "sha256": "$(FarmPlayerSha256.ToLowerInvariant())" }</FarmPlayerTemplateText>
+      <FarmPlayerTemplateText>{ "target": "$(FarmPlayerHostTarget)", "version": "$(Version)", "sha256": "$(FarmPlayerSha256.ToLowerInvariant())", "files": { "THIRD-PARTY.txt": "$(FarmPlayerLicensesSha256.ToLowerInvariant())" } }</FarmPlayerTemplateText>
     </PropertyGroup>
     <MakeDir Directories="$(IntermediateOutputPath)players/$(FarmPlayerHostTarget)" Condition="'$(FarmPlayerStatus)' == 'built'" />
     <WriteLinesToFile File="$(FarmPlayerTemplateJson)" Lines="$(FarmPlayerTemplateText)" Overwrite="true" WriteOnlyWhenDifferent="true" Condition="'$(FarmPlayerStatus)' == 'built'" />

@@ -49,13 +49,58 @@ module Playtest =
         | JArray items -> Json.set key (JArray(List.map f items)) value
         | _ -> value
 
-    /// The project JSON with the state written back.
+    /// The calendar the game ran (Rust `resolve_settings(&project.settings).calendar`).
+    let private calendar (project: Json) : CalendarConfig =
+        match Decode.run SchemaJson.decodeProjectSettings (Json.get "settings" project) with
+        | Ok settings -> (ContentCompiler.settings { GameProject.Default with Settings = settings }).Calendar
+        | Error _ -> SettingsSchema.DefaultProjectSettings.Calendar
+
+    /// `currentDayOfSeason` for the clock (Rust `kept_day_of_season`): absent when `currentDay`
+    /// alone lands on the clock's season and day of season.
+    let private dayOfSeason (calendar: CalendarConfig) (clock: Json) : Json option =
+        let number = function
+            | JNumber n -> Some n
+            | _ -> None
+        let day = number (Json.get "day" clock) |> Option.defaultValue 0.0
+        let season = Json.asString (Json.get "season" clock) |> Option.defaultValue ""
+        let kept = SettingsSchema.clockDayOfSeason calendar season day (number (Json.get "dayOfSeason" clock))
+        let natural, naturalDay = SettingsSchema.naturalDate calendar day
+        if natural.Id <> season || naturalDay <> kept then Some(JNumber kept) else None
+
+    /// What the project's own fields do not hold (Rust `KeptState::of_state`): the tick, today's
+    /// shop purchases, an open dialogue, shop or minigame, NPC walks and the mine floor; absent
+    /// when there is nothing to carry.
+    let private keptState (state: Json) : Json option =
+        let present (key: string) (value: Json) = if Json.isNullish value then [] else [ key, value ]
+        let npcs =
+            match Json.get "npcs" state with
+            | JObject members ->
+                members
+                |> List.choose (fun (id, npc) ->
+                    match present "path" (Json.get "path" npc) @ present "patrolIndex" (Json.get "patrolIndex" npc) with
+                    | [] -> None
+                    | walk -> Some(id, JObject walk))
+            | _ -> []
+        let purchases =
+            match Json.get "shopPurchasesToday" state with
+            | JObject _ as purchases -> purchases
+            | _ -> JObject []
+        let tick = Json.get "tick" (Json.get "clock" state) |> Json.orElse (JNumber 0.0)
+        let floor = Json.get "currentFloor" (Json.get "mine" state) |> Json.orElse (JNumber 0.0)
+        let sessions = present "dialogue" (Json.get "dialogue" state) @ present "shop" (Json.get "shop" state) @ present "minigame" (Json.get "minigame" state)
+        if tick = JNumber 0.0 && purchases = JObject [] && sessions.IsEmpty && npcs.IsEmpty && floor = JNumber 0.0 then
+            None
+        else
+            Some(JObject([ "tick", tick; "shopPurchasesToday", purchases ] @ sessions @ [ "npcs", JObject npcs; "mineCurrentFloor", floor ]))
+
+    /// The project JSON with the state written back. Flag values go back as they are (plugins
+    /// store numbers and strings), and keys keep their places.
     let applyStateJson (project: Json) (state: Json) : Json =
         let player = Json.get "player" state
         let clock = Json.get "clock" state
         let flags =
             match Json.get "flags" state with
-            | JObject members -> JObject(members |> List.map (fun (key, value) -> key, JBool(Json.truthy value)))
+            | JObject _ as flags -> flags
             | _ -> JObject []
         let projectPlayer =
             Json.get "player" project
@@ -77,9 +122,11 @@ module Playtest =
               "mineDeepestFloor", Some(Json.get "deepestFloor" (Json.get "mine" state))
               "currentDay", Some(Json.get "day" clock)
               "currentSeason", Some(Json.get "season" clock)
+              "currentDayOfSeason", dayOfSeason (calendar project) clock
               "currentTimeMinutes", Some(Json.get "timeMinutes" clock)
               "currentYear", Some(Json.get "year" clock)
-              "rngState", Some(Json.get "rng" state) ]
+              "rngState", Some(Json.get "rng" state)
+              "keptState", keptState state ]
 
     /// The project with a playtest's final state (the engine's `GameState` JSON) written back,
     /// or why the result is not a valid project.

@@ -5,6 +5,7 @@ open System.Globalization
 open System.IO
 open System.Net
 open System.Text
+open System.Threading
 open FarmEngine.Authoring
 open FarmEngine.Schemas
 
@@ -50,13 +51,16 @@ type ExportReport =
       CartridgeSize: int64
       /// Lowercase hex SHA-256 of `game.cart` ("" when none was compiled).
       CartridgeSha256: string
-      /// Errors that stopped the whole export (Problems errors, bad options, compile failures).
+      /// Errors that stopped the whole export (Problems errors, bad options, compile failures,
+      /// cancelling, an unexpected failure).
       Errors: string list
       /// Problems warnings and unused assets.
       Warnings: string list
-      Targets: TargetReport list }
+      Targets: TargetReport list
+      /// True when the export was cancelled; `Targets` has the ones finished before that.
+      Cancelled: bool }
 
-    /// True when Problems or the options stopped the export before any target.
+    /// True when something stopped the export as a whole (Problems, the options, cancelling).
     member this.Blocked = not this.Errors.IsEmpty
 
     /// True when every requested target was exported.
@@ -87,7 +91,7 @@ module Exporter =
         let title = defaultArg settings.Title project.Name
         let version = defaultArg settings.Version project.Version
         { Title = title
-          ExecutableName = (match settings.ExecutableName with None -> Defaults.slugId title Seq.empty "game" | Some value -> value)
+          ExecutableName = (match settings.ExecutableName with None -> Defaults.defaultExecutableName title | Some value -> value)
           Version = version
           GameId = settings.GameId
           Company = orNull (Option.toObj settings.Company)
@@ -95,16 +99,26 @@ module Exporter =
           IconAssetId = orNull (Option.toObj settings.IconAssetId)
           Targets = List.ofSeq settings.Targets }
 
-    /// Problems errors (block export) and warnings, plus unused assets, as report lines.
+    /// Problems errors (block export) and warnings, plus unused assets, as report lines. The
+    /// effective executable name (set, or made from the title) must be one export can write.
     let check (project: GameProject) : string list * string list =
         let problems = Problems.collect project
         let line (p: Problem) = if p.Path = "" then p.Message else p.Path + ": " + p.Message
+        let errors = problems |> Problems.errors |> List.map line
+        let name = (identity project).ExecutableName
+        let nameError =
+            if Defaults.executableNameAllowed name || errors |> List.exists (fun e -> e.StartsWith("export.executableName", StringComparison.Ordinal)) then []
+            else
+                [ sprintf
+                      "export.executableName: The executable name \"%s\" can't be used: it needs 1 to %d letters, numbers, hyphens or underscores and cannot be a reserved name (a device name such as CON, or licenses)."
+                      name
+                      Defaults.MaxExecutableNameLength ]
         let unused = AssetUsage.unused project
         let assetWarnings =
             [ for asset in unused ->
                 let index = project.CustomAssets |> List.findIndex (fun a -> obj.ReferenceEquals(a, asset) || a = asset)
                 sprintf "customAssets[%d]: Asset \"%s\" (%s) is not used by the game and is left out of it." index asset.Name asset.Id ]
-        problems |> Problems.errors |> List.map line,
+        errors @ nameError,
         (problems |> Problems.warnings |> List.map line) @ assetWarnings
 
     /// The version resource for a Windows game.
@@ -122,7 +136,19 @@ module Exporter =
               "ProductVersion", game.Version
               "Comments", "Made with Farming RPG Maker " + editorVersion ] }
 
+    /// A web page with `ExportTarget.webContentSecurityPolicy`: a template page that sets no
+    /// policy (an older template) gets it as the first element of its `<head>`, or first of all.
+    let withContentSecurityPolicy (page: string) : string =
+        if page.Contains("Content-Security-Policy", StringComparison.OrdinalIgnoreCase) then
+            page
+        else
+            let meta =
+                sprintf "<meta http-equiv=\"Content-Security-Policy\" content=\"%s\">" ExportTarget.webContentSecurityPolicy
+            let head = page.IndexOf("<head>", StringComparison.OrdinalIgnoreCase)
+            if head >= 0 then page.Insert(head + "<head>".Length, "\n" + meta) else meta + "\n" + page
+
     /// The files of one target's game folder, in memory. `icons` has every `Icons.sizes` entry.
+    /// Template files come from `template.Files`: the bytes `Templates.find` checked.
     let package
         (game: GameIdentity)
         (target: ExportTarget)
@@ -131,8 +157,8 @@ module Exporter =
         (icons: (int * byte[]) list)
         (editorVersion: string)
         : Result<PackageFile list, string> =
-        let player = File.ReadAllBytes template.Executable
-        let licenses = File.ReadAllBytes template.Licenses
+        let player = template.Read target.TemplateExecutable
+        let licenses = template.Read Templates.LicensesFile
         let common =
             [ { Path = "game.cart"; Data = cart; Executable = false }
               { Path = "licenses/" + Templates.LicensesFile; Data = licenses; Executable = false } ]
@@ -151,53 +177,123 @@ module Exporter =
                 @ common
             )
         | ExportTarget.Web ->
-            let missing = ExportTarget.webFiles |> List.filter (fun f -> not (File.Exists(Path.Combine(template.Folder, f))))
-            if not missing.IsEmpty then
-                Error(sprintf "The %s player template has no %s." target.DisplayName (String.Join(", ", missing)))
-            else
-                let read (name: string) = File.ReadAllBytes(Path.Combine(template.Folder, name))
-                let page =
-                    File.ReadAllText(Path.Combine(template.Folder, "index.html"))
-                        .Replace("{{TITLE}}", WebUtility.HtmlEncode game.Title)
-                let icon = icons |> List.find (fun (size, _) -> size = 256) |> snd
-                Ok(
-                    [ { Path = "index.html"; Data = Encoding.UTF8.GetBytes page; Executable = false }
-                      { Path = "game.js"; Data = read "game.js"; Executable = false }
-                      { Path = "farm_wasm.js"; Data = read "farm_wasm.js"; Executable = false }
-                      { Path = target.TemplateExecutable; Data = player; Executable = false }
-                      { Path = "icon.png"; Data = icon; Executable = false } ]
-                    @ common
-                )
+            let page =
+                Encoding.UTF8.GetString(template.Read "index.html").Replace("{{TITLE}}", WebUtility.HtmlEncode game.Title)
+                |> withContentSecurityPolicy
+            let icon = icons |> List.find (fun (size, _) -> size = 256) |> snd
+            Ok(
+                [ { Path = "index.html"; Data = Encoding.UTF8.GetBytes page; Executable = false }
+                  { Path = "game.js"; Data = template.Read "game.js"; Executable = false }
+                  { Path = "style.css"; Data = template.Read "style.css"; Executable = false }
+                  { Path = "farm_wasm.js"; Data = template.Read "farm_wasm.js"; Executable = false }
+                  { Path = target.TemplateExecutable; Data = player; Executable = false }
+                  { Path = "icon.png"; Data = icon; Executable = false } ]
+                @ common
+            )
         |> Result.map (List.sortWith (fun a b -> String.CompareOrdinal(a.Path, b.Path)))
 
-    /// Writes `files` into `folder`. A folder that already holds files export would not write
-    /// is left alone (it may be the creator's), so a mistyped output folder loses nothing.
-    let private writeFolder (folder: string) (files: PackageFile list) : Result<unit, string> =
-        let expected = files |> List.map (fun f -> f.Path) |> Set.ofList
-        let existing =
-            if Directory.Exists folder then
-                Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
-                |> Seq.map (fun f -> Path.GetRelativePath(folder, f).Replace('\\', '/'))
-                |> List.ofSeq
+    /// Files a file manager or the OS leaves in folders it shows (`.DS_Store`, `Thumbs.db`,
+    /// `desktop.ini`, KDE's `.directory`). They are not the creator's, so they don't block a
+    /// re-export; they go with the replaced folder.
+    let isOsMetadataFile (path: string) : bool =
+        let path = path.Replace('\\', '/')
+        match path.Substring(path.LastIndexOf '/' + 1).ToLowerInvariant() with
+        | ".ds_store"
+        | "thumbs.db"
+        | "desktop.ini"
+        | ".directory" -> true
+        | _ -> false
+
+    /// A symbolic link, junction or other reparse point: export never writes through one.
+    let private isLink (info: FileSystemInfo) =
+        // LinkTarget also sees a dangling link; Attributes is all ones for a missing path.
+        not (isNull info.LinkTarget) || (info.Exists && info.Attributes.HasFlag FileAttributes.ReparsePoint)
+
+    /// Everything under `folder` as (path relative to `root` with `/`, entry), without entering
+    /// linked folders.
+    let rec private entries (root: string) (folder: DirectoryInfo) : (string * FileSystemInfo) list =
+        [ for info in folder.EnumerateFileSystemInfos() do
+              yield Path.GetRelativePath(root, info.FullName).Replace('\\', '/'), info
+              match info with
+              | :? DirectoryInfo as sub when not (isLink sub) -> yield! entries root sub
+              | _ -> () ]
+
+    /// Why export must not replace `folder` (None when it may): a link where the folder or
+    /// anything in it should be, or files export would not write (it may be the creator's
+    /// folder, so a mistyped output folder loses nothing). OS metadata files are fine.
+    let private replaceProblem (folder: string) (files: PackageFile list) : string option =
+        let info = DirectoryInfo folder
+        if isLink info then
+            Some(sprintf "%s is a link. Export does not write through links; remove it or choose another output folder." folder)
+        elif File.Exists folder then
+            Some(sprintf "%s is a file, not a folder. Choose another output folder or remove it." folder)
+        elif not info.Exists then None
+        else
+            let expected = files |> List.map (fun f -> f.Path) |> Set.ofList
+            let found = entries folder info
+            match found |> List.filter (fun (_, entry) -> isLink entry) with
+            | (path, _) :: _ ->
+                Some(sprintf "%s holds a link (%s). Export does not write through links; remove it or choose another output folder." folder path)
+            | [] ->
+                let foreign =
+                    found
+                    |> List.filter (fun (path, entry) ->
+                        not (entry :? DirectoryInfo) && not (expected.Contains path) && not (isOsMetadataFile path))
+                    |> List.map fst
+                match foreign with
+                | [] -> None
+                | foreign ->
+                    Some(
+                        sprintf
+                            "%s already has files that export did not write (%s). Choose another output folder or remove them."
+                            folder
+                            (String.Join(", ", foreign |> List.sort |> List.truncate 3))
+                    )
+
+    /// Writes `files` into the new folder `staging` (each file created, never opened through
+    /// an existing link).
+    let private writeStaging (cancel: CancellationToken) (staging: string) (files: PackageFile list) =
+        Directory.CreateDirectory staging |> ignore
+        for file in files do
+            cancel.ThrowIfCancellationRequested()
+            let path = Path.Combine(staging, file.Path.Replace('/', Path.DirectorySeparatorChar))
+            match Path.GetDirectoryName path with
+            | null -> ()
+            | directory -> Directory.CreateDirectory directory |> ignore
+            do
+                use stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)
+                stream.Write(file.Data, 0, file.Data.Length)
+            if file.Executable && not (OperatingSystem.IsWindows()) then
+                File.SetUnixFileMode(path, Archives.modeOf file)
+
+    /// Deletes a staging folder or temp file export made, ignoring failures (it is hidden, and
+    /// named so the next export never mistakes it for its own).
+    let private tryDelete (path: string) =
+        try
+            if Directory.Exists path then Directory.Delete(path, true)
+            elif File.Exists path then File.Delete path
+        with
+        | :? IOException
+        | :? UnauthorizedAccessException -> ()
+
+    /// Puts `staging` where `folder` is: the old folder is moved aside first (so a locked file,
+    /// such as a running game, fails the export before anything changed), then removed.
+    /// Returns a warning when the old folder could not be removed.
+    let private swapIn (staging: string) (folder: string) (aside: string) : string list =
+        if Directory.Exists folder then
+            Directory.Move(folder, aside)
+            try
+                Directory.Move(staging, folder)
+            with _ ->
+                Directory.Move(aside, folder)
+                reraise ()
+            tryDelete aside
+            if Directory.Exists aside then
+                [ sprintf "The previous export was moved to %s but could not be deleted; remove it yourself." aside ]
             else []
-        match existing |> List.filter (fun p -> not (expected.Contains p)) with
-        | [] ->
-            for file in files do
-                let path = Path.Combine(folder, file.Path.Replace('/', Path.DirectorySeparatorChar))
-                match Path.GetDirectoryName path with
-                | null -> ()
-                | directory -> Directory.CreateDirectory directory |> ignore
-                File.WriteAllBytes(path, file.Data)
-                if file.Executable && not (OperatingSystem.IsWindows()) then
-                    File.SetUnixFileMode(path, Archives.modeOf file)
-            Ok()
-        | foreign ->
-            Error(
-                sprintf
-                    "%s already has files that export did not write (%s). Choose another output folder or remove them."
-                    folder
-                    (String.Join(", ", foreign |> List.sort |> List.truncate 3))
-            )
+        else
+            Directory.Move(staging, folder)
+            []
 
     let private failedTarget (target: ExportTarget) (errors: string list) =
         { Target = target.Id
@@ -209,7 +305,19 @@ module Exporter =
           Warnings = []
           Errors = errors }
 
+    /// One sentence for an exception export did not expect.
+    let private describe (error: exn) =
+        match error with
+        | :? IOException
+        | :? UnauthorizedAccessException -> error.Message
+        | :? OutOfMemoryException -> "There is not enough memory to export the game."
+        | _ -> sprintf "Export failed unexpectedly (%s): %s" (error.GetType().Name) error.Message
+
+    /// One target: package it in memory, write the folder (and archive) under temporary names
+    /// next to where they go, then rename them into place. A failure at any point leaves the
+    /// previous export as it was, with no half-written files, and fails this target only.
     let private exportTarget
+        (cancel: CancellationToken)
         (options: ExportOptions)
         (templatesRoot: string)
         (editorVersion: string)
@@ -219,40 +327,72 @@ module Exporter =
         (target: ExportTarget)
         : TargetReport =
         let write (template: PlayerTemplate) (files: PackageFile list) =
-            let folder = Path.Combine(options.OutputFolder, target.Id, game.ExecutableName)
+            let parent = Path.Combine(options.OutputFolder, target.Id)
+            let folder = Path.Combine(parent, game.ExecutableName)
+            let archive =
+                if options.CreateArchives then
+                    Some(Path.Combine(options.OutputFolder, game.ExecutableName + "-" + target.Id + target.ArchiveExtension))
+                else None
             let warnings =
                 match target with
                 | ExportTarget.WindowsX64 ->
-                    match PeResources.read (File.ReadAllBytes template.Executable) with
+                    match PeResources.read (template.Read target.TemplateExecutable) with
                     | Ok image when image.SignatureSize > 0 ->
-                        [ "The Windows player template is signed; export changes the executable, so sign the game again." ]
+                        [ "The Windows player template is signed. Changing the executable breaks a signature, so export removed it; sign the game again if you need one." ]
                     | _ -> []
                 | ExportTarget.LinuxX64 -> []
                 | ExportTarget.Web ->
                     [ "Browsers only run the web demo from a web server (an itch.io page, or `python3 -m http.server` in its folder), not from a file:// link." ]
-            match writeFolder folder files with
-            | Error e -> failedTarget target [ e ]
-            | Ok() ->
-                let (archive: string | null), archiveSize =
-                    if options.CreateArchives then
-                        let path = Path.Combine(options.OutputFolder, game.ExecutableName + "-" + target.Id + target.ArchiveExtension)
-                        let bytes =
-                            match target with
-                            | ExportTarget.WindowsX64 -> Archives.zip game.ExecutableName files
-                            | ExportTarget.LinuxX64 -> Archives.tarGz game.ExecutableName files
-                            // itch.io wants index.html at the root of the zip.
-                            | ExportTarget.Web -> Archives.zipFlat files
-                        File.WriteAllBytes(path, bytes)
-                        path, int64 bytes.Length
-                    else null, 0L
-                { Target = target.Id
-                  DisplayName = target.DisplayName
-                  Folder = folder
-                  Archive = archive
-                  ArchiveSize = archiveSize
-                  Files = [ for f in files -> { Path = f.Path; Size = int64 f.Data.Length } ]
-                  Warnings = warnings
-                  Errors = [] }
+            let archiveProblem =
+                match archive with
+                | Some path when Directory.Exists path || isLink (FileInfo path) ->
+                    Some(sprintf "%s is a folder or a link. Export does not write through links; remove it or choose another output folder." path)
+                | _ -> None
+            let parentProblem =
+                if isLink (DirectoryInfo parent) then
+                    Some(sprintf "%s is a link. Export does not write through links; remove it or choose another output folder." parent)
+                else None
+            match parentProblem |> Option.orElse archiveProblem |> Option.orElse (replaceProblem folder files) with
+            | Some problem -> failedTarget target [ problem ]
+            | None ->
+                let unique = Guid.NewGuid().ToString("N")
+                let staging = Path.Combine(parent, sprintf ".%s.export-%s" game.ExecutableName unique)
+                let aside = Path.Combine(parent, sprintf ".%s.previous-%s" game.ExecutableName unique)
+                let archiveTemp = archive |> Option.map (fun path -> Path.Combine(options.OutputFolder, sprintf ".%s.%s.tmp" (Path.GetFileName path) unique))
+                try
+                    Directory.CreateDirectory parent |> ignore
+                    writeStaging cancel staging files
+                    let archiveSize =
+                        match archiveTemp with
+                        | None -> 0L
+                        | Some temp ->
+                            cancel.ThrowIfCancellationRequested()
+                            let bytes =
+                                match target with
+                                | ExportTarget.WindowsX64 -> Archives.zip game.ExecutableName files
+                                | ExportTarget.LinuxX64 -> Archives.tarGz game.ExecutableName files
+                                // itch.io wants index.html at the root of the zip.
+                                | ExportTarget.Web -> Archives.zipFlat files
+                            do
+                                use stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)
+                                stream.Write(bytes, 0, bytes.Length)
+                            int64 bytes.Length
+                    cancel.ThrowIfCancellationRequested()
+                    let swapWarnings = swapIn staging folder aside
+                    match archive, archiveTemp with
+                    | Some path, Some temp -> File.Move(temp, path, true)
+                    | _ -> ()
+                    { Target = target.Id
+                      DisplayName = target.DisplayName
+                      Folder = folder
+                      Archive = Option.toObj archive
+                      ArchiveSize = archiveSize
+                      Files = [ for f in files -> { Path = f.Path; Size = int64 f.Data.Length } ]
+                      Warnings = warnings @ swapWarnings
+                      Errors = [] }
+                finally
+                    tryDelete staging
+                    archiveTemp |> Option.iter tryDelete
         try
             match Templates.find templatesRoot target editorVersion with
             | Error e -> failedTarget target [ e ]
@@ -261,8 +401,8 @@ module Exporter =
                 | Error e -> failedTarget target [ e ]
                 | Ok files -> write template files
         with
-        | :? IOException as error -> failedTarget target [ error.Message ]
-        | :? UnauthorizedAccessException as error -> failedTarget target [ error.Message ]
+        | :? OperationCanceledException -> reraise ()
+        | error -> failedTarget target [ describe error ]
 
     /// The icon PNGs for every size: the creator's icon asset, or the default icon.
     let icons (project: GameProject) (game: GameIdentity) : Result<(int * byte[]) list, string> =
@@ -273,64 +413,81 @@ module Exporter =
             | None -> Error(sprintf "The export icon asset %s was not found." id)
             | Some asset -> Icons.decodeDataUrl asset.DataUrl |> Result.bind Icons.render
 
-    /// Runs an export. Never throws for project, template or file problems; they are in the report.
-    let run (options: ExportOptions) (project: GameProject) : ExportReport =
-        let game = identity project
+    /// Runs an export that `cancel` can stop between files: targets not finished by then are
+    /// left as they were (`Cancelled` in the report). Never throws: project, template, file and
+    /// unexpected failures are all in the report.
+    let runCancellable (cancel: CancellationToken) (options: ExportOptions) (project: GameProject) : ExportReport =
         let editorVersion = options.EditorVersion |> Option.defaultValue Templates.editorVersion
-        let report =
-            { Title = game.Title
-              ExecutableName = game.ExecutableName
-              Version = game.Version
-              GameId = game.GameId
+        let empty =
+            { Title = project.Name
+              ExecutableName = ""
+              Version = project.Version
+              GameId = ""
               EditorVersion = editorVersion
               OutputFolder = options.OutputFolder
               CartridgeSize = 0L
               CartridgeSha256 = ""
               Errors = []
               Warnings = []
-              Targets = [] }
-        let targets = options.Targets |> List.distinct
-        let optionErrors =
-            [ if targets.IsEmpty then "Choose at least one export target."
-              for id in targets do
-                  if (ExportTarget.tryParse id).IsNone then
-                      sprintf "Unknown export target %s (use %s)." id (String.Join(" or ", ExportTarget.ids))
-              if String.IsNullOrWhiteSpace options.OutputFolder then "Choose an output folder." ]
-        let problemErrors, warnings = check project
-        let report = { report with Warnings = warnings }
-        if not optionErrors.IsEmpty || not problemErrors.IsEmpty then
-            { report with Errors = optionErrors @ problemErrors }
-        else
-            let compiled =
-                try
-                    Ok(CartridgeCompiler.Compile project)
-                with :? InvalidOperationException as error ->
-                    Error("The cartridge could not be compiled: " + error.Message)
-            match compiled, icons project game with
-            | Error e, _
-            | _, Error e -> { report with Errors = [ e ] }
-            | Ok cart, Ok iconImages ->
-                let options = { options with OutputFolder = Path.GetFullPath options.OutputFolder }
-                let templatesRoot = options.TemplatesFolder |> Option.defaultWith Templates.defaultFolder
-                let results =
+              Targets = []
+              Cancelled = false }
+        let mutable report = empty
+        try
+            let game = identity project
+            report <-
+                { report with
+                    Title = game.Title
+                    ExecutableName = game.ExecutableName
+                    Version = game.Version
+                    GameId = game.GameId }
+            let targets = options.Targets |> List.distinct
+            let optionErrors =
+                [ if targets.IsEmpty then "Choose at least one export target."
+                  for id in targets do
+                      if (ExportTarget.tryParse id).IsNone then
+                          sprintf "Unknown export target %s (use %s)." id (String.Join(" or ", ExportTarget.ids))
+                  if String.IsNullOrWhiteSpace options.OutputFolder then "Choose an output folder." ]
+            let problemErrors, warnings = check project
+            report <- { report with Warnings = warnings }
+            if not optionErrors.IsEmpty || not problemErrors.IsEmpty then
+                { report with Errors = optionErrors @ problemErrors }
+            else
+                let compiled =
                     try
-                        Directory.CreateDirectory options.OutputFolder |> ignore
-                        Ok(
-                            [ for id in targets ->
-                                exportTarget options templatesRoot editorVersion game cart iconImages (ExportTarget.tryParse id).Value ]
-                        )
+                        Ok(CartridgeCompiler.Compile project)
                     with
-                    | :? IOException as error -> Error error.Message
-                    | :? UnauthorizedAccessException as error -> Error error.Message
-                let report =
-                    { report with
-                        OutputFolder = options.OutputFolder
-                        CartridgeSize = int64 cart.Length
-                        CartridgeSha256 = Binary.sha256 cart }
-                match results with
-                | Error e -> { report with Errors = [ e ] }
-                | Ok targets -> { report with Targets = targets }
+                    | :? OperationCanceledException -> reraise ()
+                    | error -> Error("The cartridge could not be compiled: " + error.Message)
+                match compiled, icons project game with
+                | Error e, _
+                | _, Error e -> { report with Errors = [ e ] }
+                | Ok cart, Ok iconImages ->
+                    let options = { options with OutputFolder = Path.GetFullPath options.OutputFolder }
+                    let templatesRoot = options.TemplatesFolder |> Option.defaultWith Templates.defaultFolder
+                    report <-
+                        { report with
+                            OutputFolder = options.OutputFolder
+                            CartridgeSize = int64 cart.Length
+                            CartridgeSha256 = Binary.sha256 cart }
+                    if File.Exists options.OutputFolder then
+                        { report with Errors = [ sprintf "%s is a file, not a folder. Choose another output folder." options.OutputFolder ] }
+                    else
+                        Directory.CreateDirectory options.OutputFolder |> ignore
+                        for id in targets do
+                            cancel.ThrowIfCancellationRequested()
+                            let result = exportTarget cancel options templatesRoot editorVersion game cart iconImages (ExportTarget.tryParse id).Value
+                            report <- { report with Targets = report.Targets @ [ result ] }
+                        report
+        with
+        | :? OperationCanceledException ->
+            { report with
+                Cancelled = true
+                Errors = report.Errors @ [ "Export was cancelled. Targets it had not finished were left as they were." ] }
+        | error -> { report with Errors = report.Errors @ [ describe error ] }
 
+    /// Runs an export. Never throws: project, template, file and unexpected failures are all in
+    /// the report.
+    let run (options: ExportOptions) (project: GameProject) : ExportReport = runCancellable CancellationToken.None options project
     /// "12 B", "3.4 KB", "5.6 MB".
     let formatSize (bytes: int64) =
         if bytes < 1024L then sprintf "%d B" bytes
@@ -343,7 +500,7 @@ module Exporter =
         let line (s: string) = text.Append(s).Append('\n') |> ignore
         line (sprintf "Export Game: %s %s (%s, game id %s)" report.Title report.Version report.ExecutableName report.GameId)
         if report.Blocked then
-            line "Export stopped:"
+            line (if report.Cancelled then "Export cancelled:" else "Export stopped:")
             for e in report.Errors do
                 line ("  error: " + e)
         for w in report.Warnings do

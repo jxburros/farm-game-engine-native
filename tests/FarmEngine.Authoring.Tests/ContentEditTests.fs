@@ -103,22 +103,67 @@ let ``crops carry their seed and crop items`` () =
     Assert.Same(removed, removed |> apply (RemoveCrop crop.Id))
 
 [<Fact>]
-let ``removing a quest scrubs prerequisites, offers and outcomes`` () =
+let ``removing a quest scrubs offers and outcomes but keeps what waits for it locked`` () =
     let project = starter ()
     let chain = { Defaults.newQuest project with Prerequisites = Some [ "quest-first-harvest" ] }
     let startOutcome = { EventOutcome.Default with Type = "startQuest"; QuestId = Some("quest-first-harvest") }
     let starts = { Defaults.newEvent project with Outcomes = [ startOutcome ] }
     let project = project |> apply (Batch("setup", [ UpsertQuest chain; UpsertEvent starts ]))
     let removed = project |> apply (RemoveQuest "quest-first-harvest")
-    Assert.Empty((removed.Quests |> Seq.find (fun q -> q.Id = chain.Id)).Prerequisites.Value)
     Assert.Empty((removed.Events |> Seq.find (fun e -> e.Id = starts.Id)).Outcomes)
-    Assert.Empty(errors removed |> List.filter (fun p -> p.Code = "content.quests" || p.Code = "content.events"))
+    Assert.Empty(errors removed |> List.filter (fun p -> p.Code = "content.events"))
+    // The follow-up quest still needs the missing one (it never completes), and Problems says so.
+    Assert.Equal(Some [ "quest-first-harvest" ], (removed.Quests |> Seq.find (fun q -> q.Id = chain.Id)).Prerequisites)
+    Assert.Contains(errors removed, fun p -> p.Code = "content.quests" && p.Message.Contains "requires missing quest")
+
+/// The gate a removal must not open (#86): content that only runs when a condition on the
+/// removed thing holds.
+[<Fact>]
+let ``removing what a condition checks keeps the gated content locked`` () =
+    let project = starter ()
+    let key = { item "key-gate" "Gate key" with Type = ItemTypes.Material }
+    let quest = Defaults.newQuest project
+    let npcId = project.Npcs.Head.Id
+    let gated (conditions: EventCondition list) =
+        { Defaults.newEvent project with Conditions = conditions; Outcomes = [ { EventOutcome.Default with Type = "giveMoney"; Amount = Some 100.0 } ] }
+    let byItem = gated [ EventCondition.HasItem { ItemId = key.Id; Quantity = 1.0 } ]
+    let bySpace = gated [ EventCondition.InventorySpace { ItemId = key.Id; Quantity = 1.0 } ]
+    let byQuest = gated [ EventCondition.QuestStatus { QuestId = quest.Id; Status = "completed" } ]
+    let byNpc = gated [ EventCondition.Friendship { NpcId = npcId; Min = 4.0 } ]
+    let action = { (Defaults.newAction project) with Conditions = [ EventCondition.HasItem { ItemId = key.Id; Quantity = 1.0 } ] }
+    let recipe = { Defaults.newRecipe project with Unlock = Some { RecipeUnlock.Default with QuestId = Some quest.Id } }
+    let greeting = project.Dialogues |> List.find (fun d -> d.NpcId = npcId)
+    let option = { DialogueOption.Default with Text = "Use the key"; RequiresItem = Some key.Id }
+    let project =
+        project
+        |> apply (UpsertItem key)
+        |> apply (UpsertQuest quest)
+        |> fun p -> { p with Events = p.Events @ [ { byItem with Id = "ev-item" }; { bySpace with Id = "ev-space" }; { byQuest with Id = "ev-quest" }; { byNpc with Id = "ev-npc" } ] }
+        |> apply (UpsertAction action)
+        |> apply (UpsertRecipe recipe)
+        |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ option ] })
+    let conditionsOf (p: GameProject) (id: string) = (p.Events |> List.find (fun e -> e.Id = id)).Conditions
+    let removed = project |> apply (Batch("remove", [ RemoveItem key.Id; RemoveQuest quest.Id ]))
+    for id in [ "ev-item"; "ev-space"; "ev-quest" ] do
+        Assert.Equal<EventCondition list>(conditionsOf project id, conditionsOf removed id)
+    Assert.Equal<EventCondition list>(action.Conditions, (removed.Actions |> List.find (fun a -> a.Id = action.Id)).Conditions)
+    Assert.Equal(Some quest.Id, (removed.Recipes |> List.find (fun r -> r.Id = recipe.Id)).Unlock.Value.QuestId)
+    let options (p: GameProject) = (p.Dialogues |> List.find (fun d -> d.Id = greeting.Id)).Options
+    Assert.Equal(Some key.Id, (List.last (options removed)).RequiresItem)
+    // Every kept gate is a Problems error until the creator decides what to do with it.
+    let codes = errors removed |> List.map (fun p -> p.Code)
+    for code in [ "content.events"; "event.conditionUnknownItem"; "action.conditionUnknownItem"; "recipe.unlockQuestMissing"; "dialogue.optionUnknownItem" ] do
+        Assert.Contains(code, codes)
+    // The NPC: friendship gates stay too.
+    let withoutNpc = project |> apply (RemoveNpc npcId)
+    Assert.Equal<EventCondition list>(conditionsOf project "ev-npc", conditionsOf withoutNpc "ev-npc")
+    Assert.Contains(errors withoutNpc, fun p -> p.Code = "event.conditionUnknownNpc")
 
 [<Fact>]
 let ``removing an event clears its fired flag and scene lists`` () =
     let project = starter ()
     let event = Defaults.newEvent project
-    let flags = project.EventFlags @ [ EventsSchema.EventFiredFlag event.Id, true ]
+    let flags = project.EventFlags @ [ EventsSchema.EventFiredFlag event.Id, JBool true ]
     let project = project |> apply (UpsertEvent event)
     let project = { project with EventFlags = flags }
     let removed = project |> apply (RemoveEvent event.Id)
@@ -237,3 +282,56 @@ let ``duplicated actions, minigames and crops get fresh ids and stay valid`` () 
     let project = project |> apply (UpsertCrop cropCopy)
     Assert.True(project.Items |> List.exists (fun i -> i.Id = sprintf "seed-%s" cropCopy.Id))
     Assert.True((errors project).IsEmpty, describe (errors project))
+
+[<Fact>]
+let ``reward options become once-only when their reward is set`` () =
+    let project = starter ()
+    let greeting = (npc project "npc-farmer").Dialogue.[0]
+    let plain = { DialogueOption.Default with Text = "Hello" }
+    let added = project |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ plain ] })
+    let option (p: GameProject) = (p.Dialogues |> List.find (fun d -> d.Id = greeting.Id)).Options |> List.last
+    Assert.Equal(None, (option added).Once)
+    let rewarded = added |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ { plain with GiveMoney = Some 25.0 } ] })
+    Assert.Equal(Some true, (option rewarded).Once)
+    Assert.Equal(Some true, ((npc rewarded "npc-farmer").Dialogue.[0].Options |> List.last).Once)
+    // An explicit choice stays.
+    let repeatable = rewarded |> apply (UpsertDialogue { greeting with Options = greeting.Options @ [ { plain with GiveMoney = Some 25.0; Once = Some false } ] })
+    Assert.Equal(Some false, (option repeatable).Once)
+    // Through the NPC form too.
+    let farmer = npc project "npc-farmer"
+    let viaNpc = { farmer with Dialogue = [ { greeting with Options = greeting.Options @ [ { plain with GiveItem = Some "gift-flower" } ] } ] }
+    Assert.Equal(Some true, ((npc (project |> apply (UpsertNpc viaNpc)) "npc-farmer").Dialogue.[0].Options |> List.last).Once)
+
+[<Fact>]
+let ``item edits keep a tool's durability in the starting inventory`` () =
+    let project = starter ()
+    let hoe = project.Items |> List.find (fun i -> i.Id = "tool-hoe")
+    let worn = project.Player.Inventory |> List.map (fun s -> if s.Item.Id = "tool-hoe" then { s with Item = { s.Item with Durability = Some 40.0 } } else s)
+    let project = { project with Player = { project.Player with Inventory = worn } }
+    let renamed = project |> apply (UpsertItem { hoe with Name = "Old Hoe"; MaxDurability = Some 30.0 })
+    let slot = renamed.Player.Inventory |> List.find (fun s -> s.Item.Id = "tool-hoe")
+    Assert.Equal("Old Hoe", slot.Item.Name)
+    Assert.Equal(Some 30.0, slot.Item.Durability)
+
+[<Fact>]
+let ``a max stack of 0 does not cap the starting inventory`` () =
+    let project = starter ()
+    let wood = { (project.Items |> List.find (fun i -> i.Id = "material-wood")) with MaxStack = 0.0 }
+    let project = project |> apply (UpsertItem wood)
+    let once = project |> apply (AddToInventory "material-wood")
+    let twice = once |> apply (AddToInventory "material-wood")
+    let woodSlots (p: GameProject) = p.Player.Inventory |> List.filter (fun s -> s.Item.Id = "material-wood")
+    Assert.Equal(1, (woodSlots twice).Length)
+    Assert.Equal(2.0, (woodSlots twice).Head.Quantity)
+
+[<Fact>]
+let ``pack starting items stack to their cap and stop at the slot limit`` () =
+    let rules = InventoryRules.add
+    let seed = { Item.Default with Id = "seed"; Stackable = true; MaxStack = 10.0 }
+    let held = [ ({ Item = seed; Quantity = 4.0; Quality = None } : InventorySlot) ]
+    let merged, rejected = rules seed 25.0 3.0 held
+    Assert.Equal<float list>([ 10.0; 10.0; 9.0 ], merged |> List.map (fun s -> s.Quantity))
+    Assert.Equal(0.0, rejected)
+    let full, lost = rules seed 25.0 2.0 held
+    Assert.Equal<float list>([ 10.0; 10.0 ], full |> List.map (fun s -> s.Quantity))
+    Assert.Equal(9.0, lost)

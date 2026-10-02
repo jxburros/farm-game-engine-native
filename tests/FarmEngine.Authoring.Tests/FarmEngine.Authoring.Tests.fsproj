@@ -25,11 +25,13 @@
     <Compile Include="PatternsTests.fs" />
     <Compile Include="ReadoutsTests.fs" />
     <Compile Include="PropertyTests.fs" />
+    <Compile Include="FuzzPropertyTests.fs" />
     <Compile Include="BrokenProjects.fs" />
     <Compile Include="ValidationCaseTests.fs" />
     <Compile Include="ValidationTests.fs" />
     <Compile Include="CartridgeTests.fs" />
     <Compile Include="SnapshotTests.fs" />
+    <Compile Include="ParityTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../fixtures/golden/migrations/*.json" Link="Golden/migrations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

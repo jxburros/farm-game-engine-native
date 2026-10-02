@@ -1,11 +1,16 @@
 using Avalonia.Media.Imaging;
 using FarmEngine.Schemas;
+using SkiaSharp;
 
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>
 /// Avalonia bitmaps of project art for the art studio: <see cref="CustomAsset.DataUrl"/> holds
-/// the image as a base64 <c>data:image/…</c> URL (see <see cref="ArtImport"/>).
+/// the image as a base64 <c>data:image/…</c> URL (see <see cref="ArtImport"/>). Art can arrive in
+/// imported projects and content packs without passing <see cref="ArtImport"/>, so every decode
+/// first reads the size from the image header and refuses images over the import limits: a small
+/// file that claims a huge image (a decompression bomb) never gets its pixels allocated, and
+/// formats other than PNG, JPEG, GIF, WebP and BMP never reach Skia's codecs.
 /// </summary>
 internal static class ArtBitmaps
 {
@@ -33,25 +38,55 @@ internal static class ArtBitmaps
         }
     }
 
-    /// <summary>The whole image, or null when it can't be decoded.</summary>
-    public static Bitmap? Decode(string? dataUrl) => Load(dataUrl, stream => new Bitmap(stream));
+    /// <summary>
+    /// The width and height an encoded image declares in its header (nothing is decoded), or
+    /// null when it is not a PNG, JPEG, GIF, WebP or BMP image Skia can read. The header is read
+    /// in managed code first (<see cref="ImageHeaders"/>): Skia's codecs only see images of an
+    /// accepted format and size, and then report the size the decode will allocate.
+    /// </summary>
+    public static (int Width, int Height)? HeaderSize(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        if (ImageHeaders.Read(bytes) is not { } header)
+        {
+            return null;
+        }
+
+        if (!WithinLimits(header.Width, header.Height))
+        {
+            return (header.Width, header.Height);
+        }
+
+        using var data = SKData.CreateCopy(bytes);
+        using var codec = SKCodec.Create(data);
+        return codec is null ? null : (codec.Info.Width, codec.Info.Height);
+    }
+
+    /// <summary>The art import limits: 1 to 8192 pixels per side and at most 16 megapixels.</summary>
+    public static bool WithinLimits(int width, int height) =>
+        width > 0 && height > 0 && width <= ArtImport.MaxSide && height <= ArtImport.MaxSide && (long)width * height <= ArtImport.MaxPixels;
+
+    /// <summary>The whole image, or null when it can't be decoded or is over the import limits.</summary>
+    public static Bitmap? Decode(string? dataUrl) => Load(dataUrl, (stream, _, _) => new Bitmap(stream));
 
     /// <summary>
-    /// The asset's image shrunk so its longest side is at most <paramref name="side"/> pixels
-    /// (smaller images and legacy assets without a size are decoded whole), or null.
+    /// The image shrunk so its longest side is at most <paramref name="side"/> pixels (smaller
+    /// images are decoded whole), or null. The size comes from the image header, not from the
+    /// asset's stored width and height, which imported data may get wrong.
     /// </summary>
+    public static Bitmap? Thumbnail(string? dataUrl, int side) => Load(dataUrl, (stream, width, height) =>
+        width > side && width >= height ? Bitmap.DecodeToWidth(stream, side)
+        : height > side ? Bitmap.DecodeToHeight(stream, side)
+        : new Bitmap(stream));
+
+    /// <summary>The asset's image as a <see cref="Thumbnail(string?, int)"/>.</summary>
     public static Bitmap? Thumbnail(CustomAsset asset, int side)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        var width = asset.Width.Or(0);
-        var height = asset.Height.Or(0);
-        return Load(asset.DataUrl, stream =>
-            width > side && width >= height ? Bitmap.DecodeToWidth(stream, side)
-            : height > side ? Bitmap.DecodeToHeight(stream, side)
-            : new Bitmap(stream));
+        return Thumbnail(asset.DataUrl, side);
     }
 
-    private static Bitmap? Load(string? dataUrl, Func<Stream, Bitmap> decode)
+    private static Bitmap? Load(string? dataUrl, Func<Stream, int, int, Bitmap> decode)
     {
         if (Bytes(dataUrl) is not { } bytes)
         {
@@ -60,10 +95,15 @@ internal static class ArtBitmaps
 
         try
         {
+            if (HeaderSize(bytes) is not { } size || !WithinLimits(size.Width, size.Height))
+            {
+                return null;
+            }
+
             using var stream = new MemoryStream(bytes, writable: false);
-            return decode(stream);
+            return decode(stream, size.Width, size.Height);
         }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException or IOException)
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException or IOException or OutOfMemoryException)
         {
             return null;
         }

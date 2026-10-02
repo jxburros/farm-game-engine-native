@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "farm-bench"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "criterion",
  "farm-cart",
@@ -701,11 +701,10 @@ dependencies = [
 
 [[package]]
 name = "farm-cart"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-cart-schema",
  "farm-sim",
- "indexmap",
  "proptest",
  "ruzstd",
  "serde",
@@ -715,14 +714,14 @@ dependencies = [
 
 [[package]]
 name = "farm-cart-schema"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "flatbuffers",
 ]
 
 [[package]]
 name = "farm-ffi"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-cart",
  "farm-host",
@@ -733,8 +732,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "farm-fuzz"
+version = "0.3.0-dev"
+dependencies = [
+ "farm-cart",
+ "farm-host",
+ "farm-plugins",
+ "farm-render",
+ "farm-sim",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "farm-host"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-cart",
  "farm-player",
@@ -748,7 +760,7 @@ dependencies = [
 
 [[package]]
 name = "farm-player"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "cpal",
  "directories",
@@ -770,18 +782,19 @@ dependencies = [
 
 [[package]]
 name = "farm-plugins"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-sim",
  "serde",
  "serde_json",
  "sha2",
  "wasmi",
+ "wasmparser",
 ]
 
 [[package]]
 name = "farm-render"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "base64",
  "farm-sim",
@@ -794,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "farm-runtime"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-sim",
  "indexmap",
@@ -804,7 +817,7 @@ dependencies = [
 
 [[package]]
 name = "farm-sim"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "indexmap",
  "proptest",
@@ -816,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "farm-ui"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "farm-render",
  "farm-runtime",
@@ -827,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "farm-wasm"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "base64",
  "farm-host",

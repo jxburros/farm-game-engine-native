@@ -8,6 +8,8 @@ use farm_sim::{hash_text, stable_json, units};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+mod recording;
+
 fn golden(relative: &str) -> Value {
     let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect();
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -215,20 +217,20 @@ fn rng_streams_match_the_recorded_vectors() {
     let seeds: Vec<Value> =
         golden("v8/rng.json")["seeds"].as_array().unwrap().iter().map(|e| e["seed"].clone()).collect();
     let actual = Value::Array(seeds.iter().map(rng_vector).collect());
-    if recording() {
-        write_golden("rng.json", &actual);
-        return;
+    if RNG_RECORDER.enabled() {
+        write_golden(&RNG_RECORDER, "rng.json", &actual);
     }
     assert_eq!(golden("rng.json"), actual);
 }
 
-fn recording() -> bool {
-    std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1")
-}
+static RNG_RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "rng.json");
+static HASH_RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "hash.json");
 
-fn write_golden(relative: &str, value: &Value) {
+/// Records one golden file, then ends the run (a recording run always fails).
+fn write_golden(recorder: &recording::Recorder, relative: &str, value: &Value) -> ! {
     let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect();
-    std::fs::write(&path, serde_json::to_string_pretty(value).unwrap() + "\n").expect("write golden");
+    recorder.write(&path, (serde_json::to_string_pretty(value).unwrap() + "\n").as_bytes()).expect("write golden");
+    recorder.finish()
 }
 
 fn contains_mark(value: &Value) -> bool {
@@ -328,9 +330,8 @@ fn hash_vectors() -> Vec<Value> {
 #[test]
 fn canonical_hashes_match_the_recorded_vectors() {
     let actual = hash_vectors();
-    if recording() {
-        write_golden("hash.json", &Value::Array(actual));
-        return;
+    if HASH_RECORDER.enabled() {
+        write_golden(&HASH_RECORDER, "hash.json", &Value::Array(actual));
     }
     let recorded = golden("hash.json");
     let recorded = recorded.as_array().expect("hash vectors");

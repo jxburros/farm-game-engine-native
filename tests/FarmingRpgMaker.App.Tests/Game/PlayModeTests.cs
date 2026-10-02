@@ -143,6 +143,43 @@ public sealed class PlayModeTests
         Assert.Equal(EditorMode.Edit, host.ViewModel.Mode);
     }
 
+    /// <summary>
+    /// The toolbar never takes focus (the game owns Tab and Space), so a keyboard-only creator
+    /// reaches Debug, Keep changes and Restart through their shortcuts (#49).
+    /// </summary>
+    [AvaloniaFact]
+    public void ToolbarShortcutsReachEveryPlayModeButtonFromTheKeyboard()
+    {
+        using var host = new GameTestHost();
+        host.EnterPlay();
+        host.Frames(1);
+
+        void Chord(PhysicalKey key, RawInputModifiers modifiers)
+        {
+            host.Window.KeyPressQwerty(key, modifiers);
+            host.Window.KeyReleaseQwerty(key, modifiers);
+            host.Frames(1);
+        }
+
+        Chord(PhysicalKey.D, RawInputModifiers.Control);
+        Assert.True(host.Play.IsDebugOpen);
+        Chord(PhysicalKey.D, RawInputModifiers.Control);
+        Assert.False(host.Play.IsDebugOpen);
+        // Ctrl+D is not the game's D (walk right).
+        Assert.Equal(0, Num(State(host)["player"]!["moveIntent"]!["dx"]));
+
+        Chord(PhysicalKey.K, RawInputModifiers.Control | RawInputModifiers.Shift);
+        Assert.True(host.Play.KeepChanges);
+        Chord(PhysicalKey.K, RawInputModifiers.Control | RawInputModifiers.Shift);
+        Assert.False(host.Play.KeepChanges);
+
+        host.Play.Use(player => player.RunCommands("""[{"type":"sleep"}]"""));
+        Assert.Equal(2, Num(State(host)["clock"]!["day"]));
+        Chord(PhysicalKey.R, RawInputModifiers.Control);
+        Assert.Equal(1, Num(State(host)["clock"]!["day"]));
+        Assert.Equal(EditorMode.Play, host.ViewModel.Mode);
+    }
+
     [AvaloniaFact]
     public void PanelsOpenFromKeysAndThePointer_AndPauseWorldInput()
     {
@@ -243,15 +280,13 @@ public sealed class PlayModeTests
         using var host = new GameTestHost(autoRun: true);
         host.EnterPlay();
         var surface = host.Play.Surface;
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (surface.FrameCount < 5 && DateTime.UtcNow < deadline)
+        // The loop's frames are posted from its worker thread; each wait round also ticks the
+        // headless render timer so they get drawn.
+        PumpUntil(() =>
         {
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-            Pump();
-            Thread.Sleep(5);
-        }
-
-        Assert.True(surface.FrameCount >= 5, $"frames: {surface.FrameCount}");
+            return surface.FrameCount >= 5;
+        }, "five frames from the worker thread");
         // Leaving Play Mode stops the loop and frees the player while a frame may be in flight.
         host.ViewModel.Mode = EditorMode.Edit;
         Pump();

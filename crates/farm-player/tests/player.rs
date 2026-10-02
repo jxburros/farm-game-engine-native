@@ -86,6 +86,69 @@ fn new_game_walk_sleep_autosave_quit_and_continue() {
 }
 
 #[test]
+fn closing_the_window_during_a_game_asks_first() {
+    let stores = Stores::new();
+    let mut title = stores.standalone(&common::starter());
+    assert!(title.request_close(), "nothing to lose on the title screen");
+
+    let mut player = new_game(&stores);
+    assert!(!player.request_close());
+    idle(&mut player, 2);
+    assert_eq!(player.screen(), ScreenKind::Confirm);
+    // Cancel (focused) goes back to the paused game.
+    press(&mut player, "enter");
+    assert_eq!(player.screen(), ScreenKind::Pause);
+    // Asking again and confirming quits.
+    assert!(!player.request_close());
+    idle(&mut player, 2);
+    let rect = player.widget_rect(WidgetId::new("confirm-yes")).unwrap();
+    let (x, y) = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    let mut requests = Vec::new();
+    for events in [
+        vec![InputEvent::PointerMove { x, y }, InputEvent::PointerDown { x, y, button: Default::default() }],
+        vec![InputEvent::PointerUp { x, y, button: Default::default() }],
+        vec![],
+    ] {
+        requests.extend(player.step(FRAME, &events, SIZE.0, SIZE.1).unwrap().requests);
+    }
+    assert!(requests.contains(&PlayerRequest::Quit), "confirming sends Quit: {requests:?}");
+    // Closing twice while the question is up closes at once.
+    let mut other = new_game(&stores);
+    assert!(!other.request_close());
+    assert!(other.request_close());
+}
+
+#[test]
+fn a_damaged_save_falls_back_to_the_one_before() {
+    let stores = Stores::new();
+    let mut player = new_game(&stores);
+    press(&mut player, "z");
+    let saved = saved_state(&stores, &player, 1);
+    assert_eq!(saved.clock.day, 2);
+    // The next save goes bad (a power loss mid-write on a careless file system).
+    let mut saves = stores.saves.clone();
+    farm_player::SaveStore::write(&mut saves, 1, b"FGSV\0garbage").unwrap();
+
+    // The slot still shows, and Continue loads the save before the damaged one, saying so.
+    let mut player = stores.standalone(&common::starter());
+    assert_eq!(player.slot_previews()[0].as_ref().map(|preview| preview.day), Some(2.0));
+    idle(&mut player, 1);
+    player.step(FRAME, &[key_down("enter")], SIZE.0, SIZE.1).unwrap();
+    assert_eq!(player.screen(), ScreenKind::Playing);
+    assert_eq!(hash_state(player.state().unwrap()), hash_state(&saved));
+    assert!(player.toast_history().iter().any(|(text, kind)| text
+        == "Slot 1 was damaged, so its previous save was loaded."
+        && *kind == ToastKind::Error));
+
+    // Without a backup the slot shows as unreadable, as before.
+    let empty = Stores::new();
+    let mut saves = empty.saves.clone();
+    farm_player::SaveStore::write(&mut saves, 1, b"garbage").unwrap();
+    let player = empty.standalone(&common::starter());
+    assert!(player.slot_previews()[0].is_none());
+}
+
+#[test]
 fn save_slots_hold_previews_and_load_them() {
     let stores = Stores::new();
     let mut player = new_game(&stores);
@@ -228,6 +291,30 @@ fn panels_open_from_the_toolbar_and_close_with_their_key() {
 }
 
 #[test]
+fn play_mode_warns_about_text_the_fonts_cannot_show() {
+    // The starter's text is all covered: no warning.
+    let stores = Stores::new();
+    let player = Player::from_project(common::starter(), stores.options(PlayerMode::Embedded)).unwrap();
+    assert!(player.toast_history().is_empty(), "{:?}", player.toast_history());
+    let content = player.session().unwrap().content();
+    assert_eq!(farm_player::player::missing_glyph("Ферма", content), None, "Cyrillic is covered");
+
+    // Japanese dialogue would draw as boxes: the creator hears about it once, at the start.
+    let mut project = common::starter();
+    let npc = project.npcs.iter_mut().find(|npc| !npc.dialogue.is_empty()).unwrap();
+    npc.dialogue[0].text = "こんにちは".into();
+    let player = Player::from_project(project, stores.options(PlayerMode::Embedded)).unwrap();
+    let warnings: Vec<_> = player.toast_history().iter().filter(|(_, kind)| *kind == ToastKind::Error).collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].0.contains("\"こ\"") && warnings[0].0.contains(".text"), "{warnings:?}");
+    // Players of an exported game can't fix it: no warning there.
+    let mut project = common::starter();
+    project.npcs.iter_mut().find(|npc| !npc.dialogue.is_empty()).unwrap().dialogue[0].text = "こんにちは".into();
+    let standalone = stores.standalone(&project);
+    assert!(standalone.toast_history().is_empty());
+}
+
+#[test]
 fn embedded_mode_starts_in_game_and_serves_the_editor() {
     let stores = Stores::new();
     let mut player = Player::from_project(common::starter(), stores.options(PlayerMode::Embedded)).unwrap();
@@ -274,7 +361,8 @@ fn pack_plugins_run_in_the_player() {
     let mut player = Player::from_project(project, stores.options(PlayerMode::Embedded)).unwrap();
     assert!(player.session().unwrap().has_plugins());
     player.run_command(&Command::Sleep).unwrap();
-    idle(&mut player, 2);
+    // The plugin's answer applies before the next tick (20 a second, so within 3 frames).
+    idle(&mut player, 4);
     assert!(player.plugin_errors().is_empty(), "{:?}", player.plugin_errors());
     assert!(
         player.toast_history().iter().any(|(text, _)| text.contains("glowshrooms hum")),
@@ -283,11 +371,20 @@ fn pack_plugins_run_in_the_player() {
     );
 }
 
+/// Opens a minigame as a plugin can (the `startMinigame` command is refused under the player's
+/// rules: minigames open from actions, items, tools and plugins).
+fn open_minigame(id: &str) -> Command {
+    Command::PluginMutation {
+        plugin_id: "test".into(),
+        mutation: farm_sim::schema::PluginMutation::StartMinigame { minigame_id: id.into() },
+    }
+}
+
 #[test]
 fn a_minigame_plays_through_the_overlay() {
     let stores = Stores::new();
     let mut player = new_game(&stores);
-    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    player.run_command(&open_minigame("fishing")).unwrap();
     idle(&mut player, 2);
     assert!(player.session().unwrap().minigame_view().is_some());
     assert!(player.widget_rect(WidgetId::new("minigame-primary")).is_some());
@@ -298,7 +395,7 @@ fn a_minigame_plays_through_the_overlay() {
     assert_eq!(resolved, 1);
 
     // Give up from the overlay.
-    player.run_command(&Command::StartMinigame { minigame_id: "fishing".into() }).unwrap();
+    player.run_command(&open_minigame("fishing")).unwrap();
     idle(&mut player, 2);
     click(&mut player, WidgetId::new("minigame-give-up"));
     assert!(player.state().unwrap().minigame.is_none());
@@ -332,6 +429,66 @@ fn a_gamepad_plays_the_whole_game() {
     player.step(FRAME, &[button(GamepadButton::East, true)], SIZE.0, SIZE.1).unwrap();
     player.step(FRAME, &[button(GamepadButton::East, false)], SIZE.0, SIZE.1).unwrap();
     assert_eq!(player.screen(), ScreenKind::Playing);
+}
+
+/// Presses and releases a gamepad button, then lets two frames pass.
+fn pad(player: &mut Player, button: GamepadButton) {
+    player.step(FRAME, &[InputEvent::GamepadButton { button, pressed: true }], SIZE.0, SIZE.1).unwrap();
+    player.step(FRAME, &[InputEvent::GamepadButton { button, pressed: false }], SIZE.0, SIZE.1).unwrap();
+    idle(player, 2);
+}
+
+/// Moves focus with a D-pad direction until `target` has it.
+fn pad_to(player: &mut Player, direction: GamepadButton, target: WidgetId) {
+    for _ in 0..16 {
+        if player.focused_widget() == Some(target) {
+            return;
+        }
+        pad(player, direction);
+    }
+    panic!("the D-pad never reached {target:?}");
+}
+
+#[test]
+fn a_gamepad_enters_and_leaves_the_rebind_prompt() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    idle(&mut player, 1);
+    pad_to(&mut player, GamepadButton::DpadDown, WidgetId::new("title").with("Settings"));
+    pad(&mut player, GamepadButton::South);
+    assert_eq!(player.screen(), ScreenKind::Settings);
+    // RB twice: Display → Audio → Controls; then down to Reset controls and right into the
+    // column of key buttons.
+    pad(&mut player, GamepadButton::RightShoulder);
+    pad(&mut player, GamepadButton::RightShoulder);
+    pad_to(&mut player, GamepadButton::DpadDown, WidgetId::new("rebind-reset"));
+    pad(&mut player, GamepadButton::DpadRight);
+    let focused = player.focused_widget();
+    assert!(
+        farm_ui::BindAction::ALL.iter().any(|bind| focused == Some(WidgetId::new("rebind").with(bind.canonical_key()))),
+        "{focused:?}"
+    );
+    let before = player.settings().controls.clone();
+    let prompt = "Press a key\u{2026} (Esc or B cancels)";
+
+    // A starts the capture; the D-pad and A are swallowed while it waits; B cancels it.
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt), "{:?}", ui_texts(&player));
+    pad(&mut player, GamepadButton::DpadDown);
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt));
+    pad(&mut player, GamepadButton::East);
+    assert!(!shows(&player, prompt));
+    assert_eq!(player.screen(), ScreenKind::Settings, "B only cancelled the capture");
+    // Start cancels too, and nothing was rebound.
+    pad(&mut player, GamepadButton::South);
+    assert!(shows(&player, prompt));
+    pad(&mut player, GamepadButton::Start);
+    assert!(!shows(&player, prompt));
+    assert_eq!(player.settings().controls, before);
+    // B again leaves the settings.
+    pad(&mut player, GamepadButton::East);
+    assert_eq!(player.screen(), ScreenKind::Title);
 }
 
 #[test]
@@ -404,6 +561,33 @@ fn the_language_follows_the_setting_then_the_system_then_the_game() {
 }
 
 #[test]
+fn music_follows_the_screen_the_clock_the_weather_and_the_volume() {
+    let stores = Stores::new();
+    let mut player = stores.standalone(&common::starter());
+    let title = player.step(FRAME, &[], SIZE.0, SIZE.1).unwrap().music;
+    assert_eq!((title.music, title.ambience), (Some("day"), None));
+    press(&mut player, "enter");
+    let day = player.music_cue();
+    assert_eq!((day.music, day.ambience), (Some("day"), Some("birds")));
+    // Evening: night music and crickets.
+    let mut state = player.state().unwrap().clone();
+    state.clock.time_minutes = 21 * 60 * farm_sim::units::MINUTE;
+    player.replace_state(state).unwrap();
+    let night = player.music_cue();
+    assert_eq!((night.music, night.ambience), (Some("night"), Some("crickets")));
+    // Rain drowns the crickets out.
+    let mut state = player.state().unwrap().clone();
+    state.clock.weather_id = "rain".into();
+    player.replace_state(state).unwrap();
+    assert_eq!(player.music_cue().ambience, Some("rain"));
+    // The Music volume (and mute) set the gains.
+    let mut settings = player.settings().clone();
+    settings.audio.muted = true;
+    player.set_settings(settings);
+    assert_eq!(player.music_cue(), farm_player::MusicCue::default());
+}
+
+#[test]
 fn spanish_confirmations_and_toasts() {
     let stores = Stores::new();
     let mut player = new_game(&stores);
@@ -414,6 +598,15 @@ fn spanish_confirmations_and_toasts() {
     idle(&mut player, 30);
     let toasts: Vec<&String> = player.toast_history().iter().map(|(text, _)| text).collect();
     assert!(toasts.iter().any(|text| text.starts_with("Guardado autom\u{e1}tico (ranura 1)")), "{toasts:?}");
+    // The engine's own messages are in Spanish too (the simulation records them in English).
+    assert!(toasts.iter().any(|text| text.starts_with("D\u{ed}a 2 de primavera, a\u{f1}o 1")), "{toasts:?}");
+    assert!(!toasts.iter().any(|text| text.starts_with("Day ")), "{toasts:?}");
+    assert!(player.session().unwrap().recent_commands().iter().any(|command| command.contains("sleep")));
+    // And the built-in minigames' texts.
+    player.run_command(&open_minigame("fishing")).unwrap();
+    idle(&mut player, 2);
+    assert!(shows(&player, "\u{a1}Para! (Espacio)"), "{:?}", ui_texts(&player));
+    click(&mut player, WidgetId::new("minigame-give-up"));
     press(&mut player, "escape");
     assert!(shows(&player, "Pausa") && shows(&player, "Reanudar"), "{:?}", ui_texts(&player));
     click(&mut player, WidgetId::new("pause").with("Quit to title"));

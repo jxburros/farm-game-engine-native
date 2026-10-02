@@ -101,13 +101,22 @@ fn timing_bar() -> MinigameDef {
     MinigameDef { id: "mg-test".into(), name: "Test".into(), kind: "timing-bar".into(), ..MinigameDef::default() }
 }
 
+/// Opens a minigame as a plugin can (the `startMinigame` command is refused under the player's
+/// rules: minigames open from actions, items, tools and plugins).
+fn open_minigame(id: &str) -> Command {
+    Command::PluginMutation {
+        plugin_id: "test".into(),
+        mutation: PluginMutation::StartMinigame { minigame_id: id.into() },
+    }
+}
+
 #[test]
 fn minigames_mount_and_report_their_score_once() {
     let mut project = starter();
     project.minigames = vec![timing_bar()];
     let mut session = session_for(&project);
     session.set_cosmetic_seed(7);
-    session.run_command(&Command::StartMinigame { minigame_id: "mg-test".into() });
+    session.run_command(&open_minigame("mg-test"));
     assert!(session.minigame_view().is_some(), "mounted");
     assert!(session.engine_modal_open());
     frames(&mut session, 5);
@@ -125,7 +134,7 @@ fn escape_cancels_a_minigame() {
     let mut project = starter();
     project.minigames = vec![timing_bar()];
     let mut session = session_for(&project);
-    session.run_command(&Command::StartMinigame { minigame_id: "mg-test".into() });
+    session.run_command(&open_minigame("mg-test"));
     session.key_down("escape");
     session.update(FRAME, false);
     assert!(session.state().minigame.is_none());
@@ -139,7 +148,7 @@ struct FakePlugins {
 }
 
 impl SessionPlugins for FakePlugins {
-    fn dispatch(&mut self, events: &[HookEvent]) {
+    fn dispatch(&mut self, events: &[HookEvent], _depth: u32) {
         for event in events {
             self.seen.lock().unwrap().push(event.hook().to_owned());
             if event.hook() == "onDayStart" {
@@ -154,13 +163,13 @@ impl SessionPlugins for FakePlugins {
         }
     }
 
-    fn drain_commands(&mut self) -> Vec<Command> {
-        std::mem::take(&mut self.queued)
+    fn drain_commands(&mut self) -> Vec<(Command, u32)> {
+        std::mem::take(&mut self.queued).into_iter().map(|command| (command, 0)).collect()
     }
 }
 
 #[test]
-fn plugin_mutations_enter_the_command_log_at_the_next_frame() {
+fn plugin_mutations_enter_the_command_log_before_the_next_tick() {
     let mut session = session_for(&starter());
     let seen = Arc::new(Mutex::new(Vec::new()));
     session.set_plugins(Some(Box::new(FakePlugins { seen: seen.clone(), queued: Vec::new() })));
@@ -171,7 +180,10 @@ fn plugin_mutations_enter_the_command_log_at_the_next_frame() {
     let first_effect = seen.lock().unwrap().iter().position(|hook| hook == "onEffect").unwrap();
     assert!(seen.lock().unwrap()[..first_effect].iter().all(|hook| hook != "onEffect"));
     assert_eq!(session.state().player.money, money, "not applied mid-step");
+    // A frame without a tick applies nothing; the next tick does.
     session.update(0.0, false);
+    assert_eq!(session.state().player.money, money);
+    session.update(1.0 / TICK_RATE, false);
     assert_eq!(session.state().player.money, money + 25);
 }
 
@@ -191,6 +203,7 @@ fn the_wasm_sandbox_runs_pack_plugins_in_a_session() {
             pack_id: spec.pack_id.clone(),
             source: spec.source.clone(),
             granted_hooks: spec.granted_hooks.clone(),
+            granted_mutations: spec.granted_mutations.clone(),
         })
         .collect();
     let mut session = session_for(&project);
@@ -199,7 +212,7 @@ fn the_wasm_sandbox_runs_pack_plugins_in_a_session() {
     assert!(session.plugin_errors().is_empty(), "{:?}", session.plugin_errors());
     session.run_command(&Command::Sleep);
     session.drain_events();
-    session.update(0.0, false);
+    session.update(1.0 / TICK_RATE, false);
     let toasts: Vec<String> = session
         .drain_events()
         .into_iter()
@@ -210,6 +223,67 @@ fn the_wasm_sandbox_runs_pack_plugins_in_a_session() {
         .collect();
     assert!(!toasts.is_empty(), "the plugin's day-start message reached the game");
     assert!(farm_player::plugins::for_project(&starter(), Default::default()).is_none());
+}
+
+/// A pack whose plugin reacts on every tick-driven hook it can: day starts (from collapsing at
+/// the day's end), and every effect, each answer feeding the next.
+fn busy_plugin_project() -> GameProject {
+    let mut project = starter();
+    // Fast days (172 ticks, which no frame size used below divides), so the run crosses many
+    // day boundaries, most of them inside a frame.
+    project.settings.time.minutes_per_real_second = farm_sim::units::MINUTE * 7;
+    let source = "var n = 0;
+        api.on('onDayStart', p => [{ type: 'giveMoney', amount: p.day }, { type: 'message', text: 'day ' + p.day }]);
+        api.on('onEffect', p => { n++; return p.effectType === 'message' ? [{ type: 'setFlag', flag: 'effects', value: n }] : []; });";
+    let pack: farm_sim::schema::ContentPack = serde_json::from_value(serde_json::json!({
+        "manifest": {
+            "id": "busy", "name": "Busy", "version": "1.0.0",
+            "permissions": { "hooks": ["onDayStart", "onEffect"], "mutations": ["giveMoney", "message", "setFlag"] }
+        },
+        "plugins": [{ "id": "p", "hooks": ["onDayStart", "onEffect"], "source": source }]
+    }))
+    .unwrap();
+    project.content_packs = vec![farm_sim::schema::PackInstallation { pack, enabled: true }];
+    project
+}
+
+const TICK_RATE: f64 = farm_runtime::timestep::TICKS_PER_SECOND;
+
+/// #35: plugin mutations apply between ticks, so how the same ticks are cut into frames does
+/// not change the game.
+#[test]
+fn plugin_effects_do_not_depend_on_the_frame_rate() {
+    // The state hash after every frame, by tick.
+    let run = |frame_ticks: &[u32]| {
+        let project = busy_plugin_project();
+        let mut session = session_for(&project);
+        session.set_plugins(farm_player::plugins::for_project(&project, Default::default()));
+        assert!(session.plugin_errors().is_empty(), "{:?}", session.plugin_errors());
+        let mut hashes = std::collections::BTreeMap::new();
+        let mut index = 0;
+        while session.state().clock.tick < 3000 {
+            let ticks = frame_ticks[index % frame_ticks.len()];
+            index += 1;
+            // Exact multiples of the tick length (plus a little, never a whole extra tick).
+            session.update(f64::from(ticks) / TICK_RATE + 1e-9, false);
+            hashes.insert(session.state().clock.tick, hash_state(session.state()));
+        }
+        (session, hashes)
+    };
+    let (session, steady) = run(&[1]);
+    // The plugin was busy: the run crossed day boundaries and its answers landed.
+    assert!(session.state().clock.day > 2, "the run crosses day boundaries");
+    assert!(session.state().flags.contains_key("busy:effects"));
+    assert!(session.plugin_errors().is_empty(), "{:?}", session.plugin_errors());
+    // At every tick both runs reached, they are in the same state (when answers waited for
+    // the next frame, a 5-tick frame left them unapplied where a 1-tick frame had applied them).
+    for partition in [&[5][..], &[2, 3, 1, 5, 4]] {
+        let (_, hashes) = run(partition);
+        assert!(hashes.len() >= 600);
+        for (tick, hash) in &hashes {
+            assert_eq!(Some(hash), steady.get(tick), "frames of {partition:?} ticks, tick {tick}");
+        }
+    }
 }
 
 #[test]
@@ -230,6 +304,30 @@ fn debug_actions_change_state_without_commands() {
     let quantity: u32 =
         session.state().player.inventory.iter().filter(|slot| slot.item.id == seed).map(|slot| slot.quantity).sum();
     assert!(quantity >= 10);
+    // The drawer adds like play does: no stack above its cap, no slot past the limit.
+    let max_slots = session.state().player.max_inventory_size;
+    for _ in 0..600 {
+        session.debug(&DebugAction::GiveFirst { item_type: "seed".into() });
+        session.debug(&DebugAction::GiveFirst { item_type: "material".into() });
+    }
+    let player = &session.state().player;
+    assert!(player.inventory.len() <= max_slots as usize, "{} slots > {max_slots}", player.inventory.len());
+    for slot in &player.inventory {
+        assert!(
+            slot.item.max_stack == 0 || slot.quantity <= slot.item.max_stack,
+            "{} x {}",
+            slot.item.id,
+            slot.quantity
+        );
+    }
+    let full = session.drain_events().into_iter().any(
+        |event| matches!(event, SessionEvent::Toast { text, kind: ToastKind::Error, .. } if text == "Inventory is full!"),
+    );
+    assert!(full, "a full inventory says so");
+    // Minutes stop at the end of the day window.
+    session.debug(&DebugAction::AddMinutes { minutes: 100_000.0 });
+    let day_end = session.content().settings.time.day_end_minute;
+    assert_eq!(session.state().clock.time_minutes, farm_sim::units::minutes(day_end));
     let day = session.state().clock.day;
     session.debug(&DebugAction::SkipDay);
     assert_eq!(session.state().clock.day, day + 1);
@@ -267,4 +365,30 @@ fn toasts_keep_the_message_level() {
         })
         .collect();
     assert!(!toasts.is_empty());
+}
+
+/// #25: with a planting choice set, an interact press plants the held seed and uses fertilizer
+/// only when one is held.
+#[test]
+fn interact_presses_carry_the_held_seed() {
+    let mut session = session_for(&starter());
+    let mut state = session.state().clone();
+    // Stand on the soil patch facing open soil (the starter farm's soil is x 5..=11, y 4..=8).
+    state.player.x = farm_sim::units::tile_center(6);
+    state.player.y = farm_sim::units::tile_center(4);
+    state.player.direction = "down".to_owned();
+    session.replace_state(state);
+    let fertilizer = |session: &PlaySession| -> u32 {
+        session.state().player.inventory.iter().filter(|s| s.item.id == "fertilizer-basic").map(|s| s.quantity).sum()
+    };
+    let before = fertilizer(&session);
+    session.set_planting(Some((Some("seed-wheat".to_owned()), None)));
+    session.key_down("e");
+    frames(&mut session, 1);
+    session.key_up("e");
+    frames(&mut session, 1);
+    let crop = session.state().world.scenes[0].tiles[5][6].crop.as_ref().expect("planted");
+    assert_eq!(crop.r#type, "wheat");
+    assert_eq!(crop.quality, "normal");
+    assert_eq!(fertilizer(&session), before, "no fertilizer unless held");
 }

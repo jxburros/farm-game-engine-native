@@ -126,9 +126,15 @@ module internal EditProject =
     let private packId (install: PackInstallation) = install.Pack.Manifest.Id
 
     /// ModsEditor `confirmPackInstall`: appended enabled; a pack id already installed is refused.
+    /// Installs a pack (one undo step). Its art joins the project's custom assets
+    /// (`PackMerge.mergeAssets`), where the game, the previews and the Art tab find it, and the
+    /// installed copy keeps no second copy of the images.
     let installPack (pack: ContentPack) (project: GameProject) =
         if project.ContentPacks |> List.exists (fun i -> packId i = pack.Manifest.Id) then project
-        else { project with ContentPacks = Lists.append { Pack = pack; Enabled = true } project.ContentPacks }
+        else
+            // A pack without contentInject brings no content, its art included.
+            let project = if pack.Manifest.Permissions.ContentInject then fst (PackMerge.mergeAssets project pack) else project
+            { project with ContentPacks = Lists.append { Pack = PackRules.withoutAssets pack; Enabled = true } project.ContentPacks }
 
     let setPackEnabled (id: string) (enabled: bool) (project: GameProject) =
         let toggle (install: PackInstallation) =
@@ -138,14 +144,26 @@ module internal EditProject =
         | None -> project
 
     /// ModsEditor `move`: load order. Listed ids come first in that order; the rest keep theirs.
+    /// Each listed id takes the next install with that id not taken yet, so two installs sharing
+    /// an id (which Problems reports) are both kept: listing the id twice moves both, once moves
+    /// the first. Unknown ids are ignored.
     let reorderPacks (ids: string list) (project: GameProject) =
-        let installs = project.ContentPacks
-        let listed = ids |> List.choose (fun id -> installs |> List.tryFind (fun i -> packId i = id))
-        let listedIds = HashSet<string>(listed |> List.map packId)
-        let rest = installs |> List.filter (fun i -> not (listedIds.Contains(packId i)))
+        let installs = Array.ofList project.ContentPacks
+        let taken = Array.create installs.Length false
+        let listed =
+            ids
+            |> List.choose (fun id ->
+                match Seq.tryFind (fun k -> not taken.[k] && packId installs.[k] = id) (seq { 0 .. installs.Length - 1 }) with
+                | Some k ->
+                    taken.[k] <- true
+                    Some installs.[k]
+                | None -> None)
+        let rest = installs |> Array.indexed |> Array.filter (fun (k, _) -> not taken.[k]) |> Array.map snd |> List.ofArray
         let next = listed @ rest
-        if List.forall2 (fun (a: PackInstallation) (b: PackInstallation) -> LanguagePrimitives.PhysicalEquality a b) next installs then project
-        else { project with ContentPacks = next }
+        let unchanged =
+            next.Length = installs.Length
+            && List.forall2 (fun (a: PackInstallation) (b: PackInstallation) -> LanguagePrimitives.PhysicalEquality a b) next (List.ofArray installs)
+        if unchanged then project else { project with ContentPacks = next }
 
     let removePack (id: string) (project: GameProject) =
         match Lists.removeBy packId id project.ContentPacks with

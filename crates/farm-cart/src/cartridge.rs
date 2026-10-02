@@ -2,9 +2,9 @@
 //!
 //! Format 2 splits a project into compiled content, the inputs of a new game
 //! ([`farm_sim::StartState`]) and what presentation reads ([`farm_sim::Presentation`]), so the
-//! player never reads project JSON. The sections are compatibility JSON (JavaScript number
-//! semantics) until the native-numerics cutover. Embedded files live in an asset table and are
-//! referenced from the JSON as `asset:<id>` strings.
+//! player never reads project JSON. The sections are JSON in authoring units, converted to the
+//! simulation's fixed-unit integers as they are read (docs/NUMERICS.md). Embedded files live in
+//! an asset table and are referenced from the JSON as `asset:<id>` strings.
 
 use farm_cart_schema::farm_engine::cart::{cartridge_buffer_has_identifier, root_as_cartridge};
 use farm_sim::schema::GameContent;
@@ -49,6 +49,9 @@ pub struct CartPlugin {
     pub source: String,
     /// The plugin's hooks that the pack manifest grants, in the plugin's order.
     pub granted_hooks: Vec<String>,
+    /// The pack manifest's `permissions.mutations`; `None` when it declares none (the player
+    /// then applies the default capabilities).
+    pub granted_mutations: Option<Vec<String>>,
 }
 
 /// A verified cartridge, borrowing its sections from the buffer.
@@ -119,6 +122,9 @@ pub fn read_cartridge(bytes: &[u8]) -> Result<Cartridge<'_>, String> {
                         .granted_hooks()
                         .map(|hooks| hooks.iter().map(str::to_owned).collect())
                         .unwrap_or_default(),
+                    granted_mutations: plugin
+                        .granted_mutations()
+                        .map(|mutations| mutations.iter().map(str::to_owned).collect()),
                 })
                 .collect()
         })

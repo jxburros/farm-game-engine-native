@@ -1,6 +1,8 @@
-//! Built-in content definitions (port of `ContentBuiltin.cs` / content-builtin.ts). These
-//! migrate into the `content-default` pack in M5; until then they live here so both the engine
-//! and the editor consume a single copy.
+//! Built-in content definitions (port of `ContentBuiltin.cs` / content-builtin.ts) for the Rust
+//! project pipeline (`state::create_content_from_project`), which the hosts that get project
+//! JSON use (editor previews and sessions, `Player::from_project`, farm-wasm). Cartridges get the
+//! F# copy (`FarmEngine.Authoring/Builtin.fs`); the two are kept identical by
+//! `tests/fsharp_parity.rs` and the F# `ParityTests` (docs/LANGUAGES.md "Two project pipelines").
 
 use crate::schema::{
     AnimalSpeciesDefinition, CropDefinition, CropMultiTile, FishTable, FishTableEntry, Item, MachineTypeDefinition,
@@ -92,22 +94,34 @@ pub fn crop_definitions() -> IndexMap<String, CropDefinition> {
     definitions.into_iter().map(|definition| (definition.id.clone(), definition)).collect()
 }
 
+/// Harvest value multipliers in thousandths, by [`crate::schema::crop_qualities`].
+const QUALITY_MULTIPLIERS: [(&str, u32); 4] = [("normal", 1000), ("silver", 1250), ("gold", 1500), ("iridium", 2000)];
+
+/// Harvest value multipliers in thousandths, by mutation ('none' | 'giant' | 'golden' |
+/// 'ancient').
+const MUTATION_MULTIPLIERS: [(&str, u32); 4] = [("none", 1000), ("giant", 2500), ("golden", 3000), ("ancient", 4000)];
+
 /// Keyed by [`crate::schema::crop_qualities`].
 /// Harvest value multipliers in thousandths.
 pub fn quality_multipliers() -> IndexMap<String, u32> {
-    [("normal", 1000), ("silver", 1250), ("gold", 1500), ("iridium", 2000)]
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect()
+    QUALITY_MULTIPLIERS.into_iter().map(|(key, value)| (key.to_owned(), value)).collect()
+}
+
+/// The harvest value multiplier (thousandths) of a crop quality; `None` for an unknown one.
+/// The engine's lookup: [`quality_multipliers`] without building the map.
+pub fn quality_multiplier(quality: &str) -> Option<u32> {
+    QUALITY_MULTIPLIERS.into_iter().find(|(key, _)| *key == quality).map(|(_, value)| value)
 }
 
 /// Keyed by 'none' | 'giant' | 'golden' | 'ancient'.
 /// Harvest value multipliers in thousandths.
 pub fn mutation_multipliers() -> IndexMap<String, u32> {
-    [("none", 1000), ("giant", 2500), ("golden", 3000), ("ancient", 4000)]
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect()
+    MUTATION_MULTIPLIERS.into_iter().map(|(key, value)| (key.to_owned(), value)).collect()
+}
+
+/// The harvest value multiplier (thousandths) of a mutation; `None` for an unknown one.
+pub fn mutation_multiplier(mutation: &str) -> Option<u32> {
+    MUTATION_MULTIPLIERS.into_iter().find(|(key, _)| *key == mutation).map(|(_, value)| value)
 }
 
 pub const DAYS_PER_SEASON: u32 = 28;
@@ -133,25 +147,34 @@ fn tool_definition(
     }
 }
 
+/// The built-in tools: type, name, description, action, valid targets, energy cost (points),
+/// power level.
+type ToolRow = (&'static str, &'static str, &'static str, &'static str, &'static [&'static str], i32, i32);
+
+const TOOLS: [ToolRow; 6] = [
+    ("watering-can", "Watering Can", "Water crops to help them grow faster", "water", &["soil"], 2, 1),
+    ("hoe", "Hoe", "Till grass into farmable soil", "till", &["grass", "path"], 4, 1),
+    ("axe", "Axe", "Chop down trees and wooden obstacles", "chop", &["wall"], 6, 1),
+    ("pickaxe", "Pickaxe", "Break rocks and mine for ore", "mine", &["wall"], 8, 1),
+    ("scythe", "Scythe", "Harvest crops in a large area", "harvest", &["soil"], 5, 2),
+    ("fishing-rod", "Fishing Rod", "Catch fish from water tiles", "fish", &["water"], 3, 1),
+];
+
+fn tool_from_row(
+    (r#type, name, description, action, valid_targets, energy_cost, power_level): ToolRow,
+) -> ToolDefinition {
+    tool_definition(r#type, name, description, action, valid_targets, energy_cost, power_level)
+}
+
 /// Keyed by [`crate::schema::tool_types`].
 pub fn tool_definitions() -> IndexMap<String, ToolDefinition> {
-    let definitions = [
-        tool_definition(
-            "watering-can",
-            "Watering Can",
-            "Water crops to help them grow faster",
-            "water",
-            &["soil"],
-            2,
-            1,
-        ),
-        tool_definition("hoe", "Hoe", "Till grass into farmable soil", "till", &["grass", "path"], 4, 1),
-        tool_definition("axe", "Axe", "Chop down trees and wooden obstacles", "chop", &["wall"], 6, 1),
-        tool_definition("pickaxe", "Pickaxe", "Break rocks and mine for ore", "mine", &["wall"], 8, 1),
-        tool_definition("scythe", "Scythe", "Harvest crops in a large area", "harvest", &["soil"], 5, 2),
-        tool_definition("fishing-rod", "Fishing Rod", "Catch fish from water tiles", "fish", &["water"], 3, 1),
-    ];
-    definitions.into_iter().map(|definition| (definition.r#type.clone(), definition)).collect()
+    TOOLS.into_iter().map(|row| (row.0.to_owned(), tool_from_row(row))).collect()
+}
+
+/// The built-in definition of one tool type (`None` for an unknown type): an entry of
+/// [`tool_definitions`] without building the others.
+pub fn tool_definition_of(tool_type: &str) -> Option<ToolDefinition> {
+    TOOLS.into_iter().find(|row| row.0 == tool_type).map(tool_from_row)
 }
 
 fn tool(id: &str, name: &str, description: &str, value: i64, tool_type: &str) -> Item {
@@ -203,6 +226,8 @@ fn plain(id: &str, name: &str, description: &str, r#type: &str, max_stack: u32, 
     }
 }
 
+/// The built-in items: a seed and a crop item per built-in crop, then the tools and their
+/// upgrades, materials, gifts, fishing, animal and mining items.
 pub fn create_default_items() -> Vec<Item> {
     let mut items = Vec::new();
 

@@ -312,7 +312,7 @@ public sealed class MapEditorTests
         width.Text = "8";
         height.Text = "6";
         Pump();
-        Assert.Equal("Total tiles: 48 · Aspect ratio: 1.33\nResize removes the tiles outside 8×6.", info.Text);
+        Assert.StartsWith("Total tiles: 48 · Aspect ratio: 1.33\nResize removes the tiles outside 8×6.", info.Text, StringComparison.Ordinal);
 
         height.Text = "abc";
         Pump();
@@ -359,5 +359,49 @@ public sealed class MapEditorTests
         Open("scenes");
         Assert.Equal(0, tabs.SelectedIndex);
         Assert.Equal(11, FindByName<WrapPanel>(host.Window, "WorkshopLinks").Children.Count);
+    }
+
+    [AvaloniaFact]
+    public void PickingABrushIsNotAnUndoStep_CtrlZUndoesThePaint()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var sceneId = edit.SceneId!;
+        var before = host.Workspace.Document!.Past.Length;
+        edit.Brush = "soil";
+        Assert.Equal(before, host.Workspace.Document!.Past.Length);
+        edit.PaintTile(3, 3);
+        Assert.Equal("soil", Scene(host, sceneId).Tiles[3][3].Type);
+        edit.Brush = "water";
+        Assert.Equal(before + 1, host.Workspace.Document!.Past.Length);
+
+        // Ctrl+Z right after picking the next brush undoes the paint, and the brush stays.
+        Key(host, Avalonia.Input.Key.Z, PhysicalKey.Z, "z", RawInputModifiers.Control);
+        Assert.NotEqual("soil", Scene(host, sceneId).Tiles[3][3].Type);
+        Assert.Equal("water", edit.Brush);
+        Assert.Equal("water", host.Workspace.Current!.SelectedTileType);
+        Assert.True(FindByName<ToggleButton>(host.Window, "Brush_water").IsChecked);
+    }
+
+    [AvaloniaFact]
+    public void ShrinkingAScene_ListsAndMovesWhatStoodOnTheCutTiles()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        var sceneId = edit.SceneId!;
+        host.Workspace.Apply(Edits.SetPlayerStart(sceneId, 14, 10));
+        var info = FindByName<TextBlock>(host.Window, "SceneSizeInfo");
+        FindByName<TextBox>(host.Window, "SceneWidth").Text = "6";
+        FindByName<TextBox>(host.Window, "SceneHeight").Text = "5";
+        Pump();
+        Assert.Contains("the player start moves inside", info.Text, StringComparison.Ordinal);
+
+        Press(host, "ResizeSceneButton");
+        Pump();
+        var project = host.Workspace.Current!;
+        Assert.Equal((5.0, 4.0), (project.Player.X, project.Player.Y));
+        var outside = Problems.Collect(project).Where(p => p.Code.Contains("utOfBounds", StringComparison.Ordinal)).ToList();
+        Assert.Empty(outside);
+        Assert.Contains("the player start moves inside", AllVisibleText(host.Window), StringComparison.Ordinal);
     }
 }

@@ -223,3 +223,50 @@ let ``remove unused art deletes only what nothing uses, as one undo step`` () =
     Assert.Same(project, (Document.undo doc).Project)
     Assert.Empty(ArtLibrary.unused doc.Project)
     Assert.Same(doc, doc |> Document.apply (ArtLibrary.removeUnused doc.Project))
+
+[<Fact>]
+let ``reordering packs with a duplicated id keeps every install`` () =
+    let pack = ProjectCatalog.CreateContentDefaultPack()
+    let a1 = { Pack = pack; Enabled = true }
+    let a2 = { Pack = { pack with Manifest = { pack.Manifest with Name = "Second copy" } }; Enabled = false }
+    let b = { Pack = { pack with Manifest = { pack.Manifest with Id = "b-pack"; Name = "B" } }; Enabled = true }
+    // Installs that share an id only come from a file (InstallPack refuses them); Problems reports them.
+    let project = { blank () with ContentPacks = [ a1; a2; b ] }
+    let order (p: GameProject) = p.ContentPacks |> List.map (fun i -> i.Pack.Manifest.Name)
+    Assert.Same(project, project |> apply (ReorderPacks [ "content-default"; "content-default" ]))
+    Assert.Same(project, project |> apply (ReorderPacks [ "content-default"; "content-default"; "b-pack"; "nope" ]))
+    Assert.Equal<string list>([ "B"; a1.Pack.Manifest.Name; "Second copy" ], order (project |> apply (ReorderPacks [ "b-pack" ])))
+    Assert.Equal<string list>([ a1.Pack.Manifest.Name; "B"; "Second copy" ], order (project |> apply (ReorderPacks [ "content-default"; "b-pack" ])))
+    // ModsEditor's up arrow on B: B swaps with its neighbour, nothing is lost or doubled.
+    let moved = project |> apply (Edits.MovePack(project, "b-pack", -1))
+    Assert.Equal<string list>([ a1.Pack.Manifest.Name; "B"; "Second copy" ], order moved)
+    Assert.Same(project, project |> apply (Edits.MovePack(project, "b-pack", 1)))
+
+[<Fact>]
+let ``removing the only season of a list keeps the list closed`` () =
+    let project = starter ()
+    let winterOnly = Some [ "winter" ]
+    let item = project.Items.Head.Id
+    let shop =
+        { Defaults.newShop project with
+            Stock =
+                [ { ShopStockEntry.Default with ItemId = item; Seasons = winterOnly }
+                  { ShopStockEntry.Default with ItemId = item; Seasons = Some [ "winter"; "spring" ] } ] }
+    let quest = { Defaults.newQuest project with AvailableSeasons = winterOnly }
+    let event =
+        { Defaults.newEvent project with
+            Conditions = [ EventCondition.Season { Seasons = [ "winter" ] }; EventCondition.Season { Seasons = [ "winter"; "fall" ] } ] }
+    let project = project |> apply (Batch("setup", [ UpsertShop shop; UpsertQuest quest; UpsertEvent event ]))
+    let removed = project |> apply (RemoveSeason "winter")
+    let stock = (removed.Shops |> List.find (fun s -> s.Id = shop.Id)).Stock
+    // An empty or absent list would mean "every season": the removed id stays, and never comes.
+    Assert.Equal(winterOnly, stock.[0].Seasons)
+    Assert.Equal(Some [ "spring" ], stock.[1].Seasons)
+    Assert.Equal(winterOnly, (removed.Quests |> List.find (fun q -> q.Id = quest.Id)).AvailableSeasons)
+    let conditions = (removed.Events |> List.find (fun e -> e.Id = event.Id)).Conditions
+    Assert.Equal<EventCondition list>([ EventCondition.Season { Seasons = [ "winter" ] }; EventCondition.Season { Seasons = [ "fall" ] } ], conditions)
+    // Problems says which content waits for the missing season.
+    let codes = Problems.collect removed |> List.map (fun p -> p.Code)
+    Assert.Contains("shop.unknownSeason", codes)
+    Assert.Contains("quest.unknownSeason", codes)
+    Assert.Contains("event.conditionUnknownSeason", codes)

@@ -7,25 +7,30 @@ use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::events;
 use crate::inventory;
+use crate::messages;
 use crate::quests;
 use crate::schema::{Dialogue, DialogueOption, DialogueState, GameState, ShopSession};
 use crate::social;
+use serde_json::Value;
 
 /// `!string.IsNullOrEmpty(value)`: the string when it is present and non-empty.
 fn non_empty(value: Option<&str>) -> Option<&str> {
     value.filter(|s| !s.is_empty())
 }
 
+/// The dialogue `dialogue_id`: the NPC's own dialogue of that id first, then the standalone one.
 pub fn find_dialogue<'a>(ctx: &'a EngineContext, npc_id: &str, dialogue_id: &str) -> Option<&'a Dialogue> {
     // NPC-owned dialogues first (interaction entry point), then the global list.
-    let npc = ctx.content.npcs.iter().find(|n| n.id == npc_id);
+    let npc = ctx.npc(npc_id);
     let owned = npc.and_then(|npc| npc.dialogue.iter().find(|d| d.id == dialogue_id));
     if owned.is_some() {
         return owned;
     }
-    ctx.content.dialogues.iter().find(|d| d.id == dialogue_id)
+    ctx.dialogue(dialogue_id)
 }
 
+/// The `chooseDialogueOption` command: pick the `index`-th visible option of the open dialogue
+/// and apply it (its outcomes, item, shop, next dialogue).
 pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState, index: i32) -> Effects {
     let Some(dialogue_ref) = state.dialogue.clone() else {
         return Vec::new();
@@ -33,39 +38,67 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     let dialogue = find_dialogue(ctx, &dialogue_ref.npc_id, &dialogue_ref.dialogue_id);
     // Index over the VISIBLE options (M4: friendship/item/flag gates) so the
     // UI and the engine always agree.
-    let option: Option<DialogueOption> = dialogue.and_then(|dialogue| {
-        let visible = social::visible_dialogue_options(ctx, state, dialogue);
+    let chosen: Option<usize> = dialogue.and_then(|dialogue| {
+        let visible = social::visible_dialogue_option_indices(ctx, state, dialogue);
         // JS arr[index]: undefined for negative, fractional or out-of-range indices.
         // A fractional or negative index (read as −1) picks nothing.
-        usize::try_from(index).ok().and_then(|index| visible.get(index).cloned())
+        usize::try_from(index).ok().and_then(|index| visible.get(index).copied())
     });
-    let (Some(_dialogue), Some(option)) = (dialogue, option) else {
+    let (Some(dialogue), Some(option_index)) = (dialogue, chosen) else {
         state.dialogue = None;
         return Vec::new();
     };
+    let option: DialogueOption = dialogue.options[option_index].clone();
 
-    let mut effects = Vec::new();
-
-    if let Some(give_money) = option.give_money.filter(|money| *money != 0) {
-        state.player.money = state.player.money.saturating_add(give_money);
-        effects.push(Effect::message(message_levels::SUCCESS, format!("Received ${give_money}")));
+    // Costs and room come first: an option the player can't pay for, or whose item doesn't
+    // fit, does nothing (the conversation stays open).
+    let take_money = option.take_money.filter(|money| *money > 0);
+    if take_money.is_some_and(|money| state.player.money < money) {
+        return vec![Effect::say(message_levels::ERROR, &messages::NOT_ENOUGH_MONEY)];
     }
-
+    let mut item_grant = None;
     if let Some(give_item) = non_empty(option.give_item.as_deref()) {
-        let item = ctx.content.items.iter().find(|i| i.id == give_item);
-        if let Some(item) = item {
+        if let Some(item) = ctx.item(give_item) {
             // `option.giveItemQuantity || 1`: undefined, 0 and NaN all fall back to 1.
             let quantity = option.give_item_quantity.filter(|q| *q != 0).unwrap_or(1);
             let result =
                 inventory::add_item(&state.player.inventory, item, quantity, state.player.max_inventory_size, None);
-            if result.added {
-                state.player.inventory = result.inventory;
-                let suffix = if quantity > 1 { format!(" x{quantity}") } else { String::new() };
-                effects.push(Effect::message(message_levels::SUCCESS, format!("Received {}{}", item.name, suffix)));
-            } else {
-                effects.push(Effect::message(message_levels::ERROR, "Inventory is full!"));
+            if !result.added {
+                return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
             }
+            item_grant = Some((item, quantity, result.inventory));
         }
+    }
+
+    let mut effects = Vec::new();
+
+    if let Some(take_money) = take_money {
+        state.player.money -= take_money;
+        effects.push(Effect::say(message_levels::INFO, messages::PAID_MONEY.with(&[&take_money])));
+    }
+
+    // Remember the choice: the option's flag, and the once-only marker (the same flag when the
+    // option has one).
+    if let Some(event_flag) = non_empty(option.event_flag.as_deref()) {
+        state.flags.insert(event_flag.to_owned(), Value::Bool(true));
+    }
+    if option.once == Some(true) {
+        state.flags.insert(social::once_flag(dialogue, option_index), Value::Bool(true));
+    }
+
+    if let Some(give_money) = option.give_money.filter(|money| *money != 0) {
+        state.player.money = state.player.money.saturating_add(give_money);
+        effects.push(Effect::say(message_levels::SUCCESS, messages::RECEIVED_MONEY.with(&[&give_money])));
+    }
+
+    if let Some((item, quantity, inventory)) = item_grant {
+        state.player.inventory = inventory;
+        let received = if quantity > 1 {
+            messages::RECEIVED_ITEMS.with(&[&item.name, &quantity])
+        } else {
+            messages::RECEIVED_ITEM.with(&[&item.name])
+        };
+        effects.push(Effect::say(message_levels::SUCCESS, received));
     }
 
     // Quest-giver binding (M3): the option starts a quest if it's available.
@@ -75,7 +108,13 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     // Creator-defined action bound to this option (extensibility layer) —
     // runs before the dialogue advances, so its outcomes can gate/warp/etc.
     if let Some(action_id) = non_empty(option.action_id.as_deref()) {
+        let before_action = state.dialogue.clone();
         effects.extend(events::perform_action(ctx, state, action_id).effects);
+        // An action that opened another conversation (or closed this one) decides where the
+        // dialogue goes; the option's own next dialogue and shop don't apply.
+        if state.dialogue != before_action {
+            return effects;
+        }
     }
 
     // `state = currentState with { Dialogue = dialogueRef }`
@@ -83,12 +122,12 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
 
     // Shop-opening options close the dialogue and start a shop session.
     if let Some(open_shop_id) = non_empty(option.open_shop_id.as_deref()) {
-        let shop_exists = ctx.content.shops.iter().any(|shop| shop.id == open_shop_id);
+        let shop_exists = ctx.shop(open_shop_id).is_some();
         state.dialogue = None;
         if shop_exists {
             state.shop = Some(ShopSession { shop_id: open_shop_id.to_owned() });
         } else {
-            effects.push(Effect::message(message_levels::ERROR, "That shop does not exist."));
+            effects.push(Effect::say(message_levels::ERROR, &messages::SHOP_MISSING));
         }
         return effects;
     }
@@ -104,6 +143,7 @@ pub fn handle_choose_dialogue_option(ctx: &EngineContext, state: &mut GameState,
     effects
 }
 
+/// The `closeDialogue` command.
 pub fn handle_close_dialogue(state: &mut GameState) -> Effects {
     if state.dialogue.is_none() {
         return Vec::new();

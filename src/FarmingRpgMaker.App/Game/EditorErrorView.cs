@@ -26,7 +26,7 @@ public sealed class EditorErrorView : UserControl
         title.Name = "EditorErrorTitle";
         AutomationProperties.SetLiveSetting(title, AutomationLiveSetting.Assertive);
         var saved = saveError is null
-            ? "Something unexpected happened while editing. Your project is safe: every change before the error has been saved."
+            ? "Something unexpected happened while editing. Your project is safe: every change you applied before the error is kept. Fields you had not saved in a form yet may need to be entered again."
             : $"Something unexpected happened while editing, and your project could not be saved ({saveError}). Your changes are still open: fix the problem and choose Try Again, then check that saving works.";
         var summary = Ui.Wrapped(saved, "muted");
         summary.Name = "EditorErrorSummary";

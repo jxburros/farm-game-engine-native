@@ -8,8 +8,9 @@
 //! - Effects become [`SessionEvent`]s (toasts, sound cues, scene changes, new days) and floating
 //!   pops; the host drains them once per frame.
 //! - Plugins see every step's hook events (engine hooks, then one `onEffect` per effect), and
-//!   their mutations enter the command log at one fixed point per frame (before input), so a
-//!   replay of the command log is deterministic.
+//!   their mutations enter the command log at one fixed point per tick (right before it), so a
+//!   mutation answering tick `k` applies before tick `k + 1` at any frame rate, and a replay of
+//!   the command log is deterministic.
 //! - Minigames are hosted here: the UI forwards presses and choices, and a finished minigame
 //!   enters the command log exactly once as `resolveMinigame`.
 
@@ -18,8 +19,9 @@ use farm_runtime::input::{self, InputManager, Modifiers, MoveVector};
 use farm_runtime::timestep::FixedTimestep;
 use farm_sim::effects::message_levels;
 use farm_sim::hooks::{EffectHookPayload, HookBus, HookEvent};
-use farm_sim::schema::{GameContent, GameState, InventorySlot, Scene};
-use farm_sim::{engine, game_time, quests, state, units, Command, Effect, EngineContext, StartState};
+use farm_sim::messages::{self, Message};
+use farm_sim::schema::{GameContent, GameState, Scene};
+use farm_sim::{engine, game_time, inventory, quests, state, units, Command, Effect, EngineContext, StartState};
 use serde_json::Value;
 
 /// Play-mode tile size in world pixels (web `TILE_SIZE_PLAY`).
@@ -45,8 +47,14 @@ pub enum ToastKind {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SessionEvent {
-    /// A `message` effect (or a session notice) to show.
-    Toast { text: String, kind: ToastKind },
+    /// A `message` effect (or a session notice) to show. `text` is English (or a creator's own
+    /// words); `message` is its catalog message, which the player shows in its language.
+    Toast {
+        text: String,
+        kind: ToastKind,
+        #[serde(skip)]
+        message: Option<Message>,
+    },
     /// A sound cue (`farm_runtime::audio` preset name).
     Sound { cue: String },
     /// The player changed scene (the camera snaps; no interpolation across scenes).
@@ -65,6 +73,9 @@ pub struct Pop {
     pub x: f64,
     pub y: f64,
     pub text: String,
+    /// The interface string `text` is (a `farm_ui::Lang` key), for players that translate it.
+    #[serde(skip)]
+    pub key: Option<&'static str>,
     pub color: String,
     /// 0 (just spawned) → 1 (expired).
     pub age: f64,
@@ -89,10 +100,15 @@ impl FrameToggles {
 /// The plugin sandbox as the session sees it (implemented over `farm-plugins`). `Send`, so a
 /// session can run on a background thread (the editor steps frames off its UI thread).
 pub trait SessionPlugins: Send {
-    /// The hook events of one engine step, in order.
-    fn dispatch(&mut self, events: &[HookEvent]);
-    /// Plugin mutations to run now, as `pluginMutation` commands, in arrival order.
-    fn drain_commands(&mut self) -> Vec<Command>;
+    /// The hook events of one engine step, in order. `depth` is 0 for ticks and the player's
+    /// commands, and a plugin mutation's depth + 1 for the step that ran it (plugins do not
+    /// hear `onCommand` / `onEffect` from such steps, and deep chains are cut off).
+    fn dispatch(&mut self, events: &[HookEvent], depth: u32);
+    /// Plugin mutations to run now, as `pluginMutation` commands with their depth, in arrival
+    /// order.
+    fn drain_commands(&mut self) -> Vec<(Command, u32)>;
+    /// The game is about to run tick `tick` (plugin budgets follow the game clock).
+    fn begin_tick(&mut self, _tick: u64) {}
     /// The most recent plugin errors (init failures, throws, overruns), oldest first.
     fn recent_errors(&self) -> Vec<String> {
         Vec::new()
@@ -153,6 +169,8 @@ pub struct PlaySession {
     cosmetic: u64,
     /// The last commands run, as JSON with their tick (crash reports).
     recent: std::collections::VecDeque<String>,
+    /// What the player holds for planting (seed, fertilizer); see [`Self::set_planting`].
+    planting: Option<(Option<String>, Option<String>)>,
 }
 
 /// Commands kept for crash reports.
@@ -194,6 +212,7 @@ impl PlaySession {
             reduced_motion: false,
             cosmetic: 0x9E37_79B9_7F4A_7C15,
             recent: std::collections::VecDeque::new(),
+            planting: None,
         }
     }
 
@@ -213,7 +232,7 @@ impl PlaySession {
     /// auto-started quests) go to it first; then it sees every later step.
     pub fn set_plugins(&mut self, plugins: Option<Box<dyn SessionPlugins>>) {
         self.plugins = plugins;
-        self.dispatch_hooks(&[]);
+        self.dispatch_hooks(&[], 0);
     }
 
     pub fn has_plugins(&self) -> bool {
@@ -311,52 +330,77 @@ impl PlaySession {
 
     /// Run one command from the UI and react to its effects.
     pub fn run_command(&mut self, command: &Command) {
+        self.run_step(command, 0);
+    }
+
+    /// Run a command as a step at plugin depth `depth` (see [`SessionPlugins::dispatch`]).
+    fn run_step(&mut self, command: &Command, depth: u32) {
         if self.recent.len() >= RECENT_COMMANDS {
             self.recent.pop_front();
         }
         let json = serde_json::to_string(command).unwrap_or_default();
         self.recent.push_back(format!("tick {}: {json}", self.state.clock.tick));
         let effects = engine::apply_command(&self.ctx, &mut self.state, command);
-        self.after_step(effects);
+        self.after_step(effects, depth);
     }
 
-    /// One display frame: drain plugin mutations, sync the held movement intent, advance the
-    /// fixed-timestep simulation, then turn this frame's one-shot key presses into commands.
-    /// `host_modal_open` is true while a host panel (inventory, quests, crafting, a menu) is
-    /// open: world input pauses. Non-finite or negative frame times count as zero.
+    /// The fixed point before each tick: queued plugin mutations enter the command log, each
+    /// as a step one level deeper than the mutation.
+    fn apply_plugin_mutations(&mut self) {
+        let Some(plugins) = self.plugins.as_mut() else { return };
+        plugins.begin_tick(self.state.clock.tick);
+        for (command, depth) in plugins.drain_commands() {
+            self.run_step(&command, depth.saturating_add(1));
+        }
+    }
+
+    /// One display frame: sync the held movement intent, advance the fixed-timestep
+    /// simulation one tick at a time (queued plugin mutations apply before each tick), then
+    /// turn this frame's one-shot key presses into commands. `host_modal_open` is true while a
+    /// host panel (inventory, quests, crafting, a menu) is open: world input pauses. Non-finite
+    /// or negative frame times count as zero.
     pub fn update(&mut self, delta_seconds: f64, host_modal_open: bool) -> FrameToggles {
         let delta = if delta_seconds.is_finite() { delta_seconds.max(0.0) } else { 0.0 };
         self.elapsed_ms += delta * 1000.0;
         self.pops.retain(|(_, born)| self.elapsed_ms - born < POP_LIFETIME_MS);
 
-        // Plugin mutations enter the command log at ONE fixed point per frame.
-        if let Some(plugins) = self.plugins.as_mut() {
-            for command in plugins.drain_commands() {
-                self.run_command(&command);
-            }
-        }
-
         // Free movement: only CHANGES of the held intent become commands; zero while any
         // modal is open.
         let intent =
             if host_modal_open { MoveVector::default() } else { input::move_intent(&self.input, &self.state, None) };
-        let ticks = self.timestep.advance(delta);
+        let mut ticks = self.timestep.advance(delta);
         self.alpha = self.timestep.alpha();
+        // With `time.pauseInModals` a menu stops the game clock like a dialogue does (#37).
+        if host_modal_open && self.ctx.content.settings.time.pauses_in_modals() {
+            ticks = 0;
+        }
         if intent != self.last_intent {
             self.last_intent = intent;
             // The intent is −1, 0 or 1 on each axis.
             self.run_command(&Command::SetMoveIntent { dx: intent.dx as i32, dy: intent.dy as i32 });
         }
-        if ticks > 0 {
-            let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
-            self.prev_player = Some((x, y, self.state.player.scene_id.clone()));
-            let effects = engine::advance_tick(&self.ctx, &mut self.state, u64::from(ticks));
-            self.after_step(effects);
+        // One tick at a time, so plugin mutations answering tick k apply before tick k + 1
+        // whether the frame holds one tick or five: the same input reaches the same state at
+        // any frame rate. (advance_tick(n) is exactly n × advance_tick(1).)
+        for tick in 0..ticks {
+            self.apply_plugin_mutations();
+            if tick == 0 {
+                let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
+                self.prev_player = Some((x, y, self.state.player.scene_id.clone()));
+            }
+            let effects = engine::advance_tick(&self.ctx, &mut self.state, 1);
+            self.after_step(effects, 0);
         }
 
         let frame = input::poll_play_frame(&self.input, &self.state, &self.ctx.content, host_modal_open);
         for command in &frame.commands {
-            self.run_command(command);
+            match (command, &self.planting) {
+                (Command::Interact, Some((seed, fertilizer))) => self.run_command(&Command::InteractWith {
+                    seed_item_id: seed.clone(),
+                    fertilizer_item_id: fertilizer.clone(),
+                }),
+                _ => self.run_command(command),
+            }
         }
         self.update_minigame(delta);
         self.input.end_frame();
@@ -366,6 +410,14 @@ impl PlaySession {
             crafting: frame.toggle_crafting,
             escape: frame.escape,
         }
+    }
+
+    /// What the player holds for planting, `(seed, fertilizer)`. While set, interact presses
+    /// become `interactWith` commands: open soil gets the held seed (else the first seed that
+    /// grows this season) and the held fertilizer (else none). Unset (the default), they are
+    /// plain `interact`, which also uses the first fertilizer held.
+    pub fn set_planting(&mut self, planting: Option<(Option<String>, Option<String>)>) {
+        self.planting = planting;
     }
 
     /// Clears held keys and the sent intent (focus loss, opening a menu, leaving play).
@@ -427,19 +479,37 @@ impl PlaySession {
             }
             DebugAction::FullEnergy => self.state.player.energy = self.state.player.max_energy,
             DebugAction::AddMinutes { minutes } if minutes.is_finite() => {
-                let micro =
-                    i64::from(self.state.clock.time_minutes) + (minutes * f64::from(units::MINUTE)).round() as i64;
-                self.state.clock.time_minutes = micro.clamp(0, i64::from(u32::MAX)) as u32;
+                // Stays inside the day window: the clock stops at the day's end, where the next
+                // tick ends the day the way it does in play (it never jumps past it).
+                let time = &self.ctx.content.settings.time;
+                let minute = i64::from(units::MINUTE);
+                let (start, end) = (i64::from(time.day_start_minute) * minute, i64::from(time.day_end_minute) * minute);
+                let micro = i64::from(self.state.clock.time_minutes)
+                    .saturating_add((minutes * f64::from(units::MINUTE)).round() as i64);
+                let micro = micro.min(end).max(start.min(end)).max(0);
+                self.state.clock.time_minutes = u32::try_from(micro).unwrap_or(u32::MAX);
             }
-            DebugAction::SetSeason { season } => self.state.clock.season.clone_from(season),
+            DebugAction::SetSeason { season } => {
+                self.state.clock.season.clone_from(season);
+                farm_sim::game_time::reconcile_clock(&self.ctx.content.settings.calendar, &mut self.state.clock);
+            }
             DebugAction::GiveFirst { item_type } => {
                 let Some(item) = self.ctx.content.items.iter().find(|item| &item.r#type == item_type) else {
                     return;
                 };
-                let inventory = &mut self.state.player.inventory;
-                match inventory.iter_mut().find(|slot| slot.item.id == item.id) {
-                    Some(slot) => slot.quantity = slot.quantity.saturating_add(5),
-                    None => inventory.push(InventorySlot { item: item.clone(), quantity: 5 }),
+                // The same add as every item source in play: stack caps and the slot limit hold.
+                let player = &self.state.player;
+                let added = inventory::add_item(&player.inventory, item, 5, player.max_inventory_size, None);
+                if added.added_quantity > 0 {
+                    self.state.player.inventory = added.inventory;
+                }
+                if !added.added {
+                    let message = Message::from(&messages::INVENTORY_FULL);
+                    self.events.push(SessionEvent::Toast {
+                        text: message.english(),
+                        kind: ToastKind::Error,
+                        message: Some(message),
+                    });
                 }
             }
             DebugAction::Teleport { scene_id } => {
@@ -461,7 +531,7 @@ impl PlaySession {
             }
             DebugAction::SkipDay => {
                 game_time::perform_sleep(&self.ctx, &mut self.state, game_time::SleepOptions { collapsed: false });
-                self.dispatch_hooks(&[]);
+                self.dispatch_hooks(&[], 0);
             }
             DebugAction::AddMoney { .. } | DebugAction::AddMinutes { .. } => {}
         }
@@ -487,27 +557,27 @@ impl PlaySession {
         }
     }
 
-    fn after_step(&mut self, effects: Vec<Effect>) {
-        self.dispatch_hooks(&effects);
+    fn after_step(&mut self, effects: Vec<Effect>, depth: u32) {
+        self.dispatch_hooks(&effects, depth);
         for effect in &effects {
             if let Some(cue) = farm_runtime::audio::sfx_for_effect(effect) {
                 self.events.push(SessionEvent::Sound { cue: cue.to_owned() });
             }
             match effect {
                 Effect::CropHarvested { quantity, .. } => {
-                    self.add_pop(format!("+{quantity}"), "#8fd06c");
+                    self.add_pop(format!("+{quantity}"), None, "#8fd06c");
                 }
                 Effect::QuestCompleted { quest_id } => {
-                    self.add_pop("Quest ✓".to_owned(), "#ffd94a");
+                    self.add_pop("Quest \u{2713}".to_owned(), Some("pop.questDone"), "#ffd94a");
                     self.events.push(SessionEvent::QuestCompleted { quest_id: quest_id.clone() });
                 }
-                Effect::Message { level, text } => {
+                Effect::Message { level, text, localized } => {
                     let kind = match level.as_str() {
                         message_levels::SUCCESS => ToastKind::Success,
                         message_levels::ERROR => ToastKind::Error,
                         _ => ToastKind::Info,
                     };
-                    self.events.push(SessionEvent::Toast { text: text.clone(), kind });
+                    self.events.push(SessionEvent::Toast { text: text.clone(), kind, message: localized.0.clone() });
                 }
                 Effect::SceneChanged { scene_id, .. } => {
                     // Teleports/transitions never interpolate across scenes.
@@ -525,23 +595,23 @@ impl PlaySession {
 
     /// Engine hooks of the step, then one `onEffect` per effect (the order plugins see on the
     /// web and in the C# bridge).
-    fn dispatch_hooks(&mut self, effects: &[Effect]) {
+    fn dispatch_hooks(&mut self, effects: &[Effect], depth: u32) {
         let mut events = self.ctx.drain_hook_events();
         let Some(plugins) = self.plugins.as_mut() else { return };
         events.extend(
             effects.iter().map(|e| HookEvent::Effect(EffectHookPayload { effect_type: e.type_name().to_owned() })),
         );
         if !events.is_empty() {
-            plugins.dispatch(&events);
+            plugins.dispatch(&events, depth);
         }
     }
 
-    fn add_pop(&mut self, text: String, color: &str) {
+    fn add_pop(&mut self, text: String, key: Option<&'static str>, color: &str) {
         if self.reduced_motion {
             return;
         }
         let (x, y) = (tiles(self.state.player.x), tiles(self.state.player.y));
-        let pop = Pop { x, y, text, color: color.to_owned(), age: 0.0 };
+        let pop = Pop { x, y, text, key, color: color.to_owned(), age: 0.0 };
         self.pops.push((pop, self.elapsed_ms));
     }
 

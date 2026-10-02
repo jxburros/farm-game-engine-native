@@ -342,9 +342,11 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged
     /// <summary>
     /// Raised just before the process exits to install an update: the shell ends its
     /// playtest and flushes unsaved edits here, because Velopack terminates the process
-    /// without closing windows.
+    /// without closing windows. Setting <see cref="System.ComponentModel.CancelEventArgs.Cancel"/>
+    /// calls the restart off (edits that could not be saved; the shell asks, then calls
+    /// <see cref="ApplyAndRestart"/> again).
     /// </summary>
-    public event EventHandler? Restarting;
+    public event EventHandler<System.ComponentModel.CancelEventArgs>? Restarting;
 
     /// <summary>Exits, installs the downloaded update and relaunches.</summary>
     public void ApplyAndRestart()
@@ -356,7 +358,13 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged
 
         try
         {
-            Restarting?.Invoke(this, EventArgs.Empty);
+            var restarting = new System.ComponentModel.CancelEventArgs();
+            Restarting?.Invoke(this, restarting);
+            if (restarting.Cancel)
+            {
+                return;
+            }
+
             _service.ApplyAndRestart();
         }
 #pragma warning disable CA1031

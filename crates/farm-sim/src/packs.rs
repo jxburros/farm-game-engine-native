@@ -2,11 +2,12 @@
 //! `packId:localId` namespacing, explicit override semantics. Conflicts surface as problems for
 //! the Problems panel — never silent last-wins.
 
-use crate::farming::crops::to_custom_crop_definition;
+use crate::inventory;
 use crate::schema::{
-    is_engine_compatible, ContentPack, CropDefinition, CustomCropDefinition, GameContent, GameProject, GameState,
-    InventorySlot, Item, PackContent, PackInstallation, SavePackRef, ENGINE_VERSION,
+    is_engine_compatible, ContentPack, CropDefinition, GameContent, GameProject, GameState, InventorySlot, Item,
+    PackContent, PackInstallation, SavePackRef, ENGINE_VERSION,
 };
+use crate::world::tiles;
 use indexmap::{IndexMap, IndexSet};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -43,13 +44,6 @@ pub struct ResolvePackOrderResult {
 #[serde(rename_all = "camelCase")]
 pub struct MergePacksIntoContentResult {
     pub content: GameContent,
-    pub problems: Vec<PackProblem>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplyPackToProjectResult {
-    pub project: GameProject,
     pub problems: Vec<PackProblem>,
 }
 
@@ -278,13 +272,25 @@ pub fn apply_locale_strings(content: GameContent, installs: &[PackInstallation],
     let packs = resolve_pack_order(installs).packs;
     let mut table: IndexMap<String, String> = IndexMap::new();
     for raw_pack in &packs {
-        let pack = namespace_pack(raw_pack);
-        if let Some(locale_table) = pack.content.strings.get(locale) {
-            for (key, value) in locale_table {
-                table.insert(key.clone(), value.clone());
-            }
+        if !raw_pack.manifest.permissions.content_inject {
+            continue;
+        }
+        add_locale_strings(&mut table, &namespace_pack(raw_pack), locale);
+    }
+    localize_content(content, &table)
+}
+
+/// Add the `locale` string table of a namespaced pack to `table` (a later pack overrides).
+fn add_locale_strings(table: &mut IndexMap<String, String>, pack: &ContentPack, locale: &str) {
+    if let Some(locale_table) = pack.content.strings.get(locale) {
+        for (key, value) in locale_table {
+            table.insert(key.clone(), value.clone());
         }
     }
+}
+
+/// Replace authored names and texts with the entries of a merged string table.
+fn localize_content(content: GameContent, table: &IndexMap<String, String>) -> GameContent {
     if table.is_empty() {
         return content;
     }
@@ -442,27 +448,6 @@ impl MergeTarget<CropDefinition> for IndexMap<String, CropDefinition> {
     }
 }
 
-/// A CropDefinition stored as a project custom crop (TS structural typing).
-struct CustomCropTarget<'a> {
-    crops: &'a mut Vec<CustomCropDefinition>,
-}
-
-impl MergeTarget<CropDefinition> for CustomCropTarget<'_> {
-    fn has(&self, id: &str) -> bool {
-        self.crops.iter().any(|entry| entry.id == id)
-    }
-
-    fn set(&mut self, definition: CropDefinition) {
-        self.crops.push(to_custom_crop_definition(&definition));
-    }
-
-    fn replace(&mut self, id: &str, definition: CropDefinition) {
-        if let Some(index) = self.crops.iter().position(|entry| entry.id == id) {
-            self.crops[index] = to_custom_crop_definition(&definition);
-        }
-    }
-}
-
 /// The per-pack `merge` closure: skips empty/missing collections.
 struct PackMerger<'a> {
     pack: &'a ContentPack,
@@ -552,17 +537,72 @@ fn merge_pack(
     merger.merge_array(&c.minigames, |d| &d.id, slots.minigames, "minigame");
 }
 
+/// Whether a pack declares any content: definitions, a player start or string tables.
+fn has_content(content: &PackContent) -> bool {
+    !collection_ids(content).is_empty() || content.player_start.is_some() || !content.strings.is_empty()
+}
+
+/// `permissions.contentInject` is off: none of the pack's content loads (its plugins still
+/// run). A pack that ships content anyway gets a warning, so the Problems panel shows it.
+fn content_blocked(pack: &ContentPack, problems: &mut Vec<PackProblem>) -> bool {
+    if pack.manifest.permissions.content_inject {
+        return false;
+    }
+    if has_content(&pack.content) {
+        let id = &pack.manifest.id;
+        problems.push(PackProblem::warning(
+            id,
+            format!(
+                "Pack '{id}' ships content but does not have the contentInject permission — its content is not loaded"
+            ),
+        ));
+    }
+    true
+}
+
 /// Layer enabled packs (in resolved order) on top of a GameContent. Used at play time so mods
 /// apply without touching the authored project fields.
 pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation]) -> MergePacksIntoContentResult {
+    merge_packs(base, installs, "")
+}
+
+/// [`merge_packs_into_content`] followed by [`apply_locale_strings`] for `locale`, resolving and
+/// namespacing every pack once instead of twice (what play-time content is built with).
+pub fn merge_packs_into_content_localized(
+    base: &GameContent,
+    installs: &[PackInstallation],
+    locale: &str,
+) -> MergePacksIntoContentResult {
+    merge_packs(base, installs, locale)
+}
+
+/// The merge, collecting the string table of `locale` (none when empty) on the way.
+fn merge_packs(base: &GameContent, installs: &[PackInstallation], locale: &str) -> MergePacksIntoContentResult {
     let ResolvePackOrderResult { packs, mut problems } = resolve_pack_order(installs);
     if packs.is_empty() {
         return MergePacksIntoContentResult { content: base.clone(), problems };
     }
 
     let mut content = base.clone();
+    let mut strings: IndexMap<String, String> = IndexMap::new();
     for raw_pack in &packs {
-        let pack = namespace_pack(raw_pack);
+        if content_blocked(raw_pack, &mut problems) {
+            continue;
+        }
+        let mut pack = namespace_pack(raw_pack);
+        if !locale.is_empty() {
+            add_locale_strings(&mut strings, &pack, locale);
+        }
+        // A pack's scenes join the world when the player first enters them: fix their grids
+        // here, before anything reads them.
+        for scene in &mut pack.content.scenes {
+            if tiles::normalize_scene_grid(scene) {
+                problems.push(PackProblem::warning(
+                    &pack.manifest.id,
+                    format!("scene '{}' has a tile grid that doesn't match its size; it was fixed", scene.id),
+                ));
+            }
+        }
         merge_pack(
             &pack,
             &mut content.crops,
@@ -586,77 +626,7 @@ pub fn merge_packs_into_content(base: &GameContent, installs: &[PackInstallation
             &mut problems,
         );
     }
-    MergePacksIntoContentResult { content, problems }
-}
-
-/// Materialize a pack's content into a project (the editor's "import into project" and the
-/// starter-game seed). Same namespacing and override rules as play-time merging; returns
-/// problems for anything skipped.
-pub fn apply_pack_to_project(project: &GameProject, raw_pack: &ContentPack) -> ApplyPackToProjectResult {
-    let mut problems = Vec::new();
-    let pack = namespace_pack(raw_pack);
-
-    let mut next = project.clone();
-    let mut custom_crops = project.custom_crops.clone().unwrap_or_default();
-    merge_pack(
-        &pack,
-        &mut CustomCropTarget { crops: &mut custom_crops },
-        MergeSlots {
-            items: &mut next.items,
-            recipes: &mut next.recipes,
-            machine_types: &mut next.machine_types,
-            node_types: &mut next.node_types,
-            animal_species: &mut next.animal_species,
-            fish_tables: &mut next.fish_tables,
-            weather_types: &mut next.weather.types,
-            npcs: &mut next.npcs,
-            dialogues: &mut next.dialogues,
-            scenes: &mut next.scenes,
-            events: &mut next.events,
-            quests: &mut next.quests,
-            shops: &mut next.shops,
-            actions: &mut next.actions,
-            minigames: &mut next.minigames,
-        },
-        &mut problems,
-    );
-    next.custom_crops = Some(custom_crops);
-
-    if let Some(start) = &pack.content.player_start {
-        // `new Map(...)`: a later duplicate item id wins.
-        let mut item_by_id: IndexMap<&str, &Item> = IndexMap::new();
-        for item in &next.items {
-            item_by_id.insert(item.id.as_str(), item);
-        }
-        let mut inventory = next.player.inventory.clone();
-        for slot in &start.inventory {
-            match item_by_id.get(slot.item_id.as_str()) {
-                Some(item) => inventory.push(InventorySlot { item: (*item).clone(), quantity: slot.quantity }),
-                None => problems.push(PackProblem::error(
-                    &pack.manifest.id,
-                    format!("playerStart references unknown item '{}'", slot.item_id),
-                )),
-            }
-        }
-        next.player.inventory = inventory;
-        if let Some(money) = start.money {
-            next.player.money = money;
-        }
-        if let Some(scene_id) = &start.scene_id {
-            next.player.scene_id = scene_id.clone();
-        }
-        if let Some(x) = start.x {
-            next.player.x = x;
-        }
-        if let Some(y) = start.y {
-            next.player.y = y;
-        }
-        if let Some(scene_id) = start.scene_id.as_deref().filter(|scene_id| !scene_id.is_empty()) {
-            next.start_scene_id = scene_id.to_owned();
-        }
-    }
-
-    ApplyPackToProjectResult { project: next, problems }
+    MergePacksIntoContentResult { content: localize_content(content, &strings), problems }
 }
 
 /// All pack problems for a project (Problems panel): order + dry-run merge.
@@ -677,7 +647,9 @@ pub fn stamp_packs(installs: &[PackInstallation]) -> Vec<SavePackRef> {
 }
 
 /// Quarantine inventory items whose owning pack is missing or disabled, and restore quarantined
-/// items whose pack came back. Items are never dropped.
+/// items whose pack came back. Items are never dropped: restored items merge into the
+/// inventory like any other add (stack caps, slot limit), and what doesn't fit stays
+/// quarantined until there is room.
 pub fn reconcile_pack_items(state: GameState, enabled_pack_ids: &IndexSet<String>) -> GameState {
     let is_available = |item_id: &str| match pack_id_of(item_id) {
         None => true,
@@ -698,9 +670,38 @@ pub fn reconcile_pack_items(state: GameState, enabled_pack_ids: &IndexSet<String
     }
 
     let mut state = state;
-    state.player.inventory = keep.into_iter().chain(to_restore).collect();
-    state.quarantined_items = still_quarantined.into_iter().chain(to_quarantine).collect();
+    let (inventory, left_over) = restore_slots(keep, &to_restore, state.player.max_inventory_size);
+    state.player.inventory = inventory;
+    state.quarantined_items = still_quarantined.into_iter().chain(left_over).chain(to_quarantine).collect();
     state
+}
+
+/// Merge `slots` into `inventory` through [`inventory::add_item_with_quality`] (each slot keeps
+/// its own item copy and quality). Returns the inventory and the units that did not fit, as
+/// slots.
+pub fn restore_slots(
+    inventory: Vec<InventorySlot>,
+    slots: &[InventorySlot],
+    max_inventory_size: u32,
+) -> (Vec<InventorySlot>, Vec<InventorySlot>) {
+    let mut inventory = inventory;
+    let mut left_over = Vec::new();
+    for slot in slots {
+        let added = inventory::add_item_with_quality(
+            &inventory,
+            &slot.item,
+            slot.quality.as_deref(),
+            slot.quantity,
+            max_inventory_size,
+            None,
+        );
+        let rejected = added.rejected(slot.quantity);
+        inventory = added.inventory;
+        if rejected > 0 {
+            left_over.push(InventorySlot { quantity: rejected, ..slot.clone() });
+        }
+    }
+    (inventory, left_over)
 }
 
 #[cfg(test)]
@@ -752,13 +753,42 @@ mod tests {
     }
 
     #[test]
+    fn packs_without_content_inject_load_no_content() {
+        let mut blocked = pack("blocked", &[]);
+        blocked.pack.manifest.permissions.content_inject = false;
+        blocked.pack.content.items.push(Item { id: "gem".to_owned(), ..Item::default() });
+        blocked
+            .pack
+            .content
+            .strings
+            .insert("fr".to_owned(), [("item:wheat:name".to_owned(), "Blé".to_owned())].into_iter().collect());
+        let mut allowed = pack("allowed", &[]);
+        allowed.pack.content.items.push(Item { id: "gem".to_owned(), ..Item::default() });
+        let base =
+            GameContent { items: vec![Item { id: "wheat".to_owned(), ..Item::default() }], ..GameContent::default() };
+
+        let merged = merge_packs_into_content(&base, &[blocked.clone(), allowed]);
+        let ids: Vec<&str> = merged.content.items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, ["wheat", "allowed:gem"]);
+        let warning =
+            "Pack 'blocked' ships content but does not have the contentInject permission — its content is not loaded";
+        assert_eq!(merged.problems, [PackProblem::warning("blocked", warning.to_owned())]);
+
+        // No translations either.
+        let localized = apply_locale_strings(base.clone(), std::slice::from_ref(&blocked), "fr");
+        assert_eq!(localized.items[0].name, base.items[0].name);
+
+        // A pack without content (plugins only) has nothing to warn about.
+        let mut plugins_only = pack("plugins-only", &[]);
+        plugins_only.pack.manifest.permissions.content_inject = false;
+        assert!(merge_packs_into_content(&base, &[plugins_only]).problems.is_empty());
+    }
+
+    #[test]
     fn reconcile_returns_the_same_state_when_nothing_moves() {
         let state = GameState {
             player: PlayerState {
-                inventory: vec![InventorySlot {
-                    item: Item { id: "wheat".to_owned(), ..Item::default() },
-                    quantity: 1,
-                }],
+                inventory: vec![InventorySlot::new(Item { id: "wheat".to_owned(), ..Item::default() }, 1)],
                 ..PlayerState::default()
             },
             ..GameState::default()
@@ -769,9 +799,13 @@ mod tests {
 
     #[test]
     fn reconcile_quarantines_and_restores_pack_items() {
-        let slot = |id: &str| InventorySlot { item: Item { id: id.to_owned(), ..Item::default() }, quantity: 1 };
+        let slot = |id: &str| InventorySlot::new(Item { id: id.to_owned(), ..Item::default() }, 1);
         let state = GameState {
-            player: PlayerState { inventory: vec![slot("wheat"), slot("gone:thing")], ..PlayerState::default() },
+            player: PlayerState {
+                inventory: vec![slot("wheat"), slot("gone:thing")],
+                max_inventory_size: 10,
+                ..PlayerState::default()
+            },
             quarantined_items: vec![slot("back:thing")],
             ..GameState::default()
         };
@@ -781,5 +815,26 @@ mod tests {
         let quarantined: Vec<&str> = reconciled.quarantined_items.iter().map(|slot| slot.item.id.as_str()).collect();
         assert_eq!(inventory, ["wheat", "back:thing"]);
         assert_eq!(quarantined, ["gone:thing"]);
+    }
+
+    #[test]
+    fn restored_items_merge_into_stacks_and_what_does_not_fit_stays_quarantined() {
+        let item = |id: &str| Item { id: id.to_owned(), stackable: true, max_stack: 10, ..Item::default() };
+        let state = GameState {
+            player: PlayerState {
+                inventory: vec![InventorySlot::new(item("back:ore"), 4), InventorySlot::new(item("wheat"), 1)],
+                max_inventory_size: 3,
+                ..PlayerState::default()
+            },
+            quarantined_items: vec![InventorySlot::new(item("back:ore"), 25)],
+            ..GameState::default()
+        };
+        let enabled: IndexSet<String> = ["back".to_owned()].into_iter().collect();
+        let reconciled = reconcile_pack_items(state, &enabled);
+        let inventory: Vec<(&str, u32)> =
+            reconciled.player.inventory.iter().map(|slot| (slot.item.id.as_str(), slot.quantity)).collect();
+        // 6 top up the first stack, 10 open the last free slot, 9 wait in quarantine.
+        assert_eq!(inventory, [("back:ore", 10), ("wheat", 1), ("back:ore", 10)]);
+        assert_eq!(reconciled.quarantined_items, vec![InventorySlot::new(item("back:ore"), 9)]);
     }
 }

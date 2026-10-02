@@ -36,12 +36,19 @@ pub(crate) const MAX_ERRORS: usize = 20;
 
 /// Upgrade and validate serialized simulation state. This is deliberately independent from
 /// project migrations: authored content and a player's live runtime state evolve on different
-/// schedules. Never panics.
+/// schedules. Never panics. Loaders that own the JSON tree use [`migrate_game_state_owned`],
+/// which does not copy it.
 pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
-    if !is_object_like(raw) {
+    migrate_game_state_owned(raw.clone())
+}
+
+/// [`migrate_game_state`] taking the tree by value: a save's state is migrated, parsed and
+/// checked in place, without the copies a crafted multi-megabyte save would multiply (#80).
+pub fn migrate_game_state_owned(raw: Value) -> SaveMigrationResult {
+    if !is_object_like(&raw) {
         return fail(0.0, false, "Save state is not an object".to_owned());
     }
-    let from_version = get(get(Some(raw), "meta"), "saveVersion").and_then(Value::as_f64).unwrap_or(1.0);
+    let from_version = get(get(Some(&raw), "meta"), "saveVersion").and_then(Value::as_f64).unwrap_or(1.0);
     if from_version > current_version() {
         return fail(
             from_version,
@@ -55,7 +62,9 @@ pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
     }
 
     let migrated = from_version < current_version();
-    let mut state = spread(Some(raw));
+    // Whole doubles as integers (`1.0` → `1`): stable JSON writes them that way, so a state that
+    // went through a save compares and hashes the same as before (#142).
+    let mut state = spread(units::canonical_json(raw));
     let mut version = from_version;
     while version < current_version() {
         let Some((_, migrate)) = SAVE_MIGRATIONS.iter().find(|(from, _)| *from == version) else {
@@ -68,12 +77,12 @@ pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
         migrate(&mut state);
         version += 1.0;
     }
-    let mut meta = spread(state.get("meta"));
-    meta.insert("saveVersion".to_owned(), Value::from(CURRENT_SAVE_VERSION));
-    state.insert("meta".to_owned(), Value::Object(meta));
+    with_object(&mut state, "meta", |meta| {
+        meta.insert("saveVersion".to_owned(), Value::from(CURRENT_SAVE_VERSION));
+    });
 
     let raw_state = Value::Object(state);
-    match parse_game_state(raw_state.clone()) {
+    match parse_game_state(&raw_state) {
         Ok(data) => {
             let errors = validate_game_state_json(&raw_state, &data);
             if errors.is_empty() {
@@ -89,7 +98,7 @@ pub fn migrate_game_state(raw: &Value) -> SaveMigrationResult {
 /// [`migrate_game_state`] over JSON text. Never panics.
 pub fn migrate_game_state_json(json: &str) -> SaveMigrationResult {
     match serde_json::from_str::<Value>(json) {
-        Ok(raw) => migrate_game_state(&raw),
+        Ok(raw) => migrate_game_state_owned(raw),
         Err(error) => fail(0.0, false, format!("Save state is not valid JSON: {error}")),
     }
 }
@@ -97,7 +106,7 @@ pub fn migrate_game_state_json(json: &str) -> SaveMigrationResult {
 /// Re-validate (and migrate, if needed) an in-memory state. Never panics.
 pub fn revalidate_game_state(state: &GameState) -> SaveMigrationResult {
     match serde_json::to_value(state) {
-        Ok(raw) => migrate_game_state(&raw),
+        Ok(raw) => migrate_game_state_owned(raw),
         Err(error) => fail(0.0, false, format!("Save state could not be serialized: {error}")),
     }
 }
@@ -183,17 +192,19 @@ pub fn validate_game_state_json(raw: &Value, state: &GameState) -> Vec<String> {
 
 /// `{ ...(state.meta ?? {}), saveVersion: n, packs: state.meta?.packs ?? [] }`.
 fn stamp_meta(state: &mut Map<String, Value>, save_version: u32) {
-    let mut meta = spread(state.get("meta"));
-    meta.insert("saveVersion".to_owned(), Value::from(save_version));
-    default(&mut meta, "packs", || Value::Array(Vec::new()));
-    state.insert("meta".to_owned(), Value::Object(meta));
+    with_object(state, "meta", |meta| {
+        meta.insert("saveVersion".to_owned(), Value::from(save_version));
+        default(meta, "packs", || Value::Array(Vec::new()));
+    });
 }
 
-/// `key: { ...(state[key] ?? {}), ...defaults }` for one nested object.
+/// `key: { ...(state[key] ?? {}), ...defaults }` for one nested object, updated in place (the
+/// key keeps its position, the object is not copied).
 fn with_object(state: &mut Map<String, Value>, key: &str, update: impl FnOnce(&mut Map<String, Value>)) {
-    let mut object = spread(state.get(key));
+    let slot = state.entry(key.to_owned()).or_insert(Value::Null);
+    let mut object = spread(std::mem::take(slot));
     update(&mut object);
-    state.insert(key.to_owned(), Value::Object(object));
+    *slot = Value::Object(object);
 }
 
 fn migrate_v1_to_v2(state: &mut Map<String, Value>) {
@@ -284,17 +295,16 @@ fn default(map: &mut Map<String, Value>, key: &str, fallback: impl FnOnce() -> V
     }
 }
 
-/// `{ ...value }`: an object copies its keys, arrays and strings spread to index keys (strings
-/// by UTF-16 code unit), other primitives and null/undefined spread to `{}`.
-fn spread(value: Option<&Value>) -> Map<String, Value> {
+/// `{ ...value }` where the result must be an object: an object keeps its keys, anything else
+/// gives `{}`.
+///
+/// JavaScript spreads arrays and strings to index keys (strings by UTF-16 code unit), but every
+/// object spread here is then parsed into a schema struct that drops unknown keys, so `{}` parses
+/// to the same state. It also keeps a crafted save from exploding a long string into one map
+/// entry per character (#80).
+fn spread(value: Value) -> Map<String, Value> {
     match value {
-        Some(Value::Object(map)) => map.clone(),
-        Some(Value::Array(items)) => items.iter().enumerate().map(|(i, item)| (i.to_string(), item.clone())).collect(),
-        Some(Value::String(text)) => text
-            .encode_utf16()
-            .enumerate()
-            .map(|(i, unit)| (i.to_string(), Value::String(String::from_utf16_lossy(&[unit]))))
-            .collect(),
+        Value::Object(map) => map,
         _ => Map::new(),
     }
 }
@@ -304,8 +314,7 @@ fn spread(value: Option<&Value>) -> Map<String, Value> {
 /// zod `safeParse` without the refinements: deserialize into [`GameState`] (defaults applied,
 /// unknown keys dropped). Type errors are reported zod-style
 /// (`player.money: Expected number, received string`).
-fn parse_game_state(state: Value) -> Result<GameState, String> {
-    let original = state.clone();
+fn parse_game_state(state: &Value) -> Result<GameState, String> {
     serde_path_to_error::deserialize::<_, GameState>(state).map_err(|error| {
         let path: Vec<String> = error
             .path()
@@ -317,7 +326,7 @@ fn parse_game_state(state: Value) -> Result<GameState, String> {
                 serde_path_to_error::Segment::Unknown => None,
             })
             .collect();
-        let found = path.iter().try_fold(&original, |node, segment| match node {
+        let found = path.iter().try_fold(state, |node, segment| match node {
             Value::Object(map) => map.get(segment),
             Value::Array(items) => segment.parse::<usize>().ok().and_then(|i| items.get(i)),
             _ => None,
@@ -455,6 +464,28 @@ mod tests {
         assert!(!result.ok);
         assert_eq!(result.from_version, 0.0);
         assert!(result.errors[0].starts_with("Save state is not valid JSON: "));
+    }
+
+    #[test]
+    fn strings_and_arrays_where_objects_belong_are_not_spread() {
+        // JavaScript would spread these to one key per character or item; a crafted save could
+        // make that millions of map entries per migration step (#80).
+        assert!(spread(json!("x".repeat(100_000))).is_empty());
+        assert!(spread(json!([1, 2, 3])).is_empty());
+        let mut raw = minimal_v5();
+        raw["meta"]["saveVersion"] = json!(1);
+        raw["clock"] = json!("x".repeat(100_000));
+        let result = migrate_game_state_owned(raw);
+        assert!(result.ok, "{:?}", result.errors);
+        // The clock took the v1→v2 defaults, as from `{}`.
+        let data = result.data.expect("data");
+        assert_eq!((data.clock.day, data.clock.season.as_str()), (1, "spring"));
+        // A meta string has no version: it is a v1 save whose meta starts from `{}`.
+        let mut raw = minimal_v5();
+        raw["meta"] = json!("y".repeat(100_000));
+        let result = migrate_game_state(&raw);
+        assert_eq!((result.from_version, result.migrated), (1.0, true));
+        assert_eq!(result.data.map(|data| data.meta.save_version), result.ok.then_some(5));
     }
 
     #[test]

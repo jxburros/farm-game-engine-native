@@ -83,6 +83,20 @@ public sealed class UpdateCenterWindowTests
     }
 
     [AvaloniaFact]
+    public void StableChannel_OnAPrerelease_DoesNotCallTheBetaTheNewestStableVersion()
+    {
+        _fake.CurrentVersion = "0.3.0-beta.2";
+        var (window, coordinator) = Open(new UpdateSettings { Channel = UpdateChannel.Prerelease });
+
+        Click(window, Find<RadioButton>(window, "StableChannelOption"));
+        PumpUntil(() => coordinator.State == UpdateState.UpToDate, "up to date");
+
+        var detail = Find<TextBlock>(window, "StatusDetail").Text;
+        Assert.Equal("You're on a pre-release (0.3.0-beta.2); the next stable update will be offered when it's newer.", detail);
+        Assert.DoesNotContain("newest stable version", detail, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
     public void Error_ShowsMessage_AndAllowsRetry()
     {
         _fake.NextResult = new UpdateCheckResult.Error("Couldn't reach GitHub. Are you offline?");

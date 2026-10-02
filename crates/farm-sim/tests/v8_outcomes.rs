@@ -8,12 +8,15 @@
 //! replays on the current engine and compares, step by step.
 //!
 //! The summaries are built from the state's JSON (authoring units), so they do not depend on how
-//! the engine stores numbers. The files were recorded once, with `FARM_RECORD_V8_OUTCOMES=1`, by
-//! the v8 engine; never re-record them with a later engine.
+//! the engine stores numbers. The files were recorded once, by the v8 engine (farm-game-engine-native
+//! e09d1d0, with the recorder that commit had); they are never re-recorded, so this test has no
+//! record switch.
+//! A gameplay fix that changes what a replay plays is listed in `INTENDED_DIVERGENCES` instead,
+//! from the step where it shows.
 
 use farm_sim::replay::{self, ReplayInput};
 use farm_sim::schema::GameProject;
-use farm_sim::{quests, stable_json, state, EngineContext};
+use farm_sim::{quests, stable_json, state, CommandRules, EngineContext};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -227,8 +230,13 @@ fn normalize(value: Value) -> Value {
 /// Plays one replay and returns the summary after creation (index 0) and after every step.
 fn play(name: &str) -> Vec<Map<String, Value>> {
     let fixture = replay_fixture(name);
-    let project: GameProject = serde_json::from_value(fixture["project"].clone()).expect("project parses");
-    let ctx = EngineContext::new(state::create_content_from_project(&project));
+    let mut project: GameProject = serde_json::from_value(fixture["project"].clone()).expect("project parses");
+    // Intended divergence: v8 ran the clock while a dialogue, shop or minigame was open. Since
+    // `time.pauseInModals` (on unless a project turns it off) it stops; v8 projects never set
+    // it, so they are compared with it off.
+    project.settings.time.pause_in_modals = Some(false);
+    // v8 had no command preconditions: the replays open shops and descend the mine from anywhere.
+    let ctx = EngineContext::new(state::create_content_from_project(&project)).with_rules(CommandRules::Scripted);
     let mut game_state = state::create_game_state(&project, fixture["seed"].as_str());
     if fixture["autoStartQuests"].as_bool() == Some(true) {
         quests::auto_start_quests(&ctx, &mut game_state);
@@ -237,51 +245,20 @@ fn play(name: &str) -> Vec<Map<String, Value>> {
     let mut summaries = vec![summarize(&to_json(&game_state), &json!([]))];
     for step in fixture["steps"].as_array().expect("steps") {
         let input: ReplayInput = serde_json::from_value(step["input"].clone()).expect("input parses");
-        let result = replay::run_replay(&ctx, &mut game_state, std::slice::from_ref(&input));
+        let mut result = replay::run_replay(&ctx, &mut game_state, std::slice::from_ref(&input));
+        // Intended divergence: v9 says when it cuts an action chain short (the depth cap or the
+        // run budget); v8 stopped silently.
+        result.effects.retain(|effect| {
+            !matches!(effect, farm_sim::Effect::Message { text, .. } if text.starts_with("Action chain limit reached"))
+        });
         let effects: Value = serde_json::from_str(&stable_json::stringify(&result.effects)).expect("effects");
         summaries.push(summarize(&to_json(&game_state), &effects));
     }
     summaries
 }
 
-/// Stores the summaries as the first one in full, then per step only the parts that changed
+/// Reads the stored summaries: the first one in full, then per step only the parts that changed
 /// (tiles per tile, `null` for a tile that emptied).
-fn encode(summaries: &[Map<String, Value>]) -> Value {
-    let mut steps = Vec::new();
-    let mut previous: Option<&Map<String, Value>> = None;
-    for (index, summary) in summaries.iter().enumerate() {
-        let mut delta = Map::new();
-        delta.insert("step".to_owned(), json!(index));
-        for (key, value) in summary {
-            let before = previous.and_then(|p| p.get(key));
-            if before == Some(value) {
-                continue;
-            }
-            if key == "tiles" {
-                if let (Some(Value::Object(old)), Value::Object(new)) = (before, value) {
-                    let mut changes = Map::new();
-                    for (tile, content) in new {
-                        if old.get(tile) != Some(content) {
-                            changes.insert(tile.clone(), content.clone());
-                        }
-                    }
-                    for tile in old.keys() {
-                        if !new.contains_key(tile) {
-                            changes.insert(tile.clone(), Value::Null);
-                        }
-                    }
-                    delta.insert("tilesChanged".to_owned(), Value::Object(changes));
-                    continue;
-                }
-            }
-            delta.insert(key.clone(), value.clone());
-        }
-        steps.push(Value::Object(delta));
-        previous = Some(summary);
-    }
-    Value::Array(steps)
-}
-
 fn decode(encoded: &Value) -> Vec<Map<String, Value>> {
     let mut out: Vec<Map<String, Value>> = Vec::new();
     let mut current = Map::new();
@@ -309,6 +286,26 @@ fn decode(encoded: &Value) -> Vec<Map<String, Value>> {
     }
     out
 }
+
+/// Replays whose game changed on purpose after v8 (gameplay fixes), with the first step where
+/// it shows. The steps before it must still match v8 exactly, and that step must differ, so the
+/// list stays honest; everything after it is the fixed game and is not compared.
+const INTENDED_DIVERGENCES: &[(&str, usize, &str)] = &[
+    (
+        "calendar-festivals",
+        87,
+        "#32: a harvest's \"worth\" is what its units sell for; a mutation pays through its bigger yield only",
+    ),
+    (
+        "content-packs-and-plugins",
+        105,
+        "#32: a pack crop's harvest item is found under the pack's namespace (pack:crop-local)",
+    ),
+    ("farming-lifecycle", 48, "#30: fertilizer feeds the soil under every tile of a multi-tile crop"),
+    ("fuzz-thousand-commands", 751, "#32: harvests keep their quality in the inventory; qualities don't stack"),
+    ("replay-three-days", 12, "#32: a fertilized (silver) harvest sells at the silver price"),
+    ("starter-farm-first-week", 74, "#32: a fertilized (silver) harvest sells at the silver price"),
+];
 
 fn outcome_path(name: &str) -> PathBuf {
     golden_dir(&format!("v8/outcomes/{name}.json"))
@@ -342,26 +339,30 @@ fn differences(expected: &Map<String, Value>, actual: &Map<String, Value>) -> Ve
 
 #[test]
 fn replays_play_the_same_game_as_v8() {
-    let record = std::env::var("FARM_RECORD_V8_OUTCOMES").is_ok_and(|v| v == "1");
     let mut report = Vec::new();
     for name in replay_names() {
         let summaries = play(&name);
         let path = outcome_path(&name);
-        if record {
-            std::fs::create_dir_all(path.parent().expect("parent")).expect("create outcomes dir");
-            let text = serde_json::to_string(&encode(&summaries)).expect("encode");
-            std::fs::write(&path, text + "\n").expect("write outcomes");
-            continue;
-        }
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let expected = decode(&serde_json::from_str(&text).expect("outcomes parse"));
         if expected.len() != summaries.len() {
             report.push(format!("{name}: {} steps recorded, {} played", expected.len(), summaries.len()));
             continue;
         }
+        let diverges_at = INTENDED_DIVERGENCES.iter().find(|(replay, _, _)| *replay == name).map(|(_, step, _)| *step);
         let mut lines = Vec::new();
         for (index, (want, got)) in expected.iter().zip(&summaries).enumerate() {
-            for difference in differences(want, got) {
+            if diverges_at.is_some_and(|step| index > step) {
+                break;
+            }
+            let found = differences(want, got);
+            if Some(index) == diverges_at {
+                if found.is_empty() {
+                    lines.push(format!("  step {index}: listed as an intended divergence, but it matches v8 now"));
+                }
+                break;
+            }
+            for difference in found {
                 lines.push(format!("  step {index}: {difference}"));
             }
         }

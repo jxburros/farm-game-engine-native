@@ -10,7 +10,7 @@
 
 use crate::packs;
 use crate::schema::{
-    AnimalState, CustomAsset, CustomCropDefinition, GamePanel, GameProject, GraphicsSettings, InventorySlot,
+    AnimalState, CustomAsset, CustomCropDefinition, GamePanel, GameProject, GraphicsSettings, InventorySlot, KeptState,
     NpcSocialState, Player, ProjectSettings, RngState, SavePackRef, Scene, VisualRef,
 };
 use indexmap::IndexMap;
@@ -58,12 +58,15 @@ pub struct StartState {
     pub player: Player,
     pub quests: Vec<StartQuest>,
     pub npcs: Vec<StartNpc>,
-    pub event_flags: IndexMap<String, bool>,
+    /// Values are `boolean | number | string`.
+    pub event_flags: IndexMap<String, serde_json::Value>,
     #[serde(with = "crate::units::micro_minutes")]
     pub current_time_minutes: u32,
     #[serde(with = "crate::units::count")]
     pub current_day: u32,
     pub current_season: String,
+    #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
+    pub current_day_of_season: Option<u32>,
     #[serde(with = "crate::units::count")]
     pub current_year: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,6 +83,8 @@ pub struct StartState {
     pub quarantined_items: Option<Vec<InventorySlot>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rng_state: Option<RngState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kept_state: Option<KeptState>,
 }
 
 impl StartState {
@@ -116,6 +121,7 @@ impl StartState {
             current_time_minutes: project.current_time_minutes,
             current_day: project.current_day,
             current_season: project.current_season.clone(),
+            current_day_of_season: project.current_day_of_season,
             current_year: project.current_year,
             current_weather_id: project.current_weather_id.clone(),
             scenes: project.scenes.clone(),
@@ -125,6 +131,7 @@ impl StartState {
             mine_deepest_floor: project.mine_deepest_floor,
             quarantined_items: project.quarantined_items.clone(),
             rng_state: project.rng_state.clone(),
+            kept_state: project.kept_state.clone(),
         }
     }
 }
@@ -151,6 +158,7 @@ pub struct Presentation {
 }
 
 impl Presentation {
+    /// The start of `project`: its name, assets, crops, player look and starting state.
     pub fn from_project(project: &GameProject) -> Self {
         Self {
             name: project.name.clone(),

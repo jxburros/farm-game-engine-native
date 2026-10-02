@@ -129,9 +129,8 @@ let private parseCases =
       case "npc patrol point fractional"
           [ Parse "npcs.0.patrolPoints.1.x: Expected integer, received 1.5"; Parse "npcs.0.patrolPoints.1.y: Expected integer, received 2.25" ]
           [ set "npcs.0.patrolPoints" """[{"x":1,"y":1},{"x":1.5,"y":2.25}]""" ]
-      case "npc birthday"
-          [ Parse "npcs.1.birthday.season: Invalid enum value. Expected 'spring' | 'summer' | 'fall' | 'winter', received 'monsoon'"
-            Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
+      // An unknown season is not a parse error (calendars are customizable): ProblemsTests.
+      case "npc birthday" [ Parse "npcs.1.birthday.day: Expected integer, received 3.5" ]
           [ set "npcs.1.birthday" """{"season":"monsoon","day":3.5}""" ]
       nullCase "npc birthday season missing" "npcs.0.birthday.season: Expected string, received null" [ set "npcs.0.birthday" """{"season":null,"day":3}""" ]
       case "quest status unknown" [ Parse "quests.0.status: Invalid enum value." ] [ set "quests.0.status" "\"maybe\"" ]
@@ -266,10 +265,10 @@ let private lintCases =
           [ addEvent
                 """{"type":"hasItem","itemId":"","quantity":1},{"type":"inventorySpace","itemId":"","quantity":1},{"type":"flag","flag":"","value":true},{"type":"questStatus","questId":"","status":"active"},{"type":"friendship","npcId":"","min":1},{"type":"festivalId","festivalId":""}"""
                 "" ]
+      // The time of day range (800–300) wraps past midnight: not a problem.
       case "ranges inverted"
           [ Lint "events.0.conditions.0: minDay is greater than maxDay"
-            Lint "events.0.conditions.1: minYear is greater than maxYear"
-            Lint "events.0.conditions.2: minMinute is greater than maxMinute" ]
+            Lint "events.0.conditions.1: minYear is greater than maxYear" ]
           [ addEvent
                 """{"type":"dayRange","minDay":20,"maxDay":3},{"type":"yearRange","minYear":3,"maxYear":1},{"type":"timeOfDay","minMinute":800,"maxMinute":300},{"type":"season","seasons":["winter"]},{"type":"weather","weatherIds":["rain"]}"""
                 "" ]
@@ -351,7 +350,10 @@ let private contentCases =
           [ set "scenes.0.tiles.2.5.crop" (crop "pumpkin" "gold" "giant") ]
       case "seed of a missing crop" [ Content "references missing crop \"crop-ghost\"" ]
           [ add "items" """{"id":"seed-ghost","name":"Ghost Seeds","description":"","type":"seed","stackable":true,"maxStack":99,"value":1,"cropType":"crop-ghost"}""" ]
-      case "pack problems" [ Content "'pack-ghost'" ] [ add "contentPacks" (pack "lonely" """{"packId":"pack-ghost"}""") ] ]
+      case "pack problems" [ Content "'pack-ghost'" ] [ add "contentPacks" (pack "lonely" """{"packId":"pack-ghost"}""") ]
+      case "pack without contentInject"
+          [ Content "ships content but does not have the contentInject permission" ]
+          [ add "contentPacks" """{"enabled":true,"pack":{"manifest":{"id":"no-inject","name":"No Inject","version":"1.0.0","permissions":{"hooks":[],"contentInject":false}},"content":{"items":[{"id":"gem","name":"Gem","description":"","type":"material","stackable":true,"maxStack":99,"value":1}]},"plugins":[]}}""" ] ]
 
 /// Nulls where the schema has none: the typed parse refuses them at the first one.
 let private malformedCases =

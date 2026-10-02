@@ -7,10 +7,12 @@ use crate::engine_types::EngineContext;
 use crate::rng::Rng;
 use crate::schema::{GameState, WeatherTableEntry, WeatherTypeDefinition};
 
+/// The weather type `weather_id`.
 pub fn weather_type_by_id<'a>(ctx: &'a EngineContext, weather_id: &str) -> Option<&'a WeatherTypeDefinition> {
     ctx.content.weather.types.iter().find(|weather_type| weather_type.id == weather_id)
 }
 
+/// Today's weather type.
 pub fn current_weather<'a>(ctx: &'a EngineContext, state: &GameState) -> Option<&'a WeatherTypeDefinition> {
     weather_type_by_id(ctx, &state.clock.weather_id)
 }

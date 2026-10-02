@@ -110,6 +110,14 @@ impl std::error::Error for ImageError {}
 /// Decodes PNG, JPEG, GIF (first frame), WebP or BMP bytes into premultiplied RGBA, refusing
 /// images over [`MAX_IMAGE_SIDE`] or [`MAX_IMAGE_PIXELS`] before allocating their pixels.
 pub fn decode_image(bytes: &[u8]) -> Result<Image, ImageError> {
+    decode_image_within(bytes, MAX_IMAGE_SIDE, MAX_IMAGE_PIXELS)
+}
+
+/// [`decode_image`] with tighter limits, for images that are known to be small (a save slot's
+/// thumbnail): anything wider or taller than `max_side`, or larger than `max_pixels`, is refused
+/// from its header, before its pixels are allocated. The limits never exceed the general ones.
+pub fn decode_image_within(bytes: &[u8], max_side: u32, max_pixels: u64) -> Result<Image, ImageError> {
+    let (max_side, max_pixels) = (max_side.min(MAX_IMAGE_SIDE), max_pixels.min(MAX_IMAGE_PIXELS));
     let decode_error = |e: image::ImageError| match e {
         image::ImageError::Limits(_) => ImageError::TooLarge { width: 0, height: 0 },
         other => ImageError::Decode(other.to_string()),
@@ -121,16 +129,16 @@ pub fn decode_image(bytes: &[u8]) -> Result<Image, ImageError> {
     if width == 0 || height == 0 {
         return Err(ImageError::Decode("empty image".to_owned()));
     }
-    if width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE || u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS {
+    if width > max_side || height > max_side || u64::from(width) * u64::from(height) > max_pixels {
         return Err(ImageError::TooLarge { width, height });
     }
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| ImageError::Decode(e.to_string()))?;
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(MAX_IMAGE_SIDE);
-    limits.max_image_height = Some(MAX_IMAGE_SIDE);
-    limits.max_alloc = Some(MAX_IMAGE_PIXELS * 4 + 16 * 1024 * 1024);
+    limits.max_image_width = Some(max_side);
+    limits.max_image_height = Some(max_side);
+    limits.max_alloc = Some(max_pixels * 4 + 16 * 1024 * 1024);
     reader.limits(limits);
     let decoded = reader.decode().map_err(decode_error)?;
     let rgba = decoded.into_rgba8();
@@ -316,6 +324,18 @@ impl ImageStore {
         ImageId(id)
     }
 
+    /// Drops the image cached under `source` (one the host inserted, or a decoded source).
+    /// Returns whether there was one.
+    pub fn remove_source(&mut self, source: &str) -> bool {
+        match self.by_content.get(source).copied() {
+            Some(id) => {
+                self.remove(id);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The decoded image of an id (`None` once evicted).
     pub fn image(&self, id: ImageId) -> Option<&Image> {
         self.entries.get(&id.0).and_then(|entry| entry.image.as_ref())
@@ -421,6 +441,28 @@ mod tests {
         bytes[29..33].copy_from_slice(&crc.to_be_bytes());
         assert_eq!(decode_image(&bytes), Err(ImageError::TooLarge { width: 20_000, height: 20_000 }));
         assert!(matches!(decode_image(b"not an image"), Err(ImageError::Decode(_))));
+        // Tighter limits for images known to be small (save thumbnails).
+        let mut small = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut small)
+            .write_image(&[0; 4 * 600], 600, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        assert!(decode_image(&small).is_ok());
+        assert_eq!(decode_image_within(&small, 512, 512 * 512), Err(ImageError::TooLarge { width: 600, height: 1 }));
+        assert_eq!(decode_image_within(&small, 1024, 500), Err(ImageError::TooLarge { width: 600, height: 1 }));
+        assert!(decode_image_within(&small, 1024, 1024).is_ok());
+    }
+
+    #[test]
+    fn inserted_images_are_replaced_and_removed_by_source() {
+        let mut store = ImageStore::new(8);
+        let image = || Image::from_rgba(1, 1, vec![1, 2, 3, 255]).unwrap();
+        let first = store.insert("thumb:1", image());
+        let second = store.insert("thumb:1", image());
+        assert_eq!(store.len(), 1, "the same source replaces its entry");
+        assert!(store.image(first).is_none() && store.image(second).is_some());
+        assert!(store.remove_source("thumb:1"));
+        assert!(!store.remove_source("thumb:1"));
+        assert!(store.is_empty());
     }
 
     fn crc32(bytes: &[u8]) -> u32 {

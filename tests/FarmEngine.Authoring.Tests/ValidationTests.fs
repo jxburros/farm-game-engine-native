@@ -80,8 +80,10 @@ let ``validateProject reports constraint violations`` () =
     for prefix in [ "scenes.0.tiles.0:"; "events.0.id:"; "events.0.conditions.1:" ] do
         Assert.False(startsWith prefix errors, prefix)
     let lint = SchemaChecks.lintProject broken
-    for prefix in [ "scenes.0.tiles.0:"; "events.0.id:"; "events.0.conditions.1:" ] do
+    for prefix in [ "scenes.0.tiles.0:"; "events.0.id:" ] do
         Assert.True(startsWith prefix lint, prefix)
+    // 800–300 is a time of day range that wraps past midnight, as the engine reads it.
+    Assert.False(startsWith "events.0.conditions.1:" lint)
     Assert.False(startsWith "mode:" lint)
 
 /// Shapes the web editor produces and zod accepts (no refinements exist for them) must load
@@ -128,7 +130,7 @@ let private makeProject () : GameProject =
         |> mapTile 3 2 (fun t -> AuthoringTiles.SetTileLayer(t, "soil"))
         |> mapTile 4 4 (fun t -> AuthoringTiles.SetTileLayer(t, "wall"))
     let items = Builtin.items ()
-    let slot id quantity : InventorySlot = { Item = (items |> List.find (fun i -> i.Id = id)); Quantity = quantity }
+    let slot id quantity : InventorySlot = { Item = (items |> List.find (fun i -> i.Id = id)); Quantity = quantity; Quality = None }
     let dialogue : Dialogue list =
         [ { Dialogue.Default with
               Id = "dlg-1"; NpcId = "npc-test"; Text = "Hello!"

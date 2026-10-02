@@ -1,10 +1,11 @@
 using Avalonia.Controls;
+using FarmEngine.Interop;
 using FarmingRpgMaker.App.Game;
 using FarmingRpgMaker.App.Hosting;
 using FarmingRpgMaker.App.Projects;
+using FarmingRpgMaker.App.Tests.Ui;
 using FarmingRpgMaker.App.ViewModels;
 using FarmingRpgMaker.App.Views;
-using FarmingRpgMaker.App.Tests.Ui;
 using FarmingRpgMaker.Updates;
 using FarmingRpgMaker.Updates.Testing;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
@@ -39,14 +40,15 @@ internal sealed class GameTestHost : IDisposable
 {
     private readonly TempDir _dir = new();
 
-    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null, bool autoRun = false)
+    /// <param name="seed">Seed of the playtests (null: the project's own, which differs per test project).</param>
+    public GameTestHost(int width = 1280, int height = 800, IProjectDialogs? dialogs = null, bool autoRun = false, string? seed = null)
     {
         Workspace = new ProjectWorkspace(
             new ProjectStore(_dir.Path),
             new AppSettingsStore(System.IO.Path.Combine(_dir.Path, "settings.json")),
             autosaveDelay: TimeSpan.Zero);
-        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false }, dialogs, Launcher);
-        var coordinator = new UpdateCoordinator(new FakeUpdateService(), new InMemorySettingsStore());
+        Composition = ShellComposition.Create(Workspace, new GameSurfaceOptions { AutoRun = autoRun, Audio = false, Player = seed is null ? null : new RustPlayerOptions(Seed: seed) }, dialogs, Launcher);
+        var coordinator = new UpdateCoordinator(Updates, new InMemorySettingsStore());
         ViewModel = new MainWindowViewModel(coordinator, Composition);
         Window = new MainWindow(Launcher) { DataContext = ViewModel, Width = width, Height = height };
         Window.Show();
@@ -54,6 +56,9 @@ internal sealed class GameTestHost : IDisposable
     }
 
     public string DataDirectory => _dir.Path;
+
+    /// <summary>The update service behind the window's Update Center.</summary>
+    public FakeUpdateService Updates { get; } = new();
 
     /// <summary>Records links and folders the app asks the OS to open.</summary>
     public RecordingUrlLauncher Launcher { get; } = new();

@@ -1,0 +1,23 @@
+[package]
+name = "farm-fuzz"
+description = "Fuzz entry points for the untrusted-input boundaries (cartridges, saves, images, projects, host requests, plugin output) and the state invariants they check; run by cargo-fuzz (fuzz/) and by stable property tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+farm-sim = { path = "../farm-sim" }
+farm-cart = { path = "../farm-cart" }
+farm-render = { path = "../farm-render" }
+farm-host = { path = "../farm-host" }
+farm-plugins = { path = "../farm-plugins" }
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

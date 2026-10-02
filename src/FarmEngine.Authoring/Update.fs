@@ -12,16 +12,19 @@ module internal Lists =
     let changed (next: 'T) (previous: 'T) : bool =
         not (LanguagePrimitives.PhysicalEquality (box next) (box previous)) && not (next = previous)
 
-    /// `Some list'` when `f` changed at least one element, else `None`.
+    /// `Some list'` when `f` changed at least one element, else `None`. `f` runs once per
+    /// element and nothing is allocated until the first change; elements `f` hands back as the
+    /// same instance stay shared, so mapping the rows of a big scene keeps every untouched row.
     let mapChanged (f: 'T -> 'T) (items: 'T list) : 'T list option =
-        let mutable any = false
-        let next =
-            items
-            |> List.map (fun item ->
+        let rec scan (index: int) (rest: 'T list) =
+            match rest with
+            | [] -> None
+            | item :: tail ->
                 let mapped = f item
-                if changed mapped item then any <- true
-                mapped)
-        if any then Some next else None
+                if changed mapped item then Some(index, mapped, tail) else scan (index + 1) tail
+        match scan 0 items with
+        | None -> None
+        | Some(index, mapped, tail) -> Some(List.take index items @ (mapped :: List.map f tail))
 
     /// Elements kept by `keep`; `None` when all were kept.
     let filterChanged (keep: 'T -> bool) (items: 'T list) : 'T list option =
@@ -81,39 +84,63 @@ module internal Proj =
 
     let withSceneTiles (tiles: Tile list list) (scene: Scene) : Scene = { scene with Tiles = tiles }
 
-    /// Tiles as a mutable row array for a bulk edit; `commitRows` turns it back into a scene when changed.
+    /// A copy of the tiles as arrays, for reads that need random access over the whole scene
+    /// (flood fill). Edits go through `mapTiles` / `updateCells`, which keep untouched rows.
     let rows (scene: Scene) : Tile[][] = scene.Tiles |> List.map Array.ofList |> Array.ofList
 
     let inBounds (scene: Scene) (x: int) (y: int) =
         y >= 0 && y < scene.Tiles.Length && x >= 0 && x < scene.Tiles.[y].Length
 
-    let commitRows (scene: Scene) (rows: Tile[][]) (changed: bool) : Scene =
-        if not changed then scene
-        else withSceneTiles (rows |> Array.map List.ofArray |> List.ofArray) scene
+    /// The tile at (x, y), without copying the scene.
+    let tryTile (scene: Scene) (x: int) (y: int) : Tile option =
+        if y < 0 || x < 0 then None
+        else
+            match List.tryItem y scene.Tiles with
+            | Some row -> List.tryItem x row
+            | None -> None
 
-    /// Map every tile of a scene; the same scene when nothing changed.
+    /// Map every tile of a scene; the same scene when nothing changed. Rows without a change
+    /// stay the same list instances, so undo history shares them (#102).
     let mapTiles (f: Tile -> Tile) (scene: Scene) : Scene =
-        let rows = rows scene
-        let mutable changed = false
-        for y in 0 .. rows.Length - 1 do
-            for x in 0 .. rows.[y].Length - 1 do
-                let next = f rows.[y].[x]
-                if Lists.changed next rows.[y].[x] then
-                    rows.[y].[x] <- next
-                    changed <- true
-        commitRows scene rows changed
+        match Lists.mapChanged (fun row -> Lists.mapChanged f row |> Lists.orSame row) scene.Tiles with
+        | Some tiles -> withSceneTiles tiles scene
+        | None -> scene
+
+    /// Apply each `(x, y, f)` in order (out-of-bounds cells are ignored); the same scene when
+    /// nothing changed. Only the rows with a changed tile are rebuilt: a one-tile edit of a
+    /// 256×256 scene costs one row and the row spine, not 65k cells (#102).
+    let updateCells (updates: seq<int * int * (Tile -> Tile)>) (scene: Scene) : Scene =
+        // The row lists by index, taken on the first update (an empty update list costs nothing).
+        let mutable lines : Tile list[] = [||]
+        let mutable taken = false
+        let touched = Dictionary<int, Tile[]>()
+        let changedRows = HashSet<int>()
+        for (x, y, f) in updates do
+            if y >= 0 && x >= 0 then
+                if not taken then
+                    lines <- Array.ofList scene.Tiles
+                    taken <- true
+                if y < lines.Length then
+                    let row =
+                        match touched.TryGetValue y with
+                        | true, row -> row
+                        | _ ->
+                            let row = Array.ofList lines.[y]
+                            touched.[y] <- row
+                            row
+                    if x < row.Length then
+                        let next = f row.[x]
+                        if Lists.changed next row.[x] then
+                            row.[x] <- next
+                            changedRows.Add y |> ignore
+        if changedRows.Count = 0 then scene
+        else
+            let tiles = lines |> Array.mapi (fun y row -> if changedRows.Contains y then List.ofArray touched.[y] else row)
+            withSceneTiles (List.ofArray tiles) scene
 
     /// Map the tiles at `cells` (out-of-bounds cells are ignored); the same scene when nothing changed.
     let mapCells (cells: (int * int) list) (f: Tile -> Tile) (scene: Scene) : Scene =
-        let rows = rows scene
-        let mutable changed = false
-        for (x, y) in cells do
-            if y >= 0 && y < rows.Length && x >= 0 && x < rows.[y].Length then
-                let next = f rows.[y].[x]
-                if Lists.changed next rows.[y].[x] then
-                    rows.[y].[x] <- next
-                    changed <- true
-        commitRows scene rows changed
+        updateCells (cells |> Seq.map (fun (x, y) -> (x, y, f))) scene
 
     let mapCell (x: int) (y: int) (f: Tile -> Tile) (scene: Scene) : Scene = mapCells [ (x, y) ] f scene
 
@@ -207,10 +234,12 @@ module TileRules =
         let effective = effectiveType cleared
         if cleared.Type = effective then cleared else { cleared with Type = effective }
 
-    /// Cells of the inclusive rectangle (x0,y0)-(x1,y1) clamped to the scene, row-major.
+    /// Cells of the inclusive rectangle (x0,y0)-(x1,y1) clamped to the scene, row-major. The
+    /// width is the widest row's, so a ragged grid (whose rows `Proj.mapCells` checks one by one)
+    /// is painted wherever it has tiles, not only as wide as its first row.
     let rectCells (scene: Scene) (x0: int) (y0: int) (x1: int) (y1: int) : (int * int) list =
         let height = scene.Tiles.Length
-        let width = if height = 0 then 0 else scene.Tiles.Head.Length
+        let width = scene.Tiles |> List.fold (fun widest row -> max widest row.Length) 0
         let minX = max 0 (min x0 x1)
         let maxX = min (width - 1) (max x0 x1)
         let minY = max 0 (min y0 y1)

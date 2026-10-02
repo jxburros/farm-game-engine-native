@@ -5,8 +5,10 @@
 
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
+use crate::messages;
 use crate::schema::{GameState, SkillState};
 
+/// The level `xp` reaches on a level curve (the last threshold it meets; 0 below the first).
 pub fn skill_level_for_xp(curve: &[u32], xp: u32) -> u32 {
     let mut level = 0;
     for (i, threshold) in curve.iter().enumerate() {
@@ -17,15 +19,7 @@ pub fn skill_level_for_xp(curve: &[u32], xp: u32) -> u32 {
     level
 }
 
-/// TS `skill.charAt(0).toUpperCase() + skill.slice(1)` (C# `skill[..1].ToUpperInvariant() + skill[1..]`).
-fn skill_label(skill: &str) -> String {
-    let mut chars = skill.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
+/// Grant `xp` in `skill`, announcing a level-up. Nothing happens with skills off.
 pub fn grant_xp(ctx: &EngineContext, state: &mut GameState, skill: &str, xp: u32) -> Effects {
     if !ctx.content.settings.skills_enabled || xp == 0 {
         return Vec::new();
@@ -36,8 +30,12 @@ pub fn grant_xp(ctx: &EngineContext, state: &mut GameState, skill: &str, xp: u32
     let new_level = skill_level_for_xp(&ctx.content.settings.skill_level_curve, new_xp);
     let mut effects = Vec::new();
     if new_level > current.level {
-        let label = skill_label(skill);
-        effects.push(Effect::message(message_levels::SUCCESS, format!("{label} level {new_level}!")));
+        // TS `skill.charAt(0).toUpperCase() + skill.slice(1)`, in English.
+        let label = messages::skill_noun(skill);
+        effects.push(Effect::say(
+            message_levels::SUCCESS,
+            messages::LEVEL_UP.with_args(vec![label, messages::Arg::text(new_level)]),
+        ));
     }
 
     // `dict[skill] = …`: an existing key keeps its position, a new one is appended.
@@ -45,6 +43,7 @@ pub fn grant_xp(ctx: &EngineContext, state: &mut GameState, skill: &str, xp: u32
     effects
 }
 
+/// The player's level in `skill` (0 untrained).
 pub fn skill_level(state: &GameState, skill: &str) -> u32 {
     state.player.skills.get(skill).map_or(0, |s| s.level)
 }

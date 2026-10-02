@@ -1,10 +1,13 @@
 //! The minigame overlay (web MinigameOverlay, C# `MinigameOverlay`): the prompt, then per kind a
-//! timing bar with its moving marker and target zone, a simple battle's status, log and choices,
-//! or the fallback confirm button. Presses and releases go to `PlaySession::minigame_input`;
-//! the score enters the command log there, exactly once.
+//! track (the timing bar's marker and target zone, the moving target over the player's bar, the
+//! rhythm notes scrolling to their line) with its meters, the status and log, the choice buttons
+//! (a battle's moves, a memory game's symbols) or the primary button. Presses and releases go to
+//! `PlaySession::minigame_input`; the score enters the command log there, exactly once. Engine
+//! texts show in the player's language (their catalog messages); a def's own prompt as written.
 
 use super::{GameAction, GameView};
 use crate::format::capitalize;
+use crate::i18n::Lang;
 use crate::icons::Icon;
 use crate::input::InputDevice;
 use crate::layout::{Align, RectExt};
@@ -38,12 +41,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         actions.push(GameAction::Command(Command::CancelMinigame));
     }
     let area = modal.body;
+    let lang = ui.lang();
     let mut y = modal.top;
-    y +=
-        ui.paragraph(area.x, y, area.width, &game.prompt, 14.0, FontId::Regular, colors.text, TextAlign::Center) + 14.0;
+    let prompt = lang.localize(game.prompt_message.as_ref(), &game.prompt);
+    y += ui.paragraph(area.x, y, area.width, &prompt, 14.0, FontId::Regular, colors.text, TextAlign::Center) + 14.0;
 
-    let battle = !game.choices.is_empty();
-    if game.kind == "timing-bar" {
+    let choices = !game.choices.is_empty();
+    let track_kind = matches!(game.kind.as_str(), "timing-bar" | "moving-target" | "rhythm-tap");
+    if track_kind {
         let track = Rect::new(area.x + (area.width - BAR_WIDTH) / 2.0, y, BAR_WIDTH, BAR_HEIGHT);
         ui.list_mut().fill_round_rect(track, 6.0, colors.track);
         let zone = Rect::new(
@@ -55,17 +60,46 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         ui.push_clip(track);
         ui.list_mut().fill_rect(zone, fade(colors.primary, 0.35));
         ui.list_mut().stroke_rect(zone.inset(0.5), colors.primary, 1.0);
-        let marker_x = track.x + (game.position as f32).clamp(0.0, 1.0) * (BAR_WIDTH - 3.0);
-        ui.list_mut().fill_rect(Rect::new(marker_x, track.y, 3.0, BAR_HEIGHT), colors.accent);
+        if game.kind == "rhythm-tap" {
+            for note in &game.notes {
+                let x = track.x + (*note as f32).clamp(0.0, 1.0) * BAR_WIDTH;
+                ui.list_mut().fill_round_rect(
+                    Rect::new(x - 5.0, track.y + 4.0, 10.0, BAR_HEIGHT - 8.0),
+                    4.0,
+                    colors.accent,
+                );
+            }
+        } else {
+            let marker_x = track.x + (game.position as f32).clamp(0.0, 1.0) * (BAR_WIDTH - 3.0);
+            ui.list_mut().fill_rect(Rect::new(marker_x, track.y, 3.0, BAR_HEIGHT), colors.accent);
+        }
         ui.pop_clip();
         y += BAR_HEIGHT + 14.0;
+        if game.kind != "timing-bar" {
+            // The score so far and the time played, as two thin meters under the track.
+            for (value, color) in [(game.meter, colors.primary), (game.progress, colors.muted)] {
+                let meter = Rect::new(track.x, y, BAR_WIDTH, 5.0);
+                ui.list_mut().fill_round_rect(meter, 2.5, colors.track);
+                let filled = Rect::new(meter.x, meter.y, (value as f32).clamp(0.0, 1.0) * BAR_WIDTH, meter.height);
+                ui.list_mut().fill_round_rect(filled, 2.5, color);
+                y += 9.0;
+            }
+            y += 6.0;
+        }
     }
-    if battle {
-        y +=
-            ui.paragraph(area.x, y, area.width, &game.status, 13.5, FontId::Bold, colors.text, TextAlign::Center) + 6.0;
-        y += ui.paragraph(area.x, y, area.width, &game.log, 12.5, FontId::Regular, colors.muted, TextAlign::Center)
-            + 12.0;
-        let buttons: Vec<(String, &String)> = game.choices.iter().map(|choice| (capitalize(choice), choice)).collect();
+    let status = lang.localize(game.status_message.as_ref(), &game.status);
+    if !status.is_empty() {
+        y += ui.paragraph(area.x, y, area.width, &status, 13.5, FontId::Bold, colors.text, TextAlign::Center) + 6.0;
+    }
+    if !game.highlight.is_empty() {
+        let symbol = choice_label(lang, &game.highlight);
+        y += ui.paragraph(area.x, y, area.width, &symbol, 22.0, FontId::Bold, colors.accent, TextAlign::Center) + 8.0;
+    }
+    if choices {
+        let log = lang.localize(game.log_message.as_ref(), &game.log);
+        y += ui.paragraph(area.x, y, area.width, &log, 12.5, FontId::Regular, colors.muted, TextAlign::Center) + 12.0;
+        let buttons: Vec<(String, &String)> =
+            game.choices.iter().map(|choice| (choice_label(lang, choice), choice)).collect();
         let widths: Vec<f32> =
             buttons.iter().map(|(label, _)| ui.button_width(&Button::new(label)).max(84.0)).collect();
         let total = widths.iter().sum::<f32>() + 8.0 * (widths.len() - 1) as f32;
@@ -88,7 +122,8 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         y += height + 8.0;
     } else {
         // Press/release semantics (hold-to-catch needs both).
-        let button = Button::new(&game.button_text).primary().size(15.0).default_focus();
+        let label = lang.localize(game.button_message.as_ref(), &game.button_text);
+        let button = Button::new(&label).primary().size(15.0).default_focus();
         let width = ui.button_width(&button).max(180.0);
         let height = ui.button_height(15.0) + 8.0;
         let rect = Rect::new(area.x + (area.width - width) / 2.0, y, width, height);
@@ -100,7 +135,9 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
             actions.push(GameAction::Minigame(MinigameInput::Release));
         }
         y += height + 6.0;
-        let hint = if ui.device() == InputDevice::Gamepad { "A" } else { ui.tr("minigame.keys") };
+        // Gamepad A, or the touch controls' A button.
+        let hint =
+            if matches!(ui.device(), InputDevice::Gamepad | InputDevice::Touch) { "A" } else { ui.tr("minigame.keys") };
         ui.label(
             Rect::new(area.x, y, area.width, ui.line_height(12.0)),
             hint,
@@ -116,9 +153,14 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, actions: &mut Vec<GameActio
         let give_up = Button::new(ui.tr("minigame.giveUp")).kind(ButtonKind::Secondary);
         let width = ui.button_width(&give_up);
         let rect = footer.cut_right(width).centered(width, ui.button_height(13.0));
-        if ui.button(WidgetId::new("minigame-give-up"), rect, give_up.focusable(battle)) {
+        if ui.button(WidgetId::new("minigame-give-up"), rect, give_up.focusable(choices)) {
             actions.push(GameAction::Command(Command::CancelMinigame));
         }
     }
     ui.close_modal();
+}
+
+/// A choice's label: `minigame.choice.<id>` in the player's language, else the id capitalized.
+fn choice_label(lang: Lang, choice: &str) -> String {
+    lang.get(&format!("minigame.choice.{choice}")).map_or_else(|| capitalize(choice), str::to_owned)
 }

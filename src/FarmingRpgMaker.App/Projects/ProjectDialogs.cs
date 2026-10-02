@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -13,6 +12,22 @@ namespace FarmingRpgMaker.App.Projects;
 
 /// <summary>The user's choice in the New Project dialog.</summary>
 public sealed record NewProjectChoice(string TemplateId, string Name);
+
+/// <summary>What to do with edits that could not be saved (the unsaved-changes prompt).</summary>
+public enum UnsavedChangesChoice
+{
+    /// <summary>Stay with the open project (closing, installing or switching is called off).</summary>
+    Stay,
+
+    /// <summary>Try to save again.</summary>
+    Retry,
+
+    /// <summary>Export Project JSON… somewhere else, then ask again.</summary>
+    Export,
+
+    /// <summary>Go on without the edits (Quit anyway, Install anyway…).</summary>
+    Discard,
+}
 
 /// <summary>UI the project commands need (swappable for tests).</summary>
 public interface IProjectDialogs
@@ -35,6 +50,13 @@ public interface IProjectDialogs
 
     /// <summary>Shows the Export Game dialog over <paramref name="viewModel"/> until it closes.</summary>
     Task ShowExportGameAsync(IShellHost shell, ExportGameViewModel viewModel);
+
+    /// <summary>
+    /// Saving failed (<paramref name="error"/>) and the edits are about to be left behind: asks
+    /// whether to retry, export a copy, go on (<paramref name="discardText"/>) or stay.
+    /// <paramref name="note"/> reports the last attempt ("Still can't save…").
+    /// </summary>
+    Task<UnsavedChangesChoice> AskUnsavedChangesAsync(IShellHost shell, string error, string discardText, string? note);
 }
 
 /// <summary>Avalonia implementation: modal windows + the platform file pickers.</summary>
@@ -82,9 +104,15 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
             return null;
         }
 
-        await using var stream = await files[0].OpenReadAsync().ConfigureAwait(true);
-        using var reader = new StreamReader(stream);
-        return (files[0].Name, await reader.ReadToEndAsync().ConfigureAwait(true));
+        try
+        {
+            return (files[0].Name, await PickedFiles.ReadTextAsync(files[0], PickedFiles.MaxProjectBytes, "project files").ConfigureAwait(true));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            await ShowErrorsAsync(shell, $"{files[0].Name} could not be imported", [error.Message]).ConfigureAwait(true);
+            return null;
+        }
     }
 
     public async Task<string?> SaveExportAsync(IShellHost shell, string suggestedFileName, string json)
@@ -107,10 +135,16 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
             return null;
         }
 
-        await using var stream = await file.OpenWriteAsync().ConfigureAwait(true);
-        stream.SetLength(0);
-        await using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
-        await writer.WriteAsync(json).ConfigureAwait(true);
+        try
+        {
+            await PickedFiles.WriteTextAsync(file, json).ConfigureAwait(true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            await ShowErrorsAsync(shell, $"{file.Name} could not be saved", [error.Message]).ConfigureAwait(true);
+            return null;
+        }
+
         return file.Name;
     }
 
@@ -139,6 +173,18 @@ public sealed class AvaloniaProjectDialogs : IProjectDialogs
         }
 
         await new ExportGameWindow(viewModel).ShowDialog(owner).ConfigureAwait(true);
+    }
+
+    public async Task<UnsavedChangesChoice> AskUnsavedChangesAsync(IShellHost shell, string error, string discardText, string? note)
+    {
+        if (shell.TopLevel is not Window owner)
+        {
+            return UnsavedChangesChoice.Stay;
+        }
+
+        // Over the dialog that asked (the Update Center's Restart & install), else the main window.
+        var parent = owner.OwnedWindows.LastOrDefault(w => w.IsVisible && w.IsActive) ?? owner;
+        return await new UnsavedChangesWindow(error, discardText, note).ShowDialog<UnsavedChangesChoice>(parent).ConfigureAwait(true);
     }
 
     public async Task ShowErrorsAsync(IShellHost shell, string title, IReadOnlyList<string> errors)
@@ -184,6 +230,7 @@ internal sealed class NewProjectWindow : ProjectDialogWindow
     {
         Name = "NewProjectWindow";
         var nameBox = new TextBox { Name = "NewProjectName", Text = "My Farming Game", Watermark = "Project name" };
+        Avalonia.Automation.AutomationProperties.SetName(nameBox, "Project name");
         var list = new StackPanel { Spacing = 6 };
         RadioButton? first = null;
         foreach (var template in templates)
@@ -290,6 +337,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
         _rename.Name = "RenameProjectButton";
         _duplicate = Ui.Button("Duplicate", DuplicateSelected, "subtle");
         _duplicate.Name = "DuplicateProjectButton";
+        Avalonia.Automation.AutomationProperties.SetName(_renameBox, "New name for the selected project");
         _renameBox.TextChanged += (_, _) => UpdateButtons();
         _renameBox.KeyDown += (_, e) =>
         {
@@ -345,7 +393,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
                 title.Children.Add(new Border { Child = Ui.Text("Open now") }.WithClasses("qty-chip"));
             }
 
-            var detail = Ui.Text($"Updated {Relative(project.UpdatedAt)} · {Size(project.SizeBytes)} · {project.Id}", "muted", "small");
+            var detail = Ui.Text($"Updated {DisplayFormat.RelativeTime(project.UpdatedAt, DateTimeOffset.UtcNow)} · {DisplayFormat.FileSize(project.SizeBytes)} · {project.Id}", "muted", "small");
             _list.Items.Add(new ListBoxItem { Tag = project.Id, Content = Ui.VStack(2, title, detail) });
         }
 
@@ -421,38 +469,65 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
             return;
         }
 
-        _store.Delete(id);
         _confirmDeleteId = null;
-        Reload();
+        try
+        {
+            _store.Delete(id);
+            Reload();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A locked or read-only file: say so here instead of taking the editor down.
+            Reload(id);
+            _notice = $"Could not delete the project: {ex.Message}";
+            UpdateButtons();
+        }
     }
+}
 
-    private static string Relative(DateTimeOffset time)
+/// <summary>
+/// Edits could not be saved and are about to be left behind (closing the window, installing an
+/// update, opening another project): Export Project JSON…, Retry save, go on anyway, or stay.
+/// </summary>
+internal sealed class UnsavedChangesWindow : ProjectDialogWindow
+{
+    public UnsavedChangesWindow(string error, string discardText, string? note)
+        : base("Your changes are not saved", 560, 330)
     {
-        var age = DateTimeOffset.UtcNow - time;
-        if (age < TimeSpan.FromMinutes(1))
-        {
-            return "just now";
-        }
+        Name = "UnsavedChangesWindow";
+        var heading = Ui.HStack(10, Ui.Icon("IconAlertCircle", 24), Ui.Wrapped("Your changes could not be saved", "h2"));
+        ((PathIcon)heading.Children[0]).Foreground = (IBrush?)Application.Current?.FindResource("FarmDestructiveBrush");
+        var message = Ui.Wrapped($"Saving the project failed: {error} The changes are only open in this window. Export a copy to another folder, or free up disk space or fix the folder's permissions and retry.", "small");
+        message.Name = "UnsavedChangesMessage";
+        var status = Ui.Wrapped(note ?? "", "muted", "small");
+        status.Name = "UnsavedChangesNote";
+        status.IsVisible = note is not null;
+        Avalonia.Automation.AutomationProperties.SetLiveSetting(status, Avalonia.Automation.AutomationLiveSetting.Assertive);
 
-        if (age < TimeSpan.FromHours(1))
+        var export = Ui.Button("Export Project JSON…", () => Close(UnsavedChangesChoice.Export), "accent");
+        export.Name = "UnsavedExportButton";
+        export.IsDefault = true;
+        var retry = Ui.Button("Retry save", () => Close(UnsavedChangesChoice.Retry), "subtle");
+        retry.Name = "UnsavedRetryButton";
+        var discard = Ui.Button(discardText, () => Close(UnsavedChangesChoice.Discard), "subtle");
+        discard.Name = "UnsavedDiscardButton";
+        var stay = Ui.Button("Cancel", () => Close(UnsavedChangesChoice.Stay), "subtle");
+        stay.Name = "UnsavedStayButton";
+        stay.IsCancel = true;
+        Content = new Border
         {
-            return $"{(int)age.TotalMinutes} min ago";
-        }
-
-        if (age < TimeSpan.FromDays(1))
-        {
-            return $"{(int)age.TotalHours} h ago";
-        }
-
-        return time.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            Padding = new Thickness(20),
+            Child = new DockPanel
+            {
+                Children =
+                {
+                    NewProjectWindow.Docked(heading, Dock.Top, new Thickness(0, 0, 0, 12)),
+                    NewProjectWindow.Docked(Footer(discard, stay, retry, export), Dock.Bottom),
+                    Ui.VStack(10, message, status),
+                },
+            },
+        };
     }
-
-    private static string Size(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
-        _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
-    };
 }
 
 /// <summary>Shows load/migration errors.</summary>

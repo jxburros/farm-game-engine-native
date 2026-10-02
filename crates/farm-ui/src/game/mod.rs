@@ -15,7 +15,9 @@ mod quests;
 mod shop;
 mod toasts;
 
-pub use toasts::{Toast, ToastKind, Toasts, MAX_VISIBLE as MAX_TOASTS, TOAST_LIFETIME};
+pub use toasts::{
+    toast_lifetime, Toast, ToastKind, Toasts, MAX_TOAST_LIFETIME, MAX_VISIBLE as MAX_TOASTS, TOAST_LIFETIME,
+};
 
 use crate::icons::{self, Icon};
 use crate::layout::RectExt;
@@ -26,7 +28,7 @@ use farm_render::{resolve_visual, BuiltinArt, DrawCmd, ImageStore, Rect, Samplin
 use farm_runtime::host::{CalendarView, MinigameInput, MinigameView};
 use farm_runtime::panels::PanelView;
 use farm_sim::overlay::OverlayView;
-use farm_sim::schema::{GameContent, GameState, Item};
+use farm_sim::schema::{item_types, GameContent, GameState, Item};
 use farm_sim::Command;
 use std::sync::Arc;
 
@@ -59,6 +61,44 @@ pub enum GameAction {
     OpenMenu,
     /// Input for the running minigame.
     Minigame(MinigameInput),
+    /// Hold this seed or fertilizer for planting, or put it away when it is held.
+    Hold(String),
+}
+
+/// What the player holds for planting (picked in the inventory): interacting with open soil
+/// plants the held seed (else the first seed that grows this season) and uses the held
+/// fertilizer (else none).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Planting {
+    pub seed: Option<String>,
+    pub fertilizer: Option<String>,
+}
+
+impl Planting {
+    /// Holds `item_id` (a seed or a fertilizer), or puts it away when it is already held.
+    pub fn toggle(&mut self, content: &GameContent, item_id: &str) {
+        let Some(item) = content.items.iter().find(|item| item.id == item_id) else { return };
+        let hand = match item.r#type.as_str() {
+            item_types::SEED => &mut self.seed,
+            item_types::FERTILIZER => &mut self.fertilizer,
+            _ => return,
+        };
+        *hand = if hand.as_deref() == Some(item_id) { None } else { Some(item_id.to_owned()) };
+    }
+
+    /// Whether `item_id` is held.
+    pub fn holds(&self, item_id: &str) -> bool {
+        self.seed.as_deref() == Some(item_id) || self.fertilizer.as_deref() == Some(item_id)
+    }
+
+    /// Puts away what the player no longer has.
+    pub fn retain_held(&mut self, state: &GameState) {
+        for hand in [&mut self.seed, &mut self.fertilizer] {
+            if hand.as_deref().is_some_and(|id| held(state, id) == 0) {
+                *hand = None;
+            }
+        }
+    }
 }
 
 /// What item art is drawn from: the creator's assets, else the built-in pack.
@@ -87,6 +127,8 @@ pub struct GameView<'a> {
     /// The game UI owns keyboard and gamepad this frame (digits pick dialogue options, tabs
     /// switch shop tabs). False while a shell screen (pause, settings) is on top.
     pub keys_active: bool,
+    /// What the player holds for planting.
+    pub planting: &'a Planting,
 }
 
 /// The play screens' own state: which panel is open, the shop tab, toasts.
@@ -95,6 +137,8 @@ pub struct GameUi {
     pub panel: Option<Panel>,
     pub shop_tab: ShopTab,
     pub toasts: Toasts,
+    /// What the player holds for planting (kept here, sent with each interact by the host).
+    pub planting: Planting,
 }
 
 impl GameUi {
@@ -108,6 +152,7 @@ impl GameUi {
         if view.state.shop.is_none() {
             self.shop_tab = ShopTab::Buy;
         }
+        self.planting.retain_held(view.state);
         let hud_bottom = hud::draw(ui, view, &mut actions);
         self.toasts.top = hud_bottom + 12.0;
         match self.panel {
@@ -224,6 +269,22 @@ pub(crate) fn draw_sprite(
 /// The quantity of an item held across all slots.
 pub(crate) fn held(state: &GameState, item_id: &str) -> u64 {
     state.player.inventory.iter().filter(|slot| slot.item.id == item_id).map(|slot| u64::from(slot.quantity)).sum()
+}
+
+/// A slot's display name: the item name with one star per crop quality tier above normal
+/// (silver ★, gold ★★, iridium ★★★).
+pub(crate) fn slot_name(name: &str, quality: Option<&str>) -> String {
+    let stars = match quality {
+        Some(farm_sim::schema::crop_qualities::SILVER) => 1,
+        Some(farm_sim::schema::crop_qualities::GOLD) => 2,
+        Some(farm_sim::schema::crop_qualities::IRIDIUM) => 3,
+        _ => 0,
+    };
+    if stars == 0 {
+        name.to_owned()
+    } else {
+        format!("{name} {}", "\u{2605}".repeat(stars))
+    }
 }
 
 /// An item's display name (its id when unknown).

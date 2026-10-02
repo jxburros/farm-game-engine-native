@@ -66,11 +66,56 @@ module Problems =
         | "schemaVersion" :: _ | "id" :: _ | "rngState" :: _ | "mineDeepestFloor" :: _ -> Some NavigationTarget.Settings
         | _ -> None
 
-    /// `SchemaChecks.projectIssues`: zod refinement failures, all errors.
+    /// The JSON path of a schema issue. zod joins record keys into the dotted path as they are,
+    /// so a weather-table season id that is a number or has dots would read as indices or
+    /// members: the project's own keys say where the key ends.
+    let private schemaJsonPath (project: GameProject) (zodPath: string) : string =
+        let table = "weather.table."
+        let key =
+            if zodPath.StartsWith(table, StringComparison.Ordinal) then
+                project.Weather.Table
+                |> List.map fst
+                |> List.filter (fun key -> zodPath = table + key || zodPath.StartsWith(table + key + ".", StringComparison.Ordinal))
+                |> List.sortByDescending (fun key -> key.Length)
+                |> List.tryHead
+            else None
+        match key with
+        | Some key ->
+            let rest = zodPath.Substring(min zodPath.Length (table.Length + key.Length + 1))
+            let parent = ProblemPath.memberPath "weather.table" key
+            if rest.Length = 0 then parent
+            else
+                let tail = jsonPath rest
+                if tail.StartsWith "[" then parent + tail else parent + "." + tail
+        | None -> jsonPath zodPath
+
+    /// Lints the editor checks already report with their own codes: scene grids and duplicate
+    /// scene ids (`ChecksWorld`: `scene.gridRows`, `scene.gridWidth`, `duplicate.scene`), a
+    /// missing start scene and an empty door target (`ContentLints`) and an empty player scene
+    /// (`player.sceneMissing`).
+    let private reportedElsewhere (issue: SchemaIssue) =
+        let segments = issue.Path.Split('.')
+        match List.ofArray segments with
+        | [ "startSceneId" ]
+        | [ "player"; "sceneId" ]
+        | [ "scenes"; _; "transitions"; _; "toSceneId" ] -> true
+        | [ "scenes"; _; "id" ] -> issue.Message.StartsWith("Duplicate scene id", StringComparison.Ordinal)
+        | [ "scenes"; _; "tiles" ]
+        | [ "scenes"; _; "tiles"; _ ] -> issue.Message.StartsWith("Expected ", StringComparison.Ordinal)
+        | _ -> false
+
+    /// `SchemaChecks.projectChecks`: zod refinement failures (errors), then the structural lints
+    /// zod cannot express (empty ids, inverted regions and day or year ranges, empty flag
+    /// names; warnings, `lint.*` codes) that no editor check reports already.
     let private fromSchema (project: GameProject) (sink: Sink) =
-        for issue in SchemaChecks.projectIssues project do
+        let issues, lints = SchemaChecks.projectChecks project
+        for issue in issues do
             let segments = issue.Path.Split('.') |> List.ofArray
-            sink.Error("schema." + (List.head segments), jsonPath issue.Path, issue.Message, schemaTarget project segments)
+            sink.Error("schema." + (List.head segments), schemaJsonPath project issue.Path, issue.Message, schemaTarget project segments)
+        for lint in lints do
+            if not (reportedElsewhere lint) then
+                let segments = lint.Path.Split('.') |> List.ofArray
+                sink.Warning("lint." + (List.head segments), schemaJsonPath project lint.Path, lint.Message, schemaTarget project segments)
 
     let private indexOf (list: 'T list) (idOf: 'T -> string) (id: string option) : int option =
         match id with

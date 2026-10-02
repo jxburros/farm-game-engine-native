@@ -11,6 +11,21 @@ open FarmEngine.Authoring.Net
 open FarmEngine.Authoring.Tests.TestProjects
 open FarmEngine.Schemas
 
+/// Replays a failing run. A failure message ends with FsCheck's seed ("Replay directly at failing
+/// step with (seed,gamma,size)"); rerun with FARM_FSCHECK_REPLAY set to that tuple to get the same
+/// cases again (CONTRIBUTING.md, "Property tests"). Unset, every run draws a new seed.
+type ReplayFromEnvironmentAttribute() as this =
+    inherit PropertiesAttribute()
+
+    do
+        match System.Environment.GetEnvironmentVariable "FARM_FSCHECK_REPLAY" with
+        | null
+        | "" -> ()
+        | replay -> this.Replay <- replay
+
+[<assembly: ReplayFromEnvironment>]
+do ()
+
 let private farmId = "scene-farm"
 
 let private tileTypes = Gen.elements (List.ofSeq TileTypes.All)
@@ -154,13 +169,26 @@ let private referenceCodes (p: Problem) =
     || p.Code.Contains "Unknown" || p.Code.Contains "Missing" || p.Code.Contains "unknown" || p.Code.Contains "missing"
     || p.Code = "dialogue.npcMissing" || p.Code = "quest.giverMissing"
 
+/// References a removal keeps on purpose (#86): a gate on the removed thing (a condition, a
+/// required item, a prerequisite, an unlock) stays, so what it gates stays locked, and Problems
+/// reports it.
+let private keptGate (p: Problem) =
+    p.Path.Contains ".conditions["
+    || p.Path.EndsWith ".requiresItem"
+    || p.Path.EndsWith ".unlock.questId"
+    || (p.Code = "content.events" && p.Message.Contains " checks missing ")
+    || (p.Code = "content.quests" && p.Message.Contains " requires missing quest ")
+
 [<Property(MaxTest = 40)>]
 let ``removing entities leaves no dangling references`` () =
     let project = starter ()
     let all = removals project |> Array.ofList
     Prop.forAll (Arb.fromGen (Gen.listOf (Gen.elements all))) (fun edits ->
         let next = edits |> List.fold (fun p e -> Document.run p e) project
-        let dangling = Problems.collect next |> List.filter referenceCodes |> List.filter (fun p -> p.Severity = Severity.Error)
+        let dangling =
+            Problems.collect next
+            |> List.filter referenceCodes
+            |> List.filter (fun p -> p.Severity = Severity.Error && not (keptGate p))
         if dangling.IsEmpty then true
         else failwithf "after %A:\n%s" edits (describe dangling))
 
@@ -365,7 +393,7 @@ let private author (project: GameProject) (step: AuthoringStep) : GameProject =
         | Pattern(kind, name, x, y, day, friendship, consequences) ->
             let npcId = project.Npcs |> Seq.tryHead |> Option.map (fun n -> n.Id) |> Option.defaultValue ""
             let options =
-                { Name = name; Text = ""; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences }
+                { Name = name; Text = ""; X = x; Y = y; Day = day; NpcId = npcId; Friendship = friendship; Consequences = consequences; SceneId = "" }
             match Patterns.build kind options project with
             | Ok edit -> run edit
             | Error _ -> project

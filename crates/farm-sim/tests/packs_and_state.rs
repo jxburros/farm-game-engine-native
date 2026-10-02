@@ -24,7 +24,15 @@ fn fixture(name: &str) -> Value {
 
 fn reference(key: &str) -> Value {
     static REFERENCE: OnceLock<Value> = OnceLock::new();
-    REFERENCE.get_or_init(|| fixture("packs-project.ts-reference.json"))[key].clone()
+    let mut value = REFERENCE.get_or_init(|| fixture("packs-project.ts-reference.json"))[key].clone();
+    // The fixture's player stands beside its 2×1 scene (x 2, y 0.25 tiles). The TS engine kept
+    // them there, able to walk off the grid; a new game here starts them on the nearest tile of
+    // the grid (#116).
+    if matches!(key, "stateSeeded" | "stateDefault" | "applied") {
+        value["player"]["x"] = Value::from(1.5);
+        value["player"]["y"] = Value::from(0.5);
+    }
+    value
 }
 
 fn load_project() -> GameProject {
@@ -71,6 +79,10 @@ fn assert_matches_reference<T: Serialize>(key: &str, actual: &T) {
     // A new state is a v5 save; the reference was written by v8 (save version 4).
     if let Some(version) = actual.pointer_mut("/meta/saveVersion") {
         *version = Value::from(4);
+    }
+    // The clock's day of season (#23) is newer than the reference; loading derives it.
+    if let Some(clock) = actual.pointer_mut("/clock").and_then(Value::as_object_mut) {
+        clock.shift_remove("dayOfSeason");
     }
     assert_same_within_grid(key, &reference(key), &actual);
 }
@@ -143,12 +155,12 @@ fn apply_locale_strings_uses_later_packs_and_falls_back_to_authored_text() {
     assert_matches_reference("localized", &packs::apply_locale_strings(merged.clone(), &project.content_packs, "fr"));
     assert_eq!(packs::apply_locale_strings(merged.clone(), &project.content_packs, "xx"), merged);
     assert_eq!(packs::apply_locale_strings(merged.clone(), &project.content_packs, ""), merged);
-}
-
-#[test]
-fn apply_pack_to_project_materializes_content_and_player_start() {
-    let project = load_project();
-    assert_matches_reference("applyA", &packs::apply_pack_to_project(&project, &project.content_packs[1].pack));
+    // The one-pass merge used at play time localizes the same way.
+    for locale in ["fr", "xx", ""] {
+        let localized = packs::apply_locale_strings(merged.clone(), &project.content_packs, locale);
+        let one_pass = packs::merge_packs_into_content_localized(&ts_base_content(), &project.content_packs, locale);
+        assert_eq!(one_pass.content, localized, "{locale}");
+    }
 }
 
 #[test]
@@ -169,6 +181,8 @@ fn create_game_state_hashes_like_the_ts_reference_state() {
     let project = load_project();
     let mut reference: farm_sim::GameState = serde_json::from_value(reference("stateSeeded")).expect("a GameState");
     reference.meta.save_version = farm_sim::schema::save::CURRENT_SAVE_VERSION;
+    // The reference predates the clock's day of season (#23): derive it as loading a save does.
+    farm_sim::game_time::reconcile_clock(&project.settings.calendar, &mut reference.clock);
     assert_eq!(hash_state(&reference), hash_state(&state::create_game_state(&project, Some("seed-x"))));
 }
 

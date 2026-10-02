@@ -38,12 +38,15 @@ fn screenshot_renders_frames_without_a_window() {
 }
 
 /// Runs the real window under Xvfb for a few frames. Skipped (with a note) where no virtual
-/// display can be started.
+/// display can be started, unless `FARM_REQUIRE_DISPLAY=1` (CI, which installs Xvfb) makes that a
+/// failure: a missing display must not turn the test green there.
 #[cfg(all(feature = "desktop", target_os = "linux"))]
 #[test]
 fn the_window_opens_renders_and_exits() {
+    let required = std::env::var("FARM_REQUIRE_DISPLAY").is_ok_and(|value| value == "1");
     let available = Command::new("xvfb-run").arg("--help").output().is_ok_and(|output| output.status.success());
     if !available {
+        assert!(!required, "FARM_REQUIRE_DISPLAY=1 but xvfb-run is not installed");
         eprintln!("skipped: xvfb-run is not installed");
         return;
     }
@@ -56,6 +59,7 @@ fn the_window_opens_renders_and_exits() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() && (stderr.contains("Cannot open a window") || stderr.contains("xvfb-run: error")) {
+        assert!(!required, "FARM_REQUIRE_DISPLAY=1 but no display server could be started: {stderr}");
         eprintln!("skipped: no display server could be started: {stderr}");
         return;
     }

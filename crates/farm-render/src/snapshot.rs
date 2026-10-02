@@ -258,6 +258,39 @@ pub struct SnapshotAtmosphere {
     pub weather_overlay: Option<String>,
 }
 
+/// The tiles a snapshot holds: columns `x0..=x1` of rows `y0..=y1`. Rows outside are empty, and
+/// cells left of `x0` are blank stand-ins (indices stay `tiles[y][x]`); the renderer only reads
+/// tiles in its camera's range, which the window must cover ([`TileWindow::for_camera`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct TileWindow {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+}
+
+impl TileWindow {
+    /// The tiles [`crate::build_world`] reads for `camera` (world pixels): the visible range,
+    /// rounded out, and the row below it (tall objects there poke into view), plus `margin`
+    /// tiles around (a host that draws with a slightly larger camera than it built for).
+    pub fn for_camera(camera: &SnapshotCamera, padding: f64, pitch: f64, margin: i32) -> Self {
+        let pitch = if pitch > 0.0 { pitch } else { 1.0 };
+        let first = |pixel: f64| crate::num::to_int(((pixel - padding) / pitch).floor());
+        let last = |pixel: f64| crate::num::to_int(((pixel - padding) / pitch).ceil());
+        TileWindow {
+            x0: first(camera.x).saturating_sub(margin).max(0),
+            y0: first(camera.y).saturating_sub(margin).max(0),
+            x1: last(camera.x + camera.width).saturating_add(margin),
+            y1: last(camera.y + camera.height).saturating_add(1).saturating_add(margin),
+        }
+    }
+
+    pub fn contains(&self, x: usize, y: usize) -> bool {
+        let (x, y) = (x as i64, y as i64);
+        x >= i64::from(self.x0) && x <= i64::from(self.x1) && y >= i64::from(self.y0) && y <= i64::from(self.y1)
+    }
+}
+
 /// Everything the world renderer draws in one frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -287,6 +320,10 @@ pub struct WorldSnapshot {
     /// Transient overlay effects; omitted under reduced motion.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pops: Option<Vec<SnapshotPop>>,
+    /// The tiles actually built, when the snapshot holds only part of the scene
+    /// ([`crate::SnapshotOptions::tile_window`]); `None`: every tile. Never serialized.
+    #[serde(skip)]
+    pub tile_window: Option<TileWindow>,
 }
 
 impl Default for WorldSnapshot {
@@ -306,6 +343,7 @@ impl Default for WorldSnapshot {
             npcs: Vec::new(),
             player: SnapshotEntity::default(),
             pops: None,
+            tile_window: None,
         }
     }
 }

@@ -60,6 +60,9 @@ let ``patching writes icons, version and checksum that read back`` () =
     let stored = BitConverter.ToUInt32(patched, image.ChecksumOffset)
     Assert.Equal(PeResources.checksum patched image.ChecksumOffset, stored)
     Assert.NotEqual(BitConverter.ToUInt32(original, image.ChecksumOffset), stored)
+    // The console template became a GUI program (no console window behind the game).
+    Assert.Equal(PeResources.SUBSYSTEM_CONSOLE, PeResources.subsystem original |> ok)
+    Assert.Equal(PeResources.SUBSYSTEM_GUI, PeResources.subsystem patched |> ok)
     // Capacities survive: patching the result again works and gives the same bytes.
     Assert.Equal<byte[]>(patched, PeResources.patch rendered versionBytes patched |> ok)
     // Nothing outside the resource data changed.
@@ -67,6 +70,7 @@ let ``patching writes icons, version and checksum that read back`` () =
     let inside (offset: int) =
         resources.Resources |> List.exists (fun r -> offset >= r.DataOffset && offset < r.DataOffset + r.Capacity || offset >= r.EntryOffset + 4 && offset < r.EntryOffset + 8)
         || (offset >= image.ChecksumOffset && offset < image.ChecksumOffset + 4)
+        || (offset >= image.SubsystemOffset && offset < image.SubsystemOffset + 2)
     for i in 0 .. original.Length - 1 do
         if original[i] <> patched[i] && not (inside i) then failwithf "byte %d changed outside the resources" i
 
@@ -113,3 +117,67 @@ let ``checksum matches the reference algorithm on the untouched fixture`` () =
     let changed = Array.copy original
     changed[image.ChecksumOffset] <- 0xAAuy
     Assert.Equal(sum, PeResources.checksum changed image.ChecksumOffset)
+
+/// File offset of the fixture's data directories (PE32+).
+let private directories (bytes: byte[]) = BitConverter.ToInt32(bytes, 0x3C) + 24 + 112
+
+[<Fact>]
+let ``a signed template loses its signature instead of keeping a broken one`` () =
+    // The fixture with a stand-in certificate table appended, as signtool would put it.
+    let original = template ()
+    let certificate = Array.append [| 16uy; 0uy; 0uy; 0uy; 0uy; 2uy; 2uy; 0uy |] (Array.create 8 0xCCuy)
+    let signed = Array.append original certificate
+    let security = directories signed + 4 * 8
+    BitConverter.GetBytes(uint32 original.Length).CopyTo(signed, security)
+    BitConverter.GetBytes(uint32 certificate.Length).CopyTo(signed, security + 4)
+    let image = PeResources.read signed |> ok
+    Assert.Equal(certificate.Length, image.SignatureSize)
+    let patched = PeResources.patch (icons ()) (version ()) signed |> ok
+    // The certificate table is cut off and the Security directory cleared.
+    Assert.Equal(original.Length, patched.Length)
+    Assert.Equal(0UL, BitConverter.ToUInt64(patched, security))
+    let result = PeResources.read patched |> ok
+    Assert.Equal(0, result.SignatureSize)
+    Assert.Equal(PeResources.checksum patched result.ChecksumOffset, BitConverter.ToUInt32(patched, result.ChecksumOffset))
+    // Same bytes as patching the unsigned template.
+    Assert.Equal<byte[]>(PeResources.patch (icons ()) (version ()) original |> ok, patched)
+
+[<Fact>]
+let ``resource data outside the resource section is refused`` () =
+    let bytes = template ()
+    let image = PeResources.read bytes |> ok
+    // Point the version resource's data at the start of .text (RVA 0x1000): patching it would
+    // clear code.
+    let version = image.Resources |> List.find (fun r -> r.TypeId = PeResources.RT_VERSION)
+    BitConverter.GetBytes(0x1000u).CopyTo(bytes, version.EntryOffset)
+    match PeResources.read bytes with
+    | Ok _ -> failwith "data in .text must be refused"
+    | Error e -> Assert.Contains("outside the resource section", e)
+    match PeResources.patch (icons ()) (VersionInfo.build (Exporter.versionResource (Exporter.identity (starter ())) "1.0.0")) bytes with
+    | Ok _ -> failwith "data in .text must be refused"
+    | Error e -> Assert.StartsWith("Not a usable Windows executable", e)
+
+[<Fact>]
+let ``a resource table used twice is refused`` () =
+    let bytes = template ()
+    let rsrc = 0x3800 // the fixture's .rsrc raw offset (Fixtures/pe/build.sh)
+    let count = int (BitConverter.ToUInt16(bytes, rsrc + 12)) + int (BitConverter.ToUInt16(bytes, rsrc + 14))
+    Assert.True(count >= 2)
+    // The second type entry points at the first type's name table.
+    Array.blit bytes (rsrc + 16 + 4) bytes (rsrc + 16 + 8 + 4) 4
+    match PeResources.read bytes with
+    | Ok _ -> failwith "a shared table must be refused"
+    | Error e -> Assert.Contains("used twice", e)
+
+[<Fact>]
+let ``a truncated resource section never yields a slot past the end of the file`` () =
+    let original = template ()
+    for length in [ 0x3900; 0x5000; 0x8000; 0xA000; 0xC000; 0xD800 ] do
+        let bytes = original[0 .. length - 1]
+        match PeResources.read bytes with
+        | Error e -> Assert.StartsWith("Not a usable Windows executable", e)
+        | Ok image ->
+            for r in image.Resources do
+                Assert.True(r.DataOffset + r.Capacity <= bytes.Length, sprintf "slot past the end at length %d" length)
+            // Patching never throws: it fits, or it says why not.
+            PeResources.patch (icons ()) (version ()) bytes |> ignore

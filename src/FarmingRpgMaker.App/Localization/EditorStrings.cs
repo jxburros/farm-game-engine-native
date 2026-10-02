@@ -7,8 +7,9 @@ public sealed record EditorLanguage(string Code, string NativeName);
 
 /// <summary>
 /// String tables of the editor's own chrome (the web version's <c>src/lib/i18n.ts</c>): mode
-/// names, the Play Mode toolbar, the Help menu, the welcome tour and the shortcuts list. The
-/// game's interface is localized by the Rust player (farm-ui); editor forms stay English.
+/// names, the Play Mode toolbar, the whole menu bar, the welcome tour and the shortcuts list. The
+/// game's interface is localized by the Rust player (farm-ui); editor tabs, forms and Problems
+/// stay English until the full editor pass (ROADMAP "Later").
 /// <para>
 /// <see cref="Get(string)"/> looks a key up in the current <see cref="Language"/>, falls back to
 /// English, then to the key itself. The language is an app setting
@@ -45,6 +46,14 @@ public static class EditorStrings
         ["header.playing"] = "Playing: {0}",
         ["header.editing"] = "Editing: {0}",
         // Menus (mnemonics with "_").
+        ["menu.file"] = "_File",
+        ["menu.newProject"] = "_New Project",
+        ["menu.openProject"] = "_Open Project…",
+        ["menu.importJson"] = "_Import Project JSON…",
+        ["menu.exportJson"] = "_Export Project JSON…",
+        ["menu.exportGame"] = "Export _Game…",
+        ["menu.exit"] = "E_xit",
+        ["menu.game"] = "_Game",
         ["menu.playMode"] = "_Play Mode",
         ["menu.editMode"] = "_Edit Mode",
         ["menu.help"] = "_Help",
@@ -82,6 +91,9 @@ public static class EditorStrings
         ["shortcuts.mapCursor"] = "Move the map's editing cursor (map focused)",
         ["shortcuts.mapApply"] = "Use the map tool at the cursor",
         ["shortcuts.mapCancel"] = "Cancel a rectangle's first corner",
+        ["shortcuts.mapTools"] = "Map tools (map focused): Inspect, Brush, Rectangle, Fill, Pick, Select, Erase, Block, Unblock, Door, Player start",
+        ["shortcuts.quickOpen"] = "Find content, scenes and art (Edit Mode)",
+        ["shortcuts.playToolbar"] = "Play Mode: Restart · Keep changes · Debug",
         ["shortcuts.exit"] = "Quit the editor",
         ["shortcuts.guide"] = "Creator guide",
         ["shortcuts.move"] = "Move",
@@ -113,6 +125,14 @@ public static class EditorStrings
         ["toolbar.keepOff"] = "Los cambios de la prueba se descartarán al salir",
         ["header.playing"] = "Jugando: {0}",
         ["header.editing"] = "Editando: {0}",
+        ["menu.file"] = "_Archivo",
+        ["menu.newProject"] = "_Nuevo proyecto",
+        ["menu.openProject"] = "_Abrir proyecto…",
+        ["menu.importJson"] = "_Importar JSON del proyecto…",
+        ["menu.exportJson"] = "_Exportar JSON del proyecto…",
+        ["menu.exportGame"] = "Exportar _juego…",
+        ["menu.exit"] = "_Salir",
+        ["menu.game"] = "_Juego",
         ["menu.playMode"] = "Modo _Juego",
         ["menu.editMode"] = "Modo _Editor",
         ["menu.help"] = "Ay_uda",
@@ -148,6 +168,9 @@ public static class EditorStrings
         ["shortcuts.mapCursor"] = "Mover el cursor de edición del mapa (con el mapa enfocado)",
         ["shortcuts.mapApply"] = "Usar la herramienta del mapa en el cursor",
         ["shortcuts.mapCancel"] = "Cancelar la primera esquina de un rectángulo",
+        ["shortcuts.mapTools"] = "Herramientas del mapa (con el mapa enfocado): Inspeccionar, Pincel, Rectángulo, Rellenar, Tomar, Seleccionar, Borrar, Bloquear, Desbloquear, Puerta, Inicio del jugador",
+        ["shortcuts.quickOpen"] = "Buscar contenido, escenas y arte (Modo Editor)",
+        ["shortcuts.playToolbar"] = "Modo Juego: Reiniciar · Conservar cambios · Depurar",
         ["shortcuts.exit"] = "Salir del editor",
         ["shortcuts.guide"] = "Guía del creador",
         ["shortcuts.move"] = "Moverse",

@@ -9,8 +9,9 @@
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
-    <!-- Self-contained publishes should still contain the full framework
-         (Velopack diffs releases; trimming would make reflection-heavy engine code fragile). -->
+    <!-- Self-contained publishes contain the full framework, untrimmed: the app (System.Text.Json
+         serialization, F# printf and reflection) has never been checked for trimming warnings,
+         and Velopack's delta packages keep updates small anyway. -->
     <PublishTrimmed>false</PublishTrimmed>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
@@ -21,6 +22,10 @@
     <!-- farm_ffi (the Rust engine, renderer and player) is built from crates inside farm-player's
          dependency graph, so the player's notices cover it (tools/player-licenses). -->
     <None Include="../../tools/player-licenses/THIRD-PARTY.txt" Link="licenses/THIRD-PARTY-rust.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The NuGet packages, the .NET runtime, the icons and Inter (tools/editor-licenses), and the
+         app's own license. -->
+    <None Include="../../tools/editor-licenses/THIRD-PARTY-dotnet.txt" Link="licenses/THIRD-PARTY-dotnet.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../LICENSE" Link="licenses/LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- Help → Creator Guide renders the guide from the repository's docs (Views/HelpWindows.cs). -->

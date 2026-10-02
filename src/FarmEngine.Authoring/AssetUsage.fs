@@ -18,6 +18,36 @@ module AssetUsage =
         | JString s -> found.Add s |> ignore
         | _ -> ()
 
+    /// The ids of `roots` and of every asset their animation frames draw from, transitively.
+    let private withFrameSources (project: GameProject) (roots: CustomAsset list) : HashSet<string> =
+        let used = HashSet<string>()
+        let pending = Queue<CustomAsset>(roots)
+        let byId = Dictionary<string, CustomAsset>()
+        for asset in project.CustomAssets do
+            if not (byId.ContainsKey asset.Id) then byId.[asset.Id] <- asset
+        while pending.Count > 0 do
+            let asset = pending.Dequeue()
+            if used.Add asset.Id then
+                for clip in defaultArg asset.Animations [] do
+                    for frame in clip.Frames do
+                        match frame.AssetId with
+                        | None -> ()
+                        | Some id ->
+                            match byId.TryGetValue id with
+                            | true, other when not (used.Contains other.Id) -> pending.Enqueue other
+                            | _ -> ()
+        used
+
+    /// The project's assets that `json` (exported content) names by id, plus every asset their
+    /// animation frames draw from, in project order: the art a content pack must carry so its
+    /// definitions keep their look elsewhere (`VisualRef.assetId`, crop `customAsset`, …).
+    let referencedBy (project: GameProject) (json: Json list) : CustomAsset list =
+        let values = HashSet<string>()
+        for value in json do
+            strings values value
+        let used = withFrameSources project (project.CustomAssets |> List.filter (fun asset -> values.Contains asset.Id))
+        project.CustomAssets |> List.filter (fun asset -> used.Contains asset.Id)
+
     /// Assets nothing in the game refers to. An asset counts as used when any value in the
     /// project outside the asset list names its id or its data URL (visual bindings, legacy
     /// custom images, crop art, pack content, the export icon), when it is the tile art for a
@@ -38,22 +68,7 @@ module AssetUsage =
                 && (match asset.TileType with
                     | None -> false
                     | Some tileType -> values.Contains tileType))
-        let used = HashSet<string>()
-        let pending = Queue<CustomAsset>(project.CustomAssets |> List.filter refersTo)
-        let byId = Dictionary<string, CustomAsset>()
-        for asset in project.CustomAssets do
-            if not (byId.ContainsKey asset.Id) then byId.[asset.Id] <- asset
-        while pending.Count > 0 do
-            let asset = pending.Dequeue()
-            if used.Add asset.Id then
-                for clip in defaultArg asset.Animations [] do
-                    for frame in clip.Frames do
-                        match frame.AssetId with
-                        | None -> ()
-                        | Some id ->
-                            match byId.TryGetValue id with
-                            | true, other when not (used.Contains other.Id) -> pending.Enqueue other
-                            | _ -> ()
+        let used = withFrameSources project (project.CustomAssets |> List.filter refersTo)
         project.CustomAssets |> List.filter (fun asset -> not (used.Contains asset.Id))
 
     /// The assets the game uses, in project order.

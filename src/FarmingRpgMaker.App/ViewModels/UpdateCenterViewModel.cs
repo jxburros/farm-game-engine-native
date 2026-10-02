@@ -129,6 +129,9 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
         UpdateState.NotInstalled =>
             $"You're running a development build ({Coordinator.CurrentVersion}). Install Farming RPG Maker with Setup.exe from GitHub Releases to get automatic updates.",
         UpdateState.Checking => $"Looking at GitHub Releases on the {ChannelName} channel.",
+        // Velopack never downgrades: a beta stays until a newer stable release ships.
+        UpdateState.UpToDate when Coordinator.Channel == UpdateChannel.Stable && IsPrerelease(Coordinator.CurrentVersion) =>
+            $"You're on a pre-release ({Coordinator.CurrentVersion}); the next stable update will be offered when it's newer.",
         UpdateState.UpToDate => $"Farming RPG Maker {Coordinator.CurrentVersion} is the newest {ChannelName} version.",
         UpdateState.Available when Coordinator.IsAvailableUpdateSkipped =>
             $"You chose to skip this version. You're on {Coordinator.CurrentVersion}; you can still download it any time.",
@@ -173,7 +176,7 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
 
             if (update.SizeBytes is { } size)
             {
-                parts.Add(FormatSize(size));
+                parts.Add(DisplayFormat.DownloadSize(size));
             }
 
             return string.Join("  ·  ", parts);
@@ -224,6 +227,9 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
     public void Dispose() => Coordinator.PropertyChanged -= OnCoordinatorChanged;
 
     private string ChannelName => Coordinator.Channel == UpdateChannel.Prerelease ? "pre-release" : "stable";
+
+    /// <summary>SemVer pre-release versions carry a <c>-tag</c> ("0.3.0-beta.2").</summary>
+    private static bool IsPrerelease(string version) => version.Contains('-', StringComparison.Ordinal);
 
     private void OnCoordinatorChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -277,41 +283,5 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
         CancelCommand.NotifyCanExecuteChanged();
     }
 
-    private string FormatWhen(DateTimeOffset when)
-    {
-        var local = when.ToLocalTime();
-        var now = _time.GetUtcNow().ToLocalTime();
-        var ago = now - local;
-        if (ago < TimeSpan.FromMinutes(1))
-        {
-            return "just now";
-        }
-
-        if (ago < TimeSpan.FromHours(1))
-        {
-            var minutes = (int)ago.TotalMinutes;
-            return minutes == 1 ? "1 minute ago" : $"{minutes} minutes ago";
-        }
-
-        var time = local.ToString("h:mm tt", CultureInfo.InvariantCulture);
-        if (local.Date == now.Date)
-        {
-            return $"today at {time}";
-        }
-
-        if (local.Date == now.Date.AddDays(-1))
-        {
-            return $"yesterday at {time}";
-        }
-
-        return local.ToString("MMM d, yyyy", CultureInfo.InvariantCulture) + " at " + time;
-    }
-
-    internal static string FormatSize(long bytes) => bytes switch
-    {
-        >= 1_000_000_000 => (bytes / 1_000_000_000d).ToString("0.0", CultureInfo.InvariantCulture) + " GB",
-        >= 1_000_000 => (bytes / 1_000_000d).ToString("0.0", CultureInfo.InvariantCulture) + " MB",
-        >= 1_000 => (bytes / 1_000d).ToString("0", CultureInfo.InvariantCulture) + " KB",
-        _ => bytes.ToString(CultureInfo.InvariantCulture) + " bytes",
-    };
+    private string FormatWhen(DateTimeOffset when) => DisplayFormat.RelativeTime(when, _time.GetUtcNow());
 }

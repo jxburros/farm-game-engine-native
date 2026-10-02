@@ -38,16 +38,12 @@ public static class RustRender
 
     private static byte[] Call(byte[] request, string call)
     {
-        if (!FarmFfi.IsAvailable)
-        {
-            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
-        }
-
+        FarmFfi.EnsureAvailable();
         unsafe
         {
             fixed (byte* ptr = request)
             {
-                NativeMethods.FeBytes output;
+                NativeMethods.FeBytes output = default;
                 var result = NativeMethods.fe_render_json(ptr, (nuint)request.Length, &output);
                 var bytes = TakeBytes(output);
                 if (result != NativeMethods.FeResult.Ok)

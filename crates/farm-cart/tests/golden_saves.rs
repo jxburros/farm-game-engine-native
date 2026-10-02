@@ -12,6 +12,11 @@ use farm_sim::{hash_state, stable_stringify};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+#[path = "../../farm-sim/tests/recording/mod.rs"]
+mod recording;
+
+static RECORDER: recording::Recorder = recording::Recorder::new("FARM_RECORD_GOLDENS", "saves");
+
 fn golden_dir(relative: &str) -> PathBuf {
     [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", "golden", relative].iter().collect()
 }
@@ -108,7 +113,8 @@ fn every_v8_save_still_loads_with_its_values() {
         let v8: Value = serde_json::from_str(fixture["stable"].as_str().expect("stable")).expect("v8 stable JSON");
         let now: Value = serde_json::from_str(&stable_stringify(&data)).expect("stable JSON");
         let mut differences = Vec::new();
-        same_within_grid("", &v8, &now, &[".meta.saveVersion"], &mut differences);
+        // `clock.dayOfSeason` is newer than v8 (#23); loading with the game's calendar fills it.
+        same_within_grid("", &v8, &now, &[".meta.saveVersion", ".clock.dayOfSeason"], &mut differences);
         if !differences.is_empty() {
             failures.push(format!("{name}: values moved beyond the grid:\n  {}", differences.join("\n  ")));
         }
@@ -160,18 +166,20 @@ fn record(input: &Value) -> Value {
 fn save_migrations_match_the_recorded_goldens() {
     let dir = golden_dir("saves");
     let inputs = recorded_inputs();
-    if std::env::var("FARM_RECORD_GOLDENS").is_ok_and(|v| v == "1") {
+    if RECORDER.enabled() {
         for entry in std::fs::read_dir(&dir).expect("list saves") {
             let path = entry.expect("entry").path();
-            if path.extension().is_some_and(|ext| ext == "json") {
-                std::fs::remove_file(path).expect("remove old golden");
+            let stem = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+            if path.extension().is_some_and(|ext| ext == "json") && !inputs.iter().any(|(name, _)| *name == stem) {
+                std::fs::remove_file(&path).expect("remove old golden");
+                RECORDER.removed(&path);
             }
         }
         for (name, input) in &inputs {
             let text = serde_json::to_string_pretty(&record(input)).expect("encode") + "\n";
-            std::fs::write(dir.join(format!("{name}.json")), text).expect("write golden");
+            RECORDER.write(&dir.join(format!("{name}.json")), text.as_bytes()).expect("write golden");
         }
-        return;
+        RECORDER.finish();
     }
     let recorded = fixtures(&dir);
     let names: Vec<&String> = recorded.iter().map(|(name, _)| name).collect();

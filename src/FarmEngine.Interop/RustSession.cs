@@ -10,20 +10,20 @@ namespace FarmEngine.Interop;
 /// A headless game inside the Rust engine (<c>farm-sim</c> through <c>fe_session_*</c>) for tools
 /// and tests: commands go in and effects come out, all as JSON; the state lives in Rust and is
 /// read back only when asked. (Play Mode runs the graphical <see cref="RustPlayer"/> instead.)
-/// One thread at a time. Dispose it to free the Rust session.
+/// Calls are serialized; dispose it to free the Rust session (its finalizer does when nobody
+/// did), after which every call throws <see cref="ObjectDisposedException"/>.
 /// </summary>
-public sealed class RustSession : IDisposable
+public sealed unsafe class RustSession : IDisposable
 {
-    private unsafe NativeMethods.FeSession* _handle;
-    private bool _poisoned;
+    private readonly NativeHandle<NativeMethods.SessionHandle> _native;
 
-    private unsafe RustSession(NativeMethods.FeSession* handle)
+    private RustSession(NativeMethods.SessionHandle handle)
     {
-        _handle = handle;
+        _native = new NativeHandle<NativeMethods.SessionHandle>(handle, this, prefixMessages: true);
     }
 
     /// <summary>True after a Rust panic: the state is no longer trustworthy and every call throws.</summary>
-    public bool IsPoisoned => _poisoned;
+    public bool IsPoisoned => _native.IsPoisoned;
 
     /// <summary>
     /// Creates a session from a (migrated) project (<c>createGameState</c>, then optionally
@@ -32,11 +32,7 @@ public sealed class RustSession : IDisposable
     public static RustSession Create(GameProject project, string? seed = null, bool autoStartQuests = false)
     {
         ArgumentNullException.ThrowIfNull(project);
-        if (!FarmFfi.IsAvailable)
-        {
-            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
-        }
-
+        FarmFfi.EnsureAvailable();
         var projectJson = RecordJson.ToUtf8(project);
         return CreateFromBytes(projectJson, seed, autoStartQuests);
     }
@@ -45,11 +41,7 @@ public sealed class RustSession : IDisposable
     public static RustSession CreateCartridge(byte[] cartridge, string? seed = null, bool autoStartQuests = false)
     {
         ArgumentNullException.ThrowIfNull(cartridge);
-        if (!FarmFfi.IsAvailable)
-        {
-            throw new FarmFfiException("The Rust engine library (farm_ffi) is not available in this build.");
-        }
-
+        FarmFfi.EnsureAvailable();
         return CreateFromBytes(cartridge, seed, autoStartQuests);
     }
 
@@ -61,12 +53,12 @@ public sealed class RustSession : IDisposable
             fixed (byte* projectPtr = projectJson)
             fixed (byte* seedPtr = seedBytes)
             {
-                NativeMethods.FeSession* handle;
-                NativeMethods.FeBytes error;
-                var result = NativeMethods.fe_session_new(projectPtr, (nuint)projectJson.Length, seedPtr, (nuint)seedBytes.Length, autoStartQuests, &handle, &error);
-                var message = Take(error);
+                NativeMethods.FeBytes error = default;
+                var result = NativeMethods.fe_session_new(projectPtr, (nuint)projectJson.Length, seedPtr, (nuint)seedBytes.Length, autoStartQuests, out var handle, &error);
+                var message = Encoding.UTF8.GetString(RustRender.TakeBytes(error));
                 if (result != NativeMethods.FeResult.Ok)
                 {
+                    handle.Dispose();
                     throw new FarmFfiException($"fe_session_new failed: {result}. {message}");
                 }
 
@@ -82,17 +74,8 @@ public sealed class RustSession : IDisposable
     public JsonArray Apply(string commandsJson)
     {
         ArgumentNullException.ThrowIfNull(commandsJson);
-        var json = Encoding.UTF8.GetBytes(commandsJson);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
-            {
-                NativeMethods.FeBytes output;
-                var result = NativeMethods.fe_session_apply(_handle, ptr, (nuint)json.Length, &output);
-                return JsonNode.Parse(Check(result, output, nameof(Apply)))!.AsArray();
-            }
-        }
+        var json = _native.CallText(nameof(Apply), Encoding.UTF8.GetBytes(commandsJson), NativeMethods.fe_session_apply);
+        return JsonNode.Parse(json)!.AsArray();
     }
 
     /// <summary>Applies commands given as objects (serialized with the schema's JSON options).</summary>
@@ -107,10 +90,21 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            NativeMethods.FeBytes output;
-            var result = NativeMethods.fe_session_tick(_handle, ticks, &output);
-            return JsonNode.Parse(Check(result, output, nameof(Tick)))!.AsArray();
+            var json = _native.CallText(nameof(Tick), (handle, output) => NativeMethods.fe_session_tick(handle, ticks, output));
+            return JsonNode.Parse(json)!.AsArray();
+        }
+    }
+
+    /// <summary>
+    /// Whether commands apply wherever the player stands (<paramref name="scripted"/> true:
+    /// scripts, test harnesses, replays) or only where a player could give them (false, the
+    /// default; <c>farm_sim::CommandRules</c>).
+    /// </summary>
+    public void SetScripted(bool scripted)
+    {
+        unsafe
+        {
+            _native.Call(nameof(SetScripted), (handle, output) => NativeMethods.fe_session_set_scripted(handle, scripted, output));
         }
     }
 
@@ -119,8 +113,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            return Check(NativeMethods.fe_session_hash(_handle, &output), output, nameof(StateHash));
+            return _native.CallText(nameof(StateHash), NativeMethods.fe_session_hash);
         }
     }
 
@@ -129,8 +122,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            return Check(NativeMethods.fe_session_state_json(_handle, &output), output, nameof(StateJson));
+            return _native.CallText(nameof(StateJson), NativeMethods.fe_session_state_json);
         }
     }
 
@@ -142,8 +134,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            Check(NativeMethods.fe_session_skip_day(_handle, &output), output, nameof(SkipDay));
+            _native.Call(nameof(SkipDay), NativeMethods.fe_session_skip_day);
         }
     }
 
@@ -152,9 +143,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            var json = Check(NativeMethods.fe_session_project_json(_handle, &output), output, nameof(SyncedProject));
-            return RecordJson.Parse<GameProject>(json);
+            return RecordJson.Parse<GameProject>(_native.CallText(nameof(SyncedProject), NativeMethods.fe_session_project_json));
         }
     }
 
@@ -163,9 +152,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            var json = Check(NativeMethods.fe_session_hook_events(_handle, &output), output, nameof(DrainHookEvents));
-            using var document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(_native.Call(nameof(DrainHookEvents), NativeMethods.fe_session_hook_events));
             return document.RootElement.Clone();
         }
     }
@@ -178,16 +165,7 @@ public sealed class RustSession : IDisposable
     public void SetState(string stateJson)
     {
         ArgumentNullException.ThrowIfNull(stateJson);
-        var json = Encoding.UTF8.GetBytes(stateJson);
-        unsafe
-        {
-            ObjectDisposedException.ThrowIf(_handle == null, this);
-            fixed (byte* ptr = json)
-            {
-                NativeMethods.FeBytes output;
-                Check(NativeMethods.fe_session_set_state(_handle, ptr, (nuint)json.Length, &output), output, nameof(SetState));
-            }
-        }
+        _native.Call(nameof(SetState), Encoding.UTF8.GetBytes(stateJson), NativeMethods.fe_session_set_state);
     }
 
     /// <summary>
@@ -198,8 +176,7 @@ public sealed class RustSession : IDisposable
     {
         unsafe
         {
-            NativeMethods.FeBytes output;
-            return Check(NativeMethods.fe_session_save(_handle, &output), output, nameof(Save));
+            return _native.CallText(nameof(Save), NativeMethods.fe_session_save);
         }
     }
 
@@ -212,72 +189,11 @@ public sealed class RustSession : IDisposable
     public SaveLoadReport LoadSave(string save)
     {
         ArgumentNullException.ThrowIfNull(save);
-        var bytes = Encoding.UTF8.GetBytes(save);
-        unsafe
-        {
-            fixed (byte* ptr = bytes)
-            {
-                NativeMethods.FeBytes output;
-                var json = Check(NativeMethods.fe_session_load_save(_handle, ptr, (nuint)bytes.Length, &output), output, nameof(LoadSave));
-                return JsonSerializer.Deserialize<SaveLoadReport>(json, InteropJson.Options)!;
-            }
-        }
+        var json = _native.Call(nameof(LoadSave), Encoding.UTF8.GetBytes(save), NativeMethods.fe_session_load_save);
+        return JsonSerializer.Deserialize<SaveLoadReport>(json, InteropJson.Options)!;
     }
 
-    public void Dispose()
-    {
-        unsafe
-        {
-            if (_handle != null)
-            {
-                NativeMethods.fe_session_free(_handle);
-                _handle = null;
-            }
-        }
-    }
-
-    private unsafe string LastError()
-    {
-        NativeMethods.FeBytes output;
-        NativeMethods.fe_session_last_error(_handle, &output);
-        return Take(output);
-    }
-
-    private unsafe string Check(NativeMethods.FeResult result, NativeMethods.FeBytes output, string call)
-    {
-        var text = Take(output);
-        if (result == NativeMethods.FeResult.Ok)
-        {
-            return text;
-        }
-
-        Fail(result, call);
-        return text;
-    }
-
-    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    private void Fail(NativeMethods.FeResult result, string call)
-    {
-        if (result is NativeMethods.FeResult.Panic or NativeMethods.FeResult.Poisoned)
-        {
-            _poisoned = true;
-        }
-
-        throw new FarmFfiException($"{call} failed: {result}. {LastError()}");
-    }
-
-    /// <summary>Copies a Rust buffer into a string and frees it.</summary>
-    private static unsafe string Take(NativeMethods.FeBytes bytes)
-    {
-        try
-        {
-            return bytes.Ptr == null ? "" : Encoding.UTF8.GetString(bytes.Ptr, (int)bytes.Len);
-        }
-        finally
-        {
-            NativeMethods.fe_bytes_free(bytes);
-        }
-    }
+    public void Dispose() => _native.Dispose();
 }
 
 /// <summary>What <see cref="RustSession.LoadSave"/> did besides loading the state.</summary>

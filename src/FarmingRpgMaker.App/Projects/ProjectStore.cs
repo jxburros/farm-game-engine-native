@@ -3,9 +3,13 @@ using System.Text.Json.Nodes;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
 using FarmEngine.Schemas;
+using FarmingRpgMaker.Updates;
 using Microsoft.FSharp.Collections;
 
 namespace FarmingRpgMaker.App.Projects;
+
+/// <summary>When a project file was last written, and how big it is: a change by anything else shows.</summary>
+public readonly record struct FileStamp(DateTime LastWriteUtc, long Length);
 
 /// <summary>A row of the project list (web <c>ProjectIndexEntry</c> + file size).</summary>
 public sealed record ProjectSummary(string Id, string Name, DateTimeOffset UpdatedAt, long SizeBytes);
@@ -21,9 +25,17 @@ public sealed record ProjectLoadResult(GameProject? Project, IReadOnlyList<strin
 /// <summary>
 /// Desktop project storage (web src/lib/projects.ts, with files instead of localStorage):
 /// one web-compatible project JSON per project in <c>&lt;root&gt;/projects/&lt;id&gt;.json</c>
-/// plus <c>index.json</c> (id, name, updated time). Every write is atomic (temp file +
-/// move), and every load goes through the F# project migrations (<see cref="ProjectMigrations"/>).
+/// plus <c>index.json</c> (id, name, updated time). Every write is atomic and flushed to disk
+/// (<see cref="AtomicFile"/>) and keeps the previous version in <c>backups/</c>; every load goes
+/// through the F# project migrations (<see cref="ProjectMigrations"/>), and the first save after
+/// a migration first copies the original file to <c>backups/&lt;id&gt;.v&lt;from&gt;.json</c>.
 /// </summary>
+/// <remarks>
+/// The FILE is the source of truth for a project's id: <see cref="Load"/> hands back the project
+/// under the id its file name stands for, whatever id the JSON inside carries (every web export
+/// says <c>project-1</c>, and a hand-made copy repeats its original's id), so saving it writes
+/// the file it came from.
+/// </remarks>
 public sealed class ProjectStore
 {
     private const string IndexFileName = "index.json";
@@ -36,6 +48,9 @@ public sealed class ProjectStore
 
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
+
+    /// <summary>Loaded projects that were migrated, by id: the schema version their file still has.</summary>
+    private readonly Dictionary<string, double> _migratedFiles = new(StringComparer.Ordinal);
 
     public ProjectStore(string rootDirectory, TimeProvider? time = null)
     {
@@ -50,10 +65,37 @@ public sealed class ProjectStore
 
     public string IndexPath => Path.Combine(ProjectsDirectory, IndexFileName);
 
-    /// <summary>File that holds project <paramref name="id"/> (ids are sanitized to safe file names).</summary>
+    /// <summary>Previous versions of project files and pre-migration originals.</summary>
+    public string BackupsDirectory => Path.Combine(ProjectsDirectory, "backups");
+
+    /// <summary>File that holds project <paramref name="id"/> (<see cref="SafeFileName"/>).</summary>
     public string PathFor(string id) => Path.Combine(ProjectsDirectory, SafeFileName(id) + ".json");
 
+    /// <summary>The version of project <paramref name="id"/> before its last save.</summary>
+    public string PreviousVersionPath(string id) => Path.Combine(BackupsDirectory, SafeFileName(id) + ".previous.json");
+
+    /// <summary>The file of project <paramref name="id"/> as it was before migrating from schema <paramref name="fromVersion"/>.</summary>
+    public string MigrationBackupPath(string id, double fromVersion) =>
+        Path.Combine(BackupsDirectory, $"{SafeFileName(id)}.v{fromVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.json");
+
     public bool Exists(string id) => File.Exists(PathFor(id));
+
+    /// <summary>The hidden lock file of project <paramref name="id"/> (<see cref="ProjectLock"/>).</summary>
+    public string LockPathFor(string id) => Path.Combine(ProjectsDirectory, "." + SafeFileName(id) + ".json.lock");
+
+    /// <summary>The project file's <see cref="FileStamp"/>, or null when it is missing or unreadable.</summary>
+    public FileStamp? Stamp(string id)
+    {
+        try
+        {
+            var info = new FileInfo(PathFor(id));
+            return info.Exists ? new FileStamp(info.LastWriteTimeUtc, info.Length) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>All stored projects, most recently updated first.</summary>
     public IReadOnlyList<ProjectSummary> List()
@@ -77,7 +119,10 @@ public sealed class ProjectStore
         }
     }
 
-    /// <summary>Loads and migrates project <paramref name="id"/>. Never throws.</summary>
+    /// <summary>
+    /// Loads and migrates project <paramref name="id"/>, under that id whatever the file's JSON
+    /// says (see the remarks on <see cref="ProjectStore"/>). Never throws.
+    /// </summary>
     public ProjectLoadResult Load(string id)
     {
         string json;
@@ -90,17 +135,50 @@ public sealed class ProjectStore
             return ProjectLoadResult.Fail($"Could not read the project file: {ex.Message}");
         }
 
-        return Parse(json);
+        var loaded = Parse(json);
+        if (loaded.Project is { } project && project.Id != id)
+        {
+            loaded = loaded with { Project = project.WithId(id) };
+        }
+
+        if (loaded.Ok && loaded.MigratedFrom is { } from)
+        {
+            lock (_gate)
+            {
+                _migratedFiles[id] = from;
+            }
+        }
+
+        return loaded;
     }
 
-    /// <summary>Writes the project file (atomically) and refreshes its index entry.</summary>
+    /// <summary>
+    /// Writes the project file (atomically, keeping the previous version in
+    /// <see cref="BackupsDirectory"/>) and refreshes its index entry. The first save of a
+    /// migrated project first keeps the original file (<see cref="MigrationBackupPath"/>).
+    /// </summary>
     public void Save(GameProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(project.Id);
         lock (_gate)
         {
-            AtomicFile.WriteAllText(PathFor(project.Id), ToJson(project));
+            var path = PathFor(project.Id);
+            if (_migratedFiles.TryGetValue(project.Id, out var from))
+            {
+                // Never overwrite a file from an older schema without a copy: a lossy migration
+                // can then still be undone by hand.
+                var backup = MigrationBackupPath(project.Id, from);
+                if (File.Exists(path) && !File.Exists(backup))
+                {
+                    Directory.CreateDirectory(BackupsDirectory);
+                    File.Copy(path, backup);
+                }
+
+                _migratedFiles.Remove(project.Id);
+            }
+
+            AtomicFile.WriteAllText(path, ToJson(project), PreviousVersionPath(project.Id));
             var index = ReadIndex();
             var entry = new IndexEntry { Id = project.Id, Name = DisplayName(project), UpdatedAt = _time.GetUtcNow().ToUnixTimeMilliseconds() };
             var projects = index.Projects.Where(p => p.Id != project.Id).Append(entry).ToList();
@@ -108,14 +186,28 @@ public sealed class ProjectStore
         }
     }
 
+    /// <summary>
+    /// Deletes project <paramref name="id"/>. Throws when the file can't be deleted (read-only,
+    /// locked by another program) or the project is open in another editor window.
+    /// </summary>
     public void Delete(string id)
     {
+        if (ProjectLock.IsHeldElsewhere(this, id))
+        {
+            throw new IOException("It is open in another Farming RPG Maker window.");
+        }
+
         lock (_gate)
         {
             var path = PathFor(id);
             if (File.Exists(path))
             {
                 File.Delete(path);
+            }
+
+            if (File.Exists(PreviousVersionPath(id)))
+            {
+                File.Delete(PreviousVersionPath(id));
             }
 
             var index = ReadIndex();
@@ -257,35 +349,106 @@ public sealed class ProjectStore
         }
 
         var name = string.IsNullOrWhiteSpace(project.Name) ? "Imported Game" : project.Name.Trim();
-        project = project.WithId(NewId()).WithName(name).WithMode("tiles").WithSelectedTileType("grass").WithSelectedNpcId(null).WithSelectedItemId(null).WithEventFlags(FSharpList<Tuple<string, bool>>.Empty);
+        project = project.WithId(NewId()).WithName(name).WithMode("tiles").WithSelectedTileType("grass").WithSelectedNpcId(null).WithSelectedItemId(null).WithEventFlags(FSharpList<Tuple<string, FarmEngine.Authoring.Json>>.Empty);
         return new ProjectLoadResult(project, [], migratedFrom);
     }
 
     private static string DisplayName(GameProject project) => string.IsNullOrWhiteSpace(project.Name) ? "Untitled Game" : project.Name;
 
+    /// <summary>
+    /// Deletes temp files a killed editor left in the projects folder (<see cref="AtomicFile.DeleteStaleTempFiles"/>).
+    /// Never throws.
+    /// </summary>
+    public int DeleteStaleTempFiles() => AtomicFile.DeleteStaleTempFiles(ProjectsDirectory, TimeSpan.FromMinutes(10), _time);
+
+    /// <summary>
+    /// Device names Windows refuses as a file name, with or without an extension (and after
+    /// trailing dots and spaces are dropped).
+    /// </summary>
     private static readonly HashSet<string> WindowsReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "CON", "PRN", "AUX", "NUL",
-        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM\u00B9", "COM\u00B2", "COM\u00B3",
+        "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT\u00B9", "LPT\u00B2", "LPT\u00B3",
     };
 
     /// <summary>
-    /// A file stem for a project id: invalid characters replaced, and Windows device names
-    /// (<c>CON</c>, <c>NUL</c>, <c>COM1</c>, …, which Windows refuses even with an extension)
-    /// suffixed so the file can be created on every platform.
+    /// The file stem for a project id, the same on every platform and one-to-one (two ids never
+    /// share a file): characters Windows refuses in a file name, <c>%</c> itself, a leading dot
+    /// and trailing dots or spaces are escaped as <c>%XX</c> (UTF-8 bytes), and so is the first
+    /// letter of a Windows device name (<c>con</c> becomes <c>%63on</c>). Ordinary ids
+    /// (<c>proj-abc</c>, <c>project-1</c>) are their own file names.
     /// </summary>
     internal static string SafeFileName(string id)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var safe = new string(id.Select(c => invalid.Contains(c) || c is '/' or '\\' or ':' ? '_' : c).ToArray()).Trim('.', ' ');
-        if (string.IsNullOrEmpty(safe))
+        ArgumentNullException.ThrowIfNull(id);
+        if (id.Length == 0)
         {
-            return "project";
+            return "%";
         }
 
-        var stem = safe.Split('.')[0];
-        return WindowsReservedNames.Contains(stem) ? safe + "_" : safe;
+        var reserved = WindowsReservedNames.Contains(id.Split('.')[0].TrimEnd(' ', '.'));
+        var builder = new System.Text.StringBuilder(id.Length);
+        for (var i = 0; i < id.Length; i++)
+        {
+            var c = id[i];
+            var escape = c < 32 || c is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' or '%'
+                || (i == 0 && (c == '.' || reserved))
+                || (c is '.' or ' ' && id.AsSpan(i).TrimEnd(". ").IsEmpty);
+            if (!escape)
+            {
+                builder.Append(c);
+                continue;
+            }
+
+            // A surrogate pair is escaped as one character (its four UTF-8 bytes).
+            var length = char.IsHighSurrogate(c) && i + 1 < id.Length && char.IsLowSurrogate(id[i + 1]) ? 2 : 1;
+            foreach (var b in System.Text.Encoding.UTF8.GetBytes(id.Substring(i, length)))
+            {
+                builder.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            i += length - 1;
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// The id whose <see cref="SafeFileName"/> is <paramref name="stem"/>, or null when no id maps
+    /// to it (a hand-made file name such as <c>100% farm</c> or <c>con</c>).
+    /// </summary>
+    internal static string? IdForFileName(string stem)
+    {
+        ArgumentNullException.ThrowIfNull(stem);
+        var bytes = new List<byte>();
+        var text = new System.Text.StringBuilder(stem.Length);
+        for (var i = 0; i < stem.Length; i++)
+        {
+            if (stem[i] == '%' && i + 2 < stem.Length
+                && byte.TryParse(stem.AsSpan(i + 1, 2), System.Globalization.NumberStyles.AllowHexSpecifier, System.Globalization.CultureInfo.InvariantCulture, out var b))
+            {
+                bytes.Add(b);
+                i += 2;
+                continue;
+            }
+
+            DecodeBytes();
+            text.Append(stem[i]);
+        }
+
+        DecodeBytes();
+        var id = text.ToString();
+        return id.Length > 0 && SafeFileName(id) == stem ? id : null;
+
+        void DecodeBytes()
+        {
+            if (bytes.Count > 0)
+            {
+                text.Append(System.Text.Encoding.UTF8.GetString([.. bytes]));
+                bytes.Clear();
+            }
+        }
     }
 
     private IndexFile ReadIndex()
@@ -318,13 +481,30 @@ public sealed class ProjectStore
                     continue;
                 }
 
-                var id = Path.GetFileNameWithoutExtension(file);
-                if (known.Contains(id) || index.Projects.Any(p => PathFor(p.Id) == file))
+                if (index.Projects.Any(p => PathFor(p.Id) == file))
                 {
                     continue;
                 }
 
-                adopted.Add(new IndexEntry { Id = id, Name = PeekName(file) ?? id, UpdatedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(file)).ToUnixTimeMilliseconds() });
+                var stem = Path.GetFileNameWithoutExtension(file);
+                var path = file;
+                if (IdForFileName(stem) is not { } id)
+                {
+                    // A name no id maps to ("100% farm.json"): the file takes its id's name.
+                    id = stem;
+                    path = PathFor(id);
+                    if (!TryRename(file, path))
+                    {
+                        continue;
+                    }
+                }
+
+                if (known.Contains(id))
+                {
+                    continue;
+                }
+
+                adopted.Add(new IndexEntry { Id = id, Name = PeekName(path) ?? id, UpdatedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeMilliseconds() });
             }
 
             if (adopted.Count > 0)
@@ -337,6 +517,25 @@ public sealed class ProjectStore
     }
 
     private void WriteIndex(IndexFile index) => AtomicFile.WriteAllText(IndexPath, JsonSerializer.Serialize(index, IndexOptions));
+
+    private static bool TryRename(string from, string to)
+    {
+        try
+        {
+            if (File.Exists(to))
+            {
+                return false;
+            }
+
+            File.Move(from, to);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not adopt the project file {from}: {ex.Message}");
+            return false;
+        }
+    }
 
     private static string? PeekName(string file)
     {

@@ -45,8 +45,13 @@ pub struct QuestRewards {
     pub money: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<QuestRewardItem>>,
+    /// Skill XP granted on completion, to `skill`.
     #[serde(skip_serializing_if = "Option::is_none", with = "crate::units::count::opt")]
     pub experience: Option<u32>,
+    /// The skill `experience` goes to (farming, mining, foraging, fishing, social, …).
+    /// Absent: farming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -67,6 +72,8 @@ pub struct Quest {
     pub prerequisites: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_start: Option<bool>,
+    /// A completed repeatable quest can be started again (from a dialogue offer or an event)
+    /// with its objectives reset; an auto-start one restarts by itself the next morning.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeatable: Option<bool>,
     /// Seasonal availability (M3): quest only offered/auto-started in these seasons.

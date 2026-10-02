@@ -8,14 +8,16 @@
 
 use crate::view_json;
 use farm_player::{
-    DebugAction, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind, SoundRequest,
+    DebugAction, HostView, InputEvent, Player, PlayerError, PlayerOptions, PlayerRequest, ScreenKind, SoundRequest,
 };
+use farm_runtime::music::MusicCue;
 use farm_sim::schema::GameProject;
 use farm_sim::{stable_json, Command};
 use serde::{Deserialize, Serialize};
 
-/// Largest frame a host may request, in pixels.
-pub const MAX_PIXELS: u64 = 64 * 1024 * 1024;
+/// Largest frame a host may request, in pixels (16 Mpx on the web, where a module has little
+/// memory and a failed allocation aborts instead of throwing).
+pub const MAX_PIXELS: u64 = if cfg!(target_arch = "wasm32") { 16 * 1024 * 1024 } else { 64 * 1024 * 1024 };
 
 /// Options for a new player: `{"seed"?, "reducedMotion"?, "uiScale"?, "audio"?, "locale"?}`.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -59,6 +61,21 @@ pub struct FrameRequest {
     /// False steps the game without drawing (`Player::step`).
     #[serde(default = "yes")]
     pub render: bool,
+    /// Frame pixels per CSS pixel (`devicePixelRatio`, times any downscale the page applies):
+    /// the interface keeps its size on dense screens. Default 1.
+    #[serde(default = "one")]
+    pub density: f32,
+    /// The page shows on-screen touch controls: prompts name no keys.
+    #[serde(default)]
+    pub touch_controls: bool,
+    /// Frame pixels at the bottom the page covers with its controls (the HUD, panels and the
+    /// dialogue box stay above them).
+    #[serde(default)]
+    pub inset_bottom: f32,
+}
+
+fn one() -> f32 {
+    1.0
 }
 
 impl FrameRequest {
@@ -82,12 +99,23 @@ struct FrameInfo<'a> {
     screen: &'static str,
     /// An in-game panel (inventory, quests, crafting) or an engine modal is open.
     modal: bool,
+    /// The music and ambience loops to play now (`musicSamples(name, rate)`), with their gains.
+    music: MusicInfo,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct SoundInfo<'a> {
     cue: &'a str,
     gain: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MusicInfo {
+    music: Option<&'static str>,
+    music_gain: f32,
+    ambience: Option<&'static str>,
+    ambience_gain: f32,
 }
 
 /// The result of [`HostPlayer::frame`]; the pixels are [`HostPlayer::pixels`].
@@ -102,16 +130,26 @@ pub struct FrameOutcome {
     pub screen: &'static str,
     /// An in-game panel (inventory, quests, crafting) or an engine modal is open.
     pub modal: bool,
+    /// The music and ambience that should play now.
+    pub music: MusicCue,
 }
 
 impl FrameOutcome {
-    /// `{"sounds":[{"cue","gain"}],"requests":[…],"screen":"playing","modal":false}`.
+    /// `{"sounds":[{"cue","gain"}],"requests":[…],"screen":"playing","modal":false,
+    /// "music":{"music":"day","musicGain":0.5,"ambience":"birds","ambienceGain":0.4}}`.
     pub fn info_json(&self) -> String {
+        let cue = self.music;
         view_json::to_json(&FrameInfo {
             sounds: self.sounds.iter().map(|sound| SoundInfo { cue: &sound.cue, gain: sound.gain }).collect(),
             requests: &self.requests,
             screen: self.screen,
             modal: self.modal,
+            music: MusicInfo {
+                music: cue.music,
+                music_gain: cue.music_gain,
+                ambience: cue.ambience,
+                ambience_gain: cue.ambience_gain,
+            },
         })
     }
 }
@@ -129,6 +167,9 @@ enum Query {
     Toasts,
     /// Recent plugin errors, oldest first.
     PluginErrors,
+    /// Panics inside the call, as an engine bug would: hosts' tests drive the boundary's
+    /// poisoning path with it (the handle is poisoned afterwards).
+    Panic,
 }
 
 /// The host-facing name of a screen.
@@ -157,12 +198,6 @@ pub fn request_name(request: &PlayerRequest) -> String {
 
 fn error_text(error: &PlayerError) -> String {
     error.to_string()
-}
-
-/// Whether an error message means the engine failed (the player refuses further frames, so the
-/// host handle should be poisoned too). Pass to [`crate::Guarded::poisoning_on`].
-pub fn is_engine_failure(message: &str) -> bool {
-    message.starts_with("The game stopped")
 }
 
 /// An embedded player (see the module docs).
@@ -209,6 +244,12 @@ impl HostPlayer {
         &self.player
     }
 
+    /// Whether the game stopped after an engine failure (the player refuses further frames, so
+    /// the host handle is poisoned too). Pass to [`crate::Guarded::poisoning_when`].
+    pub fn stopped(&self) -> bool {
+        self.player.is_poisoned()
+    }
+
     pub fn player_mut(&mut self) -> &mut Player {
         &mut self.player
     }
@@ -231,19 +272,25 @@ impl HostPlayer {
             return Err(format!("The requested frame is too large ({}×{}).", request.width, request.height));
         }
         let dt = if request.dt.is_finite() { request.dt.clamp(0.0, 0.25) } else { 0.0 };
-        let (sounds, requests, size) = if request.render {
+        self.player.set_host_view(HostView {
+            density: request.density,
+            touch_controls: request.touch_controls,
+            inset_bottom: request.inset_bottom,
+        });
+        let (sounds, requests, music, size) = if request.render {
             let output =
                 self.player.frame(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
             let size = (output.pixels.width(), output.pixels.height());
-            (output.sounds, output.requests, Some(size))
+            (output.sounds, output.requests, output.music, Some(size))
         } else {
             let output =
                 self.player.step(dt, &request.events, request.width, request.height).map_err(|e| error_text(&e))?;
-            (output.sounds, output.requests, None)
+            (output.sounds, output.requests, output.music, None)
         };
         Ok(FrameOutcome {
             size,
             sounds,
+            music,
             requests: requests.iter().map(request_name).collect(),
             screen: screen_name(self.player.screen()),
             modal: self.modal(),
@@ -292,7 +339,8 @@ impl HostPlayer {
     }
 
     /// Read-only queries (`{"type":"summary"}`, `{"type":"widgetRect","path":[…]}`,
-    /// `{"type":"toasts"}`, `{"type":"pluginErrors"}`), answered as JSON.
+    /// `{"type":"toasts"}`, `{"type":"pluginErrors"}`; `{"type":"panic"}` for tests), answered
+    /// as JSON.
     pub fn query_json(&self, query: &[u8]) -> Result<String, String> {
         let query: Query = serde_json::from_slice(query).map_err(|e| format!("player query: {e}"))?;
         match query {
@@ -354,6 +402,7 @@ impl HostPlayer {
                 Ok(view_json::to_json(&toasts))
             }
             Query::PluginErrors => Ok(view_json::to_json(&self.player.plugin_errors())),
+            Query::Panic => panic!("A test asked the player to panic."),
         }
     }
 }

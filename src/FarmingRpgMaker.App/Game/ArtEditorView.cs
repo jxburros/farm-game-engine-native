@@ -16,7 +16,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Import, animate and bind creator art through F# project edits.</summary>
-public sealed class ArtEditorView : UserControl
+public sealed class ArtEditorView : UserControl, IRetirable
 {
     private static readonly FilePickerFileType ArtFiles = new("Artwork") { Patterns = ArtImport.FilePatterns };
     private readonly ProjectWorkspace _workspace;
@@ -95,13 +95,14 @@ public sealed class ArtEditorView : UserControl
             }
             RefreshFrames();
             DrawPreview();
+            UpdatePreviewTimer();
         };
         _bindingAsset.SelectionChanged += (_, _) => RefreshBindingClips();
 
         var left = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(Ui.Text("ARTWORK", "section"));
         left.Children.Add(Ui.Wrapped("Import PNG, JPEG, WebP, GIF, BMP or SVG. Animated images and SVGs become a still PNG; add clips below.", "muted", "small"));
-        var import = Ui.Button("Import images", async () => await PickImagesAsync(), "accent");
+        var import = Ui.AsyncButton("Import images", PickImagesAsync, error => _message.Text = $"Could not import: {error.Message}", "accent");
         import.Name = "ImportArtButton";
         ToolTip.SetTip(import, "Choose one or more images; they are added as one undo step.");
         left.Children.Add(import);
@@ -181,18 +182,23 @@ public sealed class ArtEditorView : UserControl
         Grid.SetColumn(scroll, 1);
         grid.Children.Add(scroll);
         Content = grid;
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         RefreshCellControls();
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (IsEffectivelyVisible) Refresh();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        if (_playing) _previewTimer.Start();
+        UpdatePreviewTimer();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -202,12 +208,14 @@ public sealed class ArtEditorView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
-    private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
+    private static string Number(double value) => DisplayFormat.Number(value);
     /// <summary>"32×16", or "?×?" for legacy art imported without its size.</summary>
     private static string SizeText(CustomAsset asset) =>
         asset.Width.OrNullable() is { } width && asset.Height.OrNullable() is { } height ? $"{Number(width)}×{Number(height)}" : "?×?";
-    private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{box.Name} must be a positive whole number.");
-    private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{box.Name} must be zero or more.");
+    private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{FieldName(box)} must be a positive whole number.");
+    private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{FieldName(box)} must be zero or more.");
+    /// <summary>A field as the creator knows it (its label, which screen readers announce too), not the control's name.</summary>
+    private static string FieldName(TextBox box) => AutomationProperties.GetName(box) is { Length: > 0 } label ? label : "This field";
     private CustomAsset? SelectedAsset() => _workspace.Current?.CustomAssets.FirstOrDefault(asset => asset.Id == _selectedAssetId);
     private AnimationClip? SelectedClip() => SelectedAsset()?.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == (_clips.SelectedItem as ComboBoxItem)?.Tag as string);
 
@@ -220,6 +228,9 @@ public sealed class ArtEditorView : UserControl
     /// <summary>The animation tick the preview shows.</summary>
     public double PreviewTick => _tick;
 
+    /// <summary>Whether the preview timer runs (only while an animation with several frames plays on screen).</summary>
+    internal bool PreviewTimerRunning => _previewTimer.IsEnabled;
+
     /// <summary>One step of the preview timer: the next tick is drawn unless the preview is paused or hidden.</summary>
     internal void AdvancePreview()
     {
@@ -228,12 +239,28 @@ public sealed class ArtEditorView : UserControl
         DrawPreview();
     }
 
+    /// <summary>
+    /// Runs the preview timer only while it changes something: playing, on screen, and a clip
+    /// with more than one frame selected. A still image is drawn once, not 20 times a second.
+    /// </summary>
+    private void UpdatePreviewTimer()
+    {
+        var animated = SelectedClip() is { } clip && clip.Frames.Length > 1;
+        if (_playing && animated && TopLevel.GetTopLevel(this) is not null)
+        {
+            if (!_previewTimer.IsEnabled) _previewTimer.Start();
+        }
+        else
+        {
+            _previewTimer.Stop();
+        }
+    }
+
     private void TogglePreview()
     {
         _playing = !_playing;
         _play.Content = _playing ? "Pause preview" : "Play preview";
-        if (_playing && TopLevel.GetTopLevel(this) is not null) _previewTimer.Start();
-        else _previewTimer.Stop();
+        UpdatePreviewTimer();
     }
 
     /// <summary>Opens an asset by id (Problems "Go to").</summary>
@@ -451,6 +478,7 @@ public sealed class ArtEditorView : UserControl
         RefreshSheet(asset);
         RefreshFrames();
         DrawPreview();
+        UpdatePreviewTimer();
     }
 
     /// <summary>The asset's list thumbnail (at most 64px, for crisp 32px display), decoded once per image.</summary>
@@ -488,10 +516,11 @@ public sealed class ArtEditorView : UserControl
     {
         var asset = SelectedAsset();
         var project = _workspace.Current;
-        if (asset is null || project is null) { _preview.Child = null; return; }
+        if (asset is null || project is null) { VisualPreview.Release(_preview.Child as Image); _preview.Child = null; return; }
         var visual = VisualRef.Default.WithAssetId(asset.Id).WithAnimation((_clips.SelectedItem as ComboBoxItem)?.Tag as string);
-        // The Rust renderer resolves and draws the frame, exactly as the game will show it.
-        _preview.Child = _art.Render(project, visual, _tick, _preview.Width);
+        // The Rust renderer resolves and draws the frame, exactly as the game will show it, into
+        // the bitmap already on show when the size is the same.
+        _preview.Child = _art.Draw(_preview.Child as Image, project, visual, _tick, _preview.Width);
     }
 
     /// <summary>

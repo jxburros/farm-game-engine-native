@@ -26,17 +26,25 @@ use serde_json::{Map, Value};
 pub struct PackPermissions {
     /// Hook names the pack's plugins may subscribe to (user-approved at install).
     pub hooks: Vec<String>,
-    /// May contribute content definitions (the normal case).
+    /// May contribute content definitions, a player start and string tables (the normal case).
+    /// When off, none of the pack's content loads and the Problems panel warns if it has some;
+    /// its plugins still run.
     pub content_inject: bool,
-    /// Reserved: declarative UI panels (not yet implemented).
+    /// Reserved: declarative UI panels. Packs cannot add game panels yet, so this grants
+    /// nothing either way.
     pub ui_panels: bool,
+    /// Mutation capabilities the pack's plugins may use: `message`, `giveItem` (own items),
+    /// `giveItem:any`, `*`, … (`farm_plugins::MutationGrants`). `None`: the defaults, and the
+    /// plugins' answers to `onEffect` / `onCommand` are dropped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mutations: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
 impl Default for PackPermissions {
     fn default() -> Self {
-        Self { hooks: Vec::new(), content_inject: true, ui_panels: false, extra: Map::new() }
+        Self { hooks: Vec::new(), content_inject: true, ui_panels: false, mutations: None, extra: Map::new() }
     }
 }
 

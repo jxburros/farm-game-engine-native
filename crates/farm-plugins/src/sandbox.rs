@@ -26,6 +26,14 @@ const PREPARE_FUEL: u64 = 1 << 32;
 /// Bytes per wasm page.
 const PAGE: usize = 65_536;
 
+/// Most bytes of a handler's result (its mutations as JSON) the host reads. A longer result is
+/// not copied out of the guest at all; it counts as a throw.
+pub const MAX_RESULT_BYTES: usize = 1 << 20;
+
+/// Most bytes of an error text (a thrown message, an init failure) the host reads; the rest is
+/// cut off with `…`. However large a plugin makes its message, the host keeps at most this.
+pub const MAX_ERROR_MESSAGE_BYTES: usize = 1024;
+
 /// Guest status codes (`STATUS_*` in `crates/farm-plugin-guest/src/lib.rs`).
 pub(crate) mod status {
     pub const OK: i32 = 0;
@@ -123,19 +131,39 @@ pub(crate) trait GuestInstance: Send {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GuestReply {
     pub status: i32,
+    /// The output, or for a result longer than [`MAX_RESULT_BYTES`] nothing (see
+    /// [`GuestReply::oversized`]); error texts are cut to [`MAX_ERROR_MESSAGE_BYTES`].
     pub output: String,
+    /// The output was a result longer than [`MAX_RESULT_BYTES`] and was not read.
+    pub oversized: bool,
+}
+
+impl GuestReply {
+    #[cfg(test)]
+    fn new(status: i32, output: &str) -> Self {
+        Self { status, output: output.to_owned(), oversized: false }
+    }
 }
 
 fn to_i32(len: usize) -> Result<i32, GuestFault> {
     i32::try_from(len).map_err(|_| GuestFault::Other("input too large for the plugin sandbox".to_owned()))
 }
 
-/// Read the output of the last call.
+/// Read the output of the last call: a result up to [`MAX_RESULT_BYTES`], or the start of an
+/// error text, so a plugin never makes the host copy or keep more than that.
 fn reply(instance: &mut dyn GuestInstance, status: i32) -> Result<GuestReply, GuestFault> {
     let output_ptr = instance.call(GuestExport::OutputPtr, &[])? as u32;
-    let output_len = instance.call(GuestExport::OutputLen, &[])? as u32;
-    let output = instance.read(output_ptr, output_len)?;
-    Ok(GuestReply { status, output: String::from_utf8_lossy(&output).into_owned() })
+    let output_len = instance.call(GuestExport::OutputLen, &[])? as u32 as usize;
+    if status == status::OK && output_len > MAX_RESULT_BYTES {
+        return Ok(GuestReply { status, output: String::new(), oversized: true });
+    }
+    let limit = if status == status::OK { MAX_RESULT_BYTES } else { MAX_ERROR_MESSAGE_BYTES };
+    // Read a few bytes more than the limit so a cut never splits the last character.
+    let read_len = output_len.min(limit + 4);
+    let bytes = instance.read(output_ptr, read_len as u32)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let output = if output_len > limit { crate::clip(&text, limit) } else { text.into_owned() };
+    Ok(GuestReply { status, output, oversized: false })
 }
 
 /// Write `parts` back to back into the guest's I/O buffer, call `export` with their lengths,
@@ -455,10 +483,17 @@ mod wasi {
         linker.func_wrap(MODULE, "clock_res_get", |mut caller: Caller<'_, StoreData>, _id: i32, resolution: i32| {
             write_bytes(&mut caller, resolution, &1u64.to_le_bytes())
         })?;
-        // Deterministic bytes (a fixed xorshift sequence restarted on every call).
+        // Deterministic bytes (a fixed xorshift sequence restarted on every call). The range is
+        // checked against linear memory before anything is allocated, so a huge `len` cannot
+        // make the host allocate (the current guest does not import this; a future one might).
         linker.func_wrap(MODULE, "random_get", |mut caller: Caller<'_, StoreData>, buf: i32, len: i32| {
+            let Some(memory) = memory_of(&caller) else { return FAULT };
+            let (start, len) = (buf as u32 as usize, len as u32 as usize);
+            if start.checked_add(len).is_none_or(|end| end > memory.data_size(&caller)) {
+                return FAULT;
+            }
             let mut state: u32 = 0x9E37_79B9;
-            let bytes: Vec<u8> = (0..len.max(0))
+            let bytes: Vec<u8> = (0..len)
                 .map(|_| {
                     state ^= state << 13;
                     state ^= state >> 17;
@@ -537,7 +572,7 @@ mod tests {
     fn the_protocol_rejects_calls_out_of_order() {
         let mut instance = engine().instantiate().unwrap();
         instance.set_fuel(1 << 40);
-        let bad = |output: &str| GuestReply { status: status::BAD_STATE, output: output.to_owned() };
+        let bad = |output: &str| GuestReply::new(status::BAD_STATE, output);
         assert_eq!(dispatch(instance.as_mut(), "onDayStart", "{}"), Ok(bad("the plugin is not initialized")));
         assert_eq!(init(instance.as_mut(), "[]", ""), Ok(bad("the sandbox is not prepared")));
         assert_eq!(prepare(instance.as_mut(), 16_000_000, 1_000_000).map(|r| r.status), Ok(status::OK));
@@ -582,16 +617,77 @@ mod tests {
         let source = "api.on('onDayStart', p => [{ type: 'message', text: 'day ' + p.day }]);\
                       api.on('onAction', () => { throw new TypeError('bad action'); });";
         let reply = init(instance.as_mut(), r#"["onDayStart","onAction"]"#, source).unwrap();
-        assert_eq!(reply, GuestReply { status: status::OK, output: String::new() });
+        assert_eq!(reply, GuestReply::new(status::OK, ""));
         let reply = dispatch(instance.as_mut(), "onDayStart", r#"{"day":2}"#).unwrap();
-        assert_eq!(
-            reply,
-            GuestReply { status: status::OK, output: r#"[{"type":"message","text":"day 2"}]"#.to_owned() }
-        );
+        assert_eq!(reply, GuestReply::new(status::OK, r#"[{"type":"message","text":"day 2"}]"#));
         let reply = dispatch(instance.as_mut(), "onAction", "{}").unwrap();
-        assert_eq!(reply, GuestReply { status: status::THREW, output: "bad action".to_owned() });
+        assert_eq!(reply, GuestReply::new(status::THREW, "bad action"));
         let reply = dispatch(instance.as_mut(), "onCropHarvest", "{}").unwrap();
         assert_eq!(reply.status, status::NO_HANDLER);
+    }
+
+    #[test]
+    fn huge_outputs_are_never_copied_out_of_the_guest() {
+        let mut instance = fresh();
+        // `repeat` is capped at 1 MB; doubling builds a 4 MB message.
+        let source = "api.on('onDayStart', () => { var s = 'x'; for (var i = 0; i < 22; i++) s += s; throw new Error(s); });\
+                      api.on('onAction', () => { var y = 'y'.repeat(600000); return [{ type: 'message', text: y }, { type: 'message', text: y }]; });\
+                      api.on('onCropHarvest', () => { throw new Error('é'.repeat(5000)); });";
+        init(instance.as_mut(), r#"["onDayStart","onAction","onCropHarvest"]"#, source).unwrap();
+        let thrown = dispatch(instance.as_mut(), "onDayStart", "{}").unwrap();
+        assert_eq!(thrown.status, status::THREW);
+        assert_eq!(thrown.output, format!("{}…", "x".repeat(MAX_ERROR_MESSAGE_BYTES)));
+        let result = dispatch(instance.as_mut(), "onAction", "{}").unwrap();
+        assert_eq!((result.status, result.oversized, result.output.as_str()), (status::OK, true, ""));
+        // Cuts land on character boundaries.
+        let accented = dispatch(instance.as_mut(), "onCropHarvest", "{}").unwrap();
+        assert_eq!(accented.output, format!("{}…", "é".repeat(MAX_ERROR_MESSAGE_BYTES / 2)));
+    }
+
+    #[test]
+    fn random_get_refuses_ranges_outside_memory_before_allocating() {
+        // Call the stub the way a guest would: a tiny module with one page of memory whose
+        // exported `random` calls the imported stub (host calls need a calling instance).
+        let mut wasm: Vec<u8> = vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+        // Type section: (i32, i32) -> i32.
+        wasm.extend([0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f]);
+        // Import section: wasi_snapshot_preview1.random_get, type 0.
+        let mut import = vec![0x01, 22];
+        import.extend(b"wasi_snapshot_preview1");
+        import.push(10);
+        import.extend(b"random_get");
+        import.extend([0x00, 0x00]);
+        wasm.extend([0x02, import.len() as u8]);
+        wasm.extend(import);
+        // Function section: function 1 has type 0.
+        wasm.extend([0x03, 0x02, 0x01, 0x00]);
+        // Memory section: one page.
+        wasm.extend([0x05, 0x03, 0x01, 0x00, 0x01]);
+        // Export section: "memory" (memory 0) and "random" (function 1).
+        let mut exports = vec![0x02, 6];
+        exports.extend(b"memory");
+        exports.extend([0x02, 0x00, 6]);
+        exports.extend(b"random");
+        exports.extend([0x00, 0x01]);
+        wasm.extend([0x07, exports.len() as u8]);
+        wasm.extend(exports);
+        // Code section: function 1 is `local.get 0; local.get 1; call 0`.
+        wasm.extend([0x0a, 0x0a, 0x01, 0x08, 0x00, 0x20, 0x00, 0x20, 0x01, 0x10, 0x00, 0x0b]);
+
+        let engine = Engine::default();
+        let module = Module::new(&engine, &wasm[..]).expect("the test module is valid");
+        let mut linker = Linker::new(&engine);
+        wasi::define_stubs(&mut linker).unwrap();
+        let mut store = Store::new(&engine, StoreData { limits: StoreLimitsBuilder::new().build() });
+        let instance = linker.instantiate_and_start(&mut store, &module).unwrap();
+        let random = instance.get_typed_func::<(i32, i32), i32>(&store, "random").unwrap();
+        let page = PAGE as i32;
+        assert_eq!(random.call(&mut store, (0, 16)).unwrap(), 0);
+        assert_eq!(random.call(&mut store, (page - 16, 16)).unwrap(), 0);
+        // 2 GiB, one byte past the end, or a pointer past the end: refused before allocating.
+        assert_eq!(random.call(&mut store, (0, i32::MAX)).unwrap(), 21);
+        assert_eq!(random.call(&mut store, (page - 16, 17)).unwrap(), 21);
+        assert_eq!(random.call(&mut store, (-1, 2)).unwrap(), 21);
     }
 
     #[test]

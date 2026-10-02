@@ -34,11 +34,17 @@ let private project (projectJson: string) : Result<GameProject, string> =
     | Error message -> Error message
     | Ok json -> Decode.run SchemaJson.decodeGameProject json
 
-/// `{ ok, errors, data }` around a function of a project.
+let private failure (issue: string) : Json = JObject [ "ok", JBool false; "errors", strings [ issue ]; "data", JNull ]
+
+/// `{ ok, errors, data }` around a function of a project. An exception from `f` (a compiler
+/// invariant, say) is a failure in the result too: these functions never throw.
 let private withProject (f: GameProject -> Json) (projectJson: string) : string =
-    match project projectJson with
-    | Ok parsed -> JObject [ "ok", JBool true; "errors", JArray []; "data", f parsed ]
-    | Error issue -> JObject [ "ok", JBool false; "errors", strings [ issue ]; "data", JNull ]
+    try
+        match project projectJson with
+        | Ok parsed -> JObject [ "ok", JBool true; "errors", JArray []; "data", f parsed ]
+        | Error issue -> failure issue
+    with error ->
+        failure error.Message
     |> text
 
 let private problem (p: Problem) : Json =
@@ -88,9 +94,12 @@ let compilePlaytestCartridge (projectJson: string) : byte[] =
 /// final `GameState` JSON (`Player.stateJson()` of farm-wasm).
 let applyPlaytestState (projectJson: string) (stateJson: string) : string =
     let result =
-        match project projectJson, Json.parse stateJson with
-        | Error issue, _ | _, Error issue -> Error issue
-        | Ok parsed, Ok state -> Playtest.applyState parsed state
+        try
+            match project projectJson, Json.parse stateJson with
+            | Error issue, _ | _, Error issue -> Error issue
+            | Ok parsed, Ok state -> Playtest.applyState parsed state
+        with error ->
+            Error error.Message
     match result with
     | Ok kept -> JObject [ "ok", JBool true; "errors", JArray []; "data", SchemaJson.encodeGameProject kept ]
     | Error issue -> JObject [ "ok", JBool false; "errors", strings [ issue ]; "data", JNull ]

@@ -233,8 +233,8 @@ let ``v9 moves the values a project plays with onto the engine grid`` () =
         Json.stringify v9)
     // Values already on the grid stay as they are, and the step is idempotent.
     Assert.Equal(Json.stringify v9, Json.stringify (Migrations.migrateV8ToV9 v9))
-    Assert.Equal(-3.0, Migrations.roundAway -2.5)
-    Assert.Equal(0.0, Migrations.roundAway 0.49999999999999994)
+    Assert.Equal(-3.0, JsNumber.roundHalfAway -2.5)
+    Assert.Equal(0.0, JsNumber.roundHalfAway 0.49999999999999994)
 
 [<Fact>]
 let ``whole-number fields with a fraction are reported`` () =
@@ -245,3 +245,33 @@ let ``whole-number fields with a fraction are reported`` () =
     Assert.Equal<string list>([ "items[0].value" ], found |> List.map (fun p -> p.Path))
     Assert.EndsWith("it plays as 13", found.Head.Message)
     Assert.Empty(Problems.collect project |> List.filter (fun p -> p.Code = "numbers.offGrid"))
+
+/// Web projects (the Romance pattern) can carry an NPC dialogue that differs from its copy in the
+/// project list; the NPC's copy is the one the game plays (#43).
+[<Fact>]
+let ``loading reconciles dialogue copies with the NPC's copy, which the game plays`` () =
+    let project = ProjectCatalog.CreateInitialProject 0.0
+    let npc = project.Npcs |> List.find (fun n -> n.Id = "npc-farmer")
+    let greeting = npc.Dialogue |> List.find (fun d -> d.Id = "dialogue-farmer-greeting")
+    let invitation = { DialogueOption.Default with Text = "Would you like to go on a date?"; EventFlag = Some "date-asked" }
+    let played = { greeting with Options = greeting.Options @ [ invitation ] }
+    let onlyOnNpc = { DialogueOption.Default with Text = "Only on the NPC" } |> fun o -> { greeting with Id = "dialogue-npc-only"; Options = [ o ] }
+    let mismatched =
+        { project with
+            Npcs = project.Npcs |> List.map (fun n -> if n.Id = npc.Id then { n with Dialogue = (n.Dialogue |> List.map (fun d -> if d.Id = greeting.Id then played else d)) @ [ onlyOnNpc ] } else n) }
+    Assert.Equal(greeting, mismatched.Dialogues |> List.find (fun d -> d.Id = greeting.Id))
+    let loaded =
+        match (ProjectLoad.migrateProjectText (ProjectLoad.toText mismatched)) with
+        | { Ok = true; Data = Some loaded } -> loaded
+        | result -> failwithf "%A" result.Errors
+    Assert.Equal(played, loaded.Dialogues |> List.find (fun d -> d.Id = greeting.Id))
+    Assert.Equal(onlyOnNpc, List.last loaded.Dialogues)
+    Assert.Equal(mismatched.Dialogues.Length + 1, loaded.Dialogues.Length)
+    Assert.Empty(Problems.collect loaded |> List.filter (fun p -> p.Code = "dialogue.copyMismatch" || p.Code = "dialogue.notInProject"))
+    // Saving what the Dialogue editor shows keeps the NPC-only option.
+    let shown = ProjectContent.Dialogues mismatched |> Seq.find (fun d -> d.Id = greeting.Id)
+    let saved = Document.run mismatched (UpsertDialogue shown)
+    let onNpc = (saved.Npcs |> List.find (fun n -> n.Id = npc.Id)).Dialogue |> List.find (fun d -> d.Id = greeting.Id)
+    Assert.Contains(invitation, onNpc.Options)
+    // A project whose copies agree loads as the same value.
+    Assert.Same(project, DialogueCopies.reconcile project)

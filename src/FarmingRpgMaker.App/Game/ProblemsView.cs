@@ -6,7 +6,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>The F# schema and content checks, refreshed when this tab is opened.</summary>
-public sealed class ProblemsView : UserControl
+public sealed class ProblemsView : UserControl, IRetirable
 {
     private readonly ProjectWorkspace _workspace;
     private readonly Action<Problem> _navigate;
@@ -27,8 +27,13 @@ public sealed class ProblemsView : UserControl
         stack.Children.Add(Ui.Wrapped("Errors block export. Warnings and tips help you improve the project.", "muted", "small"));
         stack.Children.Add(_rows);
         Content = new ScrollViewer { Content = stack };
-        _workspace.ProjectChanged += (_, _) => _dirty = true;
+        _workspace.ProjectChanged += OnProjectChanged;
     }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e) => _dirty = true;
 
     public void Refresh()
     {
@@ -63,6 +68,8 @@ public sealed class ProblemsView : UserControl
             {
                 var go = Ui.Button("Go to", () => _navigate(problem), "tool", "small");
                 go.Name = $"ProblemGo_{index}";
+                // Every row has a "Go to": the name says which problem it opens.
+                Avalonia.Automation.AutomationProperties.SetName(go, $"Go to: {problem.Message}");
                 _rows.Children.Add(Ui.Row(text, go));
             }
             else

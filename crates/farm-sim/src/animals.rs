@@ -11,11 +11,13 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::inventory;
+use crate::messages;
 use crate::schema::{AnimalSpeciesDefinition, AnimalState, GameState};
 use crate::units;
 
+/// The animal species `species_id`.
 pub fn species_by_id<'a>(ctx: &'a EngineContext, species_id: &str) -> Option<&'a AnimalSpeciesDefinition> {
-    ctx.content.animal_species.iter().find(|species| species.id == species_id)
+    ctx.animal_species(species_id)
 }
 
 /// The animal standing on tile `(x, y)` (animal positions are tile-aligned).
@@ -57,27 +59,27 @@ pub fn handle_animal_interaction(ctx: &EngineContext, state: &mut GameState, ani
                     a.mood = 100.min(animal.mood.saturating_add(5));
                 });
                 state.player.inventory = inventory;
-                return vec![Effect::message(message_levels::SUCCESS, format!("Fed {}", animal.name))];
+                return vec![Effect::say(message_levels::SUCCESS, messages::FED_ANIMAL.with(&[&animal.name]))];
             }
         }
     }
 
     // 2. Collect a ready product
     if animal.product_ready {
-        let product = ctx.content.items.iter().find(|item| item.id == species.product_item_id);
+        let product = ctx.item(&species.product_item_id);
         if let Some(product) = product {
             let added = inventory::add_item(&state.player.inventory, product, 1, state.player.max_inventory_size, None);
             if !added.added {
-                return vec![Effect::message(message_levels::ERROR, "Inventory is full!")];
+                return vec![Effect::say(message_levels::ERROR, &messages::INVENTORY_FULL)];
             }
             state.player.inventory = added.inventory;
             update_animal(state, &animal.id, |a| {
                 a.product_ready = false;
                 a.days_since_product = 0;
             });
-            return vec![Effect::message(
+            return vec![Effect::say(
                 message_levels::SUCCESS,
-                format!("Collected {} from {}", product.name, animal.name),
+                messages::COLLECTED_PRODUCT.with(&[&product.name, &animal.name]),
             )];
         }
     }
@@ -88,10 +90,10 @@ pub fn handle_animal_interaction(ctx: &EngineContext, state: &mut GameState, ani
             a.petted_today = true;
             a.mood = 100.min(animal.mood.saturating_add(8));
         });
-        return vec![Effect::message(message_levels::SUCCESS, format!("{} looks happy! ♥", animal.name))];
+        return vec![Effect::say(message_levels::SUCCESS, messages::ANIMAL_HAPPY.with(&[&animal.name]))];
     }
 
-    vec![Effect::message(message_levels::INFO, format!("{} is content.", animal.name))]
+    vec![Effect::say(message_levels::INFO, messages::ANIMAL_CONTENT.with(&[&animal.name]))]
 }
 
 /// Nightly pass for animals: age, mood, product rolls.

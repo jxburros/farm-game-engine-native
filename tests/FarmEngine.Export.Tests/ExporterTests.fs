@@ -245,10 +245,16 @@ let ``the web demo is a page with the module, the cartridge and an icon, zipped 
     let web = target report "web"
     let files = readFolder web.Folder
     Assert.Equal<string list>(
-        [ "farm_wasm.js"; "farm_wasm_bg.wasm"; "game.cart"; "game.js"; "icon.png"; "index.html"; "licenses/THIRD-PARTY.txt" ],
+        [ "farm_wasm.js"; "farm_wasm_bg.wasm"; "game.cart"; "game.js"; "icon.png"; "index.html"; "licenses/THIRD-PARTY.txt"; "style.css" ],
         files |> Map.toList |> List.map fst)
-    // The page carries the game's title, escaped.
-    Assert.Contains("<title>Willow &amp; &lt;Creek&gt;</title>", Text.Encoding.UTF8.GetString files.["index.html"])
+    // The page carries the game's title, escaped, and a Content-Security-Policy (added here: the
+    // fake template's page has none).
+    let page = Text.Encoding.UTF8.GetString files.["index.html"]
+    Assert.Contains("<title>Willow &amp; &lt;Creek&gt;</title>", page)
+    Assert.StartsWith(
+        sprintf "<meta http-equiv=\"Content-Security-Policy\" content=\"%s\">" ExportTarget.webContentSecurityPolicy,
+        page
+    )
     Assert.Equal<byte>(CartridgeCompiler.Compile project, files.["game.cart"])
     Assert.Equal((256, 256), pngSize files.["icon.png"])
     // Browsers need a web server for modules and wasm: the report says so.
@@ -258,6 +264,32 @@ let ``the web demo is a page with the module, the cartridge and an icon, zipped 
     Assert.EndsWith(".zip", web.Archive)
     Assert.Contains("index.html", Text.Encoding.ASCII.GetString archive)
     Assert.DoesNotContain("WillowCreek/index.html", Text.Encoding.ASCII.GetString archive)
+
+[<Fact>]
+let ``the web demo page sets its Content-Security-Policy once`` () =
+    let policy = ExportTarget.webContentSecurityPolicy
+    // Nothing inline may run or style the page, and only its own files load.
+    Assert.DoesNotContain("unsafe-inline", policy)
+    Assert.Contains("script-src 'self' 'wasm-unsafe-eval'", policy)
+    Assert.Contains("default-src 'none'", policy)
+    // A page with a policy keeps it; one without gets it at the top of its <head>.
+    let own = "<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"></head>"
+    Assert.Equal(own, Exporter.withContentSecurityPolicy own)
+    let added = Exporter.withContentSecurityPolicy "<html><head><title>x</title></head></html>"
+    Assert.StartsWith("<html><head>\n<meta http-equiv=\"Content-Security-Policy\"", added)
+    Assert.EndsWith("<title>x</title></head></html>", added)
+    // The real template carries the same policy, so export never adds a second one.
+    let rec repoRoot (folder: string) =
+        if File.Exists(Path.Combine(folder, "tools", "wasm", "web-template", "index.html")) then folder
+        else
+            match Path.GetDirectoryName folder with
+            | null -> failwith "tools/wasm/web-template not found above the test folder"
+            | parent -> repoRoot parent
+    let template = File.ReadAllText(Path.Combine(repoRoot AppContext.BaseDirectory, "tools", "wasm", "web-template", "index.html"))
+    Assert.Contains(sprintf "<meta http-equiv=\"Content-Security-Policy\" content=\"%s\">" policy, template)
+    Assert.Equal(template, Exporter.withContentSecurityPolicy template)
+    Assert.DoesNotContain("<style", template)
+    Assert.DoesNotContain("style=\"", template)
 
 [<Fact>]
 let ``a web template without its page files is refused`` () =

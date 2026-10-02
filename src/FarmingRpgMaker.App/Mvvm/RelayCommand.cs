@@ -22,7 +22,7 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
 
 /// <summary>
 /// Async <see cref="ICommand"/>: disabled while running, exceptions are routed to
-/// <paramref name="onError"/> (or swallowed) so a failing handler never crashes the UI.
+/// <paramref name="onError"/> and the log (the editor's file log) so a failing handler never crashes the UI.
 /// </summary>
 public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null, Action<Exception>? onError = null) : ICommand
 {
@@ -53,6 +53,8 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
         catch (Exception ex)
 #pragma warning restore CA1031
         {
+            // Never silently: the log has every failure, onError shows it to the creator.
+            System.Diagnostics.Trace.TraceError($"Command failed: {ex}");
             onError?.Invoke(ex);
         }
         finally

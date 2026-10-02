@@ -40,6 +40,46 @@ internal static class Ui
         return button;
     }
 
+    /// <summary>
+    /// A button whose click runs <paramref name="onClick"/> asynchronously. The button is disabled
+    /// while it runs, and an exception goes to <paramref name="onError"/> (and the log) instead of
+    /// escaping as an <c>async void</c> to the editor's error screen.
+    /// </summary>
+    public static Button AsyncButton(object content, Func<Task> onClick, Action<Exception> onError, params string[] classes)
+    {
+        ArgumentNullException.ThrowIfNull(onClick);
+        ArgumentNullException.ThrowIfNull(onError);
+        var running = false;
+        Button? button = null;
+        button = Button(content, async () =>
+        {
+            if (running)
+            {
+                return;
+            }
+
+            running = true;
+            button!.IsEnabled = false;
+            try
+            {
+                await onClick().ConfigureAwait(true);
+            }
+#pragma warning disable CA1031 // Reported next to the button; a click must not take the editor down.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                System.Diagnostics.Trace.TraceError($"{content}: {ex}");
+                onError(ex);
+            }
+            finally
+            {
+                running = false;
+                button.IsEnabled = true;
+            }
+        }, classes);
+        return button;
+    }
+
     public static PathIcon Icon(string resourceKey, double size = 16)
     {
         var icon = new PathIcon { Width = size, Height = size };

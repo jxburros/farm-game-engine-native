@@ -165,6 +165,14 @@ module JsNumber =
                     sign + digits.Substring(0, 1) + fraction + "e" + (if e >= 0 then "+" else "-") + string (abs e)
 #endif
 
+    // The two roundings of the authoring core (.NET's own `Math.Round` rounds halves to even
+    // and is not used for game values):
+    //   `round`          JS `Math.round`, halves toward +∞: code ported from the TypeScript
+    //                    (migrations that recompute values the way the web did).
+    //   `roundHalfAway`  halves away from zero: Rust `f64::round`, which the engine uses when it
+    //                    loads a value onto its integer grid, and JS `toFixed(0)`, which the web
+    //                    readouts display. For what the game will make of a value, and readouts.
+
     /// JS `Math.round`: halves round toward +∞ (.NET rounds to even).
     let round (x: float) : float =
         if Double.IsNaN x || Double.IsInfinity x then
@@ -172,6 +180,16 @@ module JsNumber =
         else
             let f = Math.Floor x
             if x - f >= 0.5 then f + 1.0 else f
+
+    /// Rust `f64::round` and JS `toFixed(0)`: to the nearest integer, halves away from zero (so
+    /// -2.5 is -3). Exact for every double (no `floor (x + 0.5)`, which turns
+    /// 0.49999999999999994 into 1).
+    let roundHalfAway (x: float) : float =
+        if Double.IsNaN x || Double.IsInfinity x then
+            x
+        else
+            let t = Math.Truncate x
+            if abs (x - t) >= 0.5 then t + (if x < 0.0 then -1.0 else 1.0) else t
 
 /// JS-semantics helpers over `Json`, for code ported from TypeScript that works on raw
 /// `Record<string, any>` data (migrations). Each helper names the JS expression it stands for.
@@ -454,24 +472,43 @@ module Json =
 
     exception private ParseFailure of string
 
+    /// The deepest nesting `parse` accepts. Project files nest about a dozen levels; the limit
+    /// keeps a hostile file from overflowing the stack (an uncatchable crash on .NET, a
+    /// `RangeError` under Fable) and keeps every recursive walk over a parsed value shallow.
+    [<Literal>]
+    let MaxDepth = 256
+
+    /// Objects with more members than this find duplicate keys through a dictionary instead of a
+    /// linear scan (map-like objects such as flag and locale tables can have thousands of keys).
+    [<Literal>]
+    let private IndexedMembers = 16
+
     /// Parses JSON text (`JSON.parse`, plus line and block comments and trailing commas, which
     /// hand-edited project files sometimes carry). Duplicate keys keep the last value in the
-    /// first key's position, like a JS object.
+    /// first key's position, like a JS object. Unlike `JSON.parse`, values nested deeper than
+    /// `MaxDepth` and numbers outside the double range (`1e400`, which JS reads as Infinity and
+    /// `JSON.stringify` writes back as null) are errors, so a file that loads also saves.
     let parse (text: string) : Result<Json, string> =
         let mutable i = 0
         let fail (message: string) : 'T = raise (ParseFailure(sprintf "%s at position %d" message i))
-        let rec skip () =
-            while i < text.Length && (text.[i] = ' ' || text.[i] = '\t' || text.[i] = '\n' || text.[i] = '\r') do
-                i <- i + 1
-            if i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '/' then
-                while i < text.Length && text.[i] <> '\n' do
+        // White space and comments: a loop, so a file of many comments does not recurse.
+        let skip () =
+            let mutable more = true
+            while more do
+                while i < text.Length && (text.[i] = ' ' || text.[i] = '\t' || text.[i] = '\n' || text.[i] = '\r') do
                     i <- i + 1
-                skip ()
-            elif i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '*' then
-                let close = text.IndexOf("*/", i + 2)
-                if close < 0 then fail "Unterminated comment"
-                i <- close + 2
-                skip ()
+                if i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '/' then
+                    while i < text.Length && text.[i] <> '\n' do
+                        i <- i + 1
+                elif i + 1 < text.Length && text.[i] = '/' && text.[i + 1] = '*' then
+                    // An ordinal search for "*/" (String.IndexOf(string) is culture-sensitive).
+                    let mutable close = i + 2
+                    while close + 1 < text.Length && not (text.[close] = '*' && text.[close + 1] = '/') do
+                        close <- close + 1
+                    if close + 1 >= text.Length then fail "Unterminated comment"
+                    i <- close + 2
+                else
+                    more <- false
         let expect (c: char) =
             if i < text.Length && text.[i] = c then i <- i + 1 else fail (sprintf "Expected '%c'" c)
         let hex (c: char) =
@@ -530,19 +567,53 @@ module Json =
                 i <- i + 1
                 if i < text.Length && (text.[i] = '+' || text.[i] = '-') then i <- i + 1
                 if digits () = 0 then fail "Invalid number"
-            JNumber(JsNumber.parse (text.Substring(start, i - start)))
+            let value = JsNumber.parse (text.Substring(start, i - start))
+            if System.Double.IsInfinity value then
+                i <- start
+                fail "Number out of range"
+            JNumber value
         let literal (word: string) (value: Json) =
             if i + word.Length <= text.Length && text.Substring(i, word.Length) = word then
                 i <- i + word.Length
                 value
             else fail "Unexpected token"
-        let rec readValue () : Json =
+        let rec readValue (depth: int) : Json =
             skip ()
             if i >= text.Length then fail "Unexpected end of JSON input"
             match text.[i] with
+            | '{'
+            | '[' when depth >= MaxDepth -> fail (sprintf "Too deeply nested (more than %d levels)" MaxDepth)
             | '{' ->
                 i <- i + 1
                 let members = ResizeArray<string * Json>()
+                // Key → position, once the object has more than `IndexedMembers` members.
+                let mutable index: System.Collections.Generic.Dictionary<string, int> option = None
+                let add (key: string) (value: Json) =
+                    let existing =
+                        match index with
+                        | Some positions ->
+                            match positions.TryGetValue key with
+                            | true, position -> position
+                            | _ -> -1
+                        | None ->
+                            let mutable position = -1
+                            let mutable k = 0
+                            while position < 0 && k < members.Count do
+                                if fst members.[k] = key then position <- k
+                                k <- k + 1
+                            position
+                    if existing >= 0 then
+                        members.[existing] <- (key, value)
+                    else
+                        members.Add((key, value))
+                        match index with
+                        | Some positions -> positions.[key] <- members.Count - 1
+                        | None when members.Count > IndexedMembers ->
+                            let positions = System.Collections.Generic.Dictionary<string, int>()
+                            for k in 0 .. members.Count - 1 do
+                                positions.[fst members.[k]] <- k
+                            index <- Some positions
+                        | None -> ()
                 skip ()
                 let mutable closed = false
                 while not closed do
@@ -554,10 +625,7 @@ module Json =
                         let key = readString ()
                         skip ()
                         expect ':'
-                        let value = readValue ()
-                        match Seq.tryFindIndex (fun (k, _) -> k = key) members with
-                        | Some index -> members.[index] <- (key, value)
-                        | None -> members.Add((key, value))
+                        add key (readValue (depth + 1))
                         skip ()
                         if i < text.Length && text.[i] = ',' then i <- i + 1
                         elif i < text.Length && text.[i] = '}' then ()
@@ -573,7 +641,7 @@ module Json =
                         i <- i + 1
                         closed <- true
                     else
-                        items.Add(readValue ())
+                        items.Add(readValue (depth + 1))
                         skip ()
                         if i < text.Length && text.[i] = ',' then i <- i + 1
                         elif i < text.Length && text.[i] = ']' then ()
@@ -586,7 +654,7 @@ module Json =
             | c when c = '-' || (c >= '0' && c <= '9') -> readNumber ()
             | _ -> fail "Unexpected token"
         try
-            let value = readValue ()
+            let value = readValue 0
             skip ()
             if i < text.Length then fail "Unexpected text after JSON"
             Ok value

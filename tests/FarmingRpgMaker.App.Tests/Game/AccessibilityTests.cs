@@ -69,4 +69,33 @@ public sealed class AccessibilityTests
         var distinct = missing.Distinct().ToList();
         Assert.True(distinct.Count == 0, $"{distinct.Count} controls have no accessible name:\n{string.Join("\n", distinct)}");
     }
+
+    [AvaloniaFact]
+    public void ToolButtonsTakeKeyboardFocusAndLetterKeysPickMapTools()
+    {
+        using var host = new GameTestHost();
+        var edit = host.Surface.EditView;
+        foreach (var name in new[] { "Tool_Rectangle", "Tool_Door", "Tool_PlaceNpc", "UndoButton", "ZoomInButton" })
+        {
+            var button = FindByName<Button>(host.Window, name);
+            Assert.True(button.Focusable, name);
+            Assert.True(!button.IsEnabled || button.Focus(), name);
+        }
+
+        Assert.True(edit.Canvas.Focus());
+        Avalonia.Headless.HeadlessWindowExtensions.KeyPress(host.Window, Avalonia.Input.Key.G, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.G, "g");
+        Pump();
+        Assert.Equal(MapTool.Fill, edit.Tool);
+        Avalonia.Headless.HeadlessWindowExtensions.KeyPress(host.Window, Avalonia.Input.Key.D, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.D, "d");
+        Pump();
+        Assert.Equal(MapTool.Door, edit.Tool);
+    }
+
+    [AvaloniaFact]
+    public void TheStatusBarIsALiveRegionAndTheModeToggleIsNamed()
+    {
+        using var host = new GameTestHost();
+        Assert.Equal(Avalonia.Automation.AutomationLiveSetting.Polite, Avalonia.Automation.AutomationProperties.GetLiveSetting(FindByName<TextBlock>(host.Window, "StatusText")));
+        Assert.Equal("Play Mode", ControlAutomationPeer.CreatePeerForElement(FindByName<Button>(host.Window, "ModeToggle")).GetName());
+    }
 }

@@ -1,7 +1,8 @@
 //! The dialogue box (web DialogueBox, C# `PlayOverlays.Dialogue`): a card at the bottom with the
 //! NPC's portrait (its art as the map draws it, else a person glyph), name and text, and the *visible* options (friendship, item and flag gates are
 //! the engine's; `chooseDialogueOption` indexes the same list). Keys 1–9 pick an option;
-//! "Goodbye" closes a dialogue without options.
+//! "Goodbye" closes a dialogue without options. A card taller than the screen scrolls (wheel,
+//! right stick), and moving the focus scrolls the focused option into view.
 
 use super::{draw_sprite, GameAction, GameView};
 use crate::icons::{self, Icon};
@@ -74,15 +75,25 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             .collect()
     };
     let options_height: f32 = option_heights.iter().sum::<f32>() + 8.0 * (option_heights.len() - 1) as f32;
-    let height = 20.0 + header_height + 18.0 + options_height + 20.0;
+    let content_height = 20.0 + header_height + 18.0 + options_height + 20.0;
     let bottom_margin = 24.0 + (screen.height * 0.04).min(40.0);
-    let card =
-        Rect::new((screen.width - width) / 2.0, (screen.bottom() - bottom_margin - height).max(12.0), width, height);
+    // Above the host's on-screen controls, and never taller than the space left: long text or
+    // many options scroll inside the card.
+    let bottom = ui.safe_area().bottom();
+    let height = content_height.min((bottom - bottom_margin - 12.0).max(120.0));
+    let card = Rect::new((screen.width - width) / 2.0, (bottom - bottom_margin - height).max(12.0), width, height);
     ui.panel(card, colors.panel, colors.panel_border, 12.0, true);
     ui.blocker(card);
+    let scrolls = content_height > height + 0.5;
+    let top = if scrolls {
+        let view = Rect::new(card.x, card.y + 8.0, card.width, card.height - 16.0);
+        ui.begin_scroll(WidgetId::new("dialogue-scroll").with(&dialogue.id), view) + 12.0
+    } else {
+        card.y + 20.0
+    };
 
     // Portrait and text.
-    let portrait = Rect::new(card.x + 20.0, card.y + 20.0, 56.0, 56.0);
+    let portrait = Rect::new(card.x + 20.0, top, 56.0, 56.0);
     ui.list_mut().fill_circle(portrait.x + 28.0, portrait.y + 28.0, 28.0, colors.secondary);
     let sprite = npc.and_then(|npc| portrait_sprite(view, npc));
     let drawn = sprite.is_some_and(|sprite| {
@@ -100,7 +111,7 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             colors.secondary,
         );
     }
-    let name_rect = Rect::new(card.x + text_x, card.y + 20.0, text_width, name_height);
+    let name_rect = Rect::new(card.x + text_x, top, text_width, name_height);
     ui.label(name_rect, npc_name, 16.5, FontId::Bold, colors.text, Align::Start);
     ui.paragraph(
         card.x + text_x,
@@ -114,15 +125,15 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
     );
 
     // Options.
-    let mut y = card.y + 20.0 + header_height + 18.0;
+    let mut y = top + header_height + 18.0;
     let x = card.x + 20.0;
     if options.is_empty() {
         let rect = Rect::new(x, y, option_width, option_heights[0]);
-        let button = Button::new(ui.tr("dialogue.goodbye"))
-            .kind(ButtonKind::Option)
-            .keycap("Esc")
-            .size(OPTION_SIZE)
-            .default_focus();
+        let mut button =
+            Button::new(ui.tr("dialogue.goodbye")).kind(ButtonKind::Option).size(OPTION_SIZE).default_focus();
+        if ui.device() != crate::input::InputDevice::Touch {
+            button = button.keycap("Esc");
+        }
         if ui.button(WidgetId::new("dialogue-goodbye"), rect, button) {
             actions.push(GameAction::Command(Command::CloseDialogue));
         }
@@ -172,6 +183,10 @@ pub(crate) fn draw(ui: &mut Ui, view: &GameView<'_>, images: &mut ImageStore, ac
             actions.push(GameAction::Command(Command::ChooseDialogueOption { index: index as i32 }));
         }
         y += height + 8.0;
+    }
+    if scrolls {
+        // `y` is 8 below the last option: 12 more of padding under it.
+        ui.end_scroll(y + 4.0);
     }
     ui.pop_layer();
 }

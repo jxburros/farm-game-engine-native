@@ -103,7 +103,9 @@ its output is used:
 v9 replaces FNV-1a over stable JSON with **xxh3-64 over the canonical binary
 encoding** of the state: a serde serializer in `farm_sim::hash` that writes
 integers little-endian, booleans as one byte, floats (only free-form JSON
-values such as flags carry them) as their IEEE-754 bits, strings and
+values such as flags carry them) as their IEEE-754 bits, except that a whole
+float within ±(2⁵³−1) is written as the integer it equals (stable JSON writes
+`1.0` as `1`, which reads back as an integer), strings and
 sequences with a `u32` length prefix, options as a tag byte, struct fields
 behind a presence byte (so a skipped optional field and a present value never
 collide) and enum variants as their index. Map entries are **sorted by their
@@ -153,6 +155,14 @@ The TypeScript goldens (`fixtures/golden/replays`, `saves`, `hash.json`,
   `golden_saves` in `farm-cart`; see `fixtures/golden/SOURCE.txt`) and
   reviewed as a diff; the v8 replays' inputs (project, seed, input log) are
   the recorded replays' inputs;
+- recording has guardrails, because a self-recorded golden pins whatever the
+  engine does, bugs included: the switches (`FARM_RECORD_GOLDENS`,
+  `FARM_PLAYER_BLESS`, `FARM_RENDER_BLESS`) are on only when set to `1`; a
+  recording run rewrites only the files that change and then **fails** with a
+  summary, so it never passes as a test run; `FARM_RECORD_GOLDENS` stamps the
+  engine commit it recorded on into `fixtures/golden/SOURCE.txt`; and CI
+  refuses to run with any record or bless switch set and fails when the tests
+  leave `fixtures/` different from the commit;
 - the comparison is a test, `farm-sim/tests/v8_outcomes.rs`: the v8 engine
   recorded the outcomes a player can see after every step of every v8 replay
   (money, energy, inventory, skills, quests, calendar, player tile, NPCs,

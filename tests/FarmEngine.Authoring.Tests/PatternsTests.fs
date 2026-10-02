@@ -6,7 +6,7 @@ open FarmEngine.Authoring.Tests.TestProjects
 open FarmEngine.Schemas
 
 let private options : PatternOptions =
-    { Name = "Willow"; Text = "A quiet spot."; X = 5; Y = 5; Day = 2; NpcId = "npc-farmer"; Friendship = 500; Consequences = true }
+    { Name = "Willow"; Text = "A quiet spot."; X = 5; Y = 5; Day = 2; NpcId = "npc-farmer"; Friendship = 500; Consequences = true; SceneId = "" }
 
 let private build (kind: PatternKind) (opts: PatternOptions) (project: GameProject) : Edit =
     match Patterns.build kind opts project with
@@ -50,6 +50,8 @@ let ``the patterns create what the web creates`` () =
     let minigame = fishing.Minigames |> Seq.find (fun m -> m.Id = "fishing")
     Assert.Equal("hold-to-catch", minigame.Kind)
     Assert.Equal(JNumber 1200.0, field "holdMs" minigame.Config)
+    // Only settings hold-to-catch reads stay (the starter timing bar's speed and prompt go).
+    Assert.Equal<string list>([ "holdMs" ], minigame.Config |> List.map fst)
     let combat = project |> apply (build Combat options project)
     Assert.Equal("simple-battle", (combat.Minigames |> Seq.find (fun m -> m.Id = "willow")).Kind)
     let tree = project |> apply (build Tree options project)
@@ -79,3 +81,15 @@ let ``patterns refuse bad tiles with the web messages`` () =
     expectError "That tile already has a doorway." (Patterns.build Building options building)
     let noScenes = { project with Scenes = [] }
     expectError "Select a scene first." (Patterns.build Story options noScenes)
+
+[<Fact>]
+let ``patterns put their tile in the scene the map shows`` () =
+    let first = starter ()
+    let barn = Defaults.newScene first "Barn" 8 6
+    let project = first |> apply (AddScene barn)
+    let mail = project |> apply (build Mail { options with SceneId = barn.Id; X = 3; Y = 2 } project)
+    let event = mail.Events |> Seq.last
+    Assert.Equal(barn.Id, event.SceneId)
+    // An unknown scene falls back to the player's scene.
+    let fallback = project |> apply (build Mail { options with SceneId = "nope" } project)
+    Assert.Equal("scene-farm", (fallback.Events |> Seq.last).SceneId)

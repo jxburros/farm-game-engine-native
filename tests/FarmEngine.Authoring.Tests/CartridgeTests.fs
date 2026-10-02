@@ -79,7 +79,11 @@ let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
         { ContentPack.Default with Manifest = { PackManifest.Default with Id = id; Name = id; Version = "1.0.0"; Permissions = { PackPermissions.Default with Hooks = [ "onDayStart"; "onEffect" ] } }; Plugins = [ { PackPlugin.Default with Id = "greeter"; Hooks = [ "onEffect"; "onCommand"; "onDayStart" ]; Source = "api.on('onDayStart', () => [])" } ] }
     let project =
         { starter () with
-            ContentPacks = [ { PackInstallation.Default with Pack = pack "alpha" }; { PackInstallation.Default with Pack = pack "off"; Enabled = false }; { PackInstallation.Default with Pack = pack "beta" } ] }
+            ContentPacks =
+                [ { PackInstallation.Default with Pack = pack "alpha" }
+                  { PackInstallation.Default with Pack = pack "off"; Enabled = false }
+                  { PackInstallation.Default with
+                      Pack = (let beta = pack "beta" in { beta with Manifest = { beta.Manifest with Permissions = { beta.Manifest.Permissions with Mutations = Some [ "message"; "giveItem:any" ] } } }) } ] }
     let cart = read (CartridgeCompiler.Compile project)
     Assert.Equal(2, cart.Plugins.Length)
     let first = cart.Plugins.[0]
@@ -88,7 +92,10 @@ let ``plugins of enabled packs ship with the hooks their manifest grants`` () =
     Assert.Equal("api.on('onDayStart', () => [])", first.Source)
     // The plugin's order, filtered by the manifest's permissions.
     Assert.Equal<string list>([ "onEffect"; "onDayStart" ], first.GrantedHooks)
+    // Mutation capabilities travel only when the manifest declares them.
+    Assert.Equal(None, first.GrantedMutations)
     Assert.Equal("beta:greeter", cart.Plugins.[1].Id)
+    Assert.Equal(Some [ "message"; "giveItem:any" ], cart.Plugins.[1].GrantedMutations)
     Assert.Empty (read (CartridgeCompiler.Compile(starter ()))).Plugins
 
 [<Fact>]
@@ -124,3 +131,135 @@ let ``the sample cartridges are current`` (file: string, sampleId: string) =
     else
         Assert.True((IO.File.ReadAllBytes path = bytes), file + ".cart is stale; rerun with FARM_RECORD_CARTRIDGES=1")
         Assert.Equal(ProjectCatalog.CreateSampleProject(sampleId, 1.7e12).Name, (read bytes).Info.Title)
+
+/// A game state as the engine writes it (only the parts Keep changes reads).
+let private engineState (project: GameProject) (clock: (string * Json) list) (rest: (string * Json) list) : Json =
+    let encoded = SchemaJson.encodeGameProject project
+    JObject(
+        [ "player", Json.get "player" encoded
+          "world", JObject [ "scenes", Json.get "scenes" encoded ]
+          "npcs", JObject []
+          "quests", JObject []
+          "clock", JObject([ "tick", JNumber 0.0; "timeMinutes", JNumber 360.0; "day", JNumber 1.0; "season", JString "spring"; "dayOfSeason", JNumber 1.0; "year", JNumber 1.0; "weatherId", JString "sun" ] |> List.map (fun (key, value) -> key, (clock |> List.tryFind (fst >> (=) key) |> Option.map snd |> Option.defaultValue value)))
+          "flags", JObject []
+          "animals", JArray []
+          "social", JObject []
+          "quarantinedItems", JArray []
+          "mine", JObject [ "deepestFloor", JNumber 0.0; "currentFloor", JNumber 0.0 ]
+          "dialogue", JNull
+          "shop", JNull
+          "minigame", JNull
+          "shopPurchasesToday", JObject []
+          "rng", JObject [ "algorithm", JString "xoshiro128ss"; "s", JArray [ JNumber 1.0; JNumber 2.0; JNumber 3.0; JNumber 4.0 ] ] ]
+        |> List.map (fun (key, value) -> key, (rest |> List.tryFind (fst >> (=) key) |> Option.map snd |> Option.defaultValue value))
+    )
+
+[<Fact>]
+let ``keep changes writes flag values and the live state back as they are`` () =
+    let project = starter ()
+    let flags = JObject [ "count", JNumber 3.0; "name", JString "Ada"; "met", JBool true ]
+    let state =
+        engineState project [ "tick", JNumber 1234.0 ] [
+            "flags", flags
+            "shop", JObject [ "shopId", JString "shop-general" ]
+            "shopPurchasesToday", JObject [ "shop-general", JObject [ "seed-wheat", JNumber 4.0 ] ]
+            "mine", JObject [ "deepestFloor", JNumber 3.0; "currentFloor", JNumber 2.0 ]
+            "npcs", JObject [ "npc-farmer", JObject [ "x", JNumber 1.0; "y", JNumber 1.0; "sceneId", JString "scene-farm"; "patrolIndex", JNumber 1.0 ] ] ]
+    match Playtest.applyState project state with
+    | Error message -> failwith message
+    | Ok kept ->
+        Assert.Equal<(string * Json) list>([ "count", JNumber 3.0; "name", JString "Ada"; "met", JBool true ], kept.EventFlags)
+        let keptState = kept.KeptState |> Option.defaultValue JNull
+        Assert.Equal(JNumber 1234.0, Json.get "tick" keptState)
+        Assert.Equal(JObject [ "shopId", JString "shop-general" ], Json.get "shop" keptState)
+        Assert.Equal(JNumber 2.0, Json.get "mineCurrentFloor" keptState)
+        Assert.Equal(JObject [ "npc-farmer", JObject [ "patrolIndex", JNumber 1.0 ] ], Json.get "npcs" keptState)
+        Assert.True(Json.isNullish (Json.get "dialogue" keptState))
+        // The next playtest's cartridge starts from it.
+        let start = parse (read (CartridgeCompiler.CompileForPlaytest kept)).StartJson
+        Assert.Equal(keptState, Json.get "keptState" start)
+        Assert.Equal(JString "Ada", Json.get "name" (Json.get "eventFlags" start))
+    // A fresh state has nothing extra to keep, and the start on day 1 of spring needs no day of season.
+    match Playtest.applyState project (engineState project [] []) with
+    | Ok kept ->
+        Assert.Equal(None, kept.KeptState)
+        Assert.Equal(None, kept.CurrentDayOfSeason)
+    | Error message -> failwith message
+
+[<Fact>]
+let ``keep changes records the day of season when the absolute day does not give it`` () =
+    let project = starter ()
+    let state = engineState project [ "day", JNumber 11.0; "season", JString "summer"; "dayOfSeason", JNumber 11.0 ] []
+    match Playtest.applyState project state with
+    | Ok kept ->
+        Assert.Equal(Some 11.0, kept.CurrentDayOfSeason)
+        let start = parse (read (CartridgeCompiler.CompileForPlaytest kept)).StartJson
+        Assert.Equal(JNumber 11.0, Json.get "currentDayOfSeason" start)
+    | Error message -> failwith message
+
+[<Fact>]
+let ``keep changes keeps the project key order`` () =
+    let project = starter ()
+    let tool = { project with Player = { project.Player with EquippedTool = Some "tool-hoe" } }
+    let keys (json: Json) = Json.keys json
+    let before = SchemaJson.encodeGameProject tool
+    // The playtest ends with no tool equipped: the key goes, the others stay in place.
+    let after = Playtest.applyStateJson before (engineState project [] [])
+    Assert.Equal<string list>(keys (Json.get "player" before) |> List.filter ((<>) "equippedTool"), keys (Json.get "player" after) |> List.filter (fun key -> Json.has key (Json.get "player" before)))
+    Assert.Equal<string list>(keys before, keys after |> List.filter (fun key -> Json.has key before))
+
+// ── Hostile cartridges and byte parity (#135, #136) ─────────────────────────
+
+let private i32At (b: byte[]) (at: int) = BitConverter.ToInt32(b, at)
+
+/// Where the length of the root table's vector field `index` sits.
+let private vectorLengthAt (b: byte[]) (index: int) : int =
+    let root = i32At b 0
+    let vtable = root - i32At b root
+    let at = root + int (BitConverter.ToUInt16(b, vtable + 4 + 2 * index))
+    at + i32At b at
+
+[<Fact>]
+let ``a vector length near Int32.MaxValue is malformed, not an exception`` () =
+    let bytes = CartridgeCompiler.Compile(starter ())
+    for length in [ Int32.MaxValue; Int32.MaxValue - 3; Int32.MinValue; bytes.Length ] do
+        let broken = Array.copy bytes
+        BitConverter.GetBytes(length).CopyTo(broken, vectorLengthAt bytes 4)
+        match CartridgeReader.read broken with
+        | Error message -> Assert.StartsWith("Malformed cartridge:", message)
+        | Ok _ -> failwithf "length %d read" length
+    // No other 32-bit word of the header makes `read` throw either.
+    for at in 8 .. 4 .. 400 do
+        for value in [ Int32.MaxValue; -1; 1 <<< 30 ] do
+            let broken = Array.copy bytes
+            BitConverter.GetBytes(value).CopyTo(broken, at)
+            CartridgeReader.read broken |> ignore
+
+[<Fact>]
+let ``out-of-range window sizes are clamped the same way in every runtime`` () =
+    let project = starter ()
+    let export = Defaults.newExportSettings project
+    let sized (width: int) (height: int) =
+        let cart = read (CartridgeCompiler.CompileForPlaytest { project with Export = Some { export with Window = { export.Window with Width = width; Height = height } } })
+        cart.Info.WindowWidth, cart.Info.WindowHeight
+    Assert.Equal((320u, 240u), sized -1 0)
+    Assert.Equal((8192u, 8192u), sized Int32.MaxValue 100000)
+    Assert.Equal((1024u, 768u), sized 1024 768)
+    Assert.Equal(0u, CartridgeCompiler.UInt32Of -1.0)
+    Assert.Equal(0u, CartridgeCompiler.UInt32Of nan)
+    Assert.Equal(UInt32.MaxValue, CartridgeCompiler.UInt32Of 1e12)
+    Assert.Equal(9u, CartridgeCompiler.UInt32Of 9.7)
+
+[<Fact>]
+let ``utf8Text replaces each maximal malformed subpart once, like dotnet and TextDecoder`` () =
+    let decode (bytes: byte list) =
+        let b = Array.ofList bytes
+        Bytes.utf8Text b 0 b.Length
+    Assert.Equal("a�", decode [ 0x61uy; 0xE2uy; 0x82uy ])
+    Assert.Equal("��", decode [ 0xE0uy; 0x80uy ])
+    Assert.Equal("�a", decode [ 0xF0uy; 0x9Fuy; 0x98uy; 0x61uy ])
+    Assert.Equal("€😀", decode [ 0xE2uy; 0x82uy; 0xACuy; 0xF0uy; 0x9Fuy; 0x98uy; 0x80uy ])
+    let random = Random(1234)
+    for _ in 1 .. 5000 do
+        let bytes = Array.init (random.Next(0, 12)) (fun _ -> byte (if random.Next 3 = 0 then random.Next 0x80 else 0x80 + random.Next 0x80))
+        Assert.Equal(Text.Encoding.UTF8.GetString bytes, Bytes.utf8Text bytes 0 bytes.Length)

@@ -20,6 +20,13 @@ impl RngState {
     fn with_words(s: [u32; 4]) -> Self {
         Self { algorithm: "xoshiro128ss".to_owned(), s }
     }
+
+    /// All four words zero: a fixed point of xoshiro, which then draws 0 forever (every chance
+    /// succeeds, every weighted pick is the first). [`RngState::default`] is this state, so a
+    /// save or project without an `rng` has it.
+    pub fn is_degenerate(&self) -> bool {
+        self.s == [0; 4]
+    }
 }
 
 impl Default for RngState {
@@ -113,10 +120,17 @@ pub struct Rng {
 }
 
 impl Rng {
+    /// A generator continuing `state`. A [degenerate](RngState::is_degenerate) state (which
+    /// loading replaces, see `farm_cart`) starts from seed 0 instead, so a missed one cannot
+    /// pin every draw to 0.
     pub fn new(state: RngState) -> Self {
+        if state.is_degenerate() {
+            return Self { state: create_rng_state_from_u32(0) };
+        }
         Self { state }
     }
 
+    /// The next 32-bit draw.
     pub fn next_u32(&mut self) -> u32 {
         let (value, next) = next_u32(&self.state);
         self.state = next;
@@ -134,6 +148,7 @@ impl Rng {
         u128::from(self.next_u32()) * denominator < numerator
     }
 
+    /// A uniform integer in `min..=max`.
     pub fn int(&mut self, min: i64, max: i64) -> i64 {
         let (value, next) = next_int(&self.state, min, max);
         self.state = next;
@@ -141,13 +156,15 @@ impl Rng {
     }
 
     /// Pick an index from integer weights: `(u × total) >> 32`, then walk the weights. `None`
-    /// for an empty or all-zero table (no draw).
+    /// for an empty or all-zero table (no draw). The product is taken in 128 bits: content
+    /// weights are `u32`s each, so their sum can pass 2³² and the product 2⁶⁴.
     pub fn weighted(&mut self, weights: &[u32]) -> Option<usize> {
         let total: u64 = weights.iter().map(|w| u64::from(*w)).sum();
         if total == 0 {
             return None;
         }
-        let mut roll = (u64::from(self.next_u32()) * total) >> 32;
+        // `u < 2³²`, so the shifted product is below `total` and fits a u64.
+        let mut roll = ((u128::from(self.next_u32()) * u128::from(total)) >> 32) as u64;
         for (i, w) in weights.iter().enumerate() {
             let w = u64::from(*w);
             if roll < w {

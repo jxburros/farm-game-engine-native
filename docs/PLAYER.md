@@ -68,11 +68,30 @@ same arguments always give the same image. A script lists input by frame:
 
 The mouse clicks every button, and the wheel (or the right stick) scrolls
 lists. The toolbar at the top has Inventory, Quests, Craft, Sleep and Menu.
+
+Planting: **Hold** on a seed or a fertilizer in the inventory picks what
+interacting with open soil uses (press it again to put it away). Without a held
+seed the first seed that grows this season is planted, and fertilizer is only
+used when one is held. Interact presses then go to the engine as `interactWith`
+commands.
 The hint row at the bottom shows the keys of the device used last: keyboard
-keycaps, or gamepad buttons once a pad is used.
+keycaps, or gamepad buttons once a pad is used. On a touch screen with
+on-screen controls (the web demo) there is no hint row and the toolbar names
+no keys. A dialogue card taller than the window scrolls, and moving the focus
+scrolls the focused option into view.
+
+Messages (toasts) stay long enough to read: at least 3.5 seconds, about a
+second more for every fifteen characters (up to 15 seconds), and errors twice
+as long. Pointing at one holds it; clicking it dismisses it.
+
+The embedded fonts (Inter, Atkinson Hyperlegible) cover Latin, Greek and
+Cyrillic, without shaping. Other scripts (CJK, Arabic…) draw as boxes; the
+editor's Play Mode warns the creator once when the game's text has such
+characters.
 
 Keyboard keys are rebindable in **Settings → Controls**: press a key's button,
-then the new key (Esc cancels). A key bound elsewhere moves to the new action.
+then the new key (Esc, gamepad B or Start cancel). A key bound elsewhere moves
+to the new action.
 The engine still sees its default keys: the player translates a pressed key to
 the key the action has by default, and swallows default game keys that were
 rebound away. Creator hotkeys and digits pass through unchanged.
@@ -93,12 +112,26 @@ default, so a partial or older file loads; an unreadable file is ignored.
 - **Display:** fullscreen (borderless) or windowed, integer scaling (whole
   pixel steps, letterboxed) or fit, interface size (75–150 %).
 - **Audio:** master, music, sound effects, mute. Sound effects are the
-  synthesized farm-runtime presets; there is no music content yet.
+  synthesized farm-runtime presets, rendered once when the device opens.
+  Music and ambience are built-in loops, composed and synthesized by the
+  engine's own code (`farm_runtime::music`: a fixed score, small
+  instruments and seeded noise), so there are no recorded or third-party
+  audio files and nothing extra to license or ship. Day music and birdsong
+  play from 6:00 to 19:00, night music and crickets after that, rain under
+  rainy weather, no ambience in indoor scenes, and day music on the title
+  screens; the Music volume sets both, and the game fades between loops.
+  The loops render on a thread of their own when the device opens; the web
+  demo renders them with `musicSamples` and loops them with WebAudio. Sound
+  follows the default output device:
+  when it goes away (headphones unplugged) or another one becomes the default,
+  the game reopens the stream on the current default device.
 - **Controls:** keyboard bindings and the gamepad layout.
 - **Accessibility:** text size (90–140 %), reduced motion (no floating pops,
   fades or flashes), a readable font (Atkinson Hyperlegible, SIL OFL 1.1, for
   the interface; text drawn in the world stays in Inter) and the language
-  (English or Spanish). Until the player picks a language the game follows
+  (English or Spanish), which covers the engine's messages (toasts, the
+  built-in minigames, save-load notices) as well as the interface. Until the
+  player picks a language the game follows
   the system's, then the game's `settings.locale`, then English; in the
   editor's Play Mode the editor's language comes first.
 
@@ -117,16 +150,35 @@ game version, cartridge hash), a preview the slot list reads without loading
 the game (farm name, day, season, year, money, play time, when it was saved and
 a thumbnail of the scene) and the zstd-compressed state. A save from another
 game is refused; one from a newer version loads with a warning; items the game
-no longer has go to quarantine. Files are written through a temporary file and
-a rename, so a crash never leaves half a save.
+no longer has go to quarantine.
+
+Files are written through a temporary file of the running copy of the game,
+flushed to the disk before a rename puts it in place (and, on Linux and macOS,
+the folder flushed after it), so a crash or power loss never leaves half a
+save. Before a slot is replaced, its previous save becomes `slot<N>.bak`: when
+a slot's save is missing or does not load, the slot list shows the backup and
+loading it says so. Temporary files that a crash left behind are removed at
+start-up.
 
 ## Crash logs
 
-A panic writes `crash-<time>.log` next to the saves and prints its path. The
-log has the player version, the game and its version, the cartridge hash, the
-slot, tick, day and scene, the state hash, the last 64 commands with their
-ticks and recent plugin errors. The simulation is deterministic, so the last
-save plus that command log replays the crash.
+A panic writes `crash-<time>-<pid>.log` next to the saves (in the temporary
+folder when there is no user folder) and prints its path. The log has the
+player version, the game and its version, the cartridge hash, the slot, tick,
+day and scene, the state hash, the last 64 commands with their ticks and
+recent plugin errors. The simulation is deterministic, so the last save plus
+that command log replays the crash.
+
+Logs are created as new files (never through an existing file or link), two
+crashes in the same second get separate logs, and only the newest ten are
+kept. The game report in a log is refreshed every second; a panic outside the
+frame (the audio thread, the window system) says how many frames old it is.
+
+When the game stops with an error, or its cartridge does not load, the window
+shows what happened and where the crash log is (an exported Windows game has
+no console), until it is closed or Esc or Enter is pressed. Closing the window
+while a game runs asks first, like Quit in the pause menu; closing again while
+that question is up closes at once.
 
 ## Headless replays
 
@@ -224,8 +276,11 @@ under one lock, so plugin hooks never block the editor. Editor shortcuts
 1. Input is routed: bound keys become the engine's keys, and the UI gets
    navigation, pointer and raw keys.
 2. The session steps (fixed timestep) unless a menu pauses the game.
-3. `farm-render` builds the world snapshot; `farm-ui` draws the HUD, panels
-   and shell screens into a draw list.
+3. `farm-render` builds the world snapshot of the tiles the camera shows (a
+   tile window, one tile of margin and the row below for tall objects), so a
+   256×256 farm costs about what a small one does; image URLs are shared
+   `Arc`s that stay the same from frame to frame. `farm-ui` draws the HUD,
+   panels and shell screens into a draw list.
 4. The world is rasterized at its native pixel-art size (the camera viewport,
    32-pixel tiles, one pixel larger for smooth scrolling) and scaled up with
    nearest neighbour: whole steps with integer scaling, else fitted;
@@ -234,7 +289,13 @@ under one lock, so plugin hooks never block the editor. Editor shortcuts
 
 The UI scales with the window (1× at 1280×800, 1.35× at 1920×1080) times the
 interface size setting. 16:10 (Steam Deck) and 16:9 both lay out without
-overlap; the HUD drops its labels and then wraps when space runs out.
+overlap; the HUD drops its labels and then wraps when space runs out. A host
+can describe its surface with `Player::set_host_view` (the web player does,
+per frame): the pixel density, so the fit is computed in CSS pixels and the
+UI keeps its size on dense phone screens, and the strip its on-screen touch
+controls cover at the bottom, which the hint row, creator panels, "Made with"
+credit, title menu and dialogue box stay above. Desktop windows keep the
+defaults (density 1, no controls).
 
 Frame times in a release build (starter farm, one thread, a 2.1 GHz Xeon
 cloud core), for the whole frame: input, UI, world and rasterizing:
@@ -245,10 +306,23 @@ cloud core), for the whole frame: input, UI, world and rasterizing:
 | Gameplay, walking | 3.1 ms | 4.3 ms |
 | Shop open | 5.5 ms | 8.8 ms |
 
-The UI keeps these low by drawing text from cached glyph sprites, filling
+The UI keeps these low by drawing text from cached glyph coverage (one mask
+per glyph, size and quarter-pixel position, coloured while blending, so
+fading text reuses it; the least recently used masks make room), filling
 rectangles with direct pixel loops, dropping commands outside the screen or
-clip, and dimming the world at its native size instead of the full frame.
-The largest remaining cost is a modal's soft shadow (about 2 ms at 1080p).
+clip, building a clip's full-frame mask only for general path fills (and
+then only rewriting the rows of the old and new clip), and dimming the world
+at its native size instead of the full frame. The largest remaining cost is a
+modal's soft shadow (about 2 ms at 1080p).
+
+At high resolutions the whole frame is still recomposed every frame at full
+physical resolution (fill, upscale, UI, then a copy into the window), also
+on menus where nothing moves. `farm-bench` measures gameplay frames at
+1280×800 and 1920×1080 against the 60 Hz budget, the same on a 256×256 farm,
+and reports 2560×1600 and 3840×2160 without a budget (one run on a shared cloud machine:
+5.4, 8.2 and 11.1 ms, then 13.7 and 23.8 ms). Capping the UI's internal resolution, skipping
+unchanged menu frames and upscaling straight into the window's buffer are
+the next steps.
 
 ## Tests
 

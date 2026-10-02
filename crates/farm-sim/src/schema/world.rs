@@ -98,6 +98,60 @@ pub struct Scene {
     pub transitions: Vec<SceneTransition>,
     pub npcs: Vec<String>,
     pub events: Vec<String>,
+    /// Indoor scenes (greenhouses, interiors, generated mine floors) keep the weather out: rain
+    /// does not water their soil and storms do not damage their crops. Absent means outdoor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indoor: Option<bool>,
+    /// Set on scenes the engine made during play (mine floors): they are not authored, never
+    /// sync back into the editor's scene lists, and `exitMine` drops them.
+    // Written as a plain boolean, as when it was an untyped key: the state hash encodes an
+    // `Option` with a tag byte.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "plain_bool")]
+    pub generated: Option<bool>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// An optional flag that is only written when present, as its bare value.
+fn plain_bool<S: serde::Serializer>(value: &Option<bool>, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_bool(value.unwrap_or(false))
+}
+
+/// The largest scene side, in tiles: the editor's size limit, and what the engine accepts when a
+/// game or save loads (larger scenes are cut down to it).
+pub const MAX_SCENE_SIZE: i32 = 256;
+
+impl Scene {
+    /// Whether `(x, y)` lies inside the scene's declared size.
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        x >= 0 && x < self.width && y >= 0 && y < self.height
+    }
+
+    /// The tile at `(x, y)`: `None` outside the declared size or where the grid has no tile (a
+    /// ragged grid that was never normalized). Simulation code reads tiles through this and
+    /// [`Scene::tile_mut`] instead of indexing `tiles[y][x]`, so a malformed grid cannot panic.
+    pub fn tile(&self, x: i32, y: i32) -> Option<&Tile> {
+        if !self.contains(x, y) {
+            return None;
+        }
+        self.tiles.get(y as usize)?.get(x as usize)
+    }
+
+    /// [`Scene::tile`], mutable.
+    pub fn tile_mut(&mut self, x: i32, y: i32) -> Option<&mut Tile> {
+        if !self.contains(x, y) {
+            return None;
+        }
+        self.tiles.get_mut(y as usize)?.get_mut(x as usize)
+    }
+
+    /// Whether this scene was generated during play (see [`Scene::generated`]).
+    pub fn is_generated(&self) -> bool {
+        self.generated == Some(true)
+    }
+
+    /// Is the scene sheltered from the weather ([`Scene::indoor`])?
+    pub fn is_indoor(&self) -> bool {
+        self.indoor == Some(true)
+    }
 }

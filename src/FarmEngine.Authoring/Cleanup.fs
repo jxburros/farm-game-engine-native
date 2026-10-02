@@ -5,8 +5,13 @@ open FarmEngine.Schemas
 /// What removing a thing takes with it. The web editors mostly only filter the list they own
 /// (NPCEditor also drops the NPC's dialogues, WildlifeEditor the species' animals, CropEditor the
 /// seed and crop items, ProjectSettingsEditor the festivals of a season); everything else was left
-/// for the Problems panel to report. Here every `Remove*` edit scrubs the references too, so a
-/// project never gains dangling ids from an edit. Each function returns the same instance when
+/// for the Problems panel to report. Here every `Remove*` edit scrubs the references too, except
+/// the ones that gate something (#86): a condition on the removed item, NPC, quest or season, a
+/// dialogue option's required item, a quest prerequisite, a recipe's unlock quest, and a season
+/// list it was the only entry of. Dropping those would make the gated content available to
+/// everyone; kept, the dangling reference never holds (nobody has the missing item, the missing
+/// quest never completes, the season never comes), so the content stays locked and Problems
+/// reports the reference until the creator decides. Each function returns the same instance when
 /// there was nothing to scrub.
 module Cleanup =
     /// `Some list'` when `f` removed (None) or changed at least one element.
@@ -90,8 +95,9 @@ module Cleanup =
     // ---- one function per removed kind ----
 
     /// An item is gone: inventory slots, shop stock, recipe lines, drops, feed/product links,
-    /// fish entries, quest targets and rewards, dialogue gifts, item conditions and outcomes,
-    /// dropped copies on tiles, and interface entries that showed it.
+    /// fish entries, quest targets and rewards, dialogue gifts, item outcomes, dropped copies on
+    /// tiles, and interface entries that showed it. Gates on it stay (`hasItem` and
+    /// `inventorySpace` conditions, options that require it): they now never hold.
     let dropItem (itemId: string) (project: GameProject) : GameProject =
         let refersTo (id: string option) = refers id itemId
         project
@@ -122,14 +128,7 @@ module Cleanup =
                 match Lists.filterChanged (fun (r: QuestRewardItem) -> r.ItemId <> itemId) items with
                 | Some kept -> { q with Rewards = { q.Rewards with Items = Some kept } }
                 | None -> q)
-        |> mapDialogueOptions (fun o ->
-            let o = if refersTo o.GiveItem then { o with GiveItem = None; GiveItemQuantity = None } else o
-            Some(if refersTo o.RequiresItem then { o with RequiresItem = None } else o))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.HasItem h -> dropWhen (h.ItemId = itemId) c
-            | EventCondition.InventorySpace s -> dropWhen (s.ItemId = itemId) c
-            | _ -> Some c)
+        |> mapDialogueOptions (fun o -> Some(if refersTo o.GiveItem then { o with GiveItem = None; GiveItemQuantity = None } else o))
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.GiveItem || o.Type = EventOutcomeTypes.TakeItem) && refersTo o.ItemId) o)
         |> mapTiles (fun t ->
             match t.Item with
@@ -142,8 +141,8 @@ module Cleanup =
                     (fun p l -> { p with Entries = l })
             ))
 
-    /// An NPC is gone: its dialogues, the editor selection, quest givers and talk targets,
-    /// friendship conditions, NPC outcomes and scene NPC lists.
+    /// An NPC is gone: its dialogues, the editor selection, quest givers and talk targets, NPC
+    /// outcomes and scene NPC lists. Friendship conditions on it stay: they now never hold.
     let dropNpc (npcId: string) (project: GameProject) : GameProject =
         project
         |> fun p -> withList p (Lists.filterChanged (fun (d: Dialogue) -> d.NpcId <> npcId) p.Dialogues) (fun p l -> { p with Dialogues = l })
@@ -153,10 +152,6 @@ module Cleanup =
             withList q
                 (Lists.mapChanged (fun (o: QuestObjective) -> if refers o.TargetNpcId npcId then { o with TargetNpcId = None } else o) q.Objectives)
                 (fun q l -> { q with Objectives = l }))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.Friendship f -> dropWhen (f.NpcId = npcId) c
-            | _ -> Some c)
         |> mapOutcomes (fun o ->
             let npcOutcome =
                 o.Type = EventOutcomeTypes.SpawnNpc || o.Type = EventOutcomeTypes.RemoveNpc
@@ -171,24 +166,13 @@ module Cleanup =
         |> mapOutcomes (fun o ->
             Some(if o.Type = EventOutcomeTypes.StartDialogue && refers o.DialogueId dialogueId then { o with DialogueId = None } else o))
 
-    /// A quest is gone: prerequisites, offers, quest conditions and outcomes, recipe unlocks and the player's lists.
+    /// A quest is gone: offers, quest outcomes and the player's lists. Gates on it stay (other
+    /// quests' prerequisites, `questStatus` conditions, recipe unlocks): the quest never
+    /// completes now, so what waited for it stays locked.
     let dropQuest (questId: string) (project: GameProject) : GameProject =
         project
-        |> mapQuests (fun q ->
-            match q.Prerequisites with
-            | None -> q
-            | Some prerequisites ->
-                withList q (Lists.filterChanged (fun (id: string) -> id <> questId) prerequisites) (fun q l -> { q with Prerequisites = Some l }))
         |> mapDialogueOptions (fun o -> Some(if refers o.OfferQuestId questId then { o with OfferQuestId = None } else o))
-        |> mapConditions (fun c ->
-            match c with
-            | EventCondition.QuestStatus q -> dropWhen (q.QuestId = questId) c
-            | _ -> Some c)
         |> mapOutcomes (fun o -> dropWhen ((o.Type = EventOutcomeTypes.StartQuest || o.Type = EventOutcomeTypes.CompleteQuest) && refers o.QuestId questId) o)
-        |> mapRecipes (fun r ->
-            match r.Unlock with
-            | Some unlock when refers unlock.QuestId questId -> { r with Unlock = Some { unlock with QuestId = None } }
-            | _ -> r)
         |> fun p ->
             let player = p.Player
             let player = withList player (Lists.filterChanged (fun (id: string) -> id <> questId) player.ActiveQuests) (fun pl l -> { pl with ActiveQuests = l })
@@ -372,17 +356,19 @@ module Cleanup =
                     { p with Player = { p.Player with SceneId = start.Id; X = float x; Y = float y } }
 
     /// A calendar season is gone: festivals on it, weather rows, and season lists that named it.
+    /// A list it was the only entry of keeps it: an empty (or absent) list means "every season",
+    /// so emptying it would open winter-only stock, quests, fish and recipes all year. Kept, the
+    /// season never comes, and Problems reports it.
     let dropSeason (seasonId: string) (project: GameProject) : GameProject =
-        let without (seasons: string list) = Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons
-        /// An optional season list without the season; absent once empty.
+        let without (seasons: string list) =
+            match Lists.filterChanged (fun (s: string) -> s <> seasonId) seasons with
+            | Some [] -> None
+            | other -> other
+        /// An optional season list without the season.
         let optionalList (seasons: string list option) : string list option option =
             match seasons with
             | None -> None
-            | Some list ->
-                match without list with
-                | Some [] -> Some None
-                | Some kept -> Some(Some kept)
-                | None -> None
+            | Some list -> without list |> Option.map Some
         project
         |> fun p ->
             let calendar = p.Settings.Calendar
@@ -411,7 +397,6 @@ module Cleanup =
             match c with
             | EventCondition.Season s ->
                 match without s.Seasons with
-                | Some [] -> None
                 | Some kept -> Some(EventCondition.Season { s with Seasons = kept })
                 | None -> Some c
             | _ -> Some c)
@@ -421,3 +406,94 @@ module Cleanup =
                 match List.tryHead p.Settings.Calendar.Seasons with
                 | Some first -> { p with CurrentSeason = first.Id }
                 | None -> p
+
+    /// A scene shrank to `width` × `height` (#44): what stood on, or pointed at, a cut tile moves
+    /// to the nearest tile inside, the way `dropScene` moves the player. That is the player start,
+    /// NPCs with their schedule stops and patrol points, animals, doors landing in the scene,
+    /// event tile conditions, tile-change and warp outcomes, and the mine entrance. Doors leaving
+    /// from a cut tile go with the tile (moving them could stack two doors on one tile). Only
+    /// the cut sides are clamped: a position that was already outside on the other side stays
+    /// for Problems to report. The same instance when nothing stood outside.
+    let clampToScene (sceneId: string) (width: int) (height: int) (project: GameProject) : GameProject =
+        let w = float width
+        let h = float height
+        let cx (x: float) = if x >= w then w - 1.0 else x
+        let cy (y: float) = if y >= h then h - 1.0 else y
+        let cut (x: float) (y: float) = x >= w || y >= h
+        let cxo (x: float option) = Option.map cx x
+        let cyo (y: float option) = Option.map cy y
+        let isHere (id: string option) = id = Some sceneId
+        /// A tile-change or warp outcome aimed at this scene (`eventScene`: the scene a
+        /// tile change without its own scene works in).
+        let clampOutcome (eventScene: string) (o: EventOutcome) : EventOutcome option =
+            let tileScene = match o.SceneId with Some id when id.Length > 0 -> id | _ -> eventScene
+            if o.Type = EventOutcomeTypes.ChangeTile && tileScene = sceneId then
+                let x, y = cxo o.TileX, cyo o.TileY
+                Some(if x = o.TileX && y = o.TileY then o else { o with TileX = x; TileY = y })
+            elif o.Type = EventOutcomeTypes.WarpPlayer && isHere o.SceneId then
+                let x, y = cxo o.X, cyo o.Y
+                Some(if x = o.X && y = o.Y then o else { o with X = x; Y = y })
+            else Some o
+        let clampCondition (c: EventCondition) : EventCondition option =
+            match c with
+            | EventCondition.EnterTile t ->
+                let next = { t with X = cx t.X; Y = cy t.Y }
+                Some(if next = t then c else EventCondition.EnterTile next)
+            | EventCondition.InteractTile t ->
+                let next = { t with X = cx t.X; Y = cy t.Y; X2 = cxo t.X2; Y2 = cyo t.Y2 }
+                Some(if next = t then c else EventCondition.InteractTile next)
+            | _ -> Some c
+        project
+        |> fun p ->
+            let player = p.Player
+            if player.SceneId <> sceneId || not (cut player.X player.Y) then p
+            else { p with Player = { player with X = cx player.X; Y = cy player.Y } }
+        |> mapNpcs (fun n ->
+            let n = if n.SceneId = sceneId && cut n.X n.Y then { n with X = cx n.X; Y = cy n.Y } else n
+            let n =
+                match n.Schedule with
+                | Some stops ->
+                    match Lists.mapChanged (fun (e: NpcScheduleEntry) -> if e.SceneId = sceneId && cut e.X e.Y then { e with X = cx e.X; Y = cy e.Y } else e) stops with
+                    | Some next -> { n with Schedule = Some next }
+                    | None -> n
+                | None -> n
+            match n.PatrolPoints with
+            | Some points when n.SceneId = sceneId ->
+                match Lists.mapChanged (fun (pt: GridPoint) -> if cut pt.X pt.Y then { pt with X = cx pt.X; Y = cy pt.Y } else pt) points with
+                | Some next -> { n with PatrolPoints = Some next }
+                | None -> n
+            | _ -> n)
+        |> fun p ->
+            match Lists.mapChanged (fun (a: AnimalState) -> if a.SceneId = sceneId && cut a.X a.Y then { a with X = cx a.X; Y = cy a.Y } else a) p.Animals with
+            | Some animals -> { p with Animals = animals }
+            | None -> p
+        |> fun p ->
+            let onScene (scene: Scene) =
+                let leaving =
+                    if scene.Id <> sceneId then None
+                    else Lists.filterChanged (fun (t: SceneTransition) -> not (cut t.FromX t.FromY)) scene.Transitions
+                let transitions = Lists.orSame scene.Transitions leaving
+                let landing =
+                    Lists.mapChanged
+                        (fun (t: SceneTransition) -> if t.ToSceneId = sceneId && cut t.ToX t.ToY then { t with ToX = cx t.ToX; ToY = cy t.ToY } else t)
+                        transitions
+                match leaving, landing with
+                | None, None -> scene
+                | _ -> { scene with Transitions = Lists.orSame transitions landing }
+            Proj.mapScenes onScene p
+        |> fun p ->
+            let onEvent (e: GameEvent) =
+                if e.SceneId <> sceneId then e
+                else
+                    let e = withList e (chooseChanged clampCondition e.Conditions) (fun e l -> { e with Conditions = l })
+                    withList e (chooseChanged (clampOutcome sceneId) e.Outcomes) (fun e l -> { e with Outcomes = l })
+            withList p (Lists.mapChanged onEvent p.Events) (fun p l -> { p with Events = l })
+        // Outcomes naming this scene themselves, wherever they run (clamping twice is harmless).
+        |> mapOutcomes (clampOutcome "")
+        |> fun p ->
+            let mine = p.Mine
+            if not (isHere mine.EntranceSceneId) then p
+            else
+                let x, y = cxo mine.EntranceX, cyo mine.EntranceY
+                if x = mine.EntranceX && y = mine.EntranceY then p
+                else { p with Mine = { mine with EntranceX = x; EntranceY = y } }

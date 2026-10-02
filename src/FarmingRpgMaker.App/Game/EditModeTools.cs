@@ -37,6 +37,8 @@ public sealed partial class EditModeView
     private readonly TextBox _doorX = new() { Name = "DoorX", Width = 58, Text = "0" };
     private readonly TextBox _doorY = new() { Name = "DoorY", Width = 58, Text = "0" };
     private readonly CheckBox _doorReturn = new() { Name = "DoorReturn", Content = "Return door" };
+    private readonly CheckBox _sceneIndoor = new() { Name = "SceneIndoor", Content = "Indoor (no weather)" };
+    private bool _showingSceneIndoor;
     private readonly Button _removeDoor = new() { Name = "RemoveDoorButton", Content = "Remove door" };
     private readonly StackPanel _transitionList = new() { Name = "TransitionList", Spacing = 6 };
     private readonly TextBlock _transitionCount = Ui.Text("", "muted", "small");
@@ -119,6 +121,11 @@ public sealed partial class EditModeView
             var button = new ToggleButton { Name = $"Tool_{tool}", Tag = tool, Content = label, Margin = new Thickness(0, 0, 6, 6) };
             button.Classes.Add("tool");
             if (panel is not null) AutomationProperties.SetName(button, tool == MapTool.Remove ? "Remove from tile" : $"Place {label}");
+            if (ToolKeys.FirstOrDefault(pair => pair.Value == tool) is { Key: var key } shortcut && shortcut.Value == tool)
+            {
+                ToolTip.SetTip(button, $"{label} (press {key} on the map)");
+                AutomationProperties.SetAcceleratorKey(button, key.ToString());
+            }
             button.Click += (_, _) => Tool = tool;
             (panel ?? _tools).Children.Add(button);
         }
@@ -192,6 +199,13 @@ public sealed partial class EditModeView
         _sceneWidth.TextChanged += (_, _) => RefreshSceneSizeInfo();
         _sceneHeight.TextChanged += (_, _) => RefreshSceneSizeInfo();
         side.Children.Add(_sceneSizeInfo);
+        // Rain does not water an indoor scene's soil and storms do not reach its crops.
+        ToolTip.SetTip(_sceneIndoor, "Greenhouses and interiors: rain does not water the soil and storms do not damage crops here.");
+        _sceneIndoor.IsCheckedChanged += (_, _) =>
+        {
+            if (!_showingSceneIndoor) ApplyToScene(id => Edits.SetSceneIndoor(id, _sceneIndoor.IsChecked == true));
+        };
+        side.Children.Add(_sceneIndoor);
         foreach (var type in TileTypes.All)
         {
             _newSceneTile.Items.Add(new ComboBoxItem { Content = Ui.Capitalize(type), Tag = type });
@@ -227,7 +241,10 @@ public sealed partial class EditModeView
         AutomationProperties.SetName(_doorX, "At X (arrival column)");
         AutomationProperties.SetName(_doorY, "At Y (arrival row)");
         side.Children.Add(Ui.HStack(8, Ui.Text("To", "muted", "small"), _doorDestination));
-        side.Children.Add(Ui.HStack(8, Ui.Text("At", "muted", "small"), _doorX, Ui.Text(","), _doorY));
+        var pickArrival = NamedButton("PickDoorArrivalButton", "Pick on map", PickDoorArrival);
+        AutomationProperties.SetName(pickArrival, "Pick the arrival tile on the map");
+        ToolTip.SetTip(pickArrival, "Click the arrival tile in the destination scene");
+        side.Children.Add(Ui.HStack(8, Ui.Text("At", "muted", "small"), _doorX, Ui.Text(","), _doorY, pickArrival));
         side.Children.Add(_doorReturn);
         side.Children.Add(Ui.HStack(8, NamedButton("SaveDoorButton", "Save door", SaveDoor), _removeDoor));
         _removeDoor.Click += (_, _) => RemoveDoor();
@@ -236,6 +253,10 @@ public sealed partial class EditModeView
         AutomationProperties.SetLiveSetting(_editorMessage, AutomationLiveSetting.Polite);
         side.Children.Add(_editorMessage);
     }
+
+    /// <summary>The tool's button label ("Fill area"), for messages.</summary>
+    private string ToolLabel(MapTool tool) =>
+        _tools.Children.Concat(_placeTools.Children).OfType<ToggleButton>().FirstOrDefault(button => Equals(button.Tag, tool))?.Content as string ?? tool.ToString();
 
     private static Button NamedButton(string name, string label, Action action)
     {
@@ -291,6 +312,9 @@ public sealed partial class EditModeView
         _shownSceneWidth = ((int)scene.Width).ToString(CultureInfo.InvariantCulture);
         _shownSceneHeight = ((int)scene.Height).ToString(CultureInfo.InvariantCulture);
         _removeDoor.IsEnabled = _doorAt is { } at && scene.Transitions.Any(t => t.FromX == at.X && t.FromY == at.Y);
+        _showingSceneIndoor = true;
+        _sceneIndoor.IsChecked = scene.Indoor.OrNullable() == true;
+        _showingSceneIndoor = false;
         RefreshSceneSizeInfo();
 
         var previous = (_doorDestination.SelectedItem as ComboBoxItem)?.Tag as string;
@@ -408,8 +432,12 @@ public sealed partial class EditModeView
     {
         var scene = CurrentScene();
         if (scene is null) return false;
+        // A form's "Pick on map" takes the tile before any tool (#47).
+        if (CompletePick(tile)) return true;
         switch (Tool)
         {
+            case MapTool.Inspect:
+                return OpenMarkerAt(tile);
             case MapTool.Pick:
                 PickAt(tile.X, tile.Y);
                 return true;
@@ -538,8 +566,7 @@ public sealed partial class EditModeView
     {
         var scene = CurrentScene();
         if (_workspace.Current is not { } project || scene is null || Edits.PickBrush(project, scene.Id, x, y) is not { } pick) return;
-        _workspace.Apply(pick);
-        var picked = _workspace.Current!;
+        var picked = Documents.Preview(project, pick);
         SetBrush(picked.SelectedTileType, picked.SelectedTileVisual.OrNull());
         _editorMessage.Text = $"Picked {picked.SelectedTileType}.";
     }
@@ -566,7 +593,7 @@ public sealed partial class EditModeView
     private bool SceneSize(out int width, out int height)
     {
         var ok = TypedSceneSize(out width, out height);
-        if (!ok) _editorMessage.Text = "Scene width and height must be whole numbers from 1 to 256.";
+        if (!ok) _editorMessage.Text = $"Scene width and height must be whole numbers from 1 to {Edits.MaxSceneSize}.";
         return ok;
     }
 
@@ -575,21 +602,29 @@ public sealed partial class EditModeView
     {
         var validWidth = int.TryParse(_sceneWidth.Text, NumberStyles.None, CultureInfo.InvariantCulture, out width);
         var validHeight = int.TryParse(_sceneHeight.Text, NumberStyles.None, CultureInfo.InvariantCulture, out height);
-        return validWidth && validHeight && width is >= 1 and <= 256 && height is >= 1 and <= 256;
+        return validWidth && validHeight && width >= 1 && width <= Edits.MaxSceneSize && height >= 1 && height <= Edits.MaxSceneSize;
     }
 
-    /// <summary>Tile count and aspect ratio of the typed size, and what a resize to it would cut off.</summary>
+    /// <summary>
+    /// Tile count and aspect ratio of the typed size, and what a resize to it would cut off: the
+    /// tiles, and each thing standing on or pointing at them that moves inside (#44).
+    /// </summary>
     private void RefreshSceneSizeInfo()
     {
         if (!TypedSceneSize(out var width, out var height))
         {
-            _sceneSizeInfo.Text = "Width and height must be whole numbers from 1 to 256.";
+            _sceneSizeInfo.Text = $"Width and height must be whole numbers from 1 to {Edits.MaxSceneSize}.";
             return;
         }
         var info = $"Total tiles: {width * height} · Aspect ratio: {((double)width / height).ToString("0.00", CultureInfo.InvariantCulture)}";
-        if (CurrentScene() is { } scene && (width < scene.Width || height < scene.Height))
+        if (CurrentScene() is { } scene && _workspace.Current is { } project && (width < scene.Width || height < scene.Height))
         {
             info += $"\nResize removes the tiles outside {width}×{height}.";
+            var impact = Edits.ResizeImpact(project, scene.Id, width, height);
+            if (impact.Count > 0)
+            {
+                info += " It also changes: " + string.Join("; ", impact) + ".";
+            }
         }
         _sceneSizeInfo.Text = info;
     }
@@ -615,9 +650,15 @@ public sealed partial class EditModeView
 
     private void ResizeScene()
     {
-        if (CurrentScene() is { } scene && SceneSize(out var width, out var height))
+        if (CurrentScene() is { } scene && _workspace.Current is { } project && SceneSize(out var width, out var height))
         {
-            _workspace.Apply(Edits.ResizeScene(scene.Id, width, height));
+            var impact = Edits.ResizeImpact(project, scene.Id, width, height);
+            if (_workspace.Apply(Edits.ResizeScene(scene.Id, width, height)))
+            {
+                _editorMessage.Text = impact.Count == 0
+                    ? $"Resized {scene.Name} to {width}×{height}."
+                    : $"Resized {scene.Name} to {width}×{height}: {string.Join("; ", impact)}. Undo puts them back.";
+            }
             ClearSelection();
             FitToView();
         }
@@ -714,7 +755,7 @@ public sealed partial class EditModeView
         var old = scene.Transitions.FirstOrDefault(t => t.FromX == from.X && t.FromY == from.Y);
         var transition = (old ?? SceneTransition.Default).WithFromX(from.X).WithFromY(from.Y).WithToSceneId(destinationId).WithToX(x).WithToY(y);
         _workspace.Apply(_doorReturn.IsChecked == true ? Edits.LinkScenes(scene.Id, transition) : Edits.SetTransition(scene.Id, transition));
-        _editorMessage.Text = $"Door saved to {destination.Name} ({x}, {y}).";
+        _editorMessage.Text = _workspace.SavedText("Door", $" to {destination.Name} ({x}, {y})");
     }
 
     private void RemoveDoor()

@@ -18,13 +18,15 @@ members = [
     "crates/farm-player",
     "crates/farm-plugins",
     "crates/farm-bench",
+    "crates/farm-fuzz",
 ]
 # The plugin guest builds only for wasm32-wasip1 (tools/plugin-guest/build.sh); its output is
-# checked in under crates/farm-plugins/guest.
-exclude = ["crates/farm-plugin-guest"]
+# checked in under crates/farm-plugins/guest. The cargo-fuzz targets (fuzz/) need nightly; the
+# stable tests of crates/farm-fuzz run the same entry points.
+exclude = ["crates/farm-plugin-guest", "fuzz"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0-dev"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
@@ -37,7 +39,6 @@ serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 indexmap = { version = "2", features = ["serde"] }
 serde_path_to_error = "0.1"
 ryu-js = "1"
-thiserror = "2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -55,6 +56,12 @@ codegen-units = 1
 lto = "thin"
 debug = 1
 
+# The simulation does its arithmetic on numbers from content, plugins and saves. It saturates
+# where a value can run off the end of its type; anything missed panics in release too (the
+# hosts catch the panic and stop the session) instead of wrapping silently into a wrong state.
+[profile.release.package.farm-sim]
+overflow-checks = true
+
 [profile.dev]
 opt-level = 1
 
@@ -65,5 +72,7 @@ opt-level = 2
 # with a tail call and rely on LLVM turning it into a jump. Debug assertions put code after
 # those calls, so each instruction would grow the native stack until a long-running plugin
 # crashed the host. Keep them off for wasmi in every profile (release has them off already).
+# The farm-plugins test a_plugin_running_its_whole_budget_fits_in_a_small_native_stack fails if
+# this breaks; builds that cannot keep it use farm-plugins' portable-dispatch feature.
 [profile.dev.package.wasmi]
 debug-assertions = false

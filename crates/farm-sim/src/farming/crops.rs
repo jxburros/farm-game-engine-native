@@ -51,6 +51,7 @@ pub fn to_crop_definition(custom: &CustomCropDefinition) -> CropDefinition {
         mutation_chance: custom.mutation_chance,
         yield_min: custom.yield_min,
         yield_max: custom.yield_max,
+        harvest_item_id: custom.harvest_item_id.clone(),
         extra,
     }
 }
@@ -62,7 +63,7 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
     let custom_asset = match extra.get("customAsset") {
         Some(Value::String(asset)) => {
             let asset = asset.clone();
-            extra.remove("customAsset");
+            extra.shift_remove("customAsset");
             Some(asset)
         }
         _ => None,
@@ -84,6 +85,7 @@ pub fn to_custom_crop_definition(crop: &CropDefinition) -> CustomCropDefinition 
         mutation_chance: crop.mutation_chance,
         yield_min: crop.yield_min,
         yield_max: crop.yield_max,
+        harvest_item_id: crop.harvest_item_id.clone(),
         custom_asset,
         extra,
     }
@@ -95,12 +97,10 @@ use crate::rng::RandomSource;
 use crate::schema::{crop_mutations, crop_qualities, tile_types, Crop, GameContent, Tile};
 use crate::units;
 
-pub fn get_crop_definition_from_content<'a>(content: &'a GameContent, crop_type: &str) -> Option<&'a CropDefinition> {
-    content.crops.get(crop_type)
-}
-
 /// Legacy wall-clock stage (pre-v4 data): `min(floor(elapsed × waterFactor / (growthTime /
 /// stages)), stages − 1)`, where an unwatered crop grows at half speed. Times in milliseconds.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_crop_stage(planted_at: i64, current_time: i64, growth_time: i64, stages: i64, watered: bool) -> i64 {
     let elapsed = i128::from(current_time) - i128::from(planted_at);
     // adjusted / stageTime = elapsed × stages / growthTime (÷ 2 when unwatered).
@@ -115,6 +115,8 @@ pub fn get_crop_stage(planted_at: i64, current_time: i64, growth_time: i64, stag
     i64::try_from(stage).map_or(last, |stage| stage.min(last))
 }
 
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn is_crop_mature(stage: i64, stages: i64) -> bool {
     stage >= stages - 1
 }
@@ -174,6 +176,8 @@ pub fn roll_mutation(definition: Option<&CropDefinition>, quality: &str, rng: &m
     None
 }
 
+/// How many crops a harvest yields: the definition's yield range, plus the quality and mutation
+/// bonuses.
 pub fn roll_yield(
     definition: Option<&CropDefinition>,
     quality: &str,
@@ -204,6 +208,8 @@ pub fn roll_yield(
     u32::try_from(quantity.max(0)).unwrap_or(u32::MAX)
 }
 
+/// The value of `quantity` crops of a quality and mutation (`None` for an unknown quality or
+/// mutation, which reads NaN in the reference).
 pub fn calculate_harvest_value(
     definition: Option<&CropDefinition>,
     quality: &str,
@@ -214,12 +220,12 @@ pub fn calculate_harvest_value(
         return Some(0);
     };
     // Unknown keys read `undefined` in JS: the value is NaN, shown as "NaN" (here `None`).
-    let quality_multiplier = content_builtin::quality_multipliers().get(quality).copied()?;
+    let quality_multiplier = content_builtin::quality_multiplier(quality)?;
     let mutation_key = match mutation {
         Some(mutation) if !mutation.is_empty() => mutation,
         _ => "none",
     };
-    let mutation_multiplier = content_builtin::mutation_multipliers().get(mutation_key).copied()?;
+    let mutation_multiplier = content_builtin::mutation_multiplier(mutation_key)?;
     let value = i128::from(definition.base_harvest_value)
         * i128::from(quality_multiplier)
         * i128::from(mutation_multiplier)
@@ -227,6 +233,7 @@ pub fn calculate_harvest_value(
     Some(i64::try_from(value.div_euclid(1_000_000)).unwrap_or(i64::MAX))
 }
 
+/// Whether a crop grows in `season` (an unknown crop never does).
 pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> bool {
     let Some(definition) = definition else {
         return false;
@@ -236,12 +243,17 @@ pub fn can_grow_in_season(definition: Option<&CropDefinition>, season: &str) -> 
 
 /// TS `SEASON_ORDER[Math.floor(gameDay / DAYS_PER_SEASON) % SEASON_ORDER.length]`, which reads
 /// `undefined` for a negative day. This signature cannot say `undefined`, so a negative day
-/// yields `""`; [`try_get_current_season`] keeps the JS shape.
+/// yields `""`; [`try_get_current_season`] keeps the JS shape. The running game reads the
+/// configurable calendar (`game_time`), not this fixed 4 × 28-day one.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_current_season(game_day: i64) -> String {
     try_get_current_season(game_day).unwrap_or_default()
 }
 
 /// JS-faithful `getCurrentSeason`: `None` where JS reads `undefined` (negative index).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn try_get_current_season(game_day: i64) -> Option<String> {
     let season_count = content_builtin::SEASON_ORDER.len() as i64;
     // JS `%` keeps the dividend's sign; a negative index reads undefined.
@@ -250,6 +262,8 @@ pub fn try_get_current_season(game_day: i64) -> Option<String> {
 }
 
 /// JS `(gameDay % DAYS_PER_SEASON) + 1` (the remainder keeps the dividend's sign).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn get_day_in_season(game_day: i64) -> i64 {
     (game_day % i64::from(content_builtin::DAYS_PER_SEASON)) + 1
 }
@@ -304,6 +318,45 @@ pub fn is_crop_mature_by_days(crop: &Crop, definition: &CropDefinition) -> bool 
     crop.days_grown.unwrap_or(0) >= crop_growth_days(definition)
 }
 
+/// The ids a harvest of `definition` may give, in order: its `harvestItemId` when set; else
+/// `crop-{id}` (the editor's convention) and, for a pack crop `pack:local`, `pack:crop-local`
+/// (the pack's own item, namespaced the same way).
+pub fn harvest_item_candidates(definition: &CropDefinition) -> Vec<String> {
+    if let Some(id) = definition.harvest_item_id.as_deref().filter(|id| !id.is_empty()) {
+        return vec![id.to_owned()];
+    }
+    let mut candidates = vec![format!("crop-{}", definition.id)];
+    if let Some((pack, local)) =
+        definition.id.split_once(':').filter(|(pack, local)| !pack.is_empty() && !local.is_empty())
+    {
+        candidates.push(format!("{pack}:crop-{local}"));
+    }
+    candidates
+}
+
+/// The item a harvest of `definition` gives (see [`harvest_item_candidates`]); `Err` names the
+/// id that was expected when none exists.
+pub fn harvest_item<'a>(
+    content: &'a GameContent,
+    definition: &CropDefinition,
+) -> Result<&'a crate::schema::Item, String> {
+    let candidates = harvest_item_candidates(definition);
+    candidates
+        .iter()
+        .find_map(|id| content.items.iter().find(|item| item.id == *id))
+        .ok_or_else(|| candidates[0].clone())
+}
+
+/// The quality a harvest comes out at: the quality the crop was planted with (silver when the
+/// soil was fertilized), one tier higher per three farming levels, at most iridium.
+/// Deterministic: it draws nothing from the RNG.
+pub fn harvest_quality(planted_quality: &str, farming_level: u32) -> String {
+    let tiers = crop_qualities::ALL;
+    let planted = tiers.iter().position(|tier| *tier == planted_quality).unwrap_or(0);
+    let bonus = usize::try_from(farming_level / 3).unwrap_or(usize::MAX);
+    tiers[planted.saturating_add(bonus).min(tiers.len() - 1)].to_owned()
+}
+
 /// Day-based planting (M2+): crops start unwatered — water them or they won't grow.
 pub fn create_planted_crop(crop_type: &str, planted_on_day: u32, fertilized: bool) -> Crop {
     Crop {
@@ -322,6 +375,9 @@ pub fn create_planted_crop(crop_type: &str, planted_on_day: u32, fertilized: boo
     }
 }
 
+/// A crop planted watered (the reference's `initializeCrop`; planting uses [`create_planted_crop`]).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Crop {
     Crop {
         r#type: crop_type.to_owned(),
@@ -337,8 +393,9 @@ pub fn initialize_crop(crop_type: &str, planted_at: i64, fertilized: bool) -> Cr
     }
 }
 
-/// Bounds come from `tiles.length` and `tiles[0].length` like the TS; a ragged grid panics on
-/// the row index exactly where the TS reads `undefined.type` (and the C# throws).
+/// Whether a `width`×`height` crop fits with its top-left corner at (x, y): every covered tile
+/// is open soil, as single-tile planting needs (no crop, machine, dropped item, active gathering
+/// node or collision). Tiles outside the grid (a ragged row too) don't fit.
 pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32, height: u32) -> bool {
     for dy in 0..i64::from(height) {
         for dx in 0..i64::from(width) {
@@ -347,11 +404,16 @@ pub fn can_place_multi_tile_crop(tiles: &[Vec<Tile>], x: i32, y: i32, width: u32
             let (Ok(row), Ok(column)) = (usize::try_from(check_y), usize::try_from(check_x)) else {
                 return false;
             };
-            if row >= tiles.len() || column >= tiles[0].len() {
+            let Some(tile) = tiles.get(row).and_then(|row| row.get(column)) else {
                 return false;
-            }
-            let tile = &tiles[row][column];
-            if tile.r#type != tile_types::SOIL || tile.crop.is_some() {
+            };
+            if tile.r#type != tile_types::SOIL
+                || tile.crop.is_some()
+                || tile.machine.is_some()
+                || tile.item.is_some()
+                || tile.collision
+                || crate::gathering::is_node_active(tile)
+            {
                 return false;
             }
         }
@@ -893,10 +955,46 @@ mod characterization_tests {
     }
 
     #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn quirk_bounds_use_the_first_row_length_so_ragged_grids_throw() {
+    fn multi_tile_crops_need_every_covered_tile_open_like_single_tile_planting() {
+        let blocked = |edit: &dyn Fn(&mut Tile)| {
+            let mut grid = soil_grid(3, 3);
+            edit(&mut grid[1][1]);
+            !can_place_multi_tile_crop(&grid, 0, 0, 2, 2)
+        };
+        assert!(blocked(&|tile| tile.machine = Some(crate::schema::TileMachine::default())));
+        assert!(blocked(&|tile| tile.item = Some(crate::schema::Item::default())));
+        assert!(blocked(&|tile| tile.collision = true));
+        assert!(blocked(&|tile| {
+            tile.node = Some(crate::schema::TileNode { remaining_health: 3, ..crate::schema::TileNode::default() });
+        }));
+        // A depleted node (waiting to respawn) doesn't block, as for single tiles.
+        assert!(!blocked(&|tile| tile.node = Some(crate::schema::TileNode::default())));
+    }
+
+    #[test]
+    fn ragged_grids_do_not_fit_a_multi_tile_crop() {
         let soil = || Tile { r#type: "soil".to_owned(), ..Tile::default() };
         let ragged = vec![vec![soil(), soil()], vec![soil()]];
-        can_place_multi_tile_crop(&ragged, 0, 0, 2, 2);
+        assert!(!can_place_multi_tile_crop(&ragged, 0, 0, 2, 2));
+    }
+
+    #[test]
+    fn harvest_quality_starts_at_the_planted_quality_and_rises_with_farming_skill() {
+        assert_eq!(harvest_quality("normal", 0), "normal");
+        assert_eq!(harvest_quality("silver", 2), "silver");
+        assert_eq!(harvest_quality("normal", 3), "silver");
+        assert_eq!(harvest_quality("silver", 3), "gold");
+        assert_eq!(harvest_quality("normal", 6), "gold");
+        assert_eq!(harvest_quality("silver", 9), "iridium");
+        assert_eq!(harvest_quality("bogus", 0), "normal");
+    }
+
+    #[test]
+    fn ragged_grids_refuse_the_footprint_instead_of_panicking() {
+        // The TS threw here (it took the width from the first row).
+        let soil = || Tile { r#type: "soil".to_owned(), ..Tile::default() };
+        let ragged = vec![vec![soil(), soil()], vec![soil()]];
+        assert!(!can_place_multi_tile_crop(&ragged, 0, 0, 2, 2));
+        assert!(can_place_multi_tile_crop(&ragged, 0, 0, 1, 2));
     }
 }

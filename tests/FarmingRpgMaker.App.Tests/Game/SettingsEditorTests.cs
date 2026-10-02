@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using FarmEngine.Authoring;
 using static FarmingRpgMaker.App.Tests.Ui.UiTestHelpers;
 
@@ -81,20 +82,91 @@ public sealed class SettingsEditorTests
         Assert.True(host.Workspace.Current!.Mine.Enabled);
     }
 
+    private static List<string> SeasonRows(GameTestHost host) =>
+        FindByName<FarmingRpgMaker.App.Game.SettingsEditorView>(host.Window, "SettingsEditorView").GetVisualDescendants().OfType<TextBox>()
+            .Where(box => box.Name == "Season_Id").Select(box => box.Text ?? "").ToList();
+
     [AvaloniaFact]
-    public void SeasonArrowsReorderTheYear()
+    public void SeasonArrowsReorderTheDraftAndSaveApplies()
     {
         using var host = new GameTestHost();
         OpenSettings(host);
         Assert.False(FindByName<Button>(host.Window, "Season_Up_spring").IsEnabled);
         Assert.False(FindByName<Button>(host.Window, "Season_Down_winter").IsEnabled);
         Press(host, "Season_Up_summer");
-        Assert.Equal(["summer", "spring", "fall", "winter"], host.Workspace.Current!.Settings.Calendar.Seasons.Select(s => s.Id));
-        Assert.False(FindByName<Button>(host.Window, "Season_Up_summer").IsEnabled);
         Press(host, "Season_Down_fall");
+        // The rows move; the project changes on Save (#70).
+        Assert.Equal(["summer", "spring", "winter", "fall"], SeasonRows(host));
+        Assert.False(FindByName<Button>(host.Window, "Season_Up_summer").IsEnabled);
+        Assert.Equal(["spring", "summer", "fall", "winter"], host.Workspace.Current!.Settings.Calendar.Seasons.Select(s => s.Id));
+        Press(host, "SaveSettingsButton");
         Assert.Equal(["summer", "spring", "winter", "fall"], host.Workspace.Current!.Settings.Calendar.Seasons.Select(s => s.Id));
         host.Workspace.Undo();
-        host.Workspace.Undo();
         Assert.Equal(["spring", "summer", "fall", "winter"], host.Workspace.Current!.Settings.Calendar.Seasons.Select(s => s.Id));
+    }
+
+    [AvaloniaFact]
+    public void RemovingASeasonIsSavedWithTheProjectSettings()
+    {
+        using var host = new GameTestHost();
+        OpenSettings(host);
+        Press(host, "Season_Remove_winter");
+        Assert.DoesNotContain("winter", SeasonRows(host));
+        Assert.Contains(host.Workspace.Current!.Settings.Calendar.Seasons, s => s.Id == "winter");
+        Press(host, "SaveSettingsButton");
+        var project = host.Workspace.Current!;
+        Assert.DoesNotContain(project.Settings.Calendar.Seasons, s => s.Id == "winter");
+        Assert.DoesNotContain(project.Weather.Table, entry => entry.Item1 == "winter");
+    }
+
+    [AvaloniaFact]
+    public void SavingOneSectionKeepsUnsavedFieldsInTheOthers()
+    {
+        using var host = new GameTestHost();
+        OpenSettings(host);
+        var speed = FindByName<TextBox>(host.Window, "Setting_PlayerSpeed");
+        speed.Text = "7.5";
+        FindByName<TextBox>(host.Window, "Weather_spring_storm").Text = "4";
+        Press(host, "SaveWeatherButton");
+        Assert.Equal(4, SettingsForm.WeatherWeight(host.Workspace.Current!, "spring", "storm"));
+        // The Gameplay edit is still there, unsaved (#70).
+        Assert.Equal("7.5", speed.Text);
+        Assert.NotEqual(7.5, host.Workspace.Current!.Settings.Movement.PlayerSpeed);
+
+        // Toggling the mine, undo and a tab switch keep it too.
+        var toggle = FindByName<CheckBox>(host.Window, "Mine_Enabled");
+        toggle.IsChecked = !toggle.IsChecked;
+        toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        host.Workspace.Undo();
+        FindByName<TabControl>(host.Window, "EditorTabs").SelectedIndex = 0;
+        Pump();
+        OpenSettings(host);
+        Assert.Equal("7.5", speed.Text);
+        Press(host, "SaveSettingsButton");
+        Assert.Equal(7.5, host.Workspace.Current!.Settings.Movement.PlayerSpeed);
+    }
+
+    [AvaloniaFact]
+    public void ErrorsNameTheField()
+    {
+        using var host = new GameTestHost();
+        OpenSettings(host);
+        FindByName<TextBox>(host.Window, "Setting_DayEndMinute").Text = "12.5";
+        Press(host, "SaveSettingsButton");
+        Assert.Equal("Could not save: Day end minute must be a whole number.", FindByName<TextBlock>(host.Window, "SettingsMessage").Text);
+        FindByName<TextBox>(host.Window, "Setting_DayEndMinute").Text = "lots";
+        Press(host, "SaveSettingsButton");
+        Assert.Equal("Could not save: Day end minute must be a number.", FindByName<TextBlock>(host.Window, "SettingsMessage").Text);
+        FindByName<TextBox>(host.Window, "Setting_DayEndMinute").Text = "1200";
+        FindByName<TextBox>(host.Window, "Setting_MaxEnergy").Text = "0";
+        Press(host, "SaveSettingsButton");
+        Assert.Equal("Could not save: Max energy must be more than 0.", FindByName<TextBlock>(host.Window, "SettingsMessage").Text);
+        FindByName<TextBox>(host.Window, "Setting_MaxEnergy").Text = "100";
+        FindByName<TextBox>(host.Window, "Setting_CollapseEnergyFraction").Text = "2";
+        Press(host, "SaveSettingsButton");
+        Assert.Equal("Could not save: Collapse energy fraction must be from 0 to 1.", FindByName<TextBlock>(host.Window, "SettingsMessage").Text);
+        FindByName<TextBox>(host.Window, "Weather_fall_sun").Text = "lots";
+        Press(host, "SaveWeatherButton");
+        Assert.Contains("weight in Fall must be a number", FindByName<TextBlock>(host.Window, "WeatherMessage").Text, StringComparison.Ordinal);
     }
 }

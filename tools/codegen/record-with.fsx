@@ -1,5 +1,7 @@
 // Regenerates src/FarmEngine.Authoring.Net/RecordWith.fs from the built schema records:
 //   dotnet build -c Release src/FarmEngine.Authoring && dotnet fsi tools/codegen/record-with.fsx
+// With --check (after the same build) it writes nothing and exits 1 when RecordWith.fs is not
+// what it would generate (tools/codegen/check.sh, CI).
 #r "../../src/FarmEngine.Authoring/bin/Release/net10.0/FarmEngine.Authoring.dll"
 open System
 open Microsoft.FSharp.Reflection
@@ -60,5 +62,14 @@ for t in records do
                     emit (sprintf "seq<KeyValuePair<%s, %s>>" (fs parts.[0]) (fs parts.[1])) "[ for pair in value -> pair.Key, pair.Value ]"
                 else emit (sprintf "seq<%s>" (fs el)) "List.ofSeq value"
             else emit (fs ft) "value"
-IO.File.WriteAllText(IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "FarmEngine.Authoring.Net", "RecordWith.fs"), String.concat "\n" lines + "\n")
-printfn "%d lines" lines.Count
+let target = IO.Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "FarmEngine.Authoring.Net", "RecordWith.fs")
+let generated = String.concat "\n" lines + "\n"
+if fsi.CommandLineArgs |> Array.contains "--check" then
+    // Line endings as checked out do not matter (a Windows checkout may have CRLF).
+    if IO.File.ReadAllText(target).Replace("\r\n", "\n") <> generated then
+        eprintfn "src/FarmEngine.Authoring.Net/RecordWith.fs is out of date: build src/FarmEngine.Authoring in Release and run dotnet fsi tools/codegen/record-with.fsx"
+        exit 1
+    printfn "src/FarmEngine.Authoring.Net/RecordWith.fs is current (%d records)" records.Length
+else
+    IO.File.WriteAllText(target, generated)
+    printfn "%d lines" lines.Count

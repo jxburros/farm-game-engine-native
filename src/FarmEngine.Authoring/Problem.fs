@@ -106,6 +106,18 @@ type Problem =
         | Some(NavigationTarget.Scene(_, _, y)) -> y
         | _ -> 0
 
+/// JSON paths for Problems (`npcs[3].dialogue[0]`).
+module ProblemPath =
+    let private isIdentifier (key: string) =
+        key.Length > 0
+        && not (System.Char.IsDigit key.[0])
+        && key |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_' || c = '$' || c = '-')
+
+    /// The member `key` of the value at `parent`: `parent.key`, or `parent["key"]` for a key
+    /// that a dotted path would misread (a number, which reads as an index, or one with dots).
+    let memberPath (parent: string) (key: string) : string =
+        if isIdentifier key then parent + "." + key else parent + "[" + Json.quote key + "]"
+
 /// Collects problems while the checks run.
 type internal Sink() =
     let items = ResizeArray<Problem>()

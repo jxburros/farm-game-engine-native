@@ -7,6 +7,7 @@ use crate::content_builtin::ToolDefinition;
 use crate::effects::Effect;
 use crate::engine_types::{Effects, EngineContext};
 use crate::game_time::{self, SleepOptions};
+use crate::messages;
 use crate::schema::GameState;
 use crate::units;
 
@@ -30,6 +31,8 @@ pub fn effective_energy_cost(definition: &ToolDefinition, tier: i32) -> i32 {
     units::points(i32::try_from(whole_points.max(1)).unwrap_or(i32::MAX))
 }
 
+/// Spend `amount` energy (thousandths of a point); running out collapses the player, which ends
+/// the day. Nothing happens with energy off.
 pub fn spend_energy(ctx: &EngineContext, state: &mut GameState, amount: i32) -> EnergySpendResult {
     if !ctx.content.settings.energy_enabled || amount <= 0 {
         return EnergySpendResult { effects: Vec::new(), collapsed: false };
@@ -50,7 +53,7 @@ pub fn spend_energy(ctx: &EngineContext, state: &mut GameState, amount: i32) -> 
     let max = i64::from(state.player.max_energy);
     let divisor = i64::from(LOW_ENERGY_DIVISOR);
     if i64::from(after) * divisor <= max && i64::from(before) * divisor > max {
-        effects.push(Effect::message("info", "You are getting exhausted — consider sleeping."));
+        effects.push(Effect::say("info", &messages::EXHAUSTED));
     }
 
     state.player.energy = after;

@@ -176,14 +176,17 @@ module References =
           optionalOneOf "Item" "ToolType" toolTypes
           optional "Item" "UseActionId" ReferenceKind.Action
           list "CropDefinition" "Seasons" ReferenceKind.Season
+          optionalAs "CropDefinition" "HarvestItemId" ReferenceKind.Item "(crop-<id>)"
           list "CustomCropDefinition" "Seasons" ReferenceKind.Season
+          optionalAs "CustomCropDefinition" "HarvestItemId" ReferenceKind.Item "(crop-<id>)"
+          optionalOneOf "InventorySlot" "Quality" (same CropQualities.All)
           plain "CustomCropDefinition" "CustomAsset" "legacy crop image as a data URL"
           // Characters and dialogue
           reference "Npc" "SceneId" ReferenceKind.Scene
           optionalOneOf "Npc" "MovePattern" (same NpcMovePatterns.All)
           oneOf "Npc" "Appearance" appearances
           plain "Npc" "CustomImage" "legacy NPC image: an asset id or a data URL"
-          oneOf "NpcBirthday" "Season" (same PrimitivesSchema.ClassicSeasons)
+          reference "NpcBirthday" "Season" ReferenceKind.Season
           reference "NpcScheduleEntry" "SceneId" ReferenceKind.Scene
           list "GiftTastes" "Loved" ReferenceKind.Item
           list "GiftTastes" "Liked" ReferenceKind.Item
@@ -193,6 +196,7 @@ module References =
           optionalAs "DialogueOption" "NextDialogueId" ReferenceKind.Dialogue "(end conversation)"
           optional "DialogueOption" "GiveItem" ReferenceKind.Item
           plain "DialogueOption" "EventFlag" flag
+          plain "DialogueOption" "HiddenIfFlag" flag
           optional "DialogueOption" "RequiresItem" ReferenceKind.Item
           plain "DialogueOption" "RequiresFlag" flag
           optional "DialogueOption" "OpenShopId" ReferenceKind.Shop
@@ -209,6 +213,7 @@ module References =
           optional "QuestObjective" "TargetNpcId" ReferenceKind.Npc
           optional "QuestObjective" "TargetSceneId" ReferenceKind.Scene
           reference "QuestRewardItem" "ItemId" ReferenceKind.Item
+          optionalAs "QuestRewards" "Skill" ReferenceKind.Skill "(farming)"
           // Events and the condition/outcome vocabulary
           optionalAs "GameEvent" "SceneId" ReferenceKind.Scene "(every scene)"
           oneOf "GameEvent" "Trigger" (same EventTriggers.All)
@@ -255,6 +260,7 @@ module References =
           reference "FishTableEntry" "ItemId" ReferenceKind.Item
           optional "FishTable" "JunkItemId" ReferenceKind.Item
           // Extensibility
+          oneOf "MinigameDef" "Kind" MinigameKinds.choices
           plain "MinigameDef" "Config" "settings passed to the minigame kind, keyed by setting name"
           // Settings, weather, mine, interface
           plain "ProjectSettings" "Locale" "a locale code for pack string tables"
@@ -271,6 +277,7 @@ module References =
           reference "PackDependency" "PackId" ReferenceKind.Pack
           plain "PackManifest" "Overrides" "ids from other packs this pack replaces (checked when packs merge)"
           plain "PackPermissions" "Hooks" "plugin hook names the pack may use"
+          plain "PackPermissions" "Mutations" "plugin mutation capabilities (docs/PLUGINS.md)"
           plain "PackPlugin" "Hooks" "plugin hook names the plugin handles"
           plain "PackContent" "Strings" "locale string tables keyed by locale code"
           optional "PackPlayerStart" "SceneId" ReferenceKind.Scene

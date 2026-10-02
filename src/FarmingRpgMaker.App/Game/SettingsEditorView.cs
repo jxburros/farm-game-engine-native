@@ -9,11 +9,29 @@ using FarmingRpgMaker.App.Projects;
 
 namespace FarmingRpgMaker.App.Game;
 
-/// <summary>Project identity, gameplay settings and calendar, saved as one F# undo step.</summary>
-public sealed class SettingsEditorView : UserControl
+/// <summary>
+/// Project identity, gameplay settings and calendar (saved as one F# undo step), weather odds,
+/// the mine and export settings. Each section keeps what was typed into it until it is saved
+/// or reverted (#70): saving another section, toggling the mine, undo or a tab switch reload
+/// only the sections without unsaved fields. Season moves and removals change the draft rows
+/// and are saved with the project settings. Errors name the field (#46).
+/// </summary>
+public sealed class SettingsEditorView : UserControl, IRetirable
 {
-    private sealed record SeasonRow(TextBox Id, TextBox Name, TextBox Days, Control Control);
+    private sealed record SeasonRow(TextBox Id, TextBox Name, TextBox Days, Button Up, Button Down, Control Control);
+
+    /// <summary>The parts of the form that are saved (and reloaded) on their own.</summary>
+    private enum Section
+    {
+        Project,
+        Weather,
+        Mine,
+        Export,
+    }
     private sealed record FestivalRow(TextBox Id, TextBox Name, TextBox SeasonId, TextBox Day, Control Control);
+
+    /// <summary>The fastest player speed the form accepts, in tiles a second.</summary>
+    private const double MaxPlayerSpeed = 15;
 
     private readonly ProjectWorkspace _workspace;
     private readonly StackPanel _seasons = new() { Spacing = 5 };
@@ -31,6 +49,7 @@ public sealed class SettingsEditorView : UserControl
     private readonly TextBox _dayStart = new() { Name = "Setting_DayStartMinute" };
     private readonly TextBox _dayEnd = new() { Name = "Setting_DayEndMinute" };
     private readonly TextBox _minutesPerSecond = new() { Name = "Setting_MinutesPerRealSecond" };
+    private readonly CheckBox _pauseInModals = new() { Name = "Setting_PauseInModals", Content = "Pause the clock in dialogue, shops, minigames and menus" };
     private readonly StackPanel _skillLevels = new() { Name = "SkillLevels", Spacing = 5 };
     private readonly List<TextBox> _skillLevelBoxes = [];
     private readonly CheckBox _energy = new() { Name = "Setting_EnergyEnabled", Content = "Energy enabled" };
@@ -62,10 +81,18 @@ public sealed class SettingsEditorView : UserControl
     private readonly TextBlock _mineNote = Ui.Wrapped("", "muted", "small");
     private readonly TextBlock _mineMessage = Ui.Wrapped("", "muted", "small");
     private readonly StackPanel _mineFields = new() { Name = "MineFields", Spacing = 6 };
+    /// <summary>Each section's fields as they were last loaded from the project.</summary>
+    private readonly Dictionary<Section, string> _loaded = [];
+    /// <summary>The saved seasons when the project section was loaded (a row removed since is removed on save).</summary>
+    private List<string> _loadedSeasons = [];
+    private readonly Action<string, string, Action<int, int>>? _pickOnMap;
 
-    public SettingsEditorView(ProjectWorkspace workspace)
+    /// <param name="workspace">The open project.</param>
+    /// <param name="pickOnMap">Lets the creator click the mine entrance on the map (scene id, prompt, what to do with the tile); null hides the button.</param>
+    public SettingsEditorView(ProjectWorkspace workspace, Action<string, string, Action<int, int>>? pickOnMap = null)
     {
         _workspace = workspace;
+        _pickOnMap = pickOnMap;
         Name = "SettingsEditorView";
         _message.Name = "SettingsMessage";
         var form = new StackPanel { Spacing = 10, Margin = new Thickness(20), MaxWidth = 760 };
@@ -89,6 +116,7 @@ public sealed class SettingsEditorView : UserControl
         Field(form, "Day start minute", _dayStart);
         Field(form, "Day end minute", _dayEnd);
         Field(form, "Game minutes per real second", _minutesPerSecond);
+        form.Children.Add(_pauseInModals);
         form.Children.Add(Ui.Text("SEASONS", "section"));
         form.Children.Add(_seasons);
         var addSeason = Ui.Button("Add season", AddSeason, "tool");
@@ -102,7 +130,8 @@ public sealed class SettingsEditorView : UserControl
         form.Children.Add(_message);
         var save = Ui.Button("Save project settings", Save, "accent");
         save.Name = "SaveSettingsButton";
-        var revert = Ui.Button("Revert fields", Refresh, "tool");
+        var revert = Ui.Button("Revert fields", () => Load(Section.Project), "tool");
+        revert.Name = "RevertSettingsButton";
         form.Children.Add(Ui.HStack(8, save, revert));
         form.Children.Add(Ui.Text("WEATHER ODDS PER SEASON", "section"));
         form.Children.Add(Ui.Wrapped("Weights, rolled at each day start. Rain waters the soil, storms can damage crops. 0 means never.", "muted", "small"));
@@ -120,7 +149,16 @@ public sealed class SettingsEditorView : UserControl
             (_mineLadder, "Ladder chance (0.02–1)"), (_exportIcon, "Icon (PNG artwork, at least 256×256)"), (_exportWidth, "Window width"),
             (_exportHeight, "Window height"), (_exportPixelScale, "Pixel scale"));
         _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance scene", "muted", "small"), _mineScene));
-        _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Entrance X", "muted", "small"), _mineX, Ui.Text("Y", "muted", "small"), _mineY));
+        var mineRow = Ui.HStack(8, Ui.Text("Entrance X", "muted", "small"), _mineX, Ui.Text("Y", "muted", "small"), _mineY);
+        if (_pickOnMap is not null)
+        {
+            var pick = Ui.Button("Pick on map", PickMineEntrance, "tool", "small");
+            pick.Name = "Mine_PickOnMap";
+            AutomationProperties.SetName(pick, "Pick the mine entrance on the map");
+            mineRow.Children.Add(pick);
+        }
+
+        _mineFields.Children.Add(mineRow);
         _mineFields.Children.Add(Ui.HStack(8, Ui.Text("Floors", "muted", "small"), _mineFloors, Ui.Text("Ladder chance (0.02–1)", "muted", "small"), _mineLadder));
         _mineNote.Name = "MineNote";
         _mineFields.Children.Add(_mineNote);
@@ -151,11 +189,99 @@ public sealed class SettingsEditorView : UserControl
         saveExport.Name = "SaveExportSettingsButton";
         form.Children.Add(saveExport);
         Content = new ScrollViewer { Content = form };
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        // Another project: nothing typed belongs to it.
+        if (e.Kind == ProjectChangeKind.Opened)
+        {
+            _loaded.Clear();
+        }
+
+        if (IsEffectivelyVisible) Refresh();
+    }
+
+    /// <summary>True while a section holds fields that are not saved (#70, #87).</summary>
+    public bool HasUnsavedChanges => Enum.GetValues<Section>().Any(IsDirty);
+
+    /// <summary>
+    /// Saves every section with unsaved fields (switching projects, closing the editor). False
+    /// when one could not be saved; its message says why.
+    /// </summary>
+    public bool SaveDrafts()
+    {
+        if (IsDirty(Section.Project)) Save();
+        if (IsDirty(Section.Weather)) SaveWeather();
+        if (IsDirty(Section.Mine)) SaveMine();
+        if (IsDirty(Section.Export)) SaveExport();
+        return !HasUnsavedChanges;
+    }
+
+    private bool IsDirty(Section section) => _loaded.TryGetValue(section, out var loaded) && loaded != Snapshot(section);
+
+    /// <summary>A section's fields as one string, to tell whether anything was typed since it was loaded.</summary>
+    private string Snapshot(Section section)
+    {
+        static string Of(Control control) => control switch
+        {
+            TextBox box => box.Text ?? "",
+            CheckBox check => check.IsChecked?.ToString() ?? "",
+            ComboBox picker => (picker.SelectedItem as ComboBoxItem)?.Tag as string ?? "",
+            _ => "",
+        };
+        IEnumerable<Control> controls = section switch
+        {
+            Section.Project =>
+            [
+                _name, _version, _locale, _speed, _maxEnergy, _collapseFraction, _collapsePenalty, _dayStart, _dayEnd, _minutesPerSecond,
+                _pauseInModals, _energy, _skills, _credit, .. _skillLevelBoxes,
+                .. _seasonRows.SelectMany(row => new Control[] { row.Id, row.Name, row.Days }),
+                .. _festivalRows.SelectMany(row => new Control[] { row.Id, row.Name, row.SeasonId, row.Day }),
+            ],
+            Section.Weather => _weatherCells.OrderBy(cell => cell.Key).Select(cell => (Control)cell.Value),
+            Section.Mine => [_mineScene, _mineX, _mineY, _mineFloors, _mineLadder],
+            _ => [_exportTitle, _exportExecutable, _exportVersion, _exportAuthor, _exportCompany, _exportIcon, _exportWidth, _exportHeight, _exportFullscreen, _exportPixelScale, _exportCredits],
+        };
+        var keys = section switch
+        {
+            Section.Project => $"{_skillLevelBoxes.Count}/{_seasonRows.Count}/{_festivalRows.Count}",
+            Section.Weather => string.Join(",", _weatherCells.Keys.OrderBy(key => key)),
+            _ => "",
+        };
+        return keys + "\u001f" + string.Join("\u001f", controls.Select(Of));
+    }
+
+    /// <summary>Fills a section from the project and remembers it as loaded.</summary>
+    private void Load(Section section)
+    {
+        if (_workspace.Current is not { } project) return;
+        switch (section)
+        {
+            case Section.Project: LoadProject(project); break;
+            case Section.Weather: RefreshWeather(project); break;
+            case Section.Mine: RefreshMine(project); break;
+            default: RefreshExport(project); break;
+        }
+
+        _loaded[section] = Snapshot(section);
+    }
+
+    /// <summary>The mine entrance clicked on the map, in the entrance scene picked here.</summary>
+    private void PickMineEntrance()
+    {
+        if (_pickOnMap is null || (_mineScene.SelectedItem as ComboBoxItem)?.Tag is not string sceneId) return;
+        _pickOnMap(sceneId, "Click the tile players use to go down into the mine.", (x, y) =>
+        {
+            _mineX.Text = x.ToString(CultureInfo.InvariantCulture);
+            _mineY.Text = y.ToString(CultureInfo.InvariantCulture);
+            _mineMessage.Text = $"Entrance set to ({x}, {y}). Save mine to keep it.";
+        });
     }
 
     private static void Field(StackPanel form, string label, TextBox input)
@@ -165,11 +291,24 @@ public sealed class SettingsEditorView : UserControl
         form.Children.Add(input);
     }
 
-    private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
+    private static string Number(double value) => DisplayFormat.Number(value);
+
+    /// <summary>The number in <paramref name="input"/>; the error names the field (its screen-reader name, #46).</summary>
     private static double Parse(TextBox input)
     {
-        var value = double.Parse(input.Text ?? "", NumberStyles.Float, CultureInfo.InvariantCulture);
-        if (!double.IsFinite(value)) throw new FormatException($"{input.Name} must be a finite number.");
+        var label = AutomationProperties.GetName(input) is { Length: > 0 } name ? name : input.Name ?? "This field";
+        var text = (input.Text ?? "").Trim();
+        if (text.Length == 0) throw new FormatException($"{label} needs a value.");
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value))
+            throw new FormatException($"{label} must be a number.");
+        return value;
+    }
+
+    /// <summary>A whole number, named in the error like <see cref="Parse"/>.</summary>
+    private static double Whole(TextBox input)
+    {
+        var value = Parse(input);
+        if (value != Math.Floor(value)) throw new FormatException($"{AutomationProperties.GetName(input)} must be a whole number.");
         return value;
     }
     private static TextBox Box(string name, string value, double width) => new() { Name = name, Text = value, Width = width };
@@ -233,38 +372,67 @@ public sealed class SettingsEditorView : UserControl
         var days = Box("Season_Days", Number(season.Days), 65);
         var what = string.IsNullOrWhiteSpace(season.Name) ? "new season" : season.Name;
         Ui.Label((id, $"{what} id"), (name, $"{what} name"), (days, $"{what} days"));
+        SeasonRow? row = null;
+        // Removing and moving change the rows; Save project settings applies them (#70).
         var remove = Ui.Button("Remove", () =>
         {
-            if (saved)
+            if (row is null) return;
+            if (_seasonRows.Count <= 1)
             {
-                _workspace.Apply(Edits.RemoveSeason(id.Text ?? ""));
+                _message.Text = "The calendar needs at least one season.";
+                return;
             }
-            else
-            {
-                var row = _seasonRows.First(r => ReferenceEquals(r.Id, id));
-                _seasonRows.Remove(row);
-                _seasons.Children.Remove(row.Control);
-            }
-        }, "tool", "small");
-        Ui.Label((remove, $"Remove {what}"));
-        var control = Ui.HStack(8, id, name, days, remove);
-        if (saved && _workspace.Current is { } project)
-        {
-            var up = Ui.Button("↑", () => _workspace.Apply(Edits.MoveSeason(season.Id, -1)), "tool", "small");
-            up.Name = $"Season_Up_{season.Id}";
-            up.IsEnabled = SettingsForm.CanMoveSeason(project, season.Id, -1);
-            ToolTip.SetTip(up, "Earlier in the year");
-            var down = Ui.Button("↓", () => _workspace.Apply(Edits.MoveSeason(season.Id, 1)), "tool", "small");
-            down.Name = $"Season_Down_{season.Id}";
-            down.IsEnabled = SettingsForm.CanMoveSeason(project, season.Id, 1);
-            ToolTip.SetTip(down, "Later in the year");
-            Ui.Label((up, $"Move {what} earlier in the year"), (down, $"Move {what} later in the year"));
-            control.Children.Insert(0, down);
-            control.Children.Insert(0, up);
-        }
 
-        _seasonRows.Add(new SeasonRow(id, name, days, control));
+            _seasonRows.Remove(row);
+            _seasons.Children.Remove(row.Control);
+            // Festivals on the season go with it, as they do once it is saved.
+            foreach (var festival in _festivalRows.Where(f => (f.SeasonId.Text ?? "").Trim() == (id.Text ?? "").Trim()).ToList())
+            {
+                _festivalRows.Remove(festival);
+                _festivals.Children.Remove(festival.Control);
+            }
+
+            UpdateSeasonArrows();
+            _message.Text = $"Removed {what} from the calendar. Save project settings to apply it.";
+        }, "tool", "small");
+        remove.Name = $"Season_Remove_{season.Id}";
+        Ui.Label((remove, $"Remove {what}"));
+        var up = Ui.Button("↑", () => MoveSeasonRow(row, -1), "tool", "small");
+        up.Name = $"Season_Up_{season.Id}";
+        ToolTip.SetTip(up, "Earlier in the year");
+        var down = Ui.Button("↓", () => MoveSeasonRow(row, 1), "tool", "small");
+        down.Name = $"Season_Down_{season.Id}";
+        ToolTip.SetTip(down, "Later in the year");
+        Ui.Label((up, $"Move {what} earlier in the year"), (down, $"Move {what} later in the year"));
+        var control = Ui.HStack(8, up, down, id, name, days, remove);
+        row = new SeasonRow(id, name, days, up, down, control);
+        _seasonRows.Add(row);
         _seasons.Children.Add(control);
+        UpdateSeasonArrows();
+    }
+
+    private void MoveSeasonRow(SeasonRow? row, int delta)
+    {
+        if (row is null) return;
+        var index = _seasonRows.IndexOf(row);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= _seasonRows.Count) return;
+        _seasonRows.RemoveAt(index);
+        _seasonRows.Insert(target, row);
+        _seasons.Children.Remove(row.Control);
+        _seasons.Children.Insert(target, row.Control);
+        UpdateSeasonArrows();
+        _message.Text = "Season order changed. Save project settings to apply it.";
+    }
+
+    /// <summary>The first season can't move earlier, the last can't move later (web ProjectSettingsEditor).</summary>
+    private void UpdateSeasonArrows()
+    {
+        for (var i = 0; i < _seasonRows.Count; i++)
+        {
+            _seasonRows[i].Up.IsEnabled = i > 0;
+            _seasonRows[i].Down.IsEnabled = i < _seasonRows.Count - 1;
+        }
     }
 
     private void AddFestivalRow(CalendarFestival festival)
@@ -311,9 +479,36 @@ public sealed class SettingsEditorView : UserControl
             .WithName(row.Name.Text ?? "")
             .WithDays(double.TryParse(row.Days.Text, CultureInfo.InvariantCulture, out var days) ? days : 28)).ToList();
 
+    /// <summary>
+    /// Reloads the sections without unsaved fields from the project (the tab is shown, the
+    /// project changed). A section with unsaved fields keeps them and says so.
+    /// </summary>
     public void Refresh()
     {
         if (_workspace.Current is not { } project) return;
+        var kept = new List<string>();
+        foreach (var section in Enum.GetValues<Section>())
+        {
+            if (IsDirty(section))
+            {
+                kept.Add(section.ToString().ToLowerInvariant());
+                continue;
+            }
+
+            Load(section);
+        }
+
+        // The mine toggle is applied at once, whatever its fields hold.
+        _mineEnabled.IsChecked = project.Mine.Enabled;
+        _mineFields.IsVisible = project.Mine.Enabled;
+        if (kept.Count > 0 && IsEffectivelyVisible)
+        {
+            _message.Text = $"Unsaved changes kept ({string.Join(", ", kept)}): save or revert them.";
+        }
+    }
+
+    private void LoadProject(GameProject project)
+    {
         var settings = project.Settings;
         _name.Text = project.Name;
         _version.Text = project.Version;
@@ -325,6 +520,7 @@ public sealed class SettingsEditorView : UserControl
         _dayStart.Text = Number(settings.Time.DayStartMinute);
         _dayEnd.Text = Number(settings.Time.DayEndMinute);
         _minutesPerSecond.Text = Number(settings.Time.MinutesPerRealSecond);
+        _pauseInModals.IsChecked = settings.Time.PauseInModals.OrNullable() != false;
         ShowSkillLevels(settings.SkillLevelCurve.Select(Number).ToList());
         _energy.IsChecked = settings.EnergyEnabled;
         _skills.IsChecked = settings.SkillsEnabled;
@@ -332,13 +528,11 @@ public sealed class SettingsEditorView : UserControl
         _seasonRows.Clear();
         _seasons.Children.Clear();
         foreach (var season in settings.Calendar.Seasons) AddSeasonRow(season);
+        _loadedSeasons = settings.Calendar.Seasons.Select(season => season.Id).ToList();
         _festivalRows.Clear();
         _festivals.Children.Clear();
         foreach (var festival in settings.Calendar.Festivals) AddFestivalRow(festival);
         _message.Text = "";
-        RefreshWeather(project);
-        RefreshMine(project);
-        RefreshExport(project);
     }
 
     private void RefreshWeather(GameProject project)
@@ -369,7 +563,9 @@ public sealed class SettingsEditorView : UserControl
         try
         {
             var weights = _weatherCells.Select(cell => (cell.Key.Season, cell.Key.Weather, string.IsNullOrWhiteSpace(cell.Value.Text) ? 0 : Parse(cell.Value))).ToList();
-            _weatherMessage.Text = _workspace.Apply(SettingsForm.WeatherOdds(project, weights)) ? "Weather odds saved." : "No changes were made.";
+            var saved = _workspace.Apply(SettingsForm.WeatherOdds(project, weights));
+            Load(Section.Weather);
+            _weatherMessage.Text = saved ? _workspace.SavedText("Weather odds") : "No changes were made.";
         }
         catch (FormatException error)
         {
@@ -380,8 +576,6 @@ public sealed class SettingsEditorView : UserControl
     private void RefreshMine(GameProject project)
     {
         var mine = project.Mine;
-        _mineEnabled.IsChecked = mine.Enabled;
-        _mineFields.IsVisible = mine.Enabled;
         var sceneId = mine.EntranceSceneId.OrNull() ?? project.StartSceneId;
         _mineScene.Items.Clear();
         foreach (var scene in project.Scenes) _mineScene.Items.Add(new ComboBoxItem { Content = scene.Name, Tag = scene.Id });
@@ -408,10 +602,10 @@ public sealed class SettingsEditorView : UserControl
         try
         {
             var sceneId = (_mineScene.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
-            var mine = SettingsForm.Mine(project, true, sceneId, Parse(_mineX), Parse(_mineY), Parse(_mineFloors), Parse(_mineLadder));
+            var mine = SettingsForm.Mine(project, true, sceneId, Whole(_mineX), Whole(_mineY), Whole(_mineFloors), Parse(_mineLadder));
             _workspace.Apply(Edits.SetMine(mine));
-            RefreshMine(_workspace.Current!);
-            _mineMessage.Text = "Mine saved.";
+            Load(Section.Mine);
+            _mineMessage.Text = _workspace.SavedText("Mine");
         }
         catch (FormatException error)
         {
@@ -489,15 +683,34 @@ public sealed class SettingsEditorView : UserControl
                 .WithCredits(Optional(_exportCredits));
             var problems = ExportSettingsForm.Check(project, settings);
             _workspace.Apply(Edits.SetExportSettings(settings));
+            Load(Section.Export);
             ShowExportProblems(problems);
             _exportMessage.Text = problems.Any(problem => problem.IsError)
-                ? "Export settings saved. Fix the errors above before exporting."
-                : "Export settings saved.";
+                ? _workspace.SavedText("Export settings") + " Fix the errors above before exporting."
+                : _workspace.SavedText("Export settings");
         }
         catch (FormatException error)
         {
             _exportMessage.Text = $"Could not save: {error.Message}";
         }
+    }
+
+    private static double Positive(TextBox box)
+    {
+        var value = Parse(box);
+        return value > 0 ? value : throw new FormatException($"{AutomationProperties.GetName(box)} must be more than 0.");
+    }
+
+    private static double AtLeastZero(TextBox box)
+    {
+        var value = Parse(box);
+        return value >= 0 ? value : throw new FormatException($"{AutomationProperties.GetName(box)} must be 0 or more.");
+    }
+
+    private static double Between(TextBox box, double low, double high)
+    {
+        var value = Parse(box);
+        return value >= low && value <= high ? value : throw new FormatException($"{AutomationProperties.GetName(box)} must be from {Number(low)} to {Number(high)}.");
     }
 
     private void Save()
@@ -507,31 +720,56 @@ public sealed class SettingsEditorView : UserControl
         {
             var seasons = _seasonRows.Select(row => CalendarSeason.Default.WithId(row.Id.Text?.Trim() ?? "").WithName(row.Name.Text?.Trim() ?? "").WithDays(Parse(row.Days))).ToList();
             var festivals = _festivalRows.Select(row => CalendarFestival.Default.WithId(row.Id.Text?.Trim() ?? "").WithName(row.Name.Text?.Trim() ?? "").WithSeasonId(row.SeasonId.Text?.Trim() ?? "").WithDay(Parse(row.Day))).ToList();
-            if (seasons.Count == 0 || seasons.Any(s => s.Id.Length == 0 || s.Days <= 0 || s.Days != Math.Floor(s.Days)) || seasons.Select(s => s.Id).Distinct().Count() != seasons.Count)
-                throw new FormatException("Seasons need distinct ids and positive day counts.");
-            if (festivals.Any(f => f.Id.Length == 0 || f.Day != Math.Floor(f.Day) || !seasons.Any(s => s.Id == f.SeasonId && f.Day >= 1 && f.Day <= s.Days)))
-                throw new FormatException("Every festival needs a season and a day within it.");
+            if (seasons.Count == 0) throw new FormatException("The calendar needs at least one season.");
+            foreach (var season in seasons)
+            {
+                var label = season.Name.Length > 0 ? $"Season \"{season.Name}\"" : "A season";
+                if (season.Id.Length == 0) throw new FormatException($"{label} needs an id.");
+                if (season.Days <= 0 || season.Days != Math.Floor(season.Days)) throw new FormatException($"{label} days must be a whole number above 0.");
+            }
+
+            if (seasons.GroupBy(s => s.Id).FirstOrDefault(group => group.Count() > 1) is { } twice)
+                throw new FormatException($"Two seasons have the id \"{twice.Key}\"; season ids must be different.");
+            foreach (var festival in festivals)
+            {
+                var label = festival.Name.Length > 0 ? $"Festival \"{festival.Name}\"" : "A festival";
+                if (festival.Id.Length == 0) throw new FormatException($"{label} needs an id.");
+                if (seasons.FirstOrDefault(s => s.Id == festival.SeasonId) is not { } on) throw new FormatException($"{label} needs a season of the calendar.");
+                if (festival.Day != Math.Floor(festival.Day) || festival.Day < 1 || festival.Day > on.Days)
+                    throw new FormatException($"{label} day must be a whole number from 1 to {Number(on.Days)}.");
+            }
+
             var curve = SkillLevelCurve();
             var settings = project.Settings
                 .WithLocale(_locale.Text?.Trim() ?? "")
                 .WithEnergyEnabled(_energy.IsChecked == true)
                 .WithSkillsEnabled(_skills.IsChecked == true)
                 .WithShowMadeWithCredit(_credit.IsChecked == true)
-                .WithMaxEnergy(Parse(_maxEnergy))
-                .WithCollapseEnergyFraction(Parse(_collapseFraction))
-                .WithCollapseMoneyPenalty(Parse(_collapsePenalty))
+                .WithMaxEnergy(Positive(_maxEnergy))
+                .WithCollapseEnergyFraction(Between(_collapseFraction, 0, 1))
+                .WithCollapseMoneyPenalty(AtLeastZero(_collapsePenalty))
                 .WithSkillLevelCurve(curve)
-                .WithMovement(project.Settings.Movement.WithPlayerSpeed(Parse(_speed)))
-                .WithTime(project.Settings.Time.WithDayStartMinute(Parse(_dayStart)).WithDayEndMinute(Parse(_dayEnd)).WithMinutesPerRealSecond(Parse(_minutesPerSecond)))
+                .WithMovement(project.Settings.Movement.WithPlayerSpeed(Positive(_speed)))
+                .WithTime(project.Settings.Time.WithDayStartMinute(Whole(_dayStart)).WithDayEndMinute(Whole(_dayEnd)).WithMinutesPerRealSecond(Positive(_minutesPerSecond))
+                    // Absent means on: unchecking writes false, checking clears an explicit false.
+                    .WithPauseInModals(_pauseInModals.IsChecked == true ? (project.Settings.Time.PauseInModals.OrNullable() is null ? null : true) : false))
                 .WithCalendar(project.Settings.Calendar.WithSeasons(seasons).WithFestivals(festivals));
             var name = _name.Text?.Trim() ?? "";
             var version = _version.Text?.Trim() ?? "";
-            if (name.Length == 0 || version.Length == 0 || settings.MaxEnergy <= 0 || settings.Movement.PlayerSpeed <= 0 || settings.Time.MinutesPerRealSecond <= 0
-                || settings.CollapseEnergyFraction < 0 || settings.CollapseEnergyFraction > 1 || settings.CollapseMoneyPenalty < 0
-                || settings.Time.DayStartMinute != Math.Floor(settings.Time.DayStartMinute) || settings.Time.DayEndMinute != Math.Floor(settings.Time.DayEndMinute))
-                throw new FormatException("Name, version, energy, speed and time rate must have valid positive values.");
-            _workspace.Apply(Edits.Batch("Project settings", [Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
-            _message.Text = "Settings saved.";
+            if (name.Length == 0) throw new FormatException("Name needs a value.");
+            if (version.Length == 0) throw new FormatException("Version needs a value.");
+            // An end at or before the start collapsed the player on every tick.
+            if (!SettingsSchema.validTime(settings.Time))
+                throw new FormatException($"The day must end at least {SettingsSchema.MinDayWindowMinutes} minutes after it starts and by minute {SettingsSchema.MaxDayEndMinute}, and the clock can run at most {SettingsSchema.MaxMinutesPerRealSecond} minutes per second.");
+            // Faster than this the player is hard to control (Problems warns about it too).
+            if (settings.Movement.PlayerSpeed > MaxPlayerSpeed)
+                throw new FormatException($"Player speed can be at most {MaxPlayerSpeed} tiles a second.");
+            // Seasons removed from the rows go through RemoveSeason first, which also clears them
+            // from weather, crops, shops, quests and fish (Cleanup.dropSeason).
+            var removed = _loadedSeasons.Where(id => !seasons.Any(season => season.Id == id)).Select(Edits.RemoveSeason);
+            _workspace.Apply(Edits.Batch("Project settings", [.. removed, Edits.SetProjectInfo(name, version), Edits.SetSettings(settings)]));
+            Load(Section.Project);
+            _message.Text = _workspace.SavedText("Settings");
         }
         catch (Exception error) when (error is FormatException or OverflowException)
         {

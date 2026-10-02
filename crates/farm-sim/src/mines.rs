@@ -9,20 +9,42 @@
 
 use crate::effects::Effect;
 use crate::engine_types::{Effects, EngineContext};
+use crate::messages;
 use crate::rng::{self, Rng};
-use crate::schema::{GameState, MineBand, MineConfig, MineProgress, Scene, TileNode};
+use crate::schema::{GameState, MineBand, MineConfig, MineProgress, Scene, TileNode, MAX_SCENE_SIZE};
 use crate::units;
-use crate::world::tiles;
-use serde_json::Value;
+use crate::world::{tiles, world_movement};
 
 pub const MINE_SCENE_PREFIX: &str = "mine-floor-";
 
+/// Where the player arrives on a floor, and the tile whose interaction climbs out.
+pub const FLOOR_ENTRY: (i32, i32) = (1, 1);
+
+/// The smallest floor side: a wall ring around at least one tile (the entry).
+pub const MIN_FLOOR_SIZE: i32 = 3;
+
+/// The scene id of mine floor `floor`.
 pub fn mine_floor_scene_id(floor: u32) -> String {
     format!("{MINE_SCENE_PREFIX}{floor}")
 }
 
+/// Whether the id has the shape of a mine floor's. A creator can name a scene that way too; see
+/// [`is_mine_floor`].
 pub fn is_mine_scene(scene_id: &str) -> bool {
     scene_id.starts_with(MINE_SCENE_PREFIX)
+}
+
+/// Whether `scene_id` is a mine floor the engine generated (not an authored scene that happens
+/// to use the prefix).
+pub fn is_mine_floor(state: &GameState, scene_id: &str) -> bool {
+    is_mine_scene(scene_id) && world_movement::find_scene(state, scene_id).is_some_and(Scene::is_generated)
+}
+
+/// A floor side from content, clamped to `MIN_FLOOR_SIZE..=MAX_SCENE_SIZE`: two content numbers
+/// must not make the game allocate billions of tiles (an allocation failure aborts the process),
+/// and a side under 3 would put the entry on the wall or outside the floor.
+pub fn floor_side(configured: u32) -> i32 {
+    i32::try_from(configured).unwrap_or(i32::MAX).clamp(MIN_FLOOR_SIZE, MAX_SCENE_SIZE)
 }
 
 fn band_for_floor(config: &MineConfig, floor: u32) -> Option<&MineBand> {
@@ -36,18 +58,19 @@ pub fn generate_mine_floor(ctx: &EngineContext, engine_seed: &str, floor: u32) -
     let mut scene = tiles::create_empty_scene(
         &mine_floor_scene_id(floor),
         &format!("Mine — Floor {floor}"),
-        i32::try_from(config.floor_width).unwrap_or(i32::MAX),
-        i32::try_from(config.floor_height).unwrap_or(i32::MAX),
+        floor_side(config.floor_width),
+        floor_side(config.floor_height),
     );
     // TS: createRngState(hashStringToU32(...)) — the numeric-seed overload.
     let seed = rng::hash_string_to_u32(&format!("{engine_seed}:mine:{floor}"));
     let mut rng = Rng::new(rng::create_rng_state_from_u32(seed));
 
     // Cave look: floor tiles + wall border
-    for y in 0..scene.height {
-        for x in 0..scene.width {
-            let border = x == 0 || y == 0 || x == scene.width - 1 || y == scene.height - 1;
-            let tile = &mut scene.tiles[y as usize][x as usize];
+    let (width, height) = (scene.width, scene.height);
+    for (y, row) in scene.tiles.iter_mut().enumerate() {
+        for (x, tile) in row.iter_mut().enumerate() {
+            let (x, y) = (x as i32, y as i32);
+            let border = x == 0 || y == 0 || x == width - 1 || y == height - 1;
             tile.r#type = if border { "wall" } else { "floor" }.to_owned();
             tile.background = "floor".to_owned();
             tile.overlay = None;
@@ -56,21 +79,22 @@ pub fn generate_mine_floor(ctx: &EngineContext, engine_seed: &str, floor: u32) -
         }
     }
 
-    const ENTRY_X: i32 = 1;
-    const ENTRY_Y: i32 = 1;
+    let (entry_x, entry_y) = FLOOR_ENTRY;
     let band = band_for_floor(config, floor);
 
     if let Some(band) = band {
         let weights: Vec<u32> = band.rocks.iter().map(|rock| rock.weight).collect();
         for y in 1..scene.height - 1 {
             for x in 1..scene.width - 1 {
-                place_rock(ctx, band, &weights, &mut rng, &mut scene, x, y, x == ENTRY_X && y == ENTRY_Y);
+                place_rock(ctx, band, &weights, &mut rng, &mut scene, x, y, x == entry_x && y == entry_y);
             }
         }
     }
 
-    // Mark the scene as generated so the project bridge skips it.
-    scene.extra.insert("generated".to_owned(), Value::Bool(true));
+    // Mark the scene as generated so the project bridge skips it and `exitMine` drops it.
+    scene.generated = Some(true);
+    // Underground: the weather stays outside.
+    scene.indoor = Some(true);
     scene
 }
 
@@ -98,11 +122,13 @@ fn place_rock(
         return;
     };
     let node_type_id = &rock.node_type_id;
-    let Some(node_def) = ctx.content.node_types.iter().find(|def| def.id == *node_type_id) else {
+    let Some(node_def) = ctx.node_type(node_type_id) else {
         return;
     };
-    scene.tiles[y as usize][x as usize].node =
-        Some(TileNode { type_id: node_type_id.clone(), remaining_health: node_def.health, ..TileNode::default() });
+    if let Some(tile) = scene.tile_mut(x, y) {
+        tile.node =
+            Some(TileNode { type_id: node_type_id.clone(), remaining_health: node_def.health, ..TileNode::default() });
+    }
 }
 
 /// Enter the mine (from the configured entrance) or descend one floor.
@@ -119,17 +145,70 @@ pub fn descend_mine(ctx: &EngineContext, state: &mut GameState, to_floor: u32) -
         state.world.scenes.push(generated);
     }
 
+    let (entry_x, entry_y) = FLOOR_ENTRY;
     state.player.scene_id = scene_id.clone();
-    state.player.x = units::tile_center(1);
-    state.player.y = units::tile_center(1);
+    state.player.x = units::tile_center(entry_x);
+    state.player.y = units::tile_center(entry_y);
     state.mine = MineProgress { current_floor: floor, deepest_floor: state.mine.deepest_floor.max(floor) };
 
     // `floor % 0` is NaN in JS: never a checkpoint.
-    let checkpoint = if floor.checked_rem(config.elevator_every) == Some(0) { " (elevator checkpoint)" } else { "" };
-    vec![
-        Effect::SceneChanged { scene_id, x: 1, y: 1 },
-        Effect::message("info", format!("Mine — floor {floor}{checkpoint}")),
-    ]
+    let checkpoint = floor.checked_rem(config.elevator_every) == Some(0);
+    let announcement = if checkpoint { &messages::MINE_FLOOR_CHECKPOINT } else { &messages::MINE_FLOOR };
+    vec![Effect::SceneChanged { scene_id, x: entry_x, y: entry_y }, Effect::say("info", announcement.with(&[&floor]))]
+}
+
+/// The deepest floor the mine entrance's elevator reaches: the last checkpoint at or above the
+/// deepest floor reached (at least floor 1).
+pub fn elevator_floor(config: &MineConfig, state: &GameState) -> u32 {
+    // floor(deepest / every) × every; JS divides by zero into NaN, and max(1, NaN) is NaN.
+    let checkpoint = state
+        .mine
+        .deepest_floor
+        .checked_div(config.elevator_every)
+        .map_or(0, |elevators| elevators * config.elevator_every);
+    checkpoint.max(1)
+}
+
+/// Whether the player stands next to (or on, or facing) the mine entrance.
+fn beside_entrance(config: &MineConfig, state: &GameState) -> bool {
+    let (Some(scene_id), Some(x), Some(y)) =
+        (config.entrance_scene_id.as_deref(), config.entrance_x, config.entrance_y)
+    else {
+        return false;
+    };
+    let player = world_movement::player_tile(state);
+    state.player.scene_id == scene_id
+        && (i64::from(player.x) - i64::from(x)).abs() <= 1
+        && (i64::from(player.y) - i64::from(y)).abs() <= 1
+}
+
+/// The `descendMine` command under [`crate::CommandRules::Player`]: why it does not apply now
+/// (`None` when it does). It works on a mine floor or beside the entrance, down to one floor past
+/// the current floor or the elevator's deepest checkpoint.
+pub fn descend_refusal(ctx: &EngineContext, state: &GameState, to_floor: u32) -> Option<Effects> {
+    let config = &ctx.content.mine;
+    if !config.enabled {
+        return Some(Vec::new());
+    }
+    let in_mine = is_mine_floor(state, &state.player.scene_id);
+    if !in_mine && !beside_entrance(config, state) {
+        return Some(vec![Effect::say("info", &messages::MINE_NOT_AT_ENTRANCE)]);
+    }
+    let reachable =
+        elevator_floor(config, state).max(if in_mine { state.mine.current_floor } else { 0 }).saturating_add(1);
+    if to_floor > reachable {
+        return Some(vec![Effect::say("info", &messages::MINE_NOT_THAT_DEEP)]);
+    }
+    None
+}
+
+/// The `exitMine` command under [`crate::CommandRules::Player`]: only on a mine floor.
+pub fn exit_refusal(state: &GameState) -> Option<Effects> {
+    if is_mine_floor(state, &state.player.scene_id) {
+        None
+    } else {
+        Some(vec![Effect::say("info", &messages::MINE_NOT_IN_MINE)])
+    }
 }
 
 /// Leave the mine back to the entrance scene.
@@ -142,23 +221,21 @@ pub fn exit_mine(ctx: &EngineContext, state: &mut GameState) -> Effects {
     let x = config.entrance_x.unwrap_or_else(|| target.width.div_euclid(2));
     let y = config.entrance_y.unwrap_or_else(|| target.height.div_euclid(2));
 
-    // Drop generated floors so they regenerate fresh next visit.
-    state.world.scenes.retain(|scene| !is_mine_scene(&scene.id));
+    // Drop generated floors so they regenerate fresh next visit. Authored scenes stay, whatever
+    // their id.
+    state.world.scenes.retain(|scene| !(scene.is_generated() && is_mine_scene(&scene.id)));
     state.player.scene_id = target_scene_id.clone();
     state.player.x = units::tile_center(x);
     state.player.y = units::tile_center(y);
     state.mine.current_floor = 0;
 
-    vec![
-        Effect::SceneChanged { scene_id: target_scene_id, x, y },
-        Effect::message("info", "You climb back to the surface."),
-    ]
+    vec![Effect::SceneChanged { scene_id: target_scene_id, x, y }, Effect::say("info", &messages::MINE_CLIMB_BACK)]
 }
 
 /// Ladder discovery: called when a node is destroyed inside a mine scene. Rolls the ladder
 /// chance and, when successful, drops a ladder on the tile.
 pub fn maybe_reveal_ladder(ctx: &EngineContext, state: &mut GameState, scene_id: &str, x: i32, y: i32) -> Effects {
-    if !is_mine_scene(scene_id) {
+    if !is_mine_floor(state, scene_id) {
         return Vec::new();
     }
     let config = &ctx.content.mine;
@@ -173,7 +250,9 @@ pub fn maybe_reveal_ladder(ctx: &EngineContext, state: &mut GameState, scene_id:
         return Vec::new();
     };
     // C# cloned the tile grid; the reducer edits the tile in place.
-    state.world.scenes[scene_index].tiles[y as usize][x as usize].ladder_down = Some(true);
+    if let Some(tile) = state.world.scenes[scene_index].tile_mut(x, y) {
+        tile.ladder_down = Some(true);
+    }
 
-    vec![Effect::message("success", "A ladder to the next floor appears!")]
+    vec![Effect::say("success", &messages::MINE_LADDER)]
 }

@@ -3,16 +3,18 @@
 
 use crate::content_builtin;
 use crate::farming::crops;
+use crate::game_time;
+use crate::inventory;
 use crate::packs;
 use crate::rng;
 use crate::schema::{
-    center_coordinate, default_weather_config, ClockState, GameContent, GameProject, GameState, GameStateMeta,
-    MineProgress, MoveIntent, NpcState, PlayerState, ProjectSettings, QuestObjectiveProgress, QuestProgress,
-    WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
+    center_coordinate, default_weather_config, CalendarConfig, ClockState, GameContent, GameProject, GameState,
+    GameStateMeta, InventorySlot, KeptState, MineProgress, MoveIntent, NpcState, PlayerState, ProjectSettings,
+    QuestObjectiveProgress, QuestProgress, WeatherConfig, WorldState, CURRENT_CONTENT_VERSION, CURRENT_SAVE_VERSION,
 };
 use crate::start::StartState;
-use crate::text;
 use crate::units;
+use crate::world::{tiles, world_movement};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -62,11 +64,11 @@ pub fn create_base_content_from_project(project: &GameProject) -> GameContent {
 /// Derive the immutable content view from an editor project: base content, then enabled content
 /// packs layered on top (M5) with explicit override semantics.
 pub fn create_content_from_project(project: &GameProject) -> GameContent {
-    let merged =
-        packs::merge_packs_into_content(&create_base_content_from_project(project), &project.content_packs).content;
-    // Localized game text from pack string tables (M7); authored text is the fallback.
-    let locale = merged.settings.locale.clone();
-    packs::apply_locale_strings(merged, &project.content_packs, &locale)
+    let base = create_base_content_from_project(project);
+    // Localized game text from pack string tables (M7); authored text is the fallback. Packs
+    // merge no settings, so the base content's locale is the merged content's.
+    let locale = base.settings.locale.clone();
+    packs::merge_packs_into_content_localized(&base, &project.content_packs, &locale).content
 }
 
 /// Create a running GameState from a project. The world starts as a deep copy of the project's
@@ -108,24 +110,28 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
     };
 
     let flags: IndexMap<String, Value> =
-        start.event_flags.iter().map(|(key, value)| (key.clone(), Value::Bool(*value))).collect();
+        start.event_flags.iter().map(|(key, value)| (key.clone(), units::canonical_json(value.clone()))).collect();
 
-    let state = GameState {
+    let mut clock = ClockState {
+        tick: 0,
+        // TS `project.currentTimeMinutes ?? dayStartMinute` / `currentYear ?? 1`: both are
+        // required (non-nullable) project fields here, so the fallbacks never apply.
+        time_minutes: start.current_time_minutes,
+        day: start.current_day,
+        season: start.current_season.clone(),
+        day_of_season: start.current_day_of_season.unwrap_or(0),
+        year: start.current_year,
+        weather_id: start.current_weather_id.clone().unwrap_or_else(|| "sun".to_owned()),
+    };
+    game_time::reconcile_clock(&resolved_settings.calendar, &mut clock);
+
+    let mut state = GameState {
         meta: GameStateMeta {
             save_version: CURRENT_SAVE_VERSION,
             engine_seed: engine_seed.clone(),
             packs: start.packs.clone(),
         },
-        clock: ClockState {
-            tick: 0,
-            // TS `project.currentTimeMinutes ?? dayStartMinute` / `currentYear ?? 1`: both are
-            // required (non-nullable) project fields here, so the fallbacks never apply.
-            time_minutes: start.current_time_minutes,
-            day: start.current_day,
-            season: start.current_season.clone(),
-            year: start.current_year,
-            weather_id: start.current_weather_id.clone().unwrap_or_else(|| "sun".to_owned()),
-        },
+        clock,
         world: WorldState { scenes: start.scenes.clone() },
         player: PlayerState {
             // Projects may store tile indices (legacy/authored) or fractional free-movement
@@ -156,21 +162,100 @@ pub fn create_game_state_from_start(start: &StartState, seed: Option<&str>) -> G
         mine: MineProgress { deepest_floor: start.mine_deepest_floor.unwrap_or(0), current_floor: 0 },
         flags,
         quarantined_items: start.quarantined_items.clone().unwrap_or_default(),
-        rng: start.rng_state.clone().unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
+        // An all-zero state would draw 0 forever (#140): seed it like a project without one.
+        rng: start
+            .rng_state
+            .clone()
+            .filter(|rng| !rng.is_degenerate())
+            .unwrap_or_else(|| rng::create_rng_state(&engine_seed)),
     };
+
+    // Grids that don't match their scene's size (a hand-edited project, an import) are fixed
+    // before the simulation reads them.
+    normalize_world(&mut state);
+    settle_new_player(&mut state);
 
     // Items from missing/disabled packs are quarantined, not dropped; they come back when the
     // pack does.
     let enabled_packs: IndexSet<String> = start.packs.iter().map(|pack| pack.id.clone()).collect();
-    packs::reconcile_pack_items(state, &enabled_packs)
+    let mut state = packs::reconcile_pack_items(state, &enabled_packs);
+    // What a kept playtest left open or mid-way (#36).
+    if let Some(kept) = &start.kept_state {
+        kept.apply_to(&mut state);
+    }
+    state
+}
+
+/// A new game's player within the rules the engine keeps from then on (#116): no negative money,
+/// energy in `0..=maxEnergy`, stacks within their caps and no more slots than the inventory
+/// has, standing on the grid of a scene of the world. The editor never writes anything else, but
+/// hosts take project JSON and cartridges from anywhere. What does not fit the inventory waits
+/// in quarantine (it comes back when there is room); a player outside every scene starts in the
+/// first one, and one beside the grid on its nearest tile. A valid start is left as it is.
+fn settle_new_player(state: &mut GameState) {
+    let player = &mut state.player;
+    player.money = player.money.max(0);
+    player.max_energy = player.max_energy.max(0);
+    player.energy = player.energy.clamp(0, player.max_energy);
+
+    let mut kept = Vec::with_capacity(player.inventory.len());
+    let mut overflow = Vec::new();
+    for slot in std::mem::take(&mut player.inventory) {
+        let cap = inventory::stack_cap(&slot.item);
+        if slot.quantity == 0 {
+            continue;
+        }
+        if slot.quantity > cap {
+            overflow.push(InventorySlot { quantity: slot.quantity - cap, ..slot.clone() });
+            kept.push(InventorySlot { quantity: cap, ..slot });
+        } else {
+            kept.push(slot);
+        }
+    }
+    let max_slots = player.max_inventory_size as usize;
+    if kept.len() > max_slots {
+        let extra: Vec<InventorySlot> = kept.drain(max_slots..).collect();
+        overflow.splice(0..0, extra);
+    }
+    let (inventory, left_over) = packs::restore_slots(kept, &overflow, player.max_inventory_size);
+    player.inventory = inventory;
+    state.quarantined_items.extend(left_over);
+
+    let scenes = &state.world.scenes;
+    let scene = scenes.iter().find(|scene| scene.id == player.scene_id).or_else(|| scenes.first());
+    if let Some(scene) = scene {
+        player.scene_id = scene.id.clone();
+        // The whole collision box on the grid: a box that pokes out of it could walk off the
+        // scene (movement only checks the cells its leading edge enters).
+        let on_grid = |center: i32, half: i32, tiles: i32| {
+            center.checked_sub(half).is_some_and(|edge| edge >= 0)
+                && center.checked_add(half).is_some_and(|edge| edge <= units::tiles(tiles))
+        };
+        if !on_grid(player.x, world_movement::PLAYER_HALF_WIDTH, scene.width) {
+            player.x = units::tile_center(units::tile_of(player.x).clamp(0, scene.width - 1));
+        }
+        if !on_grid(player.y, world_movement::PLAYER_HALF_HEIGHT, scene.height) {
+            player.y = units::tile_center(units::tile_of(player.y).clamp(0, scene.height - 1));
+        }
+    }
+}
+
+/// Make every scene grid of the world match its scene's size (see
+/// [`tiles::normalize_scene_grid`]). Returns the ids of the scenes that changed. New games and
+/// loaded saves pass through here, so the simulation never meets a ragged grid.
+pub fn normalize_world(state: &mut GameState) -> Vec<String> {
+    let mut changed = Vec::new();
+    for scene in &mut state.world.scenes {
+        if tiles::normalize_scene_grid(scene) {
+            changed.push(scene.id.clone());
+        }
+    }
+    changed
 }
 
 /// Write a running GameState back into the project (persistence bridge — keeps the single
 /// project store and the editor views in sync while the engine owns play-mode rules).
 pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameProject {
-    let event_flags: IndexMap<String, bool> =
-        state.flags.iter().map(|(key, value)| (key.clone(), text::truthy(Some(value)))).collect();
-
     let mut next = project.clone();
     // Generated scenes (mine floors) sync through so rendering works while the player stands in
     // one; they are dropped again on exitMine and are hidden from editor scene lists
@@ -207,7 +292,8 @@ pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameP
     next.player.active_quests = state.player.active_quests.clone();
     next.player.completed_quests = state.player.completed_quests.clone();
     next.player.equipped_tool = state.player.equipped_tool.clone();
-    next.event_flags = event_flags;
+    // Flag values go back as they are: plugins store numbers and strings (#36).
+    next.event_flags = state.flags.clone();
     next.animals = state.animals.clone();
     next.social_state = Some(state.social.clone());
     next.quarantined_items = Some(state.quarantined_items.clone());
@@ -215,14 +301,24 @@ pub fn apply_state_to_project(project: &GameProject, state: &GameState) -> GameP
     next.mine_deepest_floor = Some(state.mine.deepest_floor);
     next.current_day = state.clock.day;
     next.current_season = state.clock.season.clone();
+    next.current_day_of_season = kept_day_of_season(&resolve_settings(&project.settings).calendar, &state.clock);
     next.current_time_minutes = state.clock.time_minutes;
     next.current_year = state.clock.year;
     next.rng_state = Some(state.rng.clone());
+    next.kept_state = KeptState::of_state(state);
     next
 }
 
+/// The `currentDayOfSeason` a project keeps for `clock`: none when `currentDay` alone lands on
+/// the clock's season and day of season (a game that started on day 1 of the first season).
+fn kept_day_of_season(calendar: &CalendarConfig, clock: &ClockState) -> Option<u32> {
+    let date = game_time::clock_date(calendar, clock);
+    let natural = game_time::natural_date(calendar, clock.day);
+    (natural.season.id != clock.season || natural.day_of_season != date.day_of_season).then_some(date.day_of_season)
+}
+
 /// Top-level project keys [`apply_state_to_project`] writes.
-const SYNCED_PROJECT_KEYS: [&str; 12] = [
+const SYNCED_PROJECT_KEYS: [&str; 14] = [
     "scenes",
     "animals",
     "eventFlags",
@@ -232,9 +328,11 @@ const SYNCED_PROJECT_KEYS: [&str; 12] = [
     "mineDeepestFloor",
     "currentDay",
     "currentSeason",
+    "currentDayOfSeason",
     "currentTimeMinutes",
     "currentYear",
     "rngState",
+    "keptState",
 ];
 
 /// Player keys [`apply_state_to_project`] writes.
@@ -285,7 +383,10 @@ pub fn apply_state_to_project_json(project: &Value, state: &GameState) -> Result
     Ok(next)
 }
 
-/// Sets `keys` of `out` to their values in `from` (removing those `from` leaves out).
+/// Sets `keys` of `out` to their values in `from` (removing those `from` leaves out). Keys keep
+/// their place: a removal shifts the later keys up rather than moving the last key into the gap
+/// (`Map::remove` is `swap_remove` under `preserve_order`), so Keep changes leaves no noise in
+/// project diffs (#142).
 fn copy_keys(out: &mut serde_json::Map<String, Value>, from: &serde_json::Map<String, Value>, keys: &[&str]) {
     for key in keys {
         match from.get(*key) {
@@ -293,7 +394,7 @@ fn copy_keys(out: &mut serde_json::Map<String, Value>, from: &serde_json::Map<St
                 out.insert((*key).to_owned(), value.clone());
             }
             None => {
-                out.remove(*key);
+                out.shift_remove(*key);
             }
         }
     }
@@ -315,45 +416,76 @@ fn for_each_pair(
     }
 }
 
-/// TS `ProjectSettingsSchema.safeParse(project.settings ?? {})`: the typed settings when they
-/// satisfy the schema's refinements, otherwise `DEFAULT_PROJECT_SETTINGS`.
+/// The settings a game runs: `settings` with each part [`settings_fallbacks`] names replaced by
+/// its default (an invalid time window or clock rate takes the default time settings), and
+/// calendar seasons and festivals with no days dropped. The TS `ProjectSettingsSchema.safeParse`
+/// replaced every setting when one was invalid, so one festival on day 0 lost the whole
+/// calendar, energy and locale (#140). F# `ContentCompiler.settings` does the same, and
+/// Problems reports each replaced value as an error.
 pub fn resolve_settings(settings: &ProjectSettings) -> ProjectSettings {
-    if is_valid_settings(settings) {
-        settings.clone()
-    } else {
-        ProjectSettings::default()
+    let defaults = ProjectSettings::default();
+    let mut resolved = settings.clone();
+    if settings.movement.player_speed <= 0 {
+        resolved.movement = defaults.movement;
     }
+    if settings.max_energy <= 0 {
+        resolved.max_energy = defaults.max_energy;
+    }
+    // `.min(0).max(1)` in thousandths.
+    if settings.collapse_energy_fraction > units::MILLI_ONE {
+        resolved.collapse_energy_fraction = defaults.collapse_energy_fraction;
+    }
+    if settings.collapse_money_penalty < 0 {
+        resolved.collapse_money_penalty = defaults.collapse_money_penalty;
+    }
+    if !game_time::is_valid_time_config(&settings.time) {
+        resolved.time = defaults.time;
+    }
+    resolved.calendar.seasons.retain(|season| season.days > 0);
+    resolved.calendar.festivals.retain(|festival| festival.day > 0);
+    resolved
+}
+
+/// The settings [`resolve_settings`] replaces or drops, as `settings.*` paths (empty when every
+/// setting is used as written).
+pub fn settings_fallbacks(s: &ProjectSettings) -> Vec<String> {
+    let mut out = Vec::new();
+    if s.movement.player_speed <= 0 {
+        out.push("settings.movement".to_owned());
+    }
+    if s.max_energy <= 0 {
+        out.push("settings.maxEnergy".to_owned());
+    }
+    if s.collapse_energy_fraction > units::MILLI_ONE {
+        out.push("settings.collapseEnergyFraction".to_owned());
+    }
+    if s.collapse_money_penalty < 0 {
+        out.push("settings.collapseMoneyPenalty".to_owned());
+    }
+    if !game_time::is_valid_time_config(&s.time) {
+        out.push("settings.time".to_owned());
+    }
+    for (index, season) in s.calendar.seasons.iter().enumerate() {
+        if season.days == 0 {
+            out.push(format!("settings.calendar.seasons.{index}"));
+        }
+    }
+    for (index, festival) in s.calendar.festivals.iter().enumerate() {
+        if festival.day == 0 {
+            out.push(format!("settings.calendar.festivals.{index}"));
+        }
+    }
+    out
 }
 
 // zod refinements on the settings numbers. The values are already on their integer grids
 // (whole minutes and days, thousandths), so `.int()` and "is a number" hold by construction;
 // what is left are the sign and range checks.
 
-/// TS `ProjectSettingsSchema.safeParse(settings).success`.
+/// TS `ProjectSettingsSchema.safeParse(settings).success`, plus the day window and clock rate
+/// checks of [`game_time::is_valid_time_config`]: every setting is used as written.
 pub fn is_valid_settings(s: &ProjectSettings) -> bool {
-    if s.movement.player_speed <= 0 {
-        return false;
-    }
-    if s.max_energy <= 0 {
-        return false;
-    }
-    // `.min(0).max(1)` in thousandths.
-    if s.collapse_energy_fraction > units::MILLI_ONE {
-        return false;
-    }
-    if s.collapse_money_penalty < 0 {
-        return false;
-    }
-    if s.time.minutes_per_real_second == 0 {
-        return false;
-    }
-    if s.calendar.seasons.iter().any(|season| season.days == 0) {
-        return false;
-    }
-    if s.calendar.festivals.iter().any(|festival| festival.day == 0) {
-        return false;
-    }
-    true
+    settings_fallbacks(s).is_empty()
 }
 
 /// TS `WeatherConfigSchema.safeParse(config).success`: chances lie in 0–1 by construction, so

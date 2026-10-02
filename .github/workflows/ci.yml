@@ -1,5 +1,9 @@
 name: CI
 
+# Every action is pinned to a commit and the Steam Runtime image to a digest; Dependabot bumps
+# the action pins (.github/dependabot.yml). Checkouts keep no credentials, and the workflow
+# token is read-only.
+
 on:
   push:
     branches: ['**']
@@ -27,16 +31,22 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-
-      # Keep in step with rust-toolchain.toml (rustup adds the toml's components/targets).
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: "1.94"
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
+          persist-credentials: false
 
-      - uses: Swatinem/rust-cache@v2
+      # CI checks goldens; it never re-records them (docs/NUMERICS.md "Goldens").
+      - name: No record or bless switches
+        shell: bash
+        run: tools/golden/ci-guard.sh switches
+
+      # rust-toolchain.toml pins the version, components and targets.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # The desktop player links ALSA (cpal) and libudev (gilrs); winit loads xkbcommon-x11 at
       # run time; xvfb runs the window smoke test.
@@ -49,23 +59,35 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+      # --locked everywhere: a Cargo.toml change without its Cargo.lock fails here, not in the
+      # release.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
+      # On Linux the window smoke test must find Xvfb (it skips only where none is installed).
+      # The proptest seed is the run id, so a failing property replays locally with
+      # PROPTEST_RNG_SEED=<run id> (CONTRIBUTING.md "Property tests").
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
+        env:
+          FARM_REQUIRE_DISPLAY: ${{ runner.os == 'Linux' && '1' || '0' }}
+          PROPTEST_RNG_SEED: ${{ github.run_id }}
+
+      - name: The tests left fixtures/ unchanged
+        shell: bash
+        run: tools/golden/ci-guard.sh fixtures
 
       # The benchmark budgets (docs/LANGUAGES.md "Tests"), checked on medians with a 3× margin
       # for shared runners. `cargo bench -p farm-bench` has the full criterion statistics.
       - name: Time budgets (release)
         if: runner.os == 'Linux'
-        run: cargo run --release -p farm-bench -- --budget --factor 3
+        run: cargo run --locked --release -p farm-bench -- --budget --factor 3
 
       - name: WebAssembly build check (farm-sim, farm-cart, farm-runtime, farm-render, farm-ui, farm-player lib, farm-wasm)
         run: |
-          cargo check -p farm-sim -p farm-cart -p farm-runtime -p farm-render -p farm-ui --target wasm32-unknown-unknown
-          cargo check -p farm-player --lib --no-default-features --target wasm32-unknown-unknown
-          cargo check -p farm-wasm --target wasm32-unknown-unknown
+          cargo check --locked -p farm-sim -p farm-cart -p farm-runtime -p farm-render -p farm-ui --target wasm32-unknown-unknown
+          cargo check --locked -p farm-player --lib --no-default-features --target wasm32-unknown-unknown
+          cargo check --locked -p farm-wasm --target wasm32-unknown-unknown
 
       # The wasm-bindgen CLI must match the wasm-bindgen crate in Cargo.lock exactly.
       - name: wasm-bindgen version
@@ -75,26 +97,29 @@ jobs:
 
       - name: Install wasm-bindgen-cli
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: runner.os == 'Linux'
         with:
           node-version: 22
+          package-manager-cache: false
 
       # The web version's player (crates/farm-wasm): build the `--target web` package, then run
-      # it in Node (frames, storage, plugins and every golden replay).
+      # it in Node (frames, storage, plugins and every golden replay), and the web demo page's
+      # script (tools/wasm/web-template/game.js) against it.
       - name: WebAssembly player build and smoke test (farm-wasm)
         if: runner.os == 'Linux'
         run: |
           tools/wasm/build.sh
           node tools/wasm/smoke.mjs
+          node tools/wasm/game-page.mjs
 
       - name: Install cargo-about
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-about@0.9.2
 
@@ -103,22 +128,110 @@ jobs:
         if: runner.os == 'Linux'
         run: tools/player-licenses/generate.sh --check
 
+  # Line coverage of the Rust workspace, with minimums (tools/coverage/thresholds.json).
+  rust-coverage:
+    name: Rust coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools-preview
+          rustc --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-llvm-cov@0.9.1
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 xvfb
+
+      - name: Test with coverage
+        run: |
+          cargo llvm-cov --locked --workspace --no-report
+          cargo llvm-cov report --json --summary-only --output-path llvm-cov.json
+          cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Coverage minimums
+        run: python3 tools/coverage/check.py rust llvm-cov.json
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust
+          path: |
+            llvm-cov.json
+            lcov.info
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # The plugin sandbox guest is checked in (crates/farm-plugins/guest); rebuild it from source,
+  # compare the bytes, and lint the two crates the workspace excludes.
+  plugin-guest:
+    name: Plugin guest (rebuild, fmt, clippy, meter tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Cache wasi-sdk
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/plugin-guest
+          key: wasi-sdk-24.0-${{ runner.os }}
+
+      - name: fmt, clippy and the meter's tests
+        run: tools/plugin-guest/build.sh --lint
+
+      - name: The rebuilt guest equals the checked-in one
+        run: tools/plugin-guest/build.sh --check
+
   build-and-test:
     name: Build & test (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 10.0.x
+          persist-credentials: false
+
+      - name: No record or bless switches
+        run: tools/golden/ci-guard.sh switches
+
+      # Exactly the SDK global.json names (no roll-forward on the runner).
+      - name: Pin the .NET SDK
+        shell: pwsh
+        run: |
+          $json = Get-Content global.json -Raw | ConvertFrom-Json
+          $json.sdk.rollForward = 'disable'
+          $json | ConvertTo-Json -Depth 5 | Set-Content global.json
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
 
       # FarmEngine.Interop builds crates/farm-ffi during `dotnet build`.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.94"
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # FarmEngine.Export builds the desktop player template (ALSA for cpal, libudev for gilrs).
       - name: System packages
@@ -127,31 +240,60 @@ jobs:
           sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props', 'global.json') }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.fsproj', 'Directory.Packages.props', 'Directory.Build.props', 'global.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
         run: dotnet restore
 
-      - name: Build
-        run: dotnet build -c Release --no-restore
+      # C# whitespace and code style follow .editorconfig; F#, scripts, project files and docs
+      # are LF and UTF-8 with no trailing whitespace (CONTRIBUTING.md "Formatting"). Fantomas is
+      # not enforced: it would reformat almost every F# file.
+      - name: Formatting (C# and text files)
+        run: |
+          dotnet format whitespace FarmingRpgMaker.sln --no-restore --verify-no-changes
+          dotnet format style FarmingRpgMaker.sln --no-restore --verify-no-changes
+          python3 tools/ci/text-style.py
 
-      - name: Test
-        run: dotnet test -c Release --no-build --logger trx --results-directory TestResults
+      # Coverage needs the real source paths in the PDBs: coverlet leaves out assemblies whose
+      # sources it cannot find, so no deterministic /_/ paths here (Directory.Build.props).
+      - name: Build
+        run: dotnet build -c Release --no-restore -p:ContinuousIntegrationBuild=false
+
+      - name: Test (with coverage)
+        run: dotnet test -c Release --no-build --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+
+      - name: The tests left fixtures/ unchanged
+        run: tools/golden/ci-guard.sh fixtures
+
+      - name: Coverage minimums
+        run: python3 tools/coverage/check.py dotnet TestResults
+
+      # Committed generated code matches its generators (flatc accessors, RecordJson.fs,
+      # RecordWith.fs), and the version numbers agree (docs/RELEASING.md "Versions").
+      - name: Generated code and versions are current
+        run: |
+          tools/codegen/check.sh
+          tools/release/versions.sh
 
       # The authoring core must stay Fable-safe (docs/LANGUAGES.md "Phase 7"): compile it to
       # JavaScript and check the result against the .NET cartridges and migration goldens.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Authoring core under Fable (JavaScript)
         run: |
           tools/fable/build.sh
           node tools/fable/smoke.mjs
+
+      # The editor ships tools/editor-licenses/THIRD-PARTY-dotnet.txt (its NuGet packages' notices).
+      - name: Editor license notices are current
+        run: node tools/editor-licenses/generate.mjs --check
 
       # farmc finds the linux-x64 template the build put in its players/ folder.
       - name: Export a sample game and run it (linux-x64)
@@ -169,35 +311,50 @@ jobs:
             --replay fixtures/golden/cartridges/twenty-ticks.json > reference.json
           diff exported.json reference.json
 
-      - name: Upload test results
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload test results and coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-linux
           path: TestResults
           retention-days: 7
+          if-no-files-found: ignore
 
   windows:
-    name: Build & publish smoke (Windows)
+    name: Build, test & publish smoke (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 10.0.x
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: No record or bless switches
+        shell: bash
+        run: tools/golden/ci-guard.sh switches
+
+      - name: Pin the .NET SDK
+        shell: pwsh
+        run: |
+          $json = Get-Content global.json -Raw | ConvertFrom-Json
+          $json.sdk.rollForward = 'disable'
+          $json | ConvertTo-Json -Depth 5 | Set-Content global.json
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          toolchain: "1.94"
+          global-json-file: global.json
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props', 'global.json') }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.fsproj', 'Directory.Packages.props', 'Directory.Build.props', 'global.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
@@ -205,6 +362,15 @@ jobs:
 
       - name: Build
         run: dotnet build -c Release --no-restore
+
+      # Windows is the primary platform: PE patching of the real MSVC template, the Windows
+      # branches of the exporter, and Windows paths only run here.
+      - name: Test
+        run: dotnet test -c Release --no-build --logger trx --results-directory TestResults
+
+      - name: The tests left fixtures/ unchanged
+        shell: bash
+        run: tools/golden/ci-guard.sh fixtures
 
       - name: Publish (self-contained win-x64)
         run: dotnet publish src/FarmingRpgMaker.App -c Release -r win-x64 --self-contained -o publish
@@ -217,6 +383,20 @@ jobs:
           if (-not (Test-Path publish/players/windows-x64/farm-player.exe)) { throw "publish/players/windows-x64 (Export Game player template) is missing" }
           $info = (Get-Item publish/FarmingRpgMaker.exe).VersionInfo
           Write-Host "FarmingRpgMaker.exe $($info.ProductVersion) ($([math]::Round((Get-ChildItem publish -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB total)"
+
+      # .cargo/config.toml links the C runtime statically: runners have the VC++ redistributable,
+      # clean Windows installs don't.
+      - name: Check the Rust binaries need no VC++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          foreach ($file in 'publish/farm_ffi.dll', 'publish/players/windows-x64/farm-player.exe') {
+            $imports = & $dumpbin /nologo /dependents $file
+            Write-Host "$file`n$($imports -join "`n")"
+            if ($imports -match '(?i)vcruntime|msvcp|api-ms-win-crt-') { throw "$file needs the Visual C++ runtime" }
+          }
 
       # Patches the real template's icon and version resources, then runs the game.
       - name: Export a sample game and run it (windows-x64)
@@ -231,6 +411,14 @@ jobs:
           Write-Host "$($info.ProductName) $($info.ProductVersion) / $($info.FileDescription) / $($info.OriginalFilename)"
           if ($info.ProductName -ne $title -or $info.FileDescription -ne $title) { throw "Version info was not written: '$($info.ProductName)'" }
           if ($info.OriginalFilename -ne "$($game.Name).exe") { throw "OriginalFilename is '$($info.OriginalFilename)'" }
+          # Exported games are GUI programs (no console window); the template stays a console one.
+          $subsystem = {
+            param($path)
+            $bytes = [IO.File]::ReadAllBytes($path)
+            [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 24 + 68)
+          }
+          if ((& $subsystem $exe) -ne 2) { throw "The exported game is not a GUI program (subsystem $(& $subsystem $exe))" }
+          if ((& $subsystem 'target/release/farm-player.exe') -ne 3) { throw "The player template is not a console program" }
           try {
             Add-Type -AssemblyName System.Drawing
             $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
@@ -238,15 +426,26 @@ jobs:
           } catch {
             Write-Host "::warning::Could not read the exported icon: $_"
           }
-          $exported = & $exe --headless --replay fixtures/golden/cartridges/twenty-ticks.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # A GUI program still writes to redirected output; wait for it explicitly.
+          $run = Start-Process -FilePath $exe -ArgumentList '--headless', '--replay', 'fixtures/golden/cartridges/twenty-ticks.json' -NoNewWindow -Wait -PassThru -RedirectStandardOutput exported.json
+          if ($run.ExitCode -ne 0) { throw "The exported game exited with $($run.ExitCode)" }
+          $exported = (Get-Content exported.json -Raw).Trim()
           $reference = & target/release/farm-player.exe --headless --cart fixtures/golden/cartridges/project-v8.cart --replay fixtures/golden/cartridges/twenty-ticks.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host $exported
-          if ("$exported" -ne "$reference") { throw "The exported game reported $exported, the template $reference" }
+          if ($exported -ne "$reference".Trim()) { throw "The exported game reported $exported, the template $reference" }
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-windows
+          path: TestResults
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload portable build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: FarmingRpgMaker-win-x64-${{ github.sha }}
           path: publish
@@ -257,18 +456,21 @@ jobs:
     runs-on: ubuntu-latest
     # The release builds the Linux template here (docs/EXPORT.md): Steam Runtime 3
     # "sniper", Debian 11 with glibc 2.31, so games run on older distributions and Steam Deck.
-    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    # Pinned by digest (the 3.0.20260805 SDK); keep in step with release.yml. To move it:
+    # docker buildx imagetools inspect registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    container: registry.gitlab.steamos.cloud/steamrt/sniper/sdk@sha256:1c33c507bc75d012e77df5727f93b0d5b8c3f7c8d4142ba5f7a16882cc92e014
     env:
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_STRIP: symbols
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # A pinned, checksummed rustup-init (no curl | sh), then rust-toolchain.toml's toolchain.
       - name: Install Rust
         shell: bash
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: tools/ci/install-rust.sh
 
       # The desktop player links ALSA (cpal) and libudev (gilrs); the SDK normally has both.
       - name: System packages
@@ -289,8 +491,29 @@ jobs:
           tools/player-templates/package.sh linux-x64 "0.0.0-ci" target/release/farm-player players
 
       - name: Upload template
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: player-linux-x64-${{ github.sha }}
           path: players
           retention-days: 7
+
+  # Markdown style (.markdownlint-cli2.jsonc), with an exact markdownlint-cli2 version.
+  markdown:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: markdownlint
+        run: npx --yes markdownlint-cli2@0.23.3
+
+  audit:
+    name: Dependency audit
+    uses: ./.github/workflows/audit.yml

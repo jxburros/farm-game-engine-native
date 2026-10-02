@@ -10,7 +10,8 @@ use std::path::PathBuf;
 /// The `onDayStart` payload of day 3 (C# `Day3`).
 pub const DAY3: &str = r#"{"day":3,"season":"spring","year":1}"#;
 
-/// A pack whose manifest grants `granted` hooks.
+/// A pack whose manifest grants `granted` hooks and every mutation (`"*"`), so sandbox tests
+/// see answers unfiltered; the capability tests build their own manifests.
 pub fn pack(id: &str, granted: &[&str], plugins: Vec<PackPlugin>) -> ContentPack {
     ContentPack {
         manifest: PackManifest {
@@ -19,6 +20,7 @@ pub fn pack(id: &str, granted: &[&str], plugins: Vec<PackPlugin>) -> ContentPack
             version: "1.0.0".to_owned(),
             permissions: PackPermissions {
                 hooks: granted.iter().map(|h| (*h).to_owned()).collect(),
+                mutations: Some(vec!["*".to_owned()]),
                 ..Default::default()
             },
             ..Default::default()

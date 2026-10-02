@@ -2,7 +2,9 @@
 //! Port of `Tools.cs` / tools.ts.
 
 use crate::content_builtin::{self, ToolDefinition};
-use crate::schema::{Item, Tile};
+use crate::schema::Item;
+#[cfg(test)]
+use crate::schema::Tile;
 
 /// TS `TOOL_DEFINITIONS[toolType]`. The TS reads `undefined` for an unknown type; this signature
 /// cannot say so, so an unknown type yields `ToolDefinition::default()`. Every engine caller
@@ -14,7 +16,7 @@ pub fn get_tool_definition(tool_type: &str) -> ToolDefinition {
 
 /// TS `TOOL_DEFINITIONS[toolType]`; unknown types yield `undefined` (`None`) like TS.
 pub fn try_get_tool_definition(tool_type: &str) -> Option<ToolDefinition> {
-    content_builtin::tool_definitions().get(tool_type).cloned()
+    content_builtin::tool_definition_of(tool_type)
 }
 
 /// JS truthiness of an optional string: `undefined` and `""` are falsy.
@@ -22,6 +24,9 @@ fn tool_type_of(item: &Item) -> Option<&str> {
     item.tool_type.as_deref().filter(|tool_type| !tool_type.is_empty())
 }
 
+/// Whether `tool` can be used on `target_tile` (only the tile type is checked).
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn can_use_tool(tool: &Item, target_tile: &Tile) -> bool {
     let Some(tool_type) = tool_type_of(tool) else {
         return false;
@@ -32,6 +37,7 @@ pub fn can_use_tool(tool: &Item, target_tile: &Tile) -> bool {
     definition.valid_targets.contains(&target_tile.r#type)
 }
 
+/// The built-in definition of the tool `item` is, if it is one.
 pub fn get_tool_from_item(item: &Item) -> Option<ToolDefinition> {
     let tool_type = tool_type_of(item)?;
     try_get_tool_definition(tool_type)
@@ -43,6 +49,7 @@ fn truthy_number(value: Option<i32>) -> Option<i32> {
     value.filter(|v| *v != 0)
 }
 
+/// `tool` with `amount` less durability (not below 0); a tool without durability is unchanged.
 pub fn damage_tool_durability(tool: &Item, amount: i32) -> Item {
     let (Some(durability), Some(_)) = (truthy_number(tool.durability), truthy_number(tool.max_durability)) else {
         return tool.clone();
@@ -50,6 +57,7 @@ pub fn damage_tool_durability(tool: &Item, amount: i32) -> Item {
     Item { durability: Some(durability.saturating_sub(amount).max(0)), ..tool.clone() }
 }
 
+/// Whether a breakable tool is at 0 durability.
 pub fn is_tool_broken(tool: &Item) -> bool {
     // M2 fix: a tool at exactly 0 durability IS broken (the old falsy check
     // meant tools could never break; repair shops make breakage meaningful).
@@ -59,6 +67,9 @@ pub fn is_tool_broken(tool: &Item) -> bool {
     }
 }
 
+/// `tool` repaired by `amount` (a full repair when `None` or 0), up to its maximum.
+/// Test-only: the engine no longer calls it; the tests pin the reference behaviour.
+#[cfg(test)]
 pub fn repair_tool(tool: &Item, amount: Option<i32>) -> Item {
     let (Some(durability), Some(max_durability)) = (truthy_number(tool.durability), truthy_number(tool.max_durability))
     else {

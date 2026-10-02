@@ -46,3 +46,17 @@ let ``data URLs must be base64 PNG`` () =
     Assert.True(Result.isError (Icons.decodeDataUrl "data:image/png,rawtext"))
     Assert.True(Result.isError (Icons.decodeDataUrl "data:image/png;base64,***"))
     Assert.True(Result.isError (Icons.render [| 1uy; 2uy; 3uy |]))
+
+[<Fact>]
+let ``only PNG images reach Skia, whatever the data URL says`` () =
+    use bitmap = new SKBitmap(32, 32)
+    bitmap.Erase SKColors.Coral
+    use image = SKImage.FromBitmap bitmap
+    use jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90)
+    let bytes = jpeg.ToArray()
+    Assert.False(Icons.isPng bytes)
+    match Icons.render bytes with
+    | Ok _ -> failwith "a JPEG icon must be refused"
+    | Error e -> Assert.Contains("not a PNG", e)
+    Assert.True(Icons.isPng (makePng 16 16 false))
+    Assert.False(Icons.isPng [| 0x89uy; byte 'P' |])

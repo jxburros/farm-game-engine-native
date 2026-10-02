@@ -295,3 +295,110 @@ let ``the place tools offer the project's content and put it on the clicked tile
     Assert.Equal((species.Id, species.Name, farmId, 5.0, 5.0), (animal.SpeciesId, animal.Name, animal.SceneId, animal.X, animal.Y))
     Assert.Null(MapPlacement.Place(project, "item", "item-unknown", farmId, 5, 5))
     Assert.Null(MapPlacement.Place(project, "scene", farmId, farmId, 5, 5))
+
+/// The starter farm with something standing near every edge of it: a second scene whose door
+/// lands at the farm's far corner, an animal, an NPC schedule stop and waypoint, an event tile
+/// with a tile change and a warp, and the mine entrance (#44).
+let private crowdedFarm () =
+    let project = starter ()
+    let barn = Defaults.newScene project "Barn" 8 6
+    let door = { SceneTransition.Default with FromX = 1.0; FromY = 1.0; ToSceneId = farmId; ToX = 15.0; ToY = 11.0 }
+    let farmDoor = { SceneTransition.Default with FromX = 14.0; FromY = 10.0; ToSceneId = barn.Id; ToX = 2.0; ToY = 2.0 }
+    let species = project.AnimalSpecies.Head
+    let first = project.Npcs.Head
+    let walker =
+        { first with
+            X = 13.0; Y = 9.0
+            Schedule = Some [ { NpcScheduleEntry.Default with Minute = 480.0; SceneId = farmId; X = 15.0; Y = 2.0 } ]
+            PatrolPoints = Some [ { GridPoint.X = 1.0; Y = 1.0 }; { GridPoint.X = 14.0; Y = 11.0 } ] }
+    let event =
+        { GameEvent.Default with
+            Id = "event-edge"; Name = "Edge"; SceneId = farmId; Trigger = EventTriggers.Interact; Active = true
+            Conditions = [ EventCondition.InteractTile { InteractTileCondition.Default with X = 12.0; Y = 10.0; X2 = Some 15.0; Y2 = Some 11.0 } ]
+            Outcomes =
+                [ { EventOutcome.Default with Type = EventOutcomeTypes.ChangeTile; TileX = Some 15.0; TileY = Some 11.0; NewTileType = Some "water" }
+                  { EventOutcome.Default with Type = EventOutcomeTypes.WarpPlayer; SceneId = Some farmId; X = Some 15.0; Y = Some 11.0 } ] }
+    let placed =
+        project
+        |> apply (Batch("crowd", [ AddScene barn; SetTransition(barn.Id, door); SetTransition(farmId, farmDoor); SetPlayerStart(farmId, 15, 11); UpsertNpc walker; UpsertEvent event ]))
+    let placed = placed |> apply (nonNull (MapPlacement.Place(placed, "animalSpecies", species.Id, farmId, 14, 11)))
+    let placed = placed |> apply (SetMine { placed.Mine with Enabled = true; EntranceSceneId = Some farmId; EntranceX = Some 15.0; EntranceY = Some 11.0 })
+    placed, barn.Id, walker.Id
+
+let private outOfBounds (project: GameProject) =
+    errors project |> List.filter (fun p -> p.Code.ToLowerInvariant().Contains "outofbounds" || p.Message.Contains "out of bounds")
+
+[<Fact>]
+let ``shrinking a scene moves the player, NPCs, doors, events, animals and the mine entrance inside`` () =
+    let project, barnId, npcId = crowdedFarm ()
+    let before = outOfBounds project
+    Assert.True(before.IsEmpty, describe before)
+    let impact = Edits.ResizeImpact(project, farmId, 10, 8) |> List.ofSeq
+    Assert.Contains("the player start moves inside", impact)
+    Assert.Contains("the door at (14, 10) is removed", impact)
+    Assert.Contains("the mine entrance moves inside", impact)
+    Assert.Contains(impact, fun (line: string) -> line.StartsWith "NPC ")
+    Assert.Contains(impact, fun (line: string) -> line.StartsWith "animal ")
+    Assert.Contains(impact, fun (line: string) -> line.StartsWith "event ")
+    Assert.Contains(impact, fun (line: string) -> line.StartsWith "the door from \"Barn\"")
+    Assert.Empty(Edits.ResizeImpact(project, farmId, 20, 20))
+
+    let shrunk = project |> apply (ResizeScene(farmId, 10, 8))
+    let after = outOfBounds shrunk
+    Assert.True(after.IsEmpty, describe after)
+    Assert.Equal((9.0, 7.0), (shrunk.Player.X, shrunk.Player.Y))
+    let walker = npc shrunk npcId
+    Assert.Equal((9.0, 7.0), (walker.X, walker.Y))
+    Assert.Equal((9.0, 2.0), (walker.Schedule.Value.Head.X, walker.Schedule.Value.Head.Y))
+    Assert.Equal<GridPoint list>([ { GridPoint.X = 1.0; Y = 1.0 }; { GridPoint.X = 9.0; Y = 7.0 } ], walker.PatrolPoints.Value)
+    Assert.Empty((farm shrunk).Transitions)
+    let landing = (scene shrunk barnId).Transitions.Head
+    Assert.Equal((9.0, 7.0), (landing.ToX, landing.ToY))
+    let animal = shrunk.Animals |> Seq.last
+    Assert.Equal((9.0, 7.0), (animal.X, animal.Y))
+    let event = shrunk.Events |> Seq.find (fun e -> e.Id = "event-edge")
+    match event.Conditions.Head with
+    | EventCondition.InteractTile t -> Assert.Equal((9.0, 7.0, Some 9.0, Some 7.0), (t.X, t.Y, t.X2, t.Y2))
+    | other -> failwithf "expected an interact tile, got %A" other
+    Assert.Equal((Some 9.0, Some 7.0), (event.Outcomes.[0].TileX, event.Outcomes.[0].TileY))
+    Assert.Equal((Some 9.0, Some 7.0), (event.Outcomes.[1].X, event.Outcomes.[1].Y))
+    Assert.Equal((Some 9.0, Some 7.0), (shrunk.Mine.EntranceX, shrunk.Mine.EntranceY))
+    // Growing back moves nothing.
+    let grown = shrunk |> apply (ResizeScene(farmId, 16, 12))
+    Assert.Equal((9.0, 7.0), (grown.Player.X, grown.Player.Y))
+
+[<Fact>]
+let ``shrinking the starter farm leaves no out-of-bounds problems`` () =
+    for width, height in [ (1, 1); (4, 3); (8, 12); (16, 2) ] do
+        let shrunk = starter () |> apply (ResizeScene(farmId, width, height))
+        let after = outOfBounds shrunk
+        Assert.True(after.IsEmpty, sprintf "%dx%d:\n%s" width height (describe after))
+
+[<Fact>]
+let ``resize ignores sizes outside 1 to 256`` () =
+    let project = starter ()
+    Assert.Same(project, project |> apply (ResizeScene(farmId, 0, 5)))
+    Assert.Same(project, project |> apply (ResizeScene(farmId, 257, 5)))
+    Assert.Same(project, project |> apply (ResizeScene(farmId, 5, 300)))
+    Assert.Equal(256.0, (farm (project |> apply (ResizeScene(farmId, 256, 12)))).Width)
+
+[<Fact>]
+let ``a resize keeps the rows that keep their width`` () =
+    let project = starter ()
+    let taller = project |> apply (ResizeScene(farmId, 16, 20))
+    Assert.True(Seq.forall2 (fun (a: Tile list) b -> obj.ReferenceEquals(a, b)) (farm project).Tiles ((farm taller).Tiles |> List.truncate 12))
+
+[<Fact>]
+let ``map markers show doors, arrivals, event tiles, the mine entrance and the player start`` () =
+    let project, barnId, _ = crowdedFarm ()
+    let markers = MapMarkers.ForScene(project, farmId) |> List.ofSeq
+    let kinds = markers |> List.map (fun m -> m.Kind) |> List.distinct |> List.sort
+    Assert.Equal<string list>([ "arrival"; "door"; "event"; "mine"; "start" ], kinds)
+    let door = markers |> List.find (fun m -> m.Kind = "door")
+    Assert.Equal((14, 10, barnId), (door.X, door.Y, door.TargetId))
+    let arrival = markers |> List.find (fun m -> m.Kind = "arrival")
+    Assert.Equal((15, 11, barnId, 1, 1), (arrival.X, arrival.Y, arrival.TargetId, arrival.FromX, arrival.FromY))
+    let event = markers |> List.find (fun m -> m.Kind = "event" && m.TargetId = "event-edge")
+    Assert.Equal((12, 10, 15, 11), (event.X, event.Y, event.X2, event.Y2))
+    Assert.Contains("interact", event.Label)
+    Assert.Empty(MapMarkers.ForScene(project, "nope"))

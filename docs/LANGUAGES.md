@@ -14,6 +14,9 @@ where code goes as the native app grows; read it before you port a new part
 of the web editor. [PORTING.md](PORTING.md) covers how Rust code mirrors the
 TypeScript.
 
+Everything below describes what is built, except where a design is marked
+**Future**; those designs are collected in [Future](#future-not-built).
+
 ## The rule in one line
 
 **Rust runs the game. F# understands the project. C# is the desktop app.**
@@ -21,7 +24,7 @@ TypeScript.
 | Language | Owns | Never owns |
 |---|---|---|
 | **Rust** | Everything that runs while a game is being played: simulation, saves, state hashing, RNG, fixed timestep, input bindings, minigame kinds, in-game UI, rendering (draw lists and the GPU backend), audio playback, the plugin sandbox, the standalone player, the WebAssembly build. | Project JSON, editor state, anything a creator edits directly. |
-| **F#** | Everything about authored data: the project schema, migrations, validation and the Problems panel, content packs (merge and namespacing), default content and templates, workshop patterns, edit operations and undo/redo, the condition and dialogue languages, and the compiler that turns a project into a cartridge. Plus tools: the balancing lab and the `farmc` CLI. | Gameplay rules, rendering, OS or UI code. |
+| **F#** | Everything about authored data: the project schema, migrations, validation and the Problems panel, content packs (merge and namespacing), default content and templates, workshop patterns, edit operations and undo/redo, the condition and outcome vocabulary and the dialogue checks, and the compiler that turns a project into a cartridge. Plus the `farmc` CLI. | Gameplay rules, rendering, OS or UI code. |
 | **C#** | The Avalonia app: windows, views and view models, dialogs and file pickers, the project store on disk, image import, the Update Center, and hosting the Rust player and preview. | Game rules, project rules. A view model calls F# or Rust; it doesn't decide anything itself. |
 
 The contract between F# and Rust is the **cartridge**: a compiled, validated,
@@ -66,13 +69,13 @@ led here):
 - **The desktop app already works in C#.** Avalonia, Velopack, the project
   store and the UI tests stay. F# and C# share one .NET solution at no cost.
 
-## Target architecture
+## Architecture
 
-```
+```text
                        ┌──────────────────────────── .NET (one solution) ─────────────────────────────┐
  project.json ───────▶ │ FarmEngine.Authoring (F#)            FarmingRpgMaker.App (C#, Avalonia)      │
- (v8, web-compatible)  │  schema · migrations · validation      views · view models · dialogs         │
-                       │  packs · edits + undo · languages ◀──── calls F# for every project change    │
+ (v9, web-compatible)  │  schema · migrations · validation      views · view models · dialogs         │
+                       │  packs · edits + undo · problems  ◀──── calls F# for every project change    │
                        │  compiler ──▶ cartridge bytes          hosts Rust player / preview surfaces   │
                        │                     │                  tool overlays over Rust-drawn frames  │
                        │                     │              FarmEngine.Interop (C#): P/Invoke wrappers │
@@ -105,25 +108,29 @@ what an exported game contains.
 - **Game info:** a `GameInfo` table (title, version, `gameId`, author,
   window defaults, pixel scale) from the export settings, so the standalone
   player never reads project JSON. See [EXPORT.md](EXPORT.md).
-- **Contents:** content tables with string ids interned to dense integer
-  indices (`u16`/`u32`), a string table (ids, names, dialogue text, per
-  locale), compiled condition bytecode, compiled dialogue graphs, scene tile
-  layers as flat arrays, embedded images and audio (PNG/OGG as authored; Rust
-  packs texture atlases at load), and pack and plugin manifests with plugin
-  sources.
+- **Contents (as built):** the compiled content, the new-game start state and
+  the presentation data as JSON sections with string ids and numbers in
+  authoring units, an asset table with every embedded file once, and the pack
+  plugins with their granted hooks (see "Format 2" below).
+- **Contents (Future):** content tables with ids interned to dense integer
+  indices, a string table per locale, compiled condition bytecode, compiled
+  dialogue graphs, flat tile-layer arrays and texture atlases packed at load.
+  None of these exist yet.
 - **Version header:** `cart_format` (bumped on breaking change) plus the
   project schema version it was compiled from.
-- **Compatibility phase:** until the v9 cutover (phase 7), the cartridge keeps
-  today's `GameContent` shape and `double` values, so golden hashes still
-  match the TypeScript engine.
+- **Compatibility phase (history):** until the v9 cutover (phase 7), the
+  cartridge kept the `GameContent` shape and `double` values, so golden
+  hashes matched the TypeScript engine.
 - **Format 2 (current):** `cart.fbs` carries game info, the compiled content,
   the new-game start state (`StartState`) and presentation data
-  (`Presentation`) as compatibility JSON, plus an asset table that holds every
-  embedded file once (JSON refers to it as `asset:<id>`). The player never
-  reads project JSON. F# resolves the built-in catalog, pack namespacing, load
-  order, overrides and locale strings. Content keeps its string ids until
-  phase 7: interning them into indexed tables only helps once the simulation
-  uses interned indices. See [schemas/README.md](../schemas/README.md).
+  (`Presentation`) as JSON in authoring units, which the engine converts to
+  its fixed-unit integers as it reads them ([NUMERICS.md](NUMERICS.md)), plus
+  an asset table that holds every embedded file once (JSON refers to it as
+  `asset:<id>`). The player never reads project JSON. F# resolves the
+  built-in catalog, pack namespacing, load order, overrides and locale
+  strings. Content keeps its string ids: interning them into indexed tables
+  would only help if the simulation used interned indices, which it doesn't.
+  See [schemas/README.md](../schemas/README.md).
 
 ### Saves (Rust only)
 
@@ -141,8 +148,12 @@ what an exported game contains.
   longer exist go to quarantine instead of failing the load. See
   [EXPORT.md](EXPORT.md#what-earlier-phases-must-get-right). Rust can also export a save as stable JSON for
   debugging and for the web version.
-- Autosave serializes on the simulation thread in microseconds, then
-  compresses and writes on a worker thread.
+- Saving is synchronous: the player serializes, compresses and writes the
+  save on the simulation thread. Serializing the mid-size benchmark state
+  takes about 10.7 ms against a 1 ms budget, so CI holds it to a regression
+  ceiling (`SAVE_CEILING` in `crates/farm-bench`) until the stable-JSON writer
+  is replaced. **Future:** serialize in about a millisecond, then compress and
+  write on a worker thread.
 
 ### FFI: .NET → Rust (`farm-ffi`)
 
@@ -152,18 +163,25 @@ what an exported game contains.
   wrappers.
 - **Coarse, handle-based, batched.** Never one call per tile or entity. Three
   handles:
+
   ```c
   // The editor's Play Mode: the whole game player (crates/farm-ffi/src/player.rs).
   fe_result fe_player_new(const uint8_t* game, size_t len, const uint8_t* options, size_t options_len,
                           fe_player** out, fe_bytes* error);         // project JSON or cartridge
   fe_result fe_player_frame(fe_player*, const uint8_t* request, size_t len, fe_bytes* out);
                           // {dt, events, width, height} → size, info JSON, RGBA pixels
+  fe_result fe_player_frame_info(fe_player*, const uint8_t* request, size_t len, fe_bytes* out);
+                          // the same without the pixels, which stay in the player until …
+  fe_result fe_player_copy_pixels(fe_player*, uint8_t* dst, size_t len, size_t stride, fe_bytes* out);
+                          // … the host copies them once, straight into its bitmap
   fe_result fe_player_debug(fe_player*, const uint8_t* action, size_t len, fe_bytes* out);
   fe_result fe_player_synced_project(fe_player*, fe_bytes* out);    // "keep changes"
   fe_result fe_player_query_json(fe_player*, const uint8_t* query, size_t len, fe_bytes* out);
 
   // Edit Mode's map and art previews (render.rs).
   fe_result fe_preview_new(const uint8_t* project, size_t len, fe_preview** out, fe_bytes* error);
+  fe_result fe_preview_set_scenes(fe_preview*, const uint8_t* scenes, size_t len, fe_bytes* out);
+                          // a paint stroke: the changed scenes only, not the project and its art
   fe_result fe_preview_render(fe_preview*, const uint8_t* request, size_t len, fe_bytes* out);
 
   // A headless game for tools and tests (session.rs).
@@ -174,9 +192,23 @@ what an exported game contains.
   fe_result fe_session_save(fe_session*, fe_bytes* out);
 
   void      fe_bytes_free(fe_bytes);
+  uint32_t  fe_abi_version(void);
   ```
+
   Requests and answers are JSON (stable JSON for state); frames are raw
-  premultiplied RGBA. Each handle has its `_free`.
+  premultiplied RGBA. Each handle has its `_free` and its `_last_error`.
+- **Errors:** every call on a handle answers a result code, and on failure
+  `out` holds the UTF-8 message (for `Poisoned`, the error that poisoned the
+  handle); `fe_<handle>_last_error` returns it again.
+- **Loading:** `FarmEngine.Interop` loads the library from the application's
+  folder only (a `DllImportResolver`, and `DefaultDllImportSearchPaths` set to
+  the assembly directory), then compares `fe_abi_version()` with the
+  `FE_ABI_VERSION` it was written for and refuses another; bump both with any
+  signature, layout or convention change. `FarmFfi.LoadError` says why the
+  library didn't load. On Linux the default `audio-out` feature links ALSA
+  (`libasound.so.2`) when the library loads, because cpal has no backend that
+  opens it at run time; `-p:FarmFfiAudio=false` builds a library without
+  sound that loads without it.
 - **Play Mode.** The editor forwards raw input events (keys by the engine's
   names, pointer positions in frame pixels) and draws the returned pixels; the
   player owns the game, its UI and its sounds (`audio` option). Details in
@@ -187,18 +219,27 @@ what an exported game contains.
   visual binding, for the art studio) per call.
 - **Memory:** Rust allocates result buffers; .NET copies what it needs and
   frees them through `fe_bytes_free`. No pointer into Rust memory outlives the
-  next call on that handle.
-- **Threading:** a handle is used by one thread at a time. The editor runs
-  Play Mode frames on a worker thread under one lock and shows the pixels on
-  the UI thread.
+  next call on that handle. The C# handles are `SafeHandle`s: a call keeps its
+  handle alive, a disposed one throws `ObjectDisposedException` before reaching
+  Rust, and a forgotten one is freed by its finalizer.
+- **Threading:** a handle is used by one thread at a time; the C# wrappers
+  serialize their calls with a lock. The editor runs Play Mode frames on a
+  worker thread and copies the pixels into the bitmap on the UI thread.
 - **Panics** are caught at the boundary (`catch_unwind`) and returned as
   error results, never unwound into .NET. The handle is then poisoned.
+  Freeing a handle catches panics too, and leaks a poisoned one rather than
+  run its drop code. Every `unsafe` operation in `farm-ffi` is in its own
+  block with a `// SAFETY:` comment (`unsafe_op_in_unsafe_fn` and
+  `clippy::undocumented_unsafe_blocks` are denied).
 - **Synchronous hooks.** Plugin mutations are queued and come back as
-  commands (the `PluginMutationQueue` design). The engine lets
-  `onWeatherRoll` listeners return an override *during* the nightly step, but
-  plugins never do: the web bridge returns nothing from its listeners. So
-  `farm-plugins`' `PluginRuntime` dispatches `onWeatherRoll` after the step
-  like any other hook, and installs no `WeatherRollListener`.
+  commands (the `PluginMutationQueue` design), drained right before each tick
+  (`PlaySession` advances one tick at a time, so they do not depend on the
+  frame rate). The engine lets `onWeatherRoll` listeners return an override
+  *during* the nightly step, but plugins never do: the web bridge returns
+  nothing from its listeners. So `farm-plugins`' `PluginRuntime` dispatches
+  `onWeatherRoll` after the step like any other hook, and installs no
+  `WeatherRollListener`; the Problems panel warns about plugins that listen
+  to it ([PLUGINS.md](PLUGINS.md)).
 
 ### WebAssembly (`farm-wasm`)
 
@@ -222,15 +263,15 @@ These replace `BannedSymbols.txt`. They're enforced in `farm-sim` with
   in engine order.
 - `disallowed-types`: `std::collections::HashMap` and `HashSet` (use `Vec`,
   `IndexMap`, `BTreeMap`), `std::time::Instant` and `SystemTime` (use the game
-  clock), any `rand::rngs::ThreadRng` (use the seeded `Rng`).
-- `disallowed-methods`: `slice::sort_unstable*` where order is observable,
-  `f64::round` in the compatibility phase (use `js::round`).
-- **Compatibility phase (phases 1–6):** port with JavaScript number
-  semantics so the TypeScript goldens pass. That means `f64` everywhere,
+  clock). The simulation has no source of randomness but its seeded `Rng`.
+- `disallowed-methods`: `slice::sort_unstable*` (equal elements must keep
+  their order).
+- **Compatibility phase (phases 1–6, history):** the port used JavaScript
+  number semantics so the TypeScript goldens passed. That meant `f64` everywhere,
   a `js` module (`round`, `trunc`, stable sort, `is_integer`) and
   [`ryu-js`](https://crates.io/crates/ryu-js) for JavaScript-identical number
-  formatting in messages and stable JSON. The hash stays FNV-1a over stable
-  JSON (from `Hash.cs`).
+  formatting in messages and stable JSON, and the hash was FNV-1a over stable
+  JSON (from `Hash.cs`). All of it went away with v9.
 - **Native phase (phase 7 on):** `#![deny(clippy::float_arithmetic)]` in
   `farm-sim`. Every quantity gets an explicit integer type and scale; the full
   table is in [NUMERICS.md](NUMERICS.md). The starting point was:
@@ -248,19 +289,19 @@ These replace `BannedSymbols.txt`. They're enforced in `farm-sim` with
   The state hash becomes xxh3-64 over the canonical binary state encoding.
   Rendering may use floats. It reads state and never writes it.
 
-## Repository layout (target)
+## Repository layout
 
-```
+```text
 Cargo.toml                       # Rust workspace; rust-toolchain.toml pins the version
 schemas/cart.fbs, save.fbs
 crates/
-  farm-cart/       # FlatBuffers readers, interning, cartridge + save load, save migrations
+  farm-cart/       # FlatBuffers readers, cartridge + save load, save migrations
   farm-sim/        # deterministic core           ← src/FarmEngine.Core
   farm-runtime/    # timestep, input, minigames, panel model, audio cues ← src/FarmEngine.Runtime
   farm-plugins/    # PluginHost trait; QuickJS-in-wasm host run by wasmi  ← Runtime/Plugins.cs
-  farm-render/     # draw-list builder; wgpu backend (feature)           ← src/FarmEngine.Rendering
+  farm-render/     # draw-list builder; CPU rasterizer (tiny-skia)     ← src/FarmEngine.Rendering
   farm-ui/         # in-game UI (HUD, dialogue, shop, inventory, crafting, quests, panels)
-  farm-player/     # standalone player (winit + wgpu + kira + gilrs) and game shell; embeddable
+  farm-player/     # standalone player (winit + softbuffer + cpal + gilrs) and game shell; embeddable
   farm-host/       # host protocol shared by farm-ffi and farm-wasm
   farm-ffi/        # C ABI for .NET
   farm-wasm/       # wasm-bindgen API for the web
@@ -271,7 +312,7 @@ src/
   FarmEngine.Authoring.Net/      # F#, .NET-only: System.Text.Json edge, RecordJson, RecordWith (C# builders)
   FarmEngine.Export/             # F#, .NET-only: Export Game (templates, PE resources, archives)
   FarmEngine.Cli/                # F#: the farmc CLI (the balancing lab is still to come)
-  FarmEngine.Interop/            # C#: generated bindings + SafeHandle wrappers; builds farm-ffi
+  FarmEngine.Interop/            # C#: hand-written LibraryImport bindings + owning wrappers; builds farm-ffi
   FarmingRpgMaker.Updates/       # C#, unchanged
   FarmingRpgMaker.App/           # C#, Avalonia
 tests/
@@ -286,7 +327,10 @@ tools/codegen/                   # generators for RecordWith.fs and RecordJson.f
 `FarmEngine.Interop` has an MSBuild target that runs `cargo build` and copies
 `farm_ffi.dll` / `.so` / `.dylib` into the output, so `dotnet build`,
 `dotnet test` and `dotnet run` keep working as the only commands a contributor
-needs (with a Rust toolchain installed).
+needs (with a Rust toolchain installed). `-p:CargoProfile=dev` builds the
+debug library instead of the release one. Tests that need the Rust library
+fail when it is missing; set `FARM_ALLOW_MISSING_NATIVE=1` to build and test
+without a Rust toolchain, which reports them as skipped.
 
 ### F# conventions
 
@@ -310,21 +354,24 @@ needs (with a Rust toolchain installed).
 - The compiler writes cartridges with a plain-F# FlatBuffers builder
   (`FlatBuffers.fs`) that produces the same bytes as the official C# builder,
   and `CartridgeReader` reads them back; both work under Fable.
-- **Units of measure** on authored quantities: `price: int<gold>`,
-  `growthDays: int<day>`, `energyCost: int<energy>`, `x: int<tile>`. They are
-  erased at compile time, so C# sees plain numbers.
+- **Numbers** are `float` in authoring units, as in the project JSON
+  ([NUMERICS.md](NUMERICS.md)). **Future:** units of measure on authored
+  quantities (`price: float<gold>`, `x: int<tile>`); they would be erased at
+  compile time, so C# would still see plain numbers.
 - **Every project change is an `Edit`** (a discriminated union) applied by
   `Document.apply`. Undo/redo is a stack of immutable documents (structural
   sharing makes that cheap). Workshop patterns are functions that return a
   list of edits, applied as one undo step.
+
   ```fsharp
-  type Edit =
-    | PaintTiles of scene: SceneId * layer: Layer * cells: (int<tile> * int<tile>) list * brush: TileBrush
-    | FloodFill  of scene: SceneId * layer: Layer * at: int<tile> * int<tile> * brush: TileBrush
-    | SetCrop    of CropId * Crop
-    | AddNpc     of Npc
-    | Batch      of label: string * Edit list      // one undo step
+  type Edit =   // Edits.fs (excerpt)
+    | PaintTiles of sceneId: string * layer: TileLayer * cells: (int * int) list * tileType: string
+    | FloodFill of sceneId: string * layer: TileLayer * x: int * y: int * tileType: string
+    | UpsertCrop of crop: CustomCropDefinition
+    | UpsertNpc of npc: Npc
+    | Batch of label: string * edits: Edit list   // one undo step
   ```
+
 - **C# friendliness at the boundary.** Types C# view models consume are
   records with `[<CLIMutable>]` only where binding needs it. Options are
   exposed as nullable through small helper modules; don't make C# match on
@@ -342,6 +389,17 @@ needs (with a Rust toolchain installed).
   TypeScript reducer, Rust updates state in place. Undo and replay use the command log.
   Snapshots for the debug drawer and playtest "keep changes" are explicit
   copies.
+- **Every sentence the engine shows a player comes from the message catalog**
+  (`farm_sim::messages`): a stable key (`msg.notEnoughMoney`) and an English
+  template with positional arguments. `Effect::say(level, message)` records
+  the English text in the effect, exactly as before, so replays, goldens and
+  the v8 parity tests see no change, and carries the message beside it,
+  outside serialization and equality. The player translates it with the
+  `farm-ui` table of the player's language (`Lang::message`), falling back to
+  English for a key the table lacks. Built-in minigames' default texts and the
+  save-load notices (`LoadedSave::error_messages`) use the same catalog.
+  `Effect::message` is only for text a creator wrote (event and plugin
+  messages); a test fails when engine code passes it a literal or a `format!`.
 
 ## What happened to the C# code
 
@@ -369,10 +427,33 @@ below record where each part went.
 | `GameTime.cs`, `Weather.cs`, `Energy.cs`, `Tools.cs`, `Inventory.cs`, `Economy.cs`, `Crafting.cs`, `Gathering.cs`, `Skills.cs`, `Social.cs`, `Animals.cs`, `Fishing.cs`, `Mines.cs`, `DialogueSystem.cs`, `Events.cs`, `Extensibility.cs`, `Hooks.cs` | same-named `farm-sim` modules |
 | `Farming/*`, `World/*`, `Npcs/*`, `Quests/*` | `farm_sim::{farming, world, npcs, quests}` |
 | `Validation.cs` | **F#** `Authoring.Validation` (it checks the project, not play) |
-| `Packs.cs` (merge and namespacing) | **F#** `Authoring.Packs` (merging happens at compile time) |
-| `ContentBuiltin.cs` | **F#** `Authoring.Builtin`, compiled into every cartridge |
-| `State.cs` `CreateBaseContentFromProject` / `CreateContentFromProject` | **F#** compiler |
+| `Packs.cs` (merge and namespacing) | **F#** `Authoring.PackMerge` for cartridges; **also** Rust `farm_sim::packs` (see [two project pipelines](#two-project-pipelines)) |
+| `ContentBuiltin.cs` | **F#** `Authoring.Builtin`, compiled into every cartridge; **also** Rust `farm_sim::content_builtin` |
+| `State.cs` `CreateBaseContentFromProject` / `CreateContentFromProject` | **F#** compiler (`ContentCompiler`, `CartridgeCompiler`); **also** Rust `state::create_content_from_project`, `StartState::from_project`, `Presentation::from_project` |
 | `State.cs` `ApplyStateToProject` | Rust reports the playtest's final `GameState` as JSON; **F#** writes it back (`Playtest.applyState`, one undoable edit). Rust keeps its own `apply_state_to_project` for players started from project JSON, and a test keeps the two identical. |
+
+### Two project pipelines
+
+Both languages can still turn a project into what a game runs on, and both are in use:
+
+- **F#** (`ContentCompiler`, `PackMerge`, `Builtin`, `CartridgeCompiler`) writes every
+  cartridge: Export Game, `farmc`, the editor's Play Mode and the web editor (through Fable).
+- **Rust** (`farm_sim::packs`, `content_builtin`, `state::create_content_from_project`,
+  `StartState::from_project`, `Presentation::from_project`, `apply_state_to_project_json`)
+  serves the hosts that receive project JSON instead of a cartridge: `fe_session_new` and
+  `fe_preview_*` (the editor's map preview and headless sessions), `Player::from_project`, and
+  farm-wasm when it is given a project.
+
+So the rule "Rust never owns project JSON" holds for cartridges and saves, not for those
+hosts. Until they receive cartridges (or F#-compiled sections) and the Rust `from_project`
+paths can go, the two pipelines are kept identical by tests: `ParityTests.fs` compiles the
+Rust-recorded `fixtures/golden/content` projects with F#, and records `fixtures/parity` (a
+kitchen-sink project and content with every F# record field set, plus the F# pipeline's
+output for the templates, the fixture projects and the example packs), which
+`crates/farm-sim/tests/fsharp_parity.rs` checks against serde and the Rust pipeline. The
+schema itself is still kept by hand on both sides (Schema.fs/SchemaJson.fs and the serde
+types); generating one from the other is future work, and these tests catch a field added on
+one side only.
 
 ### `FarmEngine.Content` → F# — done, deleted
 
@@ -429,6 +510,10 @@ or snow), rain, snow and wind particles, and water shimmer on watered soil.
 `FarmingRpgMaker.Updates` stays C# and unchanged. Velopack packaging ships
 `farm_ffi.dll` and the player templates for Export Game.
 
+How the app's views are put together, the shared helpers to use, and the
+move from code-built views towards view models are in
+[EDITOR-ARCHITECTURE.md](EDITOR-ARCHITECTURE.md).
+
 ### Tests
 
 | Was (`FarmEngine.Core.Tests`) | Now |
@@ -448,6 +533,20 @@ New tests:
 - **Property tests:** proptest (Rust) for "replay ⇒ same hash" and "save →
   load ⇒ same state". FsCheck (F#) for "migrate(vN) is valid vN+1" and
   "compile never throws on a project with no validation errors".
+- **Fuzzing:** `crates/farm-fuzz` has one entry point per untrusted-input
+  boundary (cartridges, saves and their migrations, images, project JSON,
+  render, preview and session requests, plugin mutations, random play) and
+  the state invariants every reachable state keeps (money ≥ 0, energy in
+  range, stacks and slots within their caps, the player on a scene's grid,
+  grids of their scene's size). Its tests run every target on stable over
+  its seed corpus, random bytes and edited seeds, and the invariants under
+  generated content; `fuzz/` wraps the same targets for cargo-fuzz (nightly,
+  the optional weekly `Fuzz` workflow). On the F# side, FsCheck properties
+  (`FuzzPropertyTests.fs`) feed the JSON parser near-JSON and arbitrary text
+  and the cartridge reader edited and arbitrary bytes. A proptest failure
+  prints its shrunk input (and is kept in a `.proptest-regressions` file that
+  reruns it first); `PROPTEST_RNG_SEED` replays a run and `PROPTEST_CASES`
+  lengthens it. FsCheck prints a `Replay` seed.
 - **Benchmarks** (`farm-bench`, criterion), with budgets checked in CI once
   measured. Starting targets for a mid-range laptop:
 
@@ -457,7 +556,7 @@ New tests:
   | Overnight pass, 256×256 farm, full crops + 50 machines | < 30 ms |
   | Save (serialize on sim thread) | < 1 ms |
   | Cartridge load, sample games | < 50 ms |
-  | Frame (draw list + wgpu), 1080p, integrated GPU | < 4 ms |
+  | Frame (draw list + wgpu), 1080p, integrated GPU (Future: there is no wgpu backend; the CPU rasterizer is held to one 60 Hz frame) | < 4 ms |
 
 ## What still needs to be built, by language
 
@@ -465,6 +564,9 @@ This maps the editor list in [ROADMAP.md](../ROADMAP.md) (web sources in
 `src/components` and `src/lib` of the web repo) onto the three languages.
 **F#** is logic and data, **C#** is the view, and **Rust** is anything that
 runs in play or previews play.
+The editor items are ported; the table keeps the original plan, and the parts
+that were not built (the condition language and bytecode, dialogue graphs,
+`<day>` units, atlas packing) are listed under [Future](#future-not-built).
 
 | Roadmap item (web source) | F# | C# | Rust |
 |---|---|---|---|
@@ -474,7 +576,7 @@ runs in play or previews play.
 | **4. Art pipeline** (`AssetManager`, `ArtBindings`, `import-art.ts`, `validate-graphics.ts`) | Art binding model, clip/frame model, graphics limits validation | Image import with SkiaSharp (PNG/JPEG/WebP/GIF/BMP/SVG → PNG, size limits, sheet slicing), animation studio view | Atlas packing at cartridge load; clip playback in draw lists; live preview |
 | **5. Creator workshop + interface panels** (`CreatorWorkshop`, `InterfaceEditor`, `creator-patterns.ts`) | Patterns as `Project → Edit list` (one undo step each); panel layout model | Workshop and panel editor views | `farm-ui` renders creator panels in play |
 | **6. Mods and actions** (`ModsEditor`, `ActionsEditor`, `mod-registry.ts`, `validate-extensibility.ts`) | Pack install/enable/order, merge with conflict problems, permission model, action validation | Mod list, **permission review dialog**, action forms | `farm-plugins` sandbox; action execution in `farm-sim` |
-| **7. Problems panel + debug drawer** (`ProblemsPanel`, `DebugDrawer`) | One problems pipeline: schema, content and compiler diagnostics with JSON paths and "go to" targets | Problems list with navigation; debug drawer view | `fe_session_query_json`, state inspector, RNG and clock controls for playtests |
+| **7. Problems panel + debug drawer** (`ProblemsPanel`, `DebugDrawer`) | One problems pipeline: schema, content and compiler diagnostics with JSON paths and "go to" targets | Problems list with navigation; debug drawer view | `fe_session_state_json` and the player's debug requests: state inspector, clock and day controls for playtests |
 
 Other web parts:
 
@@ -492,13 +594,14 @@ Later items (native and web roadmaps):
 |---|---|
 | Export Game: Windows and Linux | Copy the prebuilt `farm-player` template for the target, rename it, set its icon and version info, and put `game.cart` next to it. The cartridge is never appended to the exe: that gets in the way of code signing and makes every Steam patch re-ship the runtime. See [EXPORT.md](EXPORT.md). |
 | Export Game: web demo | Done: the `farm-wasm` player template + `game.cart` + `index.html`, for itch.io pages ([EXPORT.md](EXPORT.md#output-layout)). |
-| Seed selection, fertilizer choice, richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
-| Audio-file import | C# import; F# embeds in the cartridge; Rust plays with kira (seasonal music crossfades, weather ambience layers) |
-| Zip/folder content packs with binary assets | F# pack loader + compiler |
+| Seed selection, fertilizer choice | Done: the `interactWith` command and the inventory's Hold button ([PLAYER.md](PLAYER.md#controls)) |
+| Richer animals, fishing and relationships, multi-tile buildings, roaming insects, real-time combat | `farm-sim` (+ `farm-ui` for player UI; F# for the authoring side) |
+| Audio-file import | C# import; F# embeds in the cartridge; Rust mixes it in `farm-player::audio` (seasonal music crossfades, weather ambience layers) |
+| Zip/folder content packs with binary assets | F# pack loader + compiler. JSON packs already carry their art: "Export selection as pack" embeds the images the entries use in the pack's `assets` (as data URLs), and installing a pack adds them to the project's art (`PackExport.build`, `PackMerge.mergeAssets`). |
 | JSON Schema for mod autocomplete | F# generates it from the authoring types |
 | Property-based determinism, economy and migration tests | Done: proptest (Rust), FsCheck (F#) |
 | Balancing lab (new) | F# `FarmEngine.Lab`: run thousands of seeds through `farm-ffi` in parallel; chart gold per day per crop or strategy; flag dominant crops |
-| Code signing, macOS/Linux builds | CI. wgpu, winit, kira and Avalonia all support all three. |
+| Code signing, macOS builds | CI (Windows and Linux are built and tested; macOS is not). winit, softbuffer, cpal and Avalonia support all three. |
 
 ## Phases
 
@@ -546,7 +649,7 @@ the same tests, and was then deleted.
    with `farm-wasm`; [EXPORT.md](EXPORT.md), [PLAYER.md](PLAYER.md)). *Exit:* the embedded and
    standalone players are the same `Player`, screenshot goldens pin its
    frames, and exported sample games replay their goldens on Windows and
-   Linux. The wgpu backend and the wasm player remain open.
+   Linux. The wasm player came in phase 7; the wgpu backend is Future.
 7. **One engine (v9).** First move the schema records from C# to F# so
    `FarmEngine.Authoring` compiles under Fable (done), then the web version
    adopts `farm-wasm` for play and Fable-compiled `FarmEngine.Authoring` for
@@ -556,7 +659,9 @@ the same tests, and was then deleted.
    v8→v9 project and save migrations, and re-record goldens from Rust
    ([NUMERICS.md](NUMERICS.md); done). From here Rust is the reference
    implementation and the `js` helpers are deleted. *Exit:* old v8 saves load
-   and play on in both apps, and benchmarks meet their budgets (both met).
+   and play on in both apps (met), and benchmarks meet their budgets (not
+   met for saving: about 10.7 ms against 1 ms, held to `SAVE_CEILING`; see
+   [ROADMAP.md](../ROADMAP.md)).
 
 ## Checklist: porting a new part of the web editor
 
@@ -583,6 +688,27 @@ Use this for every item in the editor list:
 8. **Tick the item** in [ROADMAP.md](../ROADMAP.md) and add it to the
    [CHANGELOG](../CHANGELOG.md).
 
+## Future (not built)
+
+Designs this plan describes that do not exist yet. Each would need its own
+issue before work starts.
+
+- **Interned cartridge content.** Dense integer indices for ids, a string
+  table per locale, compiled condition bytecode and dialogue graphs, flat
+  tile-layer arrays, texture atlases packed at load. Today the sections are
+  JSON with string ids.
+- **A condition language and a dialogue language** in F# (parse, type-check,
+  compile). Today conditions and dialogue are schema records checked by the
+  Problems pipeline.
+- **Units of measure** on the F# records (`<gold>`, `<day>`, `<tile>`).
+- **Asynchronous saving** within a 1 ms budget on the simulation thread.
+- **A wgpu renderer** for play, with a 4 ms 1080p frame target; the player
+  draws with the CPU rasterizer and softbuffer.
+- **kira audio** (crossfades, ambience layers); the player mixes its own audio
+  and outputs it through cpal.
+- **Generated FFI bindings with `SafeHandle`s**; `FarmEngine.Interop` is
+  hand-written `LibraryImport` declarations with owning wrappers.
+- **The balancing lab** (`FarmEngine.Lab`).
 
 ## Open questions
 

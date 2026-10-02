@@ -38,6 +38,8 @@ public sealed class GameWorkspaceView : UserControl
     private readonly DockPanel _editHost = new() { Name = "EditHost" };
     private readonly Border _saveBanner = new() { Name = "SaveErrorBanner", IsVisible = false, Margin = new Thickness(0, 0, 0, 10) };
     private readonly TextBlock _saveBannerText = Ui.Wrapped("", "small");
+    private Button? _retrySave;
+    private StackPanel? _conflictButtons;
     private readonly Func<Exception, bool> _viewErrorHandler;
     private PlayModeView? _play;
     private FarmEngine.Schemas.GameProject? _snapshot;
@@ -98,25 +100,85 @@ public sealed class GameWorkspaceView : UserControl
 
         _workspace.EndStroke();
         _workspace.FlushPendingSave();
-        Content = new EditorErrorView(error, _workspace.SaveError, _workspace.CanUndo, TryAgain, () =>
+        ShowErrorScreen(error);
+        // The broken editor stops following the project once the failing call has unwound, so
+        // a project opened from the File menu meanwhile doesn't hit it again.
+        var broken = EditView;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            _workspace.Undo();
-            TryAgain();
+            if (_editHost.Children.Remove(broken))
+            {
+                broken.Retire();
+            }
         });
-        _shell.ShowStatus($"The editor ran into a problem: {error.Message}");
         return true;
     }
 
-    /// <summary>"Try Again": a fresh editor over the open project (web <c>resetErrorBoundary</c>).</summary>
+    /// <summary>Builds Edit Mode (tests swap in an editor that fails to build).</summary>
+    internal Func<ProjectWorkspace, EditModeView> CreateEditor { get; set; } = workspace => new EditModeView(workspace);
+
+    /// <summary>
+    /// "Try Again": a fresh editor over the open project (web <c>resetErrorBoundary</c>). The old
+    /// editor stops following the project first. When the new one fails too, the error screen
+    /// stays up with the new error (the app never closes over it).
+    /// </summary>
     public void TryAgain()
     {
-        _editHost.Children.Remove(EditView);
-        EditView.Retire();
-        EditView = new EditModeView(_workspace);
+        RetireEditor();
+        EditModeView fresh;
+        try
+        {
+            fresh = CreateEditor(_workspace);
+        }
+#pragma warning disable CA1031 // Shown on the error screen again.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Editor error on Try Again: {ex}");
+            ShowErrorScreen(ex);
+            return;
+        }
+
+        EditView = fresh;
         _editHost.Children.Add(EditView);
         Content = _editHost;
         SyncSaveBanner();
         _shell.ShowStatus("Editor reopened.");
+    }
+
+    /// <summary>"Undo last change and try again": the undo reaches no retired editor, and its errors stay on the screen.</summary>
+    public void UndoAndTryAgain()
+    {
+        RetireEditor();
+        try
+        {
+            _workspace.Undo();
+        }
+#pragma warning disable CA1031 // Shown on the error screen again.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Editor error on Undo: {ex}");
+            ShowErrorScreen(ex);
+            return;
+        }
+
+        TryAgain();
+    }
+
+    private void ShowErrorScreen(Exception error)
+    {
+        Content = new EditorErrorView(error, _workspace.SaveError, _workspace.CanUndo, TryAgain, UndoAndTryAgain);
+        _shell.ShowStatus($"The editor ran into a problem: {error.Message}");
+    }
+
+    /// <summary>Takes the current editor out (once): it no longer hears about project changes.</summary>
+    private void RetireEditor()
+    {
+        if (_editHost.Children.Remove(EditView))
+        {
+            EditView.Retire();
+        }
     }
 
     /// <summary>The Play Mode view while playtesting.</summary>
@@ -155,7 +217,6 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         _snapshot = _workspace.Current;
-        _workspace.IsPlaytesting = true;
         _play = new PlayModeView(player, _options.AutoRun);
         _play.RestartRequested += OnRestartRequested;
         _play.Faulted += OnPlayFaulted;
@@ -195,7 +256,6 @@ public sealed class GameWorkspaceView : UserControl
         play.Faulted -= OnPlayFaulted;
         play.Close();
         _play = null;
-        _workspace.IsPlaytesting = false;
         Content = _editHost;
 
         if (finalProject is not null)
@@ -226,6 +286,8 @@ public sealed class GameWorkspaceView : UserControl
             EndPlaytest();
         }
 
+        // Fields typed into a form but not saved yet are applied before the last write (#87).
+        _workspace.ApplyDrafts();
         _workspace.FlushPendingSave();
     }
 
@@ -234,6 +296,7 @@ public sealed class GameWorkspaceView : UserControl
         base.OnDetachedFromVisualTree(e);
         // Window closing: the surface lives as long as the window.
         PrepareForShutdown();
+        _workspace.ReleaseLock();
         _shell.ModeChanged -= OnModeChanged;
         _workspace.ProjectChanged -= OnProjectChanged;
         _workspace.SaveStatusChanged -= OnSaveStatusChanged;
@@ -255,6 +318,28 @@ public sealed class GameWorkspaceView : UserControl
         }, "accent");
         retry.Name = "RetrySaveButton";
         ToolTip.SetTip(retry, "Try to write the project file again");
+        _retrySave = retry;
+
+        // The file changed on disk: the creator picks which version wins.
+        var keepMine = Ui.Button("Keep my version", () =>
+        {
+            if (!_workspace.OverwriteDiskVersion())
+            {
+                _shell.ShowStatus($"Still can't save: {_workspace.SaveError}");
+            }
+        }, "accent");
+        keepMine.Name = "KeepMyVersionButton";
+        ToolTip.SetTip(keepMine, "Save the project as it is in the editor, replacing the changed file");
+        var loadTheirs = Ui.Button("Load the file's version", () =>
+        {
+            var reloaded = _workspace.ReloadFromDisk();
+            _shell.ShowStatus(reloaded.Ok
+                ? $"Reloaded \"{reloaded.Project!.Name}\" from disk."
+                : $"The changed file could not be opened: {string.Join("; ", reloaded.Errors)}");
+        }, "subtle");
+        loadTheirs.Name = "LoadDiskVersionButton";
+        ToolTip.SetTip(loadTheirs, "Drop the editor's unsaved changes and open the file as it is now (File → Export Project JSON… keeps a copy first)");
+        _conflictButtons = Ui.HStack(8, loadTheirs, keepMine);
         _saveBannerText.Name = "SaveErrorText";
         AutomationProperties.SetLiveSetting(_saveBannerText, AutomationLiveSetting.Assertive);
         var icon = Ui.Icon("IconAlertCircle", 18);
@@ -263,7 +348,7 @@ public sealed class GameWorkspaceView : UserControl
         var message = new DockPanel();
         message.Children.Add(icon);
         message.Children.Add(_saveBannerText);
-        _saveBanner.Child = Ui.Row(message, retry);
+        _saveBanner.Child = Ui.Row(message, Ui.HStack(8, _conflictButtons, retry));
         _saveBanner.Classes.Add("save-error");
         DockPanel.SetDock(_saveBanner, Dock.Top);
     }
@@ -271,10 +356,15 @@ public sealed class GameWorkspaceView : UserControl
     private void SyncSaveBanner()
     {
         var error = _workspace.SaveError;
+        var conflict = _workspace.SaveConflict;
         _saveBanner.IsVisible = error is not null;
+        _retrySave!.IsVisible = !conflict;
+        _conflictButtons!.IsVisible = conflict;
         _saveBannerText.Text = error is null
             ? ""
-            : $"Your project could not be saved: {error} Your changes are still open here. Free up disk space or check the folder's permissions, then choose Retry save (or File → Export Project JSON… to keep a copy).";
+            : conflict
+                ? $"Your project was not saved: {error} Your changes are still open here. Keep your version (the file is replaced) or load the file's version (your unsaved changes are dropped); File → Export Project JSON… keeps a copy first."
+                : $"Your project could not be saved: {error} Your changes are still open here. Free up disk space or check the folder's permissions, then choose Retry save (or File → Export Project JSON… to keep a copy).";
     }
 
     private void OnSaveStatusChanged(object? sender, EventArgs e)
@@ -307,7 +397,8 @@ public sealed class GameWorkspaceView : UserControl
         // writes the final state back through F#; see EndPlaytest).
         return RustPlayer.CreateCartridge(
             Playtests.Cartridge(project),
-            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language });
+            // The system's reduced-motion preference reaches the game, as in the web demo.
+            options with { Audio = _options.Audio, Locale = options.Locale ?? Localization.EditorStrings.Language, ReducedMotion = options.ReducedMotion || ReducedMotion.SystemPrefers });
     }
 
     private void OnRestartRequested(object? sender, EventArgs e)

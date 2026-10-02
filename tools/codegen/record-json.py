@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Regenerates the codec and JSON-key tables in src/FarmEngine.Authoring.Net/RecordJson.fs from
 the decoders and encoders in src/FarmEngine.Authoring/SchemaJson.fs. Run after SchemaJson.fs
-changes: python3 tools/codegen/record-json.py"""
+changes: python3 tools/codegen/record-json.py
+
+With --check it writes nothing and exits 1 when RecordJson.fs is not what it would generate
+(tools/codegen/check.sh, CI)."""
 import pathlib
 import re
+import sys
 
 root = pathlib.Path(__file__).resolve().parents[2]
 schema_json = (root / "src/FarmEngine.Authoring/SchemaJson.fs").read_text()
@@ -46,5 +50,12 @@ text = target.read_text()
 begin = text.index("    // <generated")
 begin = text.index("\n", begin) + 1
 end = text.index("    // </generated>")
-target.write_text(text[:begin] + "\n".join(lines) + "\n" + text[end:])
+generated = text[:begin] + "\n".join(lines) + "\n" + text[end:]
+if "--check" in sys.argv[1:]:
+    if generated != text:
+        print(f"{target.relative_to(root)} is out of date: run python3 tools/codegen/record-json.py", file=sys.stderr)
+        sys.exit(1)
+    print(f"{target.relative_to(root)} is current ({len(types)} codecs, {len(keys)} key tables)")
+    sys.exit(0)
+target.write_text(generated)
 print(f"{len(types)} codecs, {len(keys)} key tables")

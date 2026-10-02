@@ -14,9 +14,10 @@ use farm_sim::schema::{
     WeatherTableEntry, WeatherTypeDefinition,
 };
 use farm_sim::units;
+use farm_sim::world::world_movement;
 use farm_sim::{
-    animals, energy, game_time, mines, skills, stable_json, state, weather, Command, Effect, Effects, EngineContext,
-    HookBus, Rng,
+    animals, energy, game_time, mines, skills, stable_json, state, weather, Command, CommandRules, Effect, Effects,
+    EngineContext, HookBus, Rng,
 };
 use indexmap::IndexMap;
 use std::path::PathBuf;
@@ -77,7 +78,7 @@ fn make_engine(mutate: impl FnOnce(&mut GameProject)) -> (EngineContext, GameSta
 
 fn give(state: &mut GameState, item_id: &str, quantity: u32, ctx: &EngineContext) {
     let item = ctx.content.items.iter().find(|i| i.id == item_id).unwrap_or_else(|| panic!("item {item_id}")).clone();
-    state.player.inventory.push(InventorySlot { item, quantity });
+    state.player.inventory.push(InventorySlot::new(item, quantity));
 }
 
 fn quantity(state: &GameState, item_id: &str) -> Option<u32> {
@@ -126,16 +127,6 @@ fn formats_time_of_day() {
     assert_eq!(game_time::format_time_of_day(units::minutes(0)), "12:00 AM");
     assert_eq!(game_time::format_time_of_day(units::minutes(25 * 60)), "1:00 AM"); // past-midnight wrap
     assert_eq!(game_time::format_time_of_day(units::time_of_day(9.0 * 60.0 + 5.5)), "9:05 AM");
-}
-
-#[test]
-fn classifies_day_phases() {
-    assert_eq!(game_time::day_phase(units::minutes(6 * 60)), "morning");
-    assert_eq!(game_time::day_phase(units::minutes(12 * 60)), "day");
-    assert_eq!(game_time::day_phase(units::minutes(18 * 60)), "evening");
-    assert_eq!(game_time::day_phase(units::minutes(23 * 60)), "night");
-    assert_eq!(game_time::day_phase(units::minutes(4 * 60)), "night");
-    assert_eq!(game_time::day_phase(units::minutes(26 * 60)), "night");
 }
 
 // --- weather (M4b) ---
@@ -390,7 +381,7 @@ fn floors_generate_deterministically_from_seed_plus_floor() {
     // Has rocks from the band table
     let node_count = a.tiles.iter().flatten().filter(|tile| tile.node.is_some()).count();
     assert!(node_count > 5);
-    assert_eq!(a.extra.get("generated"), Some(&serde_json::Value::Bool(true)));
+    assert_eq!(a.generated, Some(true));
 }
 
 #[test]
@@ -412,15 +403,100 @@ fn entrance_interaction_descends_exit_returns_to_the_surface_and_drops_floors() 
 
 #[test]
 fn descend_command_respects_floor_bounds_and_records_depth() {
+    // Scripted: from anywhere, to any floor (the player's rules are below).
     let (ctx, mut current) = make_engine(|_| {});
+    let ctx = ctx.with_rules(CommandRules::Scripted);
     farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 99 });
     assert_eq!(current.mine.current_floor, 10); // clamped to config.floors
     assert_eq!(current.mine.deepest_floor, 10);
 }
 
+#[test]
+fn a_player_descends_only_at_the_mine_and_only_as_deep_as_they_have_been() {
+    let (ctx, mut current) = make_engine(|_| {});
+    // Away from the entrance (5,5): refused, nothing changes.
+    at(&mut current, 1, 1, "down");
+    let before = current.clone();
+    let effects = farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 1 });
+    assert_eq!(current, before);
+    assert!(has_message(&effects, |t| t.contains("at the mine")));
+
+    // Beside the entrance: floor 1, but not floor 3 (never reached, no checkpoint).
+    at(&mut current, 5, 4, "down");
+    let before = current.clone();
+    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 3 });
+    assert_eq!(current, before);
+    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 1 });
+    assert_eq!((current.player.scene_id.as_str(), current.mine.current_floor), ("mine-floor-1", 1));
+
+    // On a floor: one floor further down at a time.
+    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 5 });
+    assert_eq!(current.mine.current_floor, 1);
+    farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 2 });
+    assert_eq!(current.mine.current_floor, 2);
+    assert_eq!(current.mine.deepest_floor, 2);
+
+    // A dialogue open: refused without a word.
+    current.dialogue = Some(farm_sim::schema::DialogueState { npc_id: "n".to_owned(), dialogue_id: "d".to_owned() });
+    let before = current.clone();
+    assert!(farm_sim::apply_command(&ctx, &mut current, &Command::DescendMine { floor: 3 }).is_empty());
+    assert_eq!(current, before);
+}
+
+#[test]
+fn a_player_exits_only_from_a_mine_floor_and_authored_mine_named_scenes_stay() {
+    let (ctx, mut current) = make_engine(|_| {});
+    // An authored scene that happens to use the floor prefix.
+    let authored = Scene { id: "mine-floor-77".to_owned(), name: "Gallery".to_owned(), ..stub_floor(77) };
+    current.world.scenes.push(Scene { generated: None, ..authored });
+    let before = current.clone();
+    let effects = farm_sim::apply_command(&ctx, &mut current, &Command::ExitMine);
+    assert_eq!(current, before, "exitMine on the surface is refused");
+    assert!(has_message(&effects, |t| t.contains("not in the mine")));
+
+    at(&mut current, 5, 4, "down");
+    farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
+    assert_eq!(current.player.scene_id, "mine-floor-1");
+    farm_sim::apply_command(&ctx, &mut current, &Command::ExitMine);
+    assert_eq!(current.player.scene_id, SCENE);
+    assert!(!current.world.scenes.iter().any(|s| s.id == "mine-floor-1"), "the generated floor is dropped");
+    assert!(current.world.scenes.iter().any(|s| s.id == "mine-floor-77"), "the authored scene stays");
+}
+
+#[test]
+fn oversized_mine_floors_are_cut_to_the_largest_scene_and_tiny_ones_grown() {
+    let (ctx, _) = make_engine(|project| {
+        project.mine.floor_width = 50_000;
+        project.mine.floor_height = 50_000;
+    });
+    let floor = mines::generate_mine_floor(&ctx, "seed", 1);
+    assert_eq!((floor.width, floor.height), (256, 256));
+    assert_eq!(floor.tiles.len(), 256);
+    assert!(floor.tiles.iter().all(|row| row.len() == 256));
+
+    let (ctx, mut current) = make_engine(|project| {
+        project.mine.floor_width = 1;
+        project.mine.floor_height = 2;
+    });
+    let floor = mines::generate_mine_floor(&ctx, "seed", 1);
+    assert_eq!((floor.width, floor.height), (3, 3));
+    // The entry is inside the wall ring.
+    assert!(!floor.tile(1, 1).expect("entry tile").collision);
+    mines::descend_mine(&ctx, &mut current, 1);
+    assert_eq!(world_movement::player_tile(&current), world_movement::TilePoint { x: 1, y: 1 });
+}
+
 /// A stand-in generated floor so descend/exit can be exercised without `create_empty_scene`.
 fn stub_floor(floor: u32) -> Scene {
-    Scene { id: mines::mine_floor_scene_id(floor), name: format!("Mine — Floor {floor}"), ..Scene::default() }
+    Scene {
+        id: mines::mine_floor_scene_id(floor),
+        name: format!("Mine — Floor {floor}"),
+        width: 3,
+        height: 3,
+        tiles: vec![vec![Default::default(); 3]; 3],
+        generated: Some(true),
+        ..Scene::default()
+    }
 }
 
 #[test]
@@ -706,4 +782,62 @@ fn invalid_overrides_are_ignored() {
     game_time::perform_sleep(&ctx, &mut next, game_time::SleepOptions { collapsed: false });
     assert!(ctx.content.weather.types.iter().any(|weather_type| weather_type.id == next.clock.weather_id));
     assert_ne!(next.clock.weather_id, "sharknado");
+}
+
+// --- indoor scenes keep the weather out (#34) ---
+
+#[test]
+fn rain_and_storms_skip_indoor_scenes() {
+    for (weather_id, waters, damage) in [("rain", true, 0.0), ("storm", true, 1.0)] {
+        let (ctx, mut current) = make_engine(|project| {
+            project.weather = always_weather(weather_id, vec![weather_type(weather_id, weather_id, waters, damage)]);
+            project.scenes[0].indoor = Some(true);
+        });
+        at(&mut current, 8, 5, "up");
+        farm_sim::apply_command(&ctx, &mut current, &Command::Interact);
+        assert!(current.world.scenes[0].tiles[4][8].crop.is_some());
+        // Day 2 rolls the weather; day 3's overnight pass would water or wreck an outdoor bed.
+        farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
+        farm_sim::apply_command(&ctx, &mut current, &Command::Sleep);
+        assert_eq!(current.clock.weather_id, weather_id);
+        let tile = &current.world.scenes[0].tiles[4][8];
+        let crop = tile.crop.as_ref().expect("the greenhouse crop survives the storm");
+        assert!(!crop.watered, "{weather_id} does not water indoor crops");
+        assert_ne!(tile.soil_state.as_deref(), Some("watered"));
+    }
+}
+
+#[test]
+fn storms_keep_npcs_home_only_outdoors() {
+    use farm_sim::schema::NpcScheduleEntry;
+    // A storm keeps scheduled NPCs from walking outside; inside, an indoor schedule still runs.
+    let run = |indoor: bool| {
+        let (ctx, mut current) = make_engine(|project| {
+            let storm = WeatherTypeDefinition { npcs_stay_inside: true, ..weather_type("storm", "Storm", false, 0.0) };
+            project.weather = always_weather("storm", vec![storm]);
+            project.scenes[0].indoor = Some(indoor);
+            let npc = &mut project.npcs[0];
+            let scene_id = npc.scene_id.clone();
+            npc.schedule = Some(vec![NpcScheduleEntry {
+                minute: 0,
+                scene_id,
+                x: units::tile_of(npc.x) + 1,
+                y: units::tile_of(npc.y),
+                ..Default::default()
+            }]);
+        });
+        current.clock.weather_id = "storm".to_owned();
+        let id = ctx.content.npcs[0].id.clone();
+        let before = current.npcs[&id].clone();
+        farm_sim::engine::advance_tick(&ctx, &mut current, 40);
+        current.npcs[&id] != before
+    };
+    assert!(!run(false), "outdoors the storm keeps the NPC put");
+    assert!(run(true), "indoors the NPC keeps its schedule");
+}
+
+#[test]
+fn generated_mine_floors_are_indoor() {
+    let (ctx, _) = make_engine(|project| *project = with_m4_content(project.clone(), SCENE));
+    assert!(mines::generate_mine_floor(&ctx, "seed", 1).is_indoor());
 }

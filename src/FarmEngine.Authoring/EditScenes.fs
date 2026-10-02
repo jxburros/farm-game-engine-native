@@ -35,23 +35,20 @@ module internal EditScenes =
         match Proj.tryScene sceneId project with
         | None -> project
         | Some scene when not (Proj.inBounds scene x y) -> project
-        | Some scene when (Proj.rows scene).[y].[x].Type = tileType && (brushVisual project tileType).IsNone -> project
+        | Some scene when (Proj.tryTile scene x y |> Option.exists (fun t -> t.Type = tileType)) && (brushVisual project tileType).IsNone -> project
         | Some scene -> paintCells sceneId layer (TileRules.regionCells scene x y) tileType project
 
     /// Web `pasteTileRegion`: stamp with the top-left at (x, y); tiles outside the scene are skipped.
     let pasteTiles (sceneId: string) (x: int) (y: int) (region: Tile list list) (project: GameProject) =
-        Proj.mapScene sceneId (fun scene ->
-            let rows = Proj.rows scene
-            let mutable changed = false
-            region |> List.iteri (fun dy row ->
-                row |> List.iteri (fun dx tile ->
+        let updates =
+            region
+            |> Seq.mapi (fun dy row ->
+                row |> Seq.mapi (fun dx tile ->
                     let tx, ty = x + dx, y + dy
-                    if ty >= 0 && ty < rows.Length && tx >= 0 && tx < rows.[ty].Length then
-                        let placed = { tile with X = float tx; Y = float ty }
-                        if placed <> rows.[ty].[tx] then
-                            rows.[ty].[tx] <- placed
-                            changed <- true))
-            Proj.commitRows scene rows changed) project
+                    let placed = { tile with X = float tx; Y = float ty }
+                    (tx, ty, fun (current: Tile) -> if placed = current then current else placed)))
+            |> Seq.concat
+        Proj.mapScene sceneId (Proj.updateCells updates) project
 
     let setCollision (sceneId: string) (cells: (int * int) list) (blocked: bool) (project: GameProject) =
         Proj.mapScene sceneId (Proj.mapCells cells (fun tile -> if tile.Collision = blocked then tile else { tile with Collision = blocked })) project
@@ -109,11 +106,9 @@ module internal EditScenes =
 
     /// Web eyedropper (`case 'eyedropper'`): the tile's type and the art on that type's own layer.
     let brushAt (project: GameProject) (sceneId: string) (x: int) (y: int) : (string * VisualRef option) option =
-        match Proj.tryScene sceneId project with
-        | Some scene when Proj.inBounds scene x y ->
-            let tile = (Proj.rows scene).[y].[x]
-            Some(tile.Type, TileRules.visualOf (TileRules.layerOf tile.Type) tile)
-        | _ -> None
+        match Proj.tryScene sceneId project |> Option.bind (fun scene -> Proj.tryTile scene x y) with
+        | Some tile -> Some(tile.Type, TileRules.visualOf (TileRules.layerOf tile.Type) tile)
+        | None -> None
 
     /// EditorPanel "Clear Items".
     let clearCropsAndItems (sceneId: string) (project: GameProject) =
@@ -151,21 +146,68 @@ module internal EditScenes =
         if System.String.IsNullOrWhiteSpace name then project
         else Proj.mapScene sceneId (fun scene -> if scene.Name = name then scene else { scene with Name = name }) project
 
-    /// SceneManager `applyResize`: tiles in the overlap are kept, new tiles are dry grass.
+    /// Marks the scene indoor (`indoor: true`) or outdoor (the key absent).
+    let setSceneIndoor (sceneId: string) (indoor: bool) (project: GameProject) =
+        let value = if indoor then Some true else None
+        Proj.mapScene sceneId (fun scene -> if scene.Indoor = value then scene else { scene with Indoor = value }) project
+
+    /// The largest scene side (the game cuts bigger scenes when it loads them).
+    [<Literal>]
+    let MaxSceneSize = 256
+
+    /// SceneManager `applyResize`: tiles in the overlap are kept, new tiles are dry grass. Rows
+    /// that keep their width are shared with the old scene. A shrink moves what stood on the cut
+    /// tiles inside (`Cleanup.clampToScene`, #44). Sizes outside 1–256 are ignored.
     let resizeScene (sceneId: string) (width: int) (height: int) (project: GameProject) =
-        if width < 1 || height < 1 then project
+        if width < 1 || height < 1 || width > MaxSceneSize || height > MaxSceneSize then project
         else
-            Proj.mapScene sceneId (fun scene ->
-                if int scene.Width = width && int scene.Height = height && scene.Tiles.Length = height
-                   && scene.Tiles |> List.forall (fun row -> row.Length = width) then scene
-                else
-                    let rows = Proj.rows scene
-                    let tiles =
-                        [ for y in 0 .. height - 1 ->
-                              [ for x in 0 .. width - 1 ->
-                                    if y < rows.Length && x < rows.[y].Length then rows.[y].[x]
-                                    else { AuthoringTiles.CreateEmptyTile(float x, float y, TileTypes.Grass) with SoilState = Some SoilStates.Dry } ] ]
-                    { scene with Width = float width; Height = float height; Tiles = tiles }) project
+            let newTile x y = { AuthoringTiles.CreateEmptyTile(float x, float y, TileTypes.Grass) with SoilState = Some SoilStates.Dry }
+            let resized =
+                Proj.mapScene sceneId (fun scene ->
+                    if int scene.Width = width && int scene.Height = height && scene.Tiles.Length = height
+                       && scene.Tiles |> List.forall (fun row -> row.Length = width) then scene
+                    else
+                        let fit (y: int) (row: Tile list) =
+                            if row.Length = width then row
+                            elif row.Length > width then List.truncate width row
+                            else row @ [ for x in row.Length .. width - 1 -> newTile x y ]
+                        let kept = scene.Tiles |> List.truncate height |> List.mapi fit
+                        let added = [ for y in kept.Length .. height - 1 -> [ for x in 0 .. width - 1 -> newTile x y ] ]
+                        { scene with Width = float width; Height = float height; Tiles = kept @ added }) project
+            if LanguagePrimitives.PhysicalEquality resized project then project
+            else Cleanup.clampToScene sceneId width height resized
+
+    /// What a resize to `width` × `height` would move or remove (the size note lists it before
+    /// the creator applies it): one line per thing standing on, or pointing at, a cut tile.
+    let resizeImpact (sceneId: string) (width: int) (height: int) (project: GameProject) : string list =
+        if width < 1 || height < 1 then []
+        else
+            let after = Cleanup.clampToScene sceneId width height project
+            let moved (before: 'T list) (next: 'T list) (describe: 'T -> string) =
+                if LanguagePrimitives.PhysicalEquality before next then []
+                else List.zip before next |> List.filter (fun (a, b) -> not (LanguagePrimitives.PhysicalEquality a b)) |> List.map (fst >> describe)
+            let cutDoors =
+                match Proj.tryScene sceneId project with
+                | Some scene ->
+                    scene.Transitions
+                    |> List.filter (fun t -> t.FromX >= float width || t.FromY >= float height)
+                    |> List.map (fun t -> sprintf "the door at (%g, %g) is removed" t.FromX t.FromY)
+                | None -> []
+            let landingDoors =
+                project.Scenes
+                |> List.collect (fun scene ->
+                    scene.Transitions
+                    |> List.filter (fun t -> t.ToSceneId = sceneId && (t.ToX >= float width || t.ToY >= float height))
+                    |> List.map (fun t -> sprintf "the door from \"%s\" (%g, %g) lands nearer" scene.Name t.FromX t.FromY))
+            [ if not (LanguagePrimitives.PhysicalEquality project.Player after.Player) then yield "the player start moves inside"
+              yield! moved project.Npcs after.Npcs (fun n -> sprintf "NPC \"%s\" moves inside" n.Name)
+              yield! moved project.Animals after.Animals (fun a -> sprintf "animal \"%s\" moves inside" a.Name)
+              yield! cutDoors
+              yield! landingDoors
+              yield! moved project.Events after.Events (fun e -> sprintf "event \"%s\" gets its tiles moved inside" e.Name)
+              yield! moved project.Actions after.Actions (fun a -> sprintf "action \"%s\" gets its tiles moved inside" a.Name)
+              yield! moved project.Minigames after.Minigames (fun m -> sprintf "minigame \"%s\" gets its tiles moved inside" m.Name)
+              if not (LanguagePrimitives.PhysicalEquality project.Mine after.Mine) then yield "the mine entrance moves inside" ]
 
     /// SceneManager `duplicateScene`: a copy with a new id, "(Copy)" appended and no NPC list.
     let duplicateScene (sceneId: string) (newSceneId: string) (project: GameProject) =

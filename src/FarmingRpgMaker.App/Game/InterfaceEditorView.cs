@@ -9,7 +9,7 @@ using FarmingRpgMaker.App.Projects;
 namespace FarmingRpgMaker.App.Game;
 
 /// <summary>Creator-defined in-game panels and their live entries.</summary>
-public sealed class InterfaceEditorView : UserControl
+public sealed class InterfaceEditorView : UserControl, IRetirable
 {
     /// <summary>
     /// One entry: its label, its kind, and the value control that kind needs in
@@ -27,6 +27,9 @@ public sealed class InterfaceEditorView : UserControl
     private readonly Button _delete;
     private string? _selectedId;
     private bool _refreshing;
+    /// <summary>The panel the fields were filled from (null: none selected).</summary>
+    private GamePanel? _shown;
+    private readonly DraftBar _draftBar;
 
     public InterfaceEditorView(ProjectWorkspace workspace)
     {
@@ -34,11 +37,20 @@ public sealed class InterfaceEditorView : UserControl
         Name = "InterfaceEditorView";
         _message.Name = "InterfaceMessage";
         Ui.Label((_panels, "Game panels"), (_title, "Panel title"), (_flag, "Show after story flag (optional)"));
+        _draftBar = new DraftBar("Interface", SaveDraft, RefreshSelected);
         _panels.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;
-            _selectedId = (_panels.SelectedItem as ListBoxItem)?.Tag as string;
-            RefreshSelected();
+            var id = (_panels.SelectedItem as ListBoxItem)?.Tag as string;
+            if (id == _selectedId) return;
+            // Unsaved fields are not dropped by choosing another panel (#87): ask first.
+            ShowSelection();
+            Navigate(() =>
+            {
+                _selectedId = id;
+                ShowSelection();
+                RefreshSelected();
+            });
         };
         var left = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(Ui.Text("GAME PANELS", "section"));
@@ -52,6 +64,7 @@ public sealed class InterfaceEditorView : UserControl
 
         var right = new StackPanel { Spacing = 10 };
         right.Children.Add(Ui.Text("PANEL DETAILS", "section"));
+        right.Children.Add(_draftBar);
         right.Children.Add(Ui.Text("Title", "muted", "small"));
         right.Children.Add(_title);
         right.Children.Add(Ui.Text("Show after story flag (optional)", "muted", "small"));
@@ -72,11 +85,63 @@ public sealed class InterfaceEditorView : UserControl
         Grid.SetColumn(scroll, 1);
         grid.Children.Add(scroll);
         Content = grid;
-        _workspace.ProjectChanged += (_, _) =>
-        {
-            if (IsEffectivelyVisible) Refresh();
-        };
+        _workspace.ProjectChanged += OnProjectChanged;
         Refresh();
+    }
+
+    /// <summary>Stops following the project (the editor that built this view was replaced).</summary>
+    public void Retire() => _workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
+    {
+        if (e.Kind == ProjectChangeKind.Opened)
+        {
+            _draftBar.Hide();
+            _shown = null;
+            _selectedId = null;
+        }
+
+        if (IsEffectivelyVisible) Refresh();
+    }
+
+    /// <summary>True while the panel's fields hold edits that are not saved (#87).</summary>
+    public bool HasUnsavedChanges => _shown is { } shown && !Equals(FromFields(shown), shown);
+
+    /// <summary>Saves the panel's unsaved fields, if any. False when they could not be saved; the message says why.</summary>
+    public bool SaveDraft()
+    {
+        if (!HasUnsavedChanges) return true;
+        Save();
+        return !HasUnsavedChanges;
+    }
+
+    /// <summary>The panel as the fields describe it (title and flag trimmed).</summary>
+    private GamePanel FromFields(GamePanel panel)
+    {
+        var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind(KindOf(row.Kind)).WithValue(ValueOf(row))).ToList();
+        return panel.WithTitle(_title.Text?.Trim() ?? "").WithVisibleFlag(string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim()).WithEntries(entries);
+    }
+
+    private void Navigate(Action next)
+    {
+        if (!HasUnsavedChanges)
+        {
+            _draftBar.Hide();
+            next();
+            return;
+        }
+
+        _draftBar.Ask($"the panel \"{_shown!.Title}\"", next);
+    }
+
+    private void ShowSelection()
+    {
+        _refreshing = true;
+        try
+        {
+            _panels.SelectedItem = _panels.Items.OfType<ListBoxItem>().FirstOrDefault(item => Equals(item.Tag, _selectedId));
+        }
+        finally { _refreshing = false; }
     }
 
     public void Refresh()
@@ -92,6 +157,8 @@ public sealed class InterfaceEditorView : UserControl
             if (_panels.SelectedItem is null) _selectedId = null;
         }
         finally { _refreshing = false; }
+        // A panel with unsaved fields stays as typed while it still exists (tab switch, undo elsewhere).
+        if (_shown is { } shown && shown.Id == _selectedId && Selected() is not null && HasUnsavedChanges) return;
         RefreshSelected();
     }
 
@@ -99,7 +166,9 @@ public sealed class InterfaceEditorView : UserControl
 
     private void RefreshSelected()
     {
+        _draftBar.Hide();
         var panel = Selected();
+        _shown = panel;
         _title.Text = panel?.Title ?? "";
         _flag.Text = panel?.VisibleFlag.OrNull() ?? "";
         _rows.Clear();
@@ -213,7 +282,9 @@ public sealed class InterfaceEditorView : UserControl
         AddEntryRow(GamePanelEntry.Default.WithKind(GamePanelEntryKinds.Text));
     }
 
-    private void Add()
+    private void Add() => Navigate(AddNow);
+
+    private void AddNow()
     {
         if (_workspace.Current is not { } project) return;
         var panel = Defaults.NewGamePanel(project);
@@ -233,9 +304,9 @@ public sealed class InterfaceEditorView : UserControl
         if (_workspace.Current is not { } project || Selected() is not { } panel) return;
         var title = _title.Text?.Trim() ?? "";
         if (title.Length == 0) { _message.Text = "Give the panel a title."; return; }
-        var entries = _rows.Select(row => GamePanelEntry.Default.WithLabel(row.Label.Text ?? "").WithKind(KindOf(row.Kind)).WithValue(ValueOf(row))).ToList();
-        var updated = panel.WithTitle(title).WithVisibleFlag(string.IsNullOrWhiteSpace(_flag.Text) ? null : _flag.Text.Trim()).WithEntries(entries);
+        var updated = FromFields(panel);
         _workspace.Apply(Edits.SetGamePanels(project.GamePanels.OrEmpty().Select(existing => existing.Id == panel.Id ? updated : existing)));
-        _message.Text = "Panel saved.";
+        RefreshSelected();
+        _message.Text = _workspace.SavedText("Panel");
     }
 }

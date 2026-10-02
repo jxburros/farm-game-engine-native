@@ -189,7 +189,7 @@ fn craftable_status_reports_ingredients_when_short_on_inputs() {
         CraftableStatus {
             craftable: false,
             reason: Some("ingredients".to_owned()),
-            message: Some("Missing ingredients.".to_owned()),
+            message: Some(farm_sim::messages::MISSING_INGREDIENTS.with(&[])),
         }
     );
 }
@@ -205,7 +205,7 @@ fn craftable_status_reports_locked_when_unlock_conditions_are_not_met() {
         CraftableStatus {
             craftable: false,
             reason: Some("locked".to_owned()),
-            message: Some("Recipe not unlocked yet.".to_owned()),
+            message: Some(farm_sim::messages::RECIPE_LOCKED.with(&[])),
         }
     );
 }
@@ -220,7 +220,7 @@ fn craftable_status_reports_station_when_ingredients_and_unlocks_are_fine_but_no
         CraftableStatus {
             craftable: false,
             reason: Some("station".to_owned()),
-            message: Some("You need to be near a Test Kitchen to craft that.".to_owned()),
+            message: Some(farm_sim::messages::NEED_STATION.with(&[&"Test Kitchen"])),
         }
     );
 }
@@ -381,4 +381,98 @@ fn hand_craft_emits_the_recipe_hook_before_progressing_quests() {
     handle_craft(&ctx, &mut state, "recipe-craft-hay");
     let events: Vec<HookEvent> = ctx.drain_hook_events();
     assert!(events.is_empty());
+}
+
+// --- all-or-nothing crafting (#21) and craft quests (#33) ---
+
+#[test]
+fn a_craft_whose_output_does_not_fit_changes_nothing() {
+    let project = starter_farm_project();
+    let ctx = EngineContext::with_hooks(farm_sim::state::create_content_from_project(&project), HookBus::new());
+    let mut state = farm_sim::state::create_game_state(&project, Some("m4"));
+    give(&ctx, &mut state, "material-fiber", 6);
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    let before = state.clone();
+    let effects = handle_craft(&ctx, &mut state, "recipe-craft-hay");
+    assert_eq!(effects, vec![Effect::message("error", "Inventory is full!")]);
+    assert_eq!(state, before, "no ingredients used");
+    assert!(ctx.drain_hook_events().is_empty(), "no craft hook for a craft that didn't happen");
+}
+
+#[test]
+fn a_craft_that_frees_the_slot_it_needs_goes_through() {
+    let (ctx, mut state) = make_m4_engine(|_| {});
+    give(&ctx, &mut state, "material-fiber", 3);
+    state.player.max_inventory_size = state.player.inventory.len() as u32;
+    handle_craft(&ctx, &mut state, "recipe-craft-hay");
+    assert_eq!(quantity(&state, "material-fiber"), None);
+    assert_eq!(quantity(&state, "feed-hay"), Some(2));
+}
+
+#[test]
+fn a_recipe_with_several_outputs_grants_all_of_them_or_none() {
+    let (ctx, mut state) = make_m4_engine(|project| {
+        project.recipes.push(RecipeDefinition {
+            id: "recipe-two".to_owned(),
+            name: "Two".to_owned(),
+            inputs: vec![RecipeIngredient { item_id: "material-wood".to_owned(), quantity: 1 }],
+            outputs: vec![
+                RecipeIngredient { item_id: "feed-hay".to_owned(), quantity: 1 },
+                RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1 },
+            ],
+            ..RecipeDefinition::default()
+        });
+    });
+    give(&ctx, &mut state, "material-wood", 2);
+    // Room for one new slot only: the hay fits, the copper bar doesn't.
+    state.player.max_inventory_size = state.player.inventory.len() as u32 + 1;
+    let before = state.clone();
+    assert_eq!(handle_craft(&ctx, &mut state, "recipe-two"), vec![Effect::message("error", "Inventory is full!")]);
+    assert_eq!(state, before);
+    state.player.max_inventory_size += 1;
+    let effects = handle_craft(&ctx, &mut state, "recipe-two");
+    assert_eq!(fixture_project::message_texts(&effects), vec!["Crafted 1x Hay", "Crafted 1x Copper Bar"]);
+}
+
+fn craft_quest(target_item_id: &str, quantity: u32) -> farm_sim::schema::Quest {
+    farm_sim::schema::Quest {
+        id: "quest-craft".to_owned(),
+        name: "Make things".to_owned(),
+        status: "active".to_owned(),
+        objectives: vec![farm_sim::schema::QuestObjective {
+            id: "make".to_owned(),
+            r#type: "craft".to_owned(),
+            target_item_id: Some(target_item_id.to_owned()),
+            target_item_quantity: Some(quantity),
+            ..farm_sim::schema::QuestObjective::default()
+        }],
+        ..farm_sim::schema::Quest::default()
+    }
+}
+
+#[test]
+fn craft_objectives_count_the_items_made_by_hand() {
+    let (ctx, mut state) = make_m4_engine(|project| {
+        project.quests.push(craft_quest("feed-hay", 4));
+        project.player.active_quests.push("quest-craft".to_owned());
+    });
+    give(&ctx, &mut state, "material-fiber", 6);
+    handle_craft(&ctx, &mut state, "recipe-craft-hay");
+    assert!(!state.player.completed_quests.contains(&"quest-craft".to_owned()));
+    let effects = handle_craft(&ctx, &mut state, "recipe-craft-hay");
+    assert!(state.player.completed_quests.contains(&"quest-craft".to_owned()));
+    assert!(effects.iter().any(|effect| matches!(effect, Effect::QuestCompleted { .. })));
+}
+
+#[test]
+fn craft_objectives_count_goods_collected_from_machines() {
+    let (ctx, mut state) = make_m4_engine(|project| {
+        project.quests.push(craft_quest("bar-copper", 1));
+        project.player.active_quests.push("quest-craft".to_owned());
+    });
+    place_machine_at(&mut state, "scene-farm", 1, 1, "machine-furnace");
+    state.world.scenes[0].tiles[1][1].machine.as_mut().expect("machine").output =
+        Some(vec![RecipeIngredient { item_id: "bar-copper".to_owned(), quantity: 1 }]);
+    collect_machine_output(&ctx, &mut state, "scene-farm", 1, 1);
+    assert!(state.player.completed_quests.contains(&"quest-craft".to_owned()));
 }

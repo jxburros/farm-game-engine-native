@@ -23,6 +23,17 @@ pub enum Command {
     UseTool { tool: String },
     #[serde(rename = "interact")]
     Interact,
+    /// `interact` with the player's planting choice: the named seed (else the first seed held
+    /// that grows this season), and a fertilizer only when one is named. Anywhere but open soil
+    /// it is a plain `interact`. Plain `interact` plants the first seed held and uses the first
+    /// fertilizer held (the rule recorded games were played with).
+    #[serde(rename = "interactWith")]
+    InteractWith {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seed_item_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fertilizer_item_id: Option<String>,
+    },
     #[serde(rename = "chooseDialogueOption")]
     ChooseDialogueOption {
         #[serde(with = "crate::units::index")]
@@ -47,6 +58,10 @@ pub enum Command {
         item_id: String,
         #[serde(with = "crate::units::count")]
         quantity: u32,
+        /// The crop quality to sell (one of `crop_qualities`, `normal` included). Absent: any
+        /// quality, lowest first, each unit at its own quality's price.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        quality: Option<String>,
     },
     #[serde(rename = "repairTool")]
     RepairTool { item_id: String },
@@ -56,6 +71,9 @@ pub enum Command {
     PlaceMachine { machine_type_id: String },
     #[serde(rename = "machineLoad")]
     MachineLoad { recipe_id: String },
+    /// Pick the idle machine on the facing tile back up (its item returns to the inventory).
+    #[serde(rename = "pickUpMachine")]
+    PickUpMachine,
     #[serde(rename = "giveGift")]
     GiveGift { item_id: String },
     #[serde(rename = "descendMine")]
@@ -94,6 +112,7 @@ impl Command {
             Self::Move { .. } => "move",
             Self::UseTool { .. } => "useTool",
             Self::Interact => "interact",
+            Self::InteractWith { .. } => "interactWith",
             Self::ChooseDialogueOption { .. } => "chooseDialogueOption",
             Self::CloseDialogue => "closeDialogue",
             Self::Sleep => "sleep",
@@ -105,6 +124,7 @@ impl Command {
             Self::Craft { .. } => "craft",
             Self::PlaceMachine { .. } => "placeMachine",
             Self::MachineLoad { .. } => "machineLoad",
+            Self::PickUpMachine => "pickUpMachine",
             Self::GiveGift { .. } => "giveGift",
             Self::DescendMine { .. } => "descendMine",
             Self::ExitMine => "exitMine",
@@ -147,5 +167,20 @@ mod tests {
             }
         );
         assert_eq!(nested.type_name(), "pluginMutation");
+
+        let plant: Command =
+            serde_json::from_value(json!({"type": "interactWith", "seedItemId": "seed-tomato"})).unwrap();
+        assert_eq!(
+            plant,
+            Command::InteractWith { seed_item_id: Some("seed-tomato".to_owned()), fertilizer_item_id: None }
+        );
+        assert_eq!(serde_json::to_value(&plant).unwrap(), json!({"type": "interactWith", "seedItemId": "seed-tomato"}));
+        let sell: Command =
+            serde_json::from_value(json!({"type": "sellItem", "itemId": "crop-wheat", "quantity": 2})).unwrap();
+        assert_eq!(sell, Command::SellItem { item_id: "crop-wheat".to_owned(), quantity: 2, quality: None });
+        assert_eq!(
+            serde_json::to_value(&sell).unwrap(),
+            json!({"type": "sellItem", "itemId": "crop-wheat", "quantity": 2})
+        );
     }
 }

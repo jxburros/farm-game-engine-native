@@ -11,6 +11,41 @@ module internal ChecksWorld =
     let private sceneTarget (context: Context) (sceneId: string) (x: float) (y: float) =
         if context.Scenes.ContainsKey sceneId then Some(NavigationTarget.Scene(sceneId, int x, int y)) else None
 
+    /// The largest scene side the game accepts (the editor's size limit); larger scenes are cut
+    /// down when a game loads.
+    let maxSceneSize = 256.0
+
+    /// The smallest mine floor side: a wall ring around the entry tile.
+    let minMineFloorSize = 3.0
+
+    /// Above this many tiles a second the player is hard to control.
+    let maxPlayerSpeed = 15.0
+
+    /// The tile at (x, y) of a scene (positions floored), when its grid has it.
+    let tileAt (scene: Scene) (x: float) (y: float) : Tile option =
+        if x < 0.0 || y < 0.0 || x >= scene.Width || y >= scene.Height then None
+        else
+            match List.tryItem (int (floor y)) scene.Tiles with
+            | Some row -> List.tryItem (int (floor x)) row
+            | None -> None
+
+    /// Whether a tile stops the player (the engine's collision): a wall, a placed machine whose
+    /// type blocks (unknown types do), or a standing gathering node whose type blocks.
+    let tileBlocks (project: GameProject) (tile: Tile) : bool =
+        let machine =
+            match tile.Machine with
+            | Some machine ->
+                project.MachineTypes |> List.tryFind (fun t -> t.Id = machine.TypeId) |> Option.forall (fun t -> t.BlocksMovement)
+            | None -> false
+        let node =
+            match tile.Node with
+            | Some node when node.RemainingHealth > 0.0 ->
+                EditScenes.placeableNodeTypes project
+                |> List.tryFindBack (fun t -> t.Id = node.TypeId)
+                |> Option.forall (fun t -> t.BlocksMovement)
+            | _ -> false
+        tile.Collision || machine || node
+
     let private player (context: Context) (sink: Sink) =
         let p = context.Project.Player
         if not (context.Scenes.ContainsKey p.SceneId) then
@@ -20,6 +55,13 @@ module internal ChecksWorld =
             sink.Error("player.startOutOfBounds", "player.x",
                        sprintf "The player starts at (%g,%g), outside \"%s\" (%g×%g)" p.X p.Y scene.Name scene.Width scene.Height,
                        sceneTarget context p.SceneId 0.0 0.0)
+        else
+            match tileAt context.Scenes.[p.SceneId] p.X p.Y with
+            | Some tile when tileBlocks context.Project tile ->
+                sink.Warning("player.startBlocked", "player.x",
+                             sprintf "The player starts on a blocked tile (%g,%g) in \"%s\" and may not be able to move" (floor p.X) (floor p.Y) context.Scenes.[p.SceneId].Name,
+                             sceneTarget context p.SceneId p.X p.Y)
+            | _ -> ()
         let quests (field: string) (ids: string list) =
             ids
             |> List.iteri (fun k id ->
@@ -46,7 +88,61 @@ module internal ChecksWorld =
                 if transition.ToSceneId = scene.Id && transition.ToX = transition.FromX && transition.ToY = transition.FromY then
                     sink.Warning("transition.leadsToItself", path,
                                  sprintf "Transition in \"%s\" at (%g,%g) leads back to the same tile" scene.Name transition.FromX transition.FromY,
-                                 sceneTarget context scene.Id transition.FromX transition.FromY)))
+                                 sceneTarget context scene.Id transition.FromX transition.FromY)
+                match context.Scenes.TryGetValue transition.ToSceneId with
+                | true, target ->
+                    match tileAt target transition.ToX transition.ToY with
+                    | Some tile when tileBlocks context.Project tile ->
+                        sink.Warning("transition.landsBlocked", path + ".toX",
+                                     sprintf "Transition in \"%s\" at (%g,%g) lands on a blocked tile (%g,%g) in \"%s\"; the game moves the player to the nearest open tile" scene.Name transition.FromX transition.FromY transition.ToX transition.ToY target.Name,
+                                     sceneTarget context target.Id transition.ToX transition.ToY)
+                    | _ -> ()
+                | _ -> ()))
+
+    /// Scene sizes and grids. The game fixes a grid that doesn't match its scene's size when it
+    /// loads (cutting it, or padding it with grass) and cuts scenes larger than 256 tiles a side;
+    /// the editor never makes either, so they come from a hand edit or an import. Packs' scenes
+    /// are checked the same way.
+    let private grids (context: Context) (sink: Sink) =
+        let validSize (value: float) = value > 0.0 && value = floor value
+        let check (path: string) (scene: Scene) (target: NavigationTarget option) =
+            if scene.Width > maxSceneSize || scene.Height > maxSceneSize then
+                sink.Error("scene.tooLarge", path + ".width",
+                           sprintf "Scene \"%s\" is %g×%g tiles; scenes can be at most %g×%g" scene.Name scene.Width scene.Height maxSceneSize maxSceneSize,
+                           target)
+            if validSize scene.Width && validSize scene.Height then
+                if float scene.Tiles.Length <> scene.Height then
+                    sink.Error("scene.gridRows", path + ".tiles",
+                               sprintf "Scene \"%s\" is %g tiles high but its map has %d rows" scene.Name scene.Height scene.Tiles.Length,
+                               target)
+                match scene.Tiles |> List.tryFindIndex (fun row -> float row.Length <> scene.Width) with
+                | Some y ->
+                    sink.Error("scene.gridWidth", sprintf "%s.tiles[%d]" path y,
+                               sprintf "Scene \"%s\" is %g tiles wide but row %d of its map has %d tiles" scene.Name scene.Width y (List.item y scene.Tiles).Length,
+                               target)
+                | None -> ()
+        let seen = HashSet<string>()
+        context.Project.Scenes
+        |> List.iteri (fun s scene ->
+            let path = sprintf "scenes[%d]" s
+            let target = sceneTarget context scene.Id 0.0 0.0
+            if scene.Id.Length > 0 && not (seen.Add scene.Id) then
+                sink.Error("duplicate.scene", path + ".id", sprintf "Duplicate scene id \"%s\"" scene.Id, target)
+            check path scene target)
+        context.Project.ContentPacks
+        |> List.iteri (fun i install ->
+            if install.Enabled then
+                install.Pack.Content.Scenes
+                |> List.iteri (fun s scene ->
+                    check (sprintf "contentPacks[%d].pack.content.scenes[%d]" i s) scene (Some(NavigationTarget.Pack install.Pack.Manifest.Id))))
+
+    /// Movement settings the game accepts but players can't handle.
+    let private movement (context: Context) (sink: Sink) =
+        let speed = context.Project.Settings.Movement.PlayerSpeed
+        if speed > maxPlayerSpeed then
+            sink.Warning("settings.playerSpeedFast", "settings.movement.playerSpeed",
+                         sprintf "The player walks %g tiles a second; above %g the game is hard to control" speed maxPlayerSpeed,
+                         Some NavigationTarget.Settings)
 
     let private npcs (context: Context) (sink: Sink) =
         context.Project.Npcs
@@ -110,7 +206,21 @@ module internal ChecksWorld =
                     sink.Error("dialogue.optionUnknownItem", opath + ".requiresItem", sprintf "Dialogue \"%s\" requires missing item \"%s\"" dialogue.Id (defaultArg option.RequiresItem ""), target)
                 // validate-extensibility.ts: a bound action must exist.
                 if dangling context.ActionIds option.ActionId then
-                    sink.Error("dialogue.optionUnknownAction", opath + ".actionId", sprintf "Dialogue \"%s\" performs missing action \"%s\"" dialogue.Id (defaultArg option.ActionId ""), target))
+                    sink.Error("dialogue.optionUnknownAction", opath + ".actionId", sprintf "Dialogue \"%s\" performs missing action \"%s\"" dialogue.Id (defaultArg option.ActionId ""), target)
+                // A reward (money or an item) with nothing stopping a repeat pays out every time
+                // the player talks again. Once-only, a hidden-if flag or a price bound it.
+                let pays = option.GiveMoney |> Option.exists (fun money -> money > 0.0) || Context.hasValue option.GiveItem
+                let guarded =
+                    option.Once = Some true
+                    || Context.hasValue option.HiddenIfFlag
+                    || option.TakeMoney |> Option.exists (fun money -> money > 0.0)
+                if pays && not guarded then
+                    sink.Warning(
+                        "dialogue.repeatableReward",
+                        opath + ".once",
+                        sprintf "Dialogue \"%s\" option \"%s\" gives its reward every time it is chosen; make it once-only or hide it behind a flag" dialogue.Id option.Text,
+                        target
+                    ))
         let checkText (path: string) (owner: string) (dialogue: Dialogue) (target: NavigationTarget option) =
             checkOptions path dialogue target
             if System.String.IsNullOrWhiteSpace dialogue.Text then
@@ -148,7 +258,11 @@ module internal ChecksWorld =
                     sink.Warning("dialogue.unreachable", path, sprintf "Dialogue \"%s\" of %s can never be reached (no option or event leads to it)" dialogue.Id npc.Name, target)
                 checkText path npc.Name dialogue target))
         // The flat list must mirror the NPC lists (NPCEditor keeps both).
-        let onNpcs = HashSet<string>(project.Npcs |> Seq.collect (fun n -> n.Dialogue |> Seq.map (fun d -> d.Id)))
+        let npcCopies = Dictionary<string, Npc * Dialogue>()
+        for npc in project.Npcs do
+            for dialogue in npc.Dialogue do
+                if not (npcCopies.ContainsKey dialogue.Id) then npcCopies.[dialogue.Id] <- (npc, dialogue)
+        let onNpcs = HashSet<string>(npcCopies.Keys)
         project.Dialogues
         |> Seq.iteri (fun d dialogue ->
             let path = sprintf "dialogues[%d]" d
@@ -156,6 +270,12 @@ module internal ChecksWorld =
                 sink.Error("dialogue.npcMissing", path + ".npcId", sprintf "Dialogue \"%s\" belongs to missing NPC \"%s\"" dialogue.Id dialogue.NpcId, None)
             elif not (onNpcs.Contains dialogue.Id) then
                 sink.Warning("dialogue.notOnNpc", path, sprintf "Dialogue \"%s\" is in the project list but not on NPC \"%s\"" dialogue.Id dialogue.NpcId, Some(NavigationTarget.Npc dialogue.NpcId))
+            match npcCopies.TryGetValue dialogue.Id with
+            | true, (npc, copy) when copy <> dialogue ->
+                // Loading a project reconciles the copies; one that differs came from an edit
+                // outside the editor. The game plays the NPC's copy.
+                sink.Warning("dialogue.copyMismatch", path, sprintf "Dialogue \"%s\" differs from the copy on %s, which is the one the game plays" dialogue.Id npc.Name, Some(NavigationTarget.Npc npc.Id))
+            | _ -> ()
             // Dialogues on an NPC were checked above; the flat list only adds strays.
             if not (onNpcs.Contains dialogue.Id) then checkOptions path dialogue None)
         let inProject = HashSet<string>(project.Dialogues |> Seq.map (fun d -> d.Id))
@@ -213,6 +333,12 @@ module internal ChecksWorld =
                     sink.Error("mine.entranceOutOfBounds", "mine.entranceX", sprintf "The mine entrance (%g,%g) is outside its scene" x y, sceneTarget context sceneId 0.0 0.0)
             if mine.Bands.IsEmpty then
                 sink.Warning("mine.noBands", "mine.bands", "The mine is enabled but has no depth bands, so floors have no rocks", settings)
+            // The game clamps the floor size into this range (a huge floor would exhaust memory).
+            for field, value in [ "floorWidth", mine.FloorWidth; "floorHeight", mine.FloorHeight ] do
+                if value < minMineFloorSize || value > maxSceneSize then
+                    sink.Error("mine.floorSize", "mine." + field,
+                               sprintf "Mine floors must be %g to %g tiles a side; %s is %g" minMineFloorSize maxSceneSize field value,
+                               settings)
         mine.Bands
         |> Seq.iteri (fun b band ->
             let path = sprintf "mine.bands[%d]" b
@@ -245,6 +371,32 @@ module internal ChecksWorld =
                     sink.Error("calendar.festivalDayOutOfRange", path + ".day", sprintf "Festival \"%s\" is on day %g but %s has %g days" festival.Name festival.Day season.Name season.Days, settings))
         if context.SeasonIds.Count > 0 && not (context.SeasonIds.Contains project.CurrentSeason) then
             sink.Warning("project.currentSeasonUnknown", "currentSeason", sprintf "The starting season \"%s\" is not in the calendar" project.CurrentSeason, settings)
+        else
+            // The clock keeps its own day of season (#23): say which day a start that does not
+            // line up with the calendar becomes.
+            match calendar.Seasons |> List.tryFind (fun s -> s.Id = project.CurrentSeason) with
+            | Some season when season.Days > 0.0 ->
+                let natural, naturalDay = SettingsSchema.naturalDate calendar project.CurrentDay
+                match project.CurrentDayOfSeason with
+                | Some day when day > season.Days ->
+                    sink.Warning(
+                        "project.currentDayOfSeasonOutOfRange",
+                        "currentDayOfSeason",
+                        sprintf "The game starts on day %g of %s, which has %g days; it starts on day %g" day season.Name season.Days season.Days,
+                        settings
+                    )
+                | None when natural.Id <> season.Id ->
+                    let day = SettingsSchema.clockDayOfSeason calendar season.Id project.CurrentDay None
+                    sink.Warning(
+                        "project.currentDayOutsideSeason",
+                        "currentDay",
+                        sprintf
+                            "Day %g of the calendar is day %g of %s, not in the starting season %s; the game starts on day %g of %s"
+                            project.CurrentDay naturalDay natural.Name season.Name day season.Name,
+                        settings
+                    )
+                | _ -> ()
+            | _ -> ()
         let weatherSeen = HashSet<string>()
         project.Weather.Types
         |> Seq.iteri (fun i weather ->
@@ -252,15 +404,17 @@ module internal ChecksWorld =
                 sink.Error("weather.duplicateType", sprintf "weather.types[%d].id" i, sprintf "Duplicate weather id \"%s\"" weather.Id, settings))
         for season, entries in project.Weather.Table do
             if not (context.SeasonIds.Contains season) then
-                sink.Warning("weather.tableUnknownSeason", sprintf "weather.table.%s" season, sprintf "The weather table has a row for unknown season \"%s\"" season, settings)
+                sink.Warning("weather.tableUnknownSeason", ProblemPath.memberPath "weather.table" season, sprintf "The weather table has a row for unknown season \"%s\"" season, settings)
             entries
             |> Seq.iteri (fun k entry ->
                 if not (context.WeatherIds.Contains entry.WeatherId) then
-                    sink.Error("weather.tableUnknownType", sprintf "weather.table.%s[%d].weatherId" season k, sprintf "The %s weather table rolls missing weather \"%s\"" season entry.WeatherId, settings))
+                    sink.Error("weather.tableUnknownType", sprintf "%s[%d].weatherId" (ProblemPath.memberPath "weather.table" season) k, sprintf "The %s weather table rolls missing weather \"%s\"" season entry.WeatherId, settings))
 
     let run (context: Context) (sink: Sink) =
         player context sink
+        grids context sink
         transitions context sink
+        movement context sink
         npcs context sink
         dialogues context sink
         placed context sink

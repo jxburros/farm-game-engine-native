@@ -11,6 +11,37 @@ type InventoryAddResult =
     | InventoryFull
     | UnknownItem
 
+/// The two copies of every dialogue: each NPC carries its own (`npc.Dialogue`, the copy the game
+/// plays) and `project.Dialogues` lists them all again (the web keeps both; the Dialogue editor
+/// lists that one). The edits keep them equal, but a project made elsewhere can carry copies that
+/// differ, and saving the stale copy would overwrite the one that plays (#43).
+module DialogueCopies =
+    /// The copy the game plays for each dialogue id an NPC carries (the first NPC's).
+    let private onNpcs (project: GameProject) : Dictionary<string, Dialogue> =
+        let byId = Dictionary<string, Dialogue>()
+        for npc in project.Npcs do
+            for dialogue in npc.Dialogue do
+                if not (byId.ContainsKey dialogue.Id) then byId.[dialogue.Id] <- dialogue
+        byId
+
+    /// `project.Dialogues` with each entry an NPC also carries as the NPC's copy.
+    let shown (project: GameProject) : Dialogue list =
+        let played = onNpcs project
+        project.Dialogues
+        |> List.map (fun dialogue ->
+            match played.TryGetValue dialogue.Id with
+            | true, copy -> copy
+            | _ -> dialogue)
+
+    /// The NPC copies win: `project.Dialogues` takes each NPC's copy in place of its own and
+    /// gains the NPC dialogues it lacks (at the end). Entries no NPC carries stay; Problems reports
+    /// them. The same instance when the copies already agree. Runs when a project loads.
+    let reconcile (project: GameProject) : GameProject =
+        let listed = HashSet<string>(project.Dialogues |> List.map (fun d -> d.Id))
+        let missing = project.Npcs |> List.collect (fun npc -> npc.Dialogue) |> List.filter (fun d -> listed.Add d.Id)
+        let next = shown project @ missing
+        if next = project.Dialogues then project else { project with Dialogues = next }
+
 /// The content edits (NPCEditor, ItemEditor, CropEditor, QuestEditor, EventsEditor, ShopEditor,
 /// RecipeEditor, NodeTypeEditor, WildlifeEditor, ActionsEditor, ProjectSettingsEditor weather and
 /// mine sections, InterfaceEditor). Each function returns the same instance when nothing changed.
@@ -48,11 +79,31 @@ module internal EditContent =
         let next = kept @ appended
         if next = project.Dialogues then project else { project with Dialogues = next }
 
+    /// Reward options default to once-only: an option that gains a reward (money or an item)
+    /// with nothing deciding how often it pays (`Once` unset, no hidden-if flag, no price)
+    /// becomes `Once = Some true`. Setting `Once` to false keeps it repeatable.
+    let rewardsOnceByDefault (previous: Dialogue option) (dialogue: Dialogue) : Dialogue =
+        let pays (option: DialogueOption) =
+            option.GiveMoney |> Option.exists (fun money -> money > 0.0) || option.GiveItem |> Option.exists (fun item -> item.Length > 0)
+        let undecided (option: DialogueOption) =
+            option.Once.IsNone && option.HiddenIfFlag.IsNone && not (option.TakeMoney |> Option.exists (fun money -> money > 0.0))
+        let before = previous |> Option.map (fun d -> d.Options) |> Option.defaultValue []
+        let options =
+            dialogue.Options
+            |> List.mapi (fun k option ->
+                let paidBefore = before |> List.tryItem k |> Option.exists pays
+                if pays option && undecided option && not paidBefore then { option with Once = Some true } else option)
+        if options = dialogue.Options then dialogue else { dialogue with Options = options }
+
     let private npcs (project: GameProject) = project.Npcs
     let private withNpcs (project: GameProject) list = { project with Npcs = list }
 
     /// NPCEditor `createNPC` / `updateNPC` / MovementScheduleSection `patch`.
     let upsertNpc (npc: Npc) (project: GameProject) =
+        let previous = project.Npcs |> List.tryFind (fun n -> n.Id = npc.Id) |> Option.map (fun n -> n.Dialogue) |> Option.defaultValue []
+        let dialogue =
+            npc.Dialogue |> List.map (fun d -> rewardsOnceByDefault (previous |> List.tryFind (fun p -> p.Id = d.Id)) d)
+        let npc = if dialogue = npc.Dialogue then npc else { npc with Dialogue = dialogue }
         upsert npcs withNpcs (fun (n: Npc) -> n.Id) npc project |> syncDialogues npc
 
     /// NPCEditor `deleteNPC` (NPC + its dialogues) plus every reference to it.
@@ -72,6 +123,9 @@ module internal EditContent =
 
     /// NPCDetailEditor `createDialogue` / DialogueEditor `save`: in `project.Dialogues` and on the owning NPC.
     let upsertDialogue (dialogue: Dialogue) (project: GameProject) =
+        let previous =
+            project.Dialogues @ (project.Npcs |> List.collect (fun n -> n.Dialogue)) |> List.tryFind (fun d -> d.Id = dialogue.Id)
+        let dialogue = rewardsOnceByDefault previous dialogue
         let project = upsert (fun p -> p.Dialogues) (fun p l -> { p with Dialogues = l }) (fun (d: Dialogue) -> d.Id) dialogue project
         let onNpc (n: Npc) =
             if n.Id <> dialogue.NpcId then
@@ -108,17 +162,24 @@ module internal EditContent =
     let private items (project: GameProject) = project.Items
     let private withItems (project: GameProject) list = { project with Items = list }
 
-    /// ItemEditor create/update. Dropped copies on tiles and inventory slots follow the definition.
+    /// ItemEditor create/update. Dropped copies on tiles and inventory slots follow the
+    /// definition, keeping their instance data (a tool's durability, clamped to the new maximum).
     let upsertItem (item: Item) (project: GameProject) =
         let project = upsert items withItems (fun (i: Item) -> i.Id) item project
         let project =
             Proj.mapScenes (Proj.mapTiles (fun tile ->
                 match tile.Item with
-                | Some placed when placed.Id = item.Id && placed <> item -> { tile with Item = Some item }
+                | Some placed when placed.Id = item.Id ->
+                    let refreshed = InventoryRules.refresh placed item
+                    if refreshed = placed then tile else { tile with Item = Some refreshed }
                 | _ -> tile)) project
         let slots =
             Lists.mapChanged
-                (fun (slot: InventorySlot) -> if slot.Item.Id = item.Id && slot.Item <> item then { slot with Item = item } else slot)
+                (fun (slot: InventorySlot) ->
+                    if slot.Item.Id <> item.Id then slot
+                    else
+                        let refreshed = InventoryRules.refresh slot.Item item
+                        if refreshed = slot.Item then slot else { slot with Item = refreshed })
                 project.Player.Inventory
         match slots with
         | Some inventory -> { project with Player = { project.Player with Inventory = inventory } }
@@ -129,22 +190,25 @@ module internal EditContent =
     let removeItem (itemId: string) (project: GameProject) =
         remove items withItems (fun (i: Item) -> i.Id) Cleanup.dropItem itemId project
 
-    /// ItemEditor `handleAddToInventory`: stack when stackable and under the max, else a new slot
-    /// when there is room; otherwise nothing happens. Also says which of its toasts applies.
+    /// ItemEditor `handleAddToInventory`: stack when stackable and under the max (a `maxStack` of
+    /// 0 is no cap, as in the engine), else a new slot when there is room; otherwise nothing
+    /// happens. Also says which of its toasts applies.
     let inventoryAdd (itemId: string) (project: GameProject) : InventoryAddResult * GameProject =
         match project.Items |> List.tryFind (fun i -> i.Id = itemId) with
         | None -> InventoryAddResult.UnknownItem, project
         | Some item ->
             let inventory = project.Player.Inventory
             let next =
-                match List.tryFindIndex (fun (slot: InventorySlot) -> slot.Item.Id = itemId) inventory with
-                | Some index when item.Stackable ->
+                let held (slot: InventorySlot) = slot.Item.Id = itemId && slot.Quality.IsNone
+                let room (slot: InventorySlot) = held slot && slot.Quantity < InventoryRules.stackCap item
+                match List.tryFindIndex room inventory, List.exists held inventory with
+                | Some index, _ when item.Stackable ->
                     let slot = inventory.[index]
-                    if slot.Quantity < item.MaxStack then Ok(List.updateAt index { slot with Quantity = slot.Quantity + 1.0 } inventory)
-                    else Error InventoryAddResult.StackFull
+                    Ok(List.updateAt index { slot with Quantity = slot.Quantity + 1.0 } inventory)
+                | None, true when item.Stackable -> Error InventoryAddResult.StackFull
                 | _ ->
                     if float inventory.Length < project.Player.MaxInventorySize then
-                        Ok(Lists.append ({ Item = item; Quantity = 1.0 } : InventorySlot) inventory)
+                        Ok(Lists.append ({ Item = item; Quantity = 1.0; Quality = None } : InventorySlot) inventory)
                     else Error InventoryAddResult.InventoryFull
             match next with
             | Ok slots -> InventoryAddResult.Added, { project with Player = { project.Player with Inventory = slots } }

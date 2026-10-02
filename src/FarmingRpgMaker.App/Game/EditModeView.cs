@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -5,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using FarmEngine.Authoring;
 using FarmEngine.Authoring.Net;
@@ -18,6 +20,9 @@ namespace FarmingRpgMaker.App.Game;
 /// </summary>
 public sealed partial class EditModeView : UserControl
 {
+    /// <summary>The map tools panel's width until the creator drags its splitter.</summary>
+    public const double DefaultPanelWidth = 300;
+
     /// <summary>Edit-mode tile size (web GameView: 28 outside play).</summary>
     public const double TileSize = 28;
 
@@ -33,7 +38,7 @@ public sealed partial class EditModeView : UserControl
         ["floor"] = "#b5a48d",
     };
 
-    public const string PortingNotice = "Tip: click the map (or Tab to it), then use the arrow keys and Enter or Space to edit from the keyboard.";
+    public const string PortingNotice = "Tip: click the map (or Tab to it), then use the arrow keys and Enter or Space to edit from the keyboard. Letter keys pick tools (B brush, R rectangle, G fill, E erase…).";
 
     private readonly ProjectWorkspace _workspace;
     private readonly MapCanvas _canvas = new() { Name = "EditCanvas", Cursor = new Cursor(StandardCursorType.Hand) };
@@ -60,9 +65,24 @@ public sealed partial class EditModeView : UserControl
     private readonly WrapPanel _palette = new() { Name = "TilePalette" };
     private readonly Button _undo;
     private readonly Button _redo;
+    /// <summary>The map tools panel; it shows on the Map tab only.</summary>
+    private readonly Grid _sidePanel;
+    /// <summary>The Edit Mode tabs, in <see cref="EditorTab"/> order.</summary>
+    private readonly TabControl _tabs;
+    private readonly ContentEditorView _contentEditor;
+    private readonly ProblemsView _problems;
+    private readonly SettingsEditorView _settingsEditor;
+    private readonly ModsEditorView _modsEditor;
+    private readonly ArtEditorView _artEditor;
+    private readonly WorkshopView _workshop;
+    private readonly InterfaceEditorView _interfaceEditor;
     private GameProject? _projectForCanvas;
+    /// <summary>What the project info panel shows, to rebuild it only when that changed (not per painted tile).</summary>
+    private string? _infoKey;
     private string? _sceneId;
     private string? _brush;
+    /// <summary>The brush's art (null: none). With <see cref="_brush"/> the editor owns the brush, not the history.</summary>
+    private VisualRef? _brushVisual;
     private string? _strokeId;
     private int _strokeCount;
     private (int X, int Y)? _lastPainted;
@@ -83,6 +103,7 @@ public sealed partial class EditModeView : UserControl
         // scroll it to its top-left corner; keyboard moves bring the cursor into view instead.
         var stage = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
         stage.Children.Add(_canvas);
+        stage.Children.Add(_markerLayer);
         stage.Children.Add(_hover);
         stage.Children.Add(_cursor);
         _scroller = new ScrollViewer
@@ -93,6 +114,67 @@ public sealed partial class EditModeView : UserControl
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             BringIntoViewOnFocusChange = false,
         };
+        var center = BuildMapCenter();
+
+        // Side panel: map tools, scene and transition controls, history.
+        _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
+        _undo.Name = "UndoButton";
+        AutomationProperties.SetName(_undo, "Undo");
+        ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
+        _redo = Ui.Button(Ui.IconLabel("IconRedo", "Redo"), () => _workspace.Redo(), "tool");
+        _redo.Name = "RedoButton";
+        AutomationProperties.SetName(_redo, "Redo");
+        ToolTip.SetTip(_redo, "Redo (Ctrl+Y)");
+        _sidePanel = BuildSidePanel();
+
+        // The tabs, in EditorTab order.
+        _tabs = new TabControl { Name = "EditorTabs" };
+        _contentEditor = new ContentEditorView(workspace, PickOnMap);
+        _settingsEditor = new SettingsEditorView(workspace, PickOnMap);
+        _modsEditor = new ModsEditorView(workspace);
+        _artEditor = new ArtEditorView(workspace, (type, visual) =>
+        {
+            UseBrush(type, visual);
+            SelectedTab = EditorTab.Map;
+        });
+        _workshop = new WorkshopView(workspace, () => _sceneId, PickOnMap, OpenWorkshopLink);
+        _interfaceEditor = new InterfaceEditorView(workspace);
+        _problems = new ProblemsView(workspace, OpenProblem);
+        AddTab(EditorTab.Map, "Map", center);
+        AddTab(EditorTab.Content, "Content", _contentEditor);
+        AddTab(EditorTab.Problems, "Problems", _problems);
+        AddTab(EditorTab.Settings, "Settings", _settingsEditor);
+        AddTab(EditorTab.Mods, "Mods", _modsEditor);
+        AddTab(EditorTab.Art, "Art", _artEditor);
+        AddTab(EditorTab.Workshop, "Workshop", _workshop);
+        AddTab(EditorTab.Interface, "Interface", _interfaceEditor);
+        _tabs.SelectionChanged += OnTabChanged;
+        SelectedTab = EditorTab.Map;
+        var dock = new DockPanel();
+        dock.Children.Add(_sidePanel);
+        dock.Children.Add(_tabs);
+        var root = new Grid();
+        root.Children.Add(dock);
+        root.Children.Add(BuildQuickOpen());
+        Content = root;
+
+        _workspace.ProjectChanged += OnProjectChanged;
+        _workspace.Leaving += OnLeaving;
+        try
+        {
+            Refresh();
+        }
+        catch
+        {
+            // A project this editor can't show: the half-built editor must not stay subscribed.
+            Retire();
+            throw;
+        }
+    }
+
+    /// <summary>The Map tab's page: the toolbar (scene, markers, zoom, hover readout), the framed map and the cursor status line.</summary>
+    private DockPanel BuildMapCenter()
+    {
         var frame = new Border { Child = _scroller, Background = new SolidColorBrush(Color.Parse("#4DE4DDCF")) }.WithClasses("game-frame");
         frame.Background = new SolidColorBrush(Color.Parse("#66E4DDCF"));
 
@@ -144,7 +226,9 @@ public sealed partial class EditModeView : UserControl
         fit.Name = "ZoomFitButton";
         AutomationProperties.SetName(fit, "Fit map to view");
         var toolbarLeft = Ui.HStack(8, Ui.Icon("IconMap", 18), Ui.Text("Scene", "hud-label"), _sceneSelector);
-        var toolbarRight = Ui.HStack(6, zoomOut, _zoomText, zoomIn, fit);
+        _showMarkers.IsCheckedChanged += (_, _) => RefreshMarkers(force: true);
+        ToolTip.SetTip(_showMarkers, "Show doors, arrivals, event tiles, the mine entrance and the player start on the map");
+        var toolbarRight = Ui.HStack(6, _showMarkers, zoomOut, _zoomText, zoomIn, fit);
         var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 0, 0, 10) };
         toolbar.Children.Add(toolbarLeft);
         var hoverBox = new Border { Child = _hoverInfo, Margin = new Thickness(16, 0) };
@@ -160,16 +244,15 @@ public sealed partial class EditModeView : UserControl
         DockPanel.SetDock(_cursorStatus, Dock.Bottom);
         center.Children.Add(_cursorStatus);
         center.Children.Add(frame);
+        return center;
+    }
 
-        // Side panel: map tools, scene and transition controls, history.
-        _undo = Ui.Button(Ui.IconLabel("IconUndo", "Undo"), () => _workspace.Undo(), "tool");
-        _undo.Name = "UndoButton";
-        AutomationProperties.SetName(_undo, "Undo");
-        ToolTip.SetTip(_undo, "Undo (Ctrl+Z)");
-        _redo = Ui.Button(Ui.IconLabel("IconRedo", "Redo"), () => _workspace.Redo(), "tool");
-        _redo.Name = "RedoButton";
-        AutomationProperties.SetName(_redo, "Redo");
-        ToolTip.SetTip(_redo, "Redo (Ctrl+Y)");
+    /// <summary>
+    /// The map tools panel left of the tabs (shown on the Map tab only): tip, project info, tile
+    /// brushes, the tool panels and undo/redo, in a column the creator can resize.
+    /// </summary>
+    private Grid BuildSidePanel()
+    {
         BuildPalette();
 
         var notice = Ui.Wrapped(PortingNotice, "small");
@@ -184,145 +267,110 @@ public sealed partial class EditModeView : UserControl
         side.Children.Add(_palette);
         BuildEditorPanels(side);
         side.Children.Add(Ui.HStack(8, _undo, _redo));
-        var sidePanel = new Border
+        var sideBorder = new Border
         {
             Name = "ProjectInfoPanel",
-            Width = 300,
-            Margin = new Thickness(0, 0, 16, 0),
             Child = new ScrollViewer { Content = side, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
         }.WithClasses("side-panel");
-        DockPanel.SetDock(sidePanel, Dock.Left);
-
-        var tabs = new TabControl { Name = "EditorTabs" };
-        var contentEditor = new ContentEditorView(workspace);
-        var settingsEditor = new SettingsEditorView(workspace);
-        var mods = new ModsEditorView(workspace);
-        var art = new ArtEditorView(workspace, (type, visual) =>
+        // The tool panel is as wide as the creator dragged it last (#56).
+        var sideWidth = Math.Clamp(_workspace.Settings.Load().MapPanelWidth ?? DefaultPanelWidth, 220, 640);
+        var sidePanel = new Grid { Name = "MapSidePanel", Margin = new Thickness(0, 0, 10, 0) };
+        sidePanel.ColumnDefinitions.Add(new ColumnDefinition(sideWidth, GridUnitType.Pixel) { MinWidth = 220, MaxWidth = 640 });
+        sidePanel.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        sidePanel.Children.Add(sideBorder);
+        var sideSplitter = new GridSplitter { Name = "MapPanelSplitter", Width = 6, ResizeDirection = GridResizeDirection.Columns, Background = Brushes.Transparent };
+        AutomationProperties.SetName(sideSplitter, "Resize the map tools panel");
+        sideSplitter.DragCompleted += (_, _) =>
         {
-            UseBrush(type, visual);
-            tabs.SelectedIndex = 0;
-        });
-        var workshop = new WorkshopView(workspace, tab =>
-        {
-            // The web editor's tab keys: art, the map and the Problems panel have their own tabs.
-            var editorTab = tab switch
-            {
-                "scenes" => 0,
-                "problems" => 2,
-                "assets" => 5,
-                _ => -1,
-            };
-            if (editorTab >= 0)
-            {
-                tabs.SelectedIndex = editorTab;
-                return;
-            }
-
-            var category = tab switch
-            {
-                "npcs" => "NPCs",
-                "actions" => "Actions",
-                "events" => "Events",
-                "nodes" => "Node types",
-                "craft" => "Recipes",
-                "crops" => "Crops",
-                "wildlife" => "Animal species",
-                "items" => "Items",
-                "quests" => "Quests",
-                _ => null,
-            };
-            if (category is not null)
-            {
-                tabs.SelectedIndex = 1;
-                contentEditor.SelectCategory(category);
-            }
-        });
-        var interfaceEditor = new InterfaceEditorView(workspace);
-        var problems = new ProblemsView(workspace, problem =>
-        {
-            if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
-            {
-                tabs.SelectedIndex = 0;
-                SelectScene(sceneId);
-                return;
-            }
-
-            if (problem.TargetKind == "settings")
-            {
-                tabs.SelectedIndex = 3;
-                return;
-            }
-            if (problem.TargetKind == "interface")
-            {
-                tabs.SelectedIndex = 7;
-                return;
-            }
-            if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
-            {
-                tabs.SelectedIndex = 4;
-                mods.SelectPack(packId);
-                return;
-            }
-            if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
-            {
-                tabs.SelectedIndex = 5;
-                art.SelectAsset(assetId);
-                return;
-            }
-
-            var category = problem.TargetKind switch
-            {
-                "npc" => "NPCs",
-                "item" => "Items",
-                "crop" => "Crops",
-                "quest" => "Quests",
-                "event" => "Events",
-                "shop" => "Shops",
-                "recipe" => "Recipes",
-                "nodeType" => "Node types",
-                "machineType" => "Machine types",
-                "animalSpecies" => "Animal species",
-                "fishTable" => "Fish tables",
-                "action" => "Actions",
-                "minigame" => "Minigames",
-                _ => null,
-            };
-            if (category is not null && problem.TargetId is { } id)
-            {
-                tabs.SelectedIndex = 1;
-                contentEditor.SelectEntry(category, id);
-            }
-        });
-        tabs.Items.Add(new TabItem { Header = "Map", Content = center });
-        tabs.Items.Add(new TabItem { Header = "Content", Content = contentEditor });
-        tabs.Items.Add(new TabItem { Header = "Problems", Content = problems });
-        tabs.Items.Add(new TabItem { Header = "Settings", Content = settingsEditor });
-        tabs.Items.Add(new TabItem { Header = "Mods", Content = mods });
-        tabs.Items.Add(new TabItem { Header = "Art", Content = art });
-        tabs.Items.Add(new TabItem { Header = "Workshop", Content = workshop });
-        tabs.Items.Add(new TabItem { Header = "Interface", Content = interfaceEditor });
-        tabs.SelectionChanged += (_, args) =>
-        {
-            if (!ReferenceEquals(args.Source, tabs)) return;
-            sidePanel.IsVisible = tabs.SelectedIndex == 0;
-            if (tabs.SelectedIndex == 2) problems.Refresh();
-            if (tabs.SelectedIndex == 1) contentEditor.Refresh();
-            if (tabs.SelectedIndex == 3) settingsEditor.Refresh();
-            if (tabs.SelectedIndex == 4) mods.Refresh();
-            if (tabs.SelectedIndex == 5) art.Refresh();
-            if (tabs.SelectedIndex == 6) workshop.Refresh();
-            if (tabs.SelectedIndex == 7) interfaceEditor.Refresh();
+            var width = sidePanel.ColumnDefinitions[0].ActualWidth;
+            if (width > 0) _workspace.Settings.TryUpdate(settings => settings with { MapPanelWidth = Math.Round(width) });
         };
-        tabs.SelectedIndex = 0;
-        var root = new DockPanel();
-        root.Children.Add(sidePanel);
-        root.Children.Add(tabs);
-        Content = root;
-
-        _workspace.ProjectChanged += OnProjectChanged;
-        Refresh();
+        Grid.SetColumn(sideSplitter, 1);
+        sidePanel.Children.Add(sideSplitter);
+        DockPanel.SetDock(sidePanel, Dock.Left);
+        return sidePanel;
     }
 
+    // ---- Tabs ----
+
+    /// <summary>The Edit Mode tab on show.</summary>
+    public EditorTab SelectedTab
+    {
+        get => (EditorTab)_tabs.SelectedIndex;
+        set => _tabs.SelectedIndex = (int)value;
+    }
+
+    private void AddTab(EditorTab tab, string header, Control content)
+    {
+        Debug.Assert(_tabs.ItemCount == (int)tab, $"The {tab} tab must be added in EditorTab order.");
+        _tabs.Items.Add(new TabItem { Header = header, Content = content });
+    }
+
+    /// <summary>The map tools show on the Map tab only; the other tabs catch up with the project when opened.</summary>
+    private void OnTabChanged(object? sender, SelectionChangedEventArgs args)
+    {
+        if (!ReferenceEquals(args.Source, _tabs)) return;
+        var tab = SelectedTab;
+        _sidePanel.IsVisible = tab == EditorTab.Map;
+        switch (tab)
+        {
+            case EditorTab.Content: _contentEditor.Refresh(); break;
+            case EditorTab.Problems: _problems.Refresh(); break;
+            case EditorTab.Settings: _settingsEditor.Refresh(); break;
+            case EditorTab.Mods: _modsEditor.Refresh(); break;
+            case EditorTab.Art: _artEditor.Refresh(); break;
+            case EditorTab.Workshop: _workshop.Refresh(); break;
+            case EditorTab.Interface: _interfaceEditor.Refresh(); break;
+        }
+    }
+
+    /// <summary>A Workshop "Build your game" shortcut (a web editor tab key).</summary>
+    private void OpenWorkshopLink(string tabKey)
+    {
+        if (EditorNavigation.WorkshopTarget(tabKey) is not { } target) return;
+        SelectedTab = target.Tab;
+        if (target.Category is { } category) _contentEditor.SelectCategory(category);
+    }
+
+    /// <summary>A Problems row: opens what the problem is about.</summary>
+    private void OpenProblem(Problem problem)
+    {
+        if (problem.TargetKind == "scene" && problem.TargetId is { } sceneId)
+        {
+            SelectedTab = EditorTab.Map;
+            SelectScene(sceneId);
+            return;
+        }
+
+        if (problem.TargetKind == "settings")
+        {
+            SelectedTab = EditorTab.Settings;
+            return;
+        }
+        if (problem.TargetKind == "interface")
+        {
+            SelectedTab = EditorTab.Interface;
+            return;
+        }
+        if (problem.TargetKind == "pack" && problem.TargetId is { } packId)
+        {
+            SelectedTab = EditorTab.Mods;
+            _modsEditor.SelectPack(packId);
+            return;
+        }
+        if (problem.TargetKind == "asset" && problem.TargetId is { } assetId)
+        {
+            SelectedTab = EditorTab.Art;
+            _artEditor.SelectAsset(assetId);
+            return;
+        }
+
+        if (EditorNavigation.ContentCategory(problem.TargetKind) is { } category && problem.TargetId is { } id)
+        {
+            SelectedTab = EditorTab.Content;
+            _contentEditor.SelectEntry(category, id);
+        }
+    }
     /// <summary>The scene shown (defaults to the player's scene).</summary>
     public string? SceneId => _sceneId;
 
@@ -340,7 +388,9 @@ public sealed partial class EditModeView : UserControl
     private void SetBrush(string? value, VisualRef? visual)
     {
         _brush = value;
-        if (value is not null) _workspace.Apply(Edits.SelectBrush(value, visual));
+        _brushVisual = value is null ? null : visual;
+        // The brush is editor state, not content: no undo step (#45).
+        if (value is not null) _workspace.ApplyWithoutHistory(Edits.SelectBrush(value, visual));
         _fillScene.IsEnabled = value is not null;
         if (value is not null)
         {
@@ -459,6 +509,15 @@ public sealed partial class EditModeView : UserControl
             parts.Add($"animal {animal.Name}");
         }
 
+        // Event triggers, arrivals, the mine entrance and the player start (doors are above).
+        if (_workspace.Current is { } project)
+        {
+            foreach (var marker in MapMarkers.ForScene(project, scene.Id).Where(m => m.Kind != "door" && x >= m.X && x <= m.X2 && y >= m.Y && y <= m.Y2))
+            {
+                parts.Add(marker.Label);
+            }
+        }
+
         return string.Join(" · ", parts);
     }
 
@@ -501,6 +560,12 @@ public sealed partial class EditModeView : UserControl
     public void Retire()
     {
         _workspace.ProjectChanged -= OnProjectChanged;
+        _workspace.Leaving -= OnLeaving;
+        foreach (var view in this.GetLogicalDescendants().OfType<IRetirable>().ToList())
+        {
+            view.Retire();
+        }
+
         _canvas.Dispose();
     }
 
@@ -514,12 +579,25 @@ public sealed partial class EditModeView : UserControl
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (!IsEffectivelyVisible || e.Source is TextBox || !e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        if (!IsEffectivelyVisible || !e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             return;
         }
 
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        // Ctrl+K / Ctrl+P: find content, scenes and art from anywhere in Edit Mode (#56).
+        if ((e.Key == Key.K || e.Key == Key.P) && !shift)
+        {
+            OpenQuickOpen();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Source is TextBox)
+        {
+            return;
+        }
+
         if (e.Key == Key.Z && !shift)
         {
             _workspace.Undo();
@@ -534,6 +612,15 @@ public sealed partial class EditModeView : UserControl
 
     private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
     {
+        // Undo and redo bring back the brush an entry was recorded with; the brush on show
+        // stays the one painting (#45), so its art keeps riding along with its type.
+        if (e.Kind == ProjectChangeKind.Edited && _brush is not null && _workspace.Current is { } current
+            && (current.SelectedTileType != _brush || !Equals(current.SelectedTileVisual.OrNull(), _brushVisual)))
+        {
+            _workspace.ApplyWithoutHistory(Edits.SelectBrush(_brush, _brushVisual));
+            return;
+        }
+
         if (e.Kind == ProjectChangeKind.Opened)
         {
             _sceneId = null;
@@ -572,6 +659,7 @@ public sealed partial class EditModeView : UserControl
         {
             _canvas.Geometry = null;
             UpdateCursor(null);
+            RefreshMarkers();
             return;
         }
 
@@ -590,6 +678,7 @@ public sealed partial class EditModeView : UserControl
         {
             _canvas.Geometry = null;
             UpdateCursor(null);
+            RefreshMarkers();
             return;
         }
 
@@ -597,6 +686,7 @@ public sealed partial class EditModeView : UserControl
         // the 1px grid seams stay exactly one pixel at every zoom level. The Rust renderer draws it.
         _canvas.Geometry = new MapGeometry(scene.Id, (int)scene.Width, (int)scene.Height, Math.Max(8, Math.Round(TileSize * _zoom)), Math.Round(12 * _zoom));
         _zoomText.Text = $"{Math.Round(_zoom * 100)}%";
+        RefreshMarkers();
         AutomationProperties.SetName(_canvas, $"Scene editor canvas: {scene.Name}, {Ui.Num(scene.Width)} by {Ui.Num(scene.Height)} tiles. Arrow keys move the editing cursor. Enter or Space applies the current tool.");
         UpdateCursor(scene);
     }
@@ -666,6 +756,28 @@ public sealed partial class EditModeView : UserControl
 
     private void RefreshInfo(GameProject project)
     {
+        var scene = CurrentScene();
+        var key = string.Join(
+            '\u001f',
+            project.Name,
+            project.Version,
+            project.SchemaVersion,
+            project.Scenes.Count(s => !s.Extra.ContainsKey("generated")),
+            project.Npcs.Length,
+            project.Items.Length,
+            project.Quests.Length,
+            project.Shops.Length,
+            project.Recipes.Length,
+            project.Dialogues.Length,
+            project.CustomAssets.Length,
+            scene is null ? "" : $"{scene.Id}\u001f{scene.Name}\u001f{scene.Width}\u001f{scene.Height}\u001f{scene.Transitions.Length}",
+            scene is null ? "" : string.Join(",", project.Npcs.Where(n => n.SceneId == scene.Id).Select(n => n.Name)));
+        if (key == _infoKey)
+        {
+            return;
+        }
+
+        _infoKey = key;
         _info.Children.Clear();
         var name = Ui.Wrapped(string.IsNullOrWhiteSpace(project.Name) ? "Untitled Game" : project.Name, "h2");
         name.Name = "ProjectInfoName";
@@ -691,7 +803,6 @@ public sealed partial class EditModeView : UserControl
         Stat("Assets", project.CustomAssets.Length);
         _info.Children.Add(stats);
 
-        var scene = CurrentScene();
         if (scene is not null)
         {
             var npcs = project.Npcs.Where(n => n.SceneId == scene.Id).Select(n => n.Name).ToList();
@@ -826,8 +937,15 @@ public sealed partial class EditModeView : UserControl
             case Key.Space:
                 ApplyToolAtCursor();
                 break;
+            case Key.Escape when _pick is not null:
+                CancelPick();
+                break;
             case Key.Escape when _gestureStart is not null:
                 CancelCorner();
+                break;
+            case var key when (e.KeyModifiers & KeyModifiers.Shift) == 0 && ToolKeys.TryGetValue(key, out var tool):
+                Tool = tool;
+                _editorMessage.Text = $"{ToolLabel(tool)} tool.";
                 break;
             default:
                 return;
@@ -835,6 +953,22 @@ public sealed partial class EditModeView : UserControl
 
         e.Handled = true;
     }
+
+    /// <summary>Single-key map tools while the map has focus (listed in Help → Keyboard Shortcuts).</summary>
+    private static readonly IReadOnlyDictionary<Key, MapTool> ToolKeys = new Dictionary<Key, MapTool>
+    {
+        [Key.V] = MapTool.Inspect,
+        [Key.B] = MapTool.Brush,
+        [Key.R] = MapTool.Rectangle,
+        [Key.G] = MapTool.Fill,
+        [Key.I] = MapTool.Pick,
+        [Key.M] = MapTool.Select,
+        [Key.E] = MapTool.Erase,
+        [Key.X] = MapTool.Block,
+        [Key.U] = MapTool.Unblock,
+        [Key.D] = MapTool.Door,
+        [Key.P] = MapTool.PlayerStart,
+    };
 
     /// <summary>
     /// The current tool at the cursor, exactly as a click there (one undo step). Rectangle and

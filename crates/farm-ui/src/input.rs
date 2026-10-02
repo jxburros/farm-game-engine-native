@@ -31,6 +31,8 @@ pub enum InputDevice {
     Keyboard,
     Mouse,
     Gamepad,
+    /// A touch screen with on-screen controls (the web demo): no key hints at all.
+    Touch,
 }
 
 /// An abstract gamepad button (Xbox names; the host maps its pads onto these).

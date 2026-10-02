@@ -89,7 +89,44 @@ module internal ChecksContent =
                     if not (context.SeasonIds.Contains season) then
                         sink.Warning("crop.unknownSeason", sprintf "%s.seasons[%d]" path k, sprintf "Crop \"%s\" grows in \"%s\", which is not in the calendar" crop.Name season, target))
                 if not (seedsFor.Contains crop.Id) then
-                    sink.Warning("crop.noSeedItem", path, sprintf "Crop \"%s\" has no seed item, so nobody can plant it" crop.Name, target))
+                    sink.Warning("crop.noSeedItem", path, sprintf "Crop \"%s\" has no seed item, so nobody can plant it" crop.Name, target)
+                // farm_sim::farming::crops::harvest_item: harvestItemId, else crop-<id> (or
+                // pack:crop-<local> for a pack crop).
+                match crop.HarvestItemId with
+                | Some id when id.Length > 0 ->
+                    if not (context.ItemIds.Contains id) then
+                        sink.Error("crop.noHarvestItem", path + ".harvestItemId", sprintf "Crop \"%s\" is harvested as missing item \"%s\"" crop.Name id, target)
+                | _ ->
+                    let fallback = sprintf "crop-%s" crop.Id
+                    let packed =
+                        match crop.Id.Split([| ':' |], 2) with
+                        | [| pack; local |] when pack.Length > 0 && local.Length > 0 -> Some(sprintf "%s:crop-%s" pack local)
+                        | _ -> None
+                    if not (context.ItemIds.Contains fallback || packed |> Option.exists context.ItemIds.Contains) then
+                        sink.Warning(
+                            "crop.noHarvestItem",
+                            path + ".harvestItemId",
+                            sprintf "Crop \"%s\" has no harvest item (no \"%s\" and no harvest item set), so harvesting it gives nothing" crop.Name fallback,
+                            target
+                        ))
+
+    /// Birthdays follow the project's calendar: the season must exist and the day must fall
+    /// inside it, or the birthday never comes.
+    let private npcs (context: Context) (sink: Sink) =
+        let seasons = context.Project.Settings.Calendar.Seasons
+        context.Project.Npcs
+        |> Seq.iteri (fun i npc ->
+            match npc.Birthday with
+            | None -> ()
+            | Some birthday ->
+                let path = sprintf "npcs[%d].birthday" i
+                let target = Some(NavigationTarget.Npc npc.Id)
+                match seasons |> List.tryFind (fun season -> season.Id = birthday.Season) with
+                | None ->
+                    sink.Warning("npc.birthdayUnknownSeason", path + ".season", sprintf "NPC \"%s\" has a birthday in \"%s\", which is not in the calendar" npc.Name birthday.Season, target)
+                | Some season when birthday.Day < 1.0 || birthday.Day > season.Days ->
+                    sink.Warning("npc.birthdayDay", path + ".day", sprintf "NPC \"%s\" has a birthday on day %g of %s, which only has days 1 to %g" npc.Name birthday.Day season.Name season.Days, target)
+                | Some _ -> ())
 
     let private quests (context: Context) (sink: Sink) =
         context.Project.Quests
@@ -107,6 +144,10 @@ module internal ChecksContent =
                 |> Seq.iteri (fun k id ->
                     if id = quest.Id then
                         sink.Error("quest.prerequisiteSelf", sprintf "%s.prerequisites[%d]" path k, sprintf "Quest \"%s\" requires itself" quest.Name, target))
+            match quest.Rewards.Skill with
+            | Some skill when skill.Length > 0 && not (SaveSchema.SkillNames |> List.contains skill) ->
+                sink.Warning("quest.unknownSkill", path + ".rewards.skill", sprintf "Quest \"%s\" gives experience to unknown skill \"%s\"" quest.Name skill, target)
+            | _ -> ()
             match quest.AvailableFromDay, quest.AvailableToDay with
             | Some fromDay, Some toDay when fromDay > toDay ->
                 sink.Warning("quest.availableWindow", path + ".availableFromDay", sprintf "Quest \"%s\" is available from day %g until day %g, which never happens" quest.Name fromDay toDay, target)
@@ -238,6 +279,11 @@ module internal ChecksContent =
                 | None -> ()
                 | Some scene when context.Scenes.ContainsKey scene && not (Context.tileInScene context scene x y) ->
                     sink.Error(sprintf "%s.outcomeTileOutOfBounds" family, opath + ".x", sprintf "%s warps the player to (%g,%g), outside \"%s\"" label x y context.Scenes.[scene].Name, target)
+                | Some scene when context.Scenes.ContainsKey scene ->
+                    match ChecksWorld.tileAt context.Scenes.[scene] x y with
+                    | Some tile when ChecksWorld.tileBlocks context.Project tile ->
+                        sink.Warning(sprintf "%s.outcomeWarpBlocked" family, opath + ".x", sprintf "%s warps the player onto a blocked tile (%g,%g) in \"%s\"; the game moves the player to the nearest open tile" label x y context.Scenes.[scene].Name, target)
+                    | _ -> ()
                 | _ -> ()
             | EventOutcomeTypes.LockTransition | EventOutcomeTypes.UnlockTransition ->
                 unknownScene ()
@@ -307,6 +353,37 @@ module internal ChecksContent =
             conditions context sink "action" path label "" target action.Conditions
             outcomes context sink "action" path label "" target action.Outcomes)
 
+    /// Actions that end up performing themselves again (A → B → A). The game stops an action chain
+    /// after 4 levels or 256 actions in all and says so, so such a loop never runs the way it
+    /// reads.
+    let private actionCycles (context: Context) (sink: Sink) =
+        let performs (action: ActionDef) =
+            action.Outcomes
+            |> List.choose (fun o -> if o.Type = EventOutcomeTypes.PerformAction then o.ActionId else None)
+            |> List.filter (fun id -> id.Length > 0)
+        let byId = Dictionary<string, ActionDef>()
+        for action in context.Project.Actions do
+            if not (byId.ContainsKey action.Id) then byId.[action.Id] <- action
+        let reachesItself (start: ActionDef) =
+            let seen = HashSet<string>()
+            let pending = Stack<string>(performs start)
+            let mutable found = false
+            while not found && pending.Count > 0 do
+                let id = pending.Pop()
+                if id = start.Id then found <- true
+                elif seen.Add id then
+                    match byId.TryGetValue id with
+                    | true, next -> for further in performs next do pending.Push further
+                    | _ -> ()
+            found
+        let reported = HashSet<string>()
+        context.Project.Actions
+        |> List.iteri (fun i action ->
+            if reported.Add action.Id && reachesItself action then
+                sink.Warning("action.cycle", sprintf "actions[%d].outcomes" i,
+                             sprintf "Action \"%s\" ends up performing itself again; the game stops such a chain after 4 levels or 256 actions" action.Name,
+                             Some(NavigationTarget.Action action.Id)))
+
     let private minigames (context: Context) (sink: Sink) =
         context.Project.Minigames
         |> Seq.iteri (fun i minigame ->
@@ -314,6 +391,39 @@ module internal ChecksContent =
             let target = Some(NavigationTarget.Minigame minigame.Id)
             if System.String.IsNullOrWhiteSpace minigame.Kind then
                 sink.Error("minigame.emptyKind", path + ".kind", sprintf "Minigame \"%s\" has no kind" minigame.Name, target)
+            else
+                match MinigameKinds.tryFind minigame.Kind with
+                | None ->
+                    sink.Warning(
+                        "minigame.unknownKind",
+                        path + ".kind",
+                        sprintf "Minigame \"%s\" uses kind \"%s\", which the game doesn't have: it plays as a single \"Go!\" button that always scores 0.5. Pick one of the built-in kinds" minigame.Name minigame.Kind,
+                        target)
+                | Some kind ->
+                    for key, value in minigame.Config do
+                        let spath = sprintf "%s.config.%s" path key
+                        match kind.Settings |> List.tryFind (fun setting -> setting.Key = key) with
+                        | None ->
+                            sink.Warning("minigame.unknownSetting", spath, sprintf "Minigame \"%s\" has setting \"%s\", which the %s kind doesn't use" minigame.Name key kind.Id, target)
+                        | Some setting ->
+                            match setting.Kind, value with
+                            | _, JNull -> ()
+                            | MinigameSettingKind.Text, JString _ -> ()
+                            | (MinigameSettingKind.Number | MinigameSettingKind.Integer), JNumber n ->
+                                let below = setting.Min |> Option.exists (fun min -> n < min)
+                                let above = setting.Max |> Option.exists (fun max -> n > max)
+                                if below || above then
+                                    let range =
+                                        match setting.Min, setting.Max with
+                                        | Some min, Some max -> sprintf "%g to %g" min max
+                                        | Some min, None -> sprintf "at least %g" min
+                                        | None, Some max -> sprintf "at most %g" max
+                                        | None, None -> ""
+                                    sink.Warning("minigame.settingRange", spath, sprintf "Minigame \"%s\": %s is %g; the game uses %s" minigame.Name setting.Label n range, target)
+                            | MinigameSettingKind.Text, _ ->
+                                sink.Warning("minigame.settingType", spath, sprintf "Minigame \"%s\": %s should be text; the game ignores it" minigame.Name setting.Label, target)
+                            | _ ->
+                                sink.Warning("minigame.settingType", spath, sprintf "Minigame \"%s\": %s should be a number; the game ignores it" minigame.Name setting.Label, target)
             if minigame.ResultTiers.IsEmpty then
                 sink.Warning("minigame.noTiers", path + ".resultTiers", sprintf "Minigame \"%s\" has no result tiers, so its score changes nothing" minigame.Name, target)
             minigame.ResultTiers
@@ -526,19 +636,21 @@ module internal ChecksContent =
             |> Seq.iteri (fun y row ->
                 row
                 |> Seq.iteri (fun x tile ->
-                    let path = sprintf "scenes[%d].tiles[%d][%d]" s y x
-                    let target = Some(NavigationTarget.Scene(scene.Id, x, y))
-                    let label = sprintf "%s (%d,%d)" scene.Name x y
-                    match tile.Visuals with
-                    | None -> ()
-                    | Some visuals ->
-                        visual (path + ".visuals.background") visuals.Background (label + " background") target
-                        visual (path + ".visuals.overlay") visuals.Overlay (label + " overlay") target
-                        visual (path + ".visuals.object") visuals.Object (label + " object") target
-                    customImage (path + ".customImage") tile.CustomImage label target
-                    match tile.Item with
-                    | None -> ()
-                    | Some item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
+                    // Most tiles carry no art of their own: no path or label strings for those.
+                    if tile.Visuals.IsSome || tile.CustomImage.IsSome || (match tile.Item with Some item -> item.Visual.IsSome | None -> false) then
+                        let path = sprintf "scenes[%d].tiles[%d][%d]" s y x
+                        let target = Some(NavigationTarget.Scene(scene.Id, x, y))
+                        let label = sprintf "%s (%d,%d)" scene.Name x y
+                        match tile.Visuals with
+                        | None -> ()
+                        | Some visuals ->
+                            visual (path + ".visuals.background") visuals.Background (label + " background") target
+                            visual (path + ".visuals.overlay") visuals.Overlay (label + " overlay") target
+                            visual (path + ".visuals.object") visuals.Object (label + " object") target
+                        customImage (path + ".customImage") tile.CustomImage label target
+                        match tile.Item with
+                        | None -> ()
+                        | Some item -> visual (path + ".item.visual") item.Visual (sprintf "%s dropped item" scene.Name) target)))
         match project.GamePanels with
         | None -> ()
         | Some panels ->
@@ -553,6 +665,55 @@ module internal ChecksContent =
                     if entry.Kind = GamePanelEntryKinds.Item && not (context.ItemIds.Contains entry.Value) then
                         sink.Error("interface.missingItem", path, sprintf "%s: missing item %s" panel.Title shown, Some NavigationTarget.Interface)))
 
+    /// Warps in enabled packs' events and actions land where the project's own are checked to:
+    /// inside an existing scene (the project's, or a pack's under its namespaced id) and not on a
+    /// blocked tile. Packs don't namespace scene references, so a pack naming its own scene by its
+    /// local id is pointed at the full one.
+    let private packWarps (context: Context) (sink: Sink) =
+        let enabled = context.Project.ContentPacks |> List.filter (fun install -> install.Enabled)
+        let packScenes = Dictionary<string, Scene>()
+        for install in enabled do
+            for scene in (PackRules.namespacePack install.Pack).Content.Scenes do
+                if not (packScenes.ContainsKey scene.Id) then packScenes.[scene.Id] <- scene
+        let sceneById (id: string) =
+            match context.Scenes.TryGetValue id with
+            | true, scene -> Some scene
+            | _ ->
+                match packScenes.TryGetValue id with
+                | true, scene -> Some scene
+                | _ -> None
+        context.Project.ContentPacks
+        |> List.iteri (fun i install ->
+            if install.Enabled then
+                let manifest = install.Pack.Manifest
+                let pack = PackRules.namespacePack install.Pack
+                let target = Some(NavigationTarget.Pack manifest.Id)
+                let check (path: string) (owner: string) (outcomes: EventOutcome list) =
+                    outcomes
+                    |> List.iteri (fun k outcome ->
+                        let opath = sprintf "%s.outcomes[%d]" path k
+                        match outcome.SceneId with
+                        | Some id when outcome.Type = EventOutcomeTypes.WarpPlayer && id.Length > 0 ->
+                            let x = defaultArg outcome.X 0.0
+                            let y = defaultArg outcome.Y 0.0
+                            match sceneById id with
+                            | None ->
+                                let full = PackRules.namespacedId manifest.Id id
+                                let hint = if packScenes.ContainsKey full then sprintf " (write \"%s\": packs don't namespace scene references)" full else ""
+                                sink.Warning("pack.warpUnknownScene", opath + ".sceneId", sprintf "Pack \"%s\": %s warps to missing scene \"%s\"%s" manifest.Name owner id hint, target)
+                            | Some scene when x < 0.0 || y < 0.0 || x >= scene.Width || y >= scene.Height ->
+                                sink.Warning("pack.warpOutOfBounds", opath + ".x", sprintf "Pack \"%s\": %s warps the player to (%g,%g), outside \"%s\"; the game moves the player to the nearest open tile" manifest.Name owner x y scene.Name, target)
+                            | Some scene ->
+                                match ChecksWorld.tileAt scene x y with
+                                | Some tile when ChecksWorld.tileBlocks context.Project tile ->
+                                    sink.Warning("pack.warpBlocked", opath + ".x", sprintf "Pack \"%s\": %s warps the player onto a blocked tile (%g,%g) in \"%s\"; the game moves the player to the nearest open tile" manifest.Name owner x y scene.Name, target)
+                                | _ -> ()
+                        | _ -> ())
+                pack.Content.Events
+                |> List.iteri (fun e event -> check (sprintf "contentPacks[%d].pack.content.events[%d]" i e) (sprintf "event \"%s\"" event.Name) event.Outcomes)
+                pack.Content.Actions
+                |> List.iteri (fun a action -> check (sprintf "contentPacks[%d].pack.content.actions[%d]" i a) (sprintf "action \"%s\"" action.Name) action.Outcomes))
+
     /// ModsEditor: the compatibility badge and the "already installed" rule.
     let private packs (context: Context) (sink: Sink) =
         let seen = HashSet<string>()
@@ -564,7 +725,20 @@ module internal ChecksContent =
             if not (seen.Add manifest.Id) then
                 sink.Error("pack.duplicate", path + ".pack.manifest.id", sprintf "Pack \"%s\" is installed twice" manifest.Id, target)
             if not (PackRules.isEngineCompatible (Some manifest.EngineCompatibility) PackRules.EngineVersion) then
-                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target))
+                sink.Warning("pack.incompatible", path + ".pack.manifest.engineCompatibility", sprintf "Pack \"%s\" wants engine %s, this is %s" manifest.Name manifest.EngineCompatibility PackRules.EngineVersion, target)
+            manifest.Permissions.Mutations
+            |> Option.defaultValue []
+            |> List.iteri (fun k entry ->
+                if not (PackRules.isMutationCapability entry) then
+                    sink.Warning("pack.unknownMutation", sprintf "%s.pack.manifest.permissions.mutations[%d]" path k, sprintf "Pack \"%s\" asks for plugin capability \"%s\", which this engine does not know (it is ignored)" manifest.Name entry, target))
+            // Plugins answer onWeatherRoll after the night: the day's watering and storm damage
+            // already used the rolled weather (docs/PLUGINS.md).
+            if install.Enabled && manifest.Permissions.Hooks |> List.contains "onWeatherRoll" then
+                install.Pack.Plugins
+                |> List.iteri (fun k plugin ->
+                    if plugin.Hooks |> List.contains "onWeatherRoll" then
+                        sink.Warning("pack.weatherRollAfterwards", sprintf "%s.pack.plugins[%d].hooks" path k, sprintf "Plugin \"%s\" of pack \"%s\" listens to onWeatherRoll, which plugins cannot answer in time: a setWeather answer changes the weather after the night's rain watering and storm damage" (defaultArg plugin.Name plugin.Id) manifest.Name, target)))
+        packWarps context sink
 
     /// Whole-number fields (money, counts) with a fraction: the engine keeps them as integers and
     /// rounds them when it loads the game (docs/NUMERICS.md), so say so.
@@ -575,7 +749,7 @@ module internal ChecksContent =
                 sink.Warning(
                     "numbers.offGrid",
                     path,
-                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (Migrations.roundAway value)),
+                    sprintf "%s is %s, but the game only uses whole numbers here: it plays as %s" what (JsNumber.format value) (JsNumber.format (JsNumber.roundHalfAway value)),
                     target
                 )
         let checkSome path what (value: float option) target = value |> Option.iter (fun v -> check path what v target)
@@ -633,9 +807,11 @@ module internal ChecksContent =
         duplicates context sink
         items context sink
         crops context sink
+        npcs context sink
         quests context sink
         events context sink
         actions context sink
+        actionCycles context sink
         minigames context sink
         shops context sink
         recipes context sink

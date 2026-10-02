@@ -10,15 +10,18 @@
 use crate::effects::{message_levels, Effect};
 use crate::engine_types::{Effects, EngineContext};
 use crate::hooks::{HookEvent, MinigameResolveHookPayload};
+use crate::messages;
 use crate::schema::GameState;
 use crate::units;
 use crate::{events, fishing, inventory};
 use serde_json::Value;
 
+/// The `startMinigame` command (and the plugin mutation): open the minigame `minigame_id`.
 pub fn handle_start_minigame(ctx: &EngineContext, state: &mut GameState, minigame_id: &str) -> Effects {
     events::start_minigame_session(ctx, state, minigame_id, None)
 }
 
+/// The `cancelMinigame` command: close the open minigame without a result.
 pub fn handle_cancel_minigame(state: &mut GameState) -> Effects {
     if state.minigame.is_none() {
         return vec![];
@@ -35,7 +38,7 @@ pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, score
     let Some(session) = state.minigame.take() else { return vec![] };
     // The score reads as a 0–1 fraction clamped onto the grid, like v8's `clampScore`.
     let score = score.min(units::PROBABILITY_ONE);
-    let definition = ctx.content.minigames.iter().find(|def| def.id == session.minigame_id);
+    let definition = ctx.minigame(&session.minigame_id);
 
     let mut effects = Vec::new();
 
@@ -63,10 +66,10 @@ pub fn handle_resolve_minigame(ctx: &EngineContext, state: &mut GameState, score
 /// declares `consumeOnUse`.
 pub fn handle_use_item(ctx: &EngineContext, state: &mut GameState, item_id: &str) -> Effects {
     let Some(slot) = state.player.inventory.iter().find(|entry| entry.item.id == item_id) else {
-        return vec![Effect::message(message_levels::ERROR, "You don't have that item.")];
+        return vec![Effect::say(message_levels::ERROR, &messages::DONT_HAVE_ITEM)];
     };
     let Some(use_action_id) = slot.item.use_action_id.clone().filter(|id| !id.is_empty()) else {
-        return vec![Effect::message(message_levels::INFO, format!("{} can't be used like that.", slot.item.name))];
+        return vec![Effect::say(message_levels::INFO, messages::CANT_USE_LIKE_THAT.with(&[&slot.item.name]))];
     };
     let consume_on_use = slot.item.consume_on_use == Some(true);
 

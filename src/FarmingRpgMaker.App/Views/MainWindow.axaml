@@ -22,18 +22,18 @@
 
   <DockPanel>
     <Menu DockPanel.Dock="Top" Name="MainMenu">
-      <MenuItem Header="_File">
-        <MenuItem Header="_New Project" InputGesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
-        <MenuItem Header="_Open Project…" InputGesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
+      <MenuItem Name="FileMenu" Header="{Binding FileMenuText}">
+        <MenuItem Header="{Binding NewProjectMenuText}" InputGesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
+        <MenuItem Header="{Binding OpenProjectMenuText}" InputGesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
         <Separator />
-        <MenuItem Header="_Import Project JSON…" Command="{Binding ImportProjectJsonCommand}" />
-        <MenuItem Header="_Export Project JSON…" Command="{Binding ExportProjectJsonCommand}" />
+        <MenuItem Header="{Binding ImportJsonMenuText}" Command="{Binding ImportProjectJsonCommand}" />
+        <MenuItem Header="{Binding ExportJsonMenuText}" Command="{Binding ExportProjectJsonCommand}" />
         <Separator />
-        <MenuItem Name="ExportGameMenuItem" Header="Export _Game…" InputGesture="Ctrl+Shift+E" Command="{Binding ExportGameCommand}" />
+        <MenuItem Name="ExportGameMenuItem" Header="{Binding ExportGameMenuText}" InputGesture="Ctrl+Shift+E" Command="{Binding ExportGameCommand}" />
         <Separator />
-        <MenuItem Header="E_xit" InputGesture="Alt+F4" Command="{Binding ExitCommand}" />
+        <MenuItem Header="{Binding ExitMenuText}" InputGesture="Alt+F4" Command="{Binding ExitCommand}" />
       </MenuItem>
-      <MenuItem Header="_Game">
+      <MenuItem Name="GameMenu" Header="{Binding GameMenuText}">
         <MenuItem Name="PlayModeMenuItem" Header="{Binding PlayModeMenuText}" InputGesture="F5" ToggleType="Radio" GroupName="mode"
                   IsChecked="{Binding IsPlayMode, Mode=OneWay}" Command="{Binding PlayModeCommand}" />
         <MenuItem Name="EditModeMenuItem" Header="{Binding EditModeMenuText}" InputGesture="F6" ToggleType="Radio" GroupName="mode"
@@ -73,6 +73,7 @@
             </StackPanel>
           </Button>
           <Button Name="ModeToggle" Classes="large"
+                  AutomationProperties.Name="{Binding ModeToggleText}"
                   Classes.accent="{Binding IsPlayMode}"
                   Classes.secondary="{Binding IsEditMode}"
                   Command="{Binding ToggleModeCommand}">
@@ -88,7 +89,8 @@
 
     <Border DockPanel.Dock="Bottom" Classes="statusbar">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Name="StatusText" Classes="muted small" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Name="StatusText" Classes="muted small" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.LiveSetting="Polite" />
         <TextBlock Grid.Column="1" Classes="muted small" Text="{Binding VersionText}" />
       </Grid>
     </Border>

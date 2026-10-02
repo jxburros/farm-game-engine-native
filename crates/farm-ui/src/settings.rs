@@ -73,6 +73,15 @@ impl AudioSettings {
             (self.master.clamp(0.0, 1.0) * self.effects.clamp(0.0, 1.0)).clamp(0.0, 1.0)
         }
     }
+
+    /// The gain of music and ambience (0 when muted).
+    pub fn music_gain(&self) -> f32 {
+        if self.muted {
+            0.0
+        } else {
+            (self.master.clamp(0.0, 1.0) * self.music.clamp(0.0, 1.0)).clamp(0.0, 1.0)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

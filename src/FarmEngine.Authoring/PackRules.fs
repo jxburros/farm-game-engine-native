@@ -11,6 +11,38 @@ module PackRules =
     let namespacedId (packId: string) (id: string) =
         if id.Contains ':' then id else packId + ":" + id
 
+    /// Every plugin mutation type (Rust `farm_plugins::MUTATION_TYPES`).
+    let MutationTypes =
+        [ "giveItem"; "takeItem"; "giveMoney"; "takeMoney"; "setFlag"; "message"; "setWeather"; "modifyFriendship"
+          "grantXp"; "modifyEnergy"; "startQuest"; "warpPlayer"; "startDialogue"; "playSound"; "performAction"; "startMinigame" ]
+
+    /// What a pack's plugins may answer when its manifest declares no `permissions.mutations`
+    /// (Rust `farm_plugins::DEFAULT_MUTATION_CAPABILITIES`).
+    let DefaultMutations = [ "message"; "playSound"; "setFlag"; "giveItem"; "takeItem" ]
+
+    /// Whether a `permissions.mutations` entry names a capability: `*`, a mutation type, or a
+    /// type with `:own` or `:any` (Rust `farm_plugins::MutationGrants`).
+    let isMutationCapability (entry: string) =
+        let entry = entry.Trim()
+        let name, scope =
+            match entry.IndexOf ':' with
+            | -1 -> entry, "own"
+            | at -> entry.Substring(0, at), entry.Substring(at + 1)
+        entry = "*" || (List.contains name MutationTypes && (scope = "own" || scope = "any"))
+
+    /// What a pack's plugins may do, in one line for the install review.
+    let describeMutations (permissions: PackPermissions) : string =
+        match permissions.Mutations with
+        | None ->
+            "default: messages, sounds, and the pack's own flags and items (answers to onEffect and onCommand are ignored)"
+        | Some [] -> "none: the plugins can only watch"
+        | Some entries when entries |> List.exists (fun entry -> entry.Trim() = "*") ->
+            "everything, including your game's and other packs' content"
+        | Some entries ->
+            let broad = entries |> List.exists (fun entry -> entry.Trim().EndsWith ":any")
+            String.Join(", ", entries)
+            + (if broad then " (\":any\" reaches your game's and other packs' content)" else " (the pack's own content only)")
+
     let private isDigit (c: char) = c >= '0' && c <= '9'
 
     /// `^([0-9]+)\.([0-9]+)\.([0-9]+)` on the trimmed text: the three numbers, or `None`.
@@ -59,9 +91,40 @@ module PackRules =
         let lowerOrDigit (c: char) = (c >= 'a' && c <= 'z') || isDigit c
         id.Length > 0 && lowerOrDigit id.[0] && id |> Seq.forall (fun c -> lowerOrDigit c || c = '-')
 
+    /// The pack key that carries art: `assets`, a list of custom assets (as in a project's
+    /// `customAssets`) with their images as `data:image/…` URLs. Native packs add it next to
+    /// `manifest`, `content` and `plugins`; the web keeps it as an unknown key (zod
+    /// `.passthrough()`), so it lives in `ContentPack.Extra`.
+    [<Literal>]
+    let AssetsKey = "assets"
+
+    /// The art a pack carries (`AssetsKey`), in pack order: every entry decoded as a custom
+    /// asset with an id and a base64 `data:image/` URL. Errors name the entry (`assets.0.dataUrl`).
+    let packAssets (pack: ContentPack) : Result<CustomAsset list, string list> =
+        match pack.Extra |> List.tryFind (fun (key, _) -> key = AssetsKey) with
+        | None -> Ok []
+        | Some(_, value) ->
+            match Decode.run (fun path json -> (Decode.list SchemaJson.decodeCustomAsset) (AssetsKey :: path) json) value with
+            | Error message -> Error [ message ]
+            | Ok assets ->
+                let errors =
+                    assets
+                    |> List.mapi (fun i (asset: CustomAsset) ->
+                        if String.IsNullOrWhiteSpace asset.Id then Some(sprintf "%s.%d.id: Required" AssetsKey i)
+                        elif not (asset.DataUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                             || not (asset.DataUrl.Contains ";base64,") then
+                            Some(sprintf "%s.%d.dataUrl: Expected a base64 data:image/ URL" AssetsKey i)
+                        else None)
+                    |> List.choose id
+                if errors.IsEmpty then Ok assets else Error errors
+
+    /// `pack` without its art (what a project keeps once the art has been merged into its own).
+    let withoutAssets (pack: ContentPack) : ContentPack =
+        { pack with Extra = pack.Extra |> List.filter (fun (key, _) -> key <> AssetsKey) }
+
     /// Validate raw pack JSON (zod `safeParse` of `ContentPackSchema`). Never throws; errors are
     /// actionable paths. The manifest's required keys and id rule are checked first, then the
-    /// first value of the wrong kind is reported.
+    /// first value of the wrong kind is reported, then the pack's art (`packAssets`).
     let validateContentPack (raw: Json) : Result<ContentPack, string list> =
         match raw with
         | JObject _ ->
@@ -79,7 +142,7 @@ module PackRules =
             if not (List.isEmpty errors) then Error errors
             else
                 match Decode.run SchemaJson.decodeContentPack raw with
-                | Ok pack -> Ok pack
+                | Ok pack -> packAssets pack |> Result.map (fun _ -> pack)
                 | Error message -> Error [ message ]
         | _ -> Error [ "Pack data is not an object — expected { manifest, content }" ]
 

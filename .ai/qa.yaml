@@ -1,0 +1,113 @@
+# QA profile for automated QA runs (human notes: .ai/qa.md). The commands are the ones CI runs
+# (.github/workflows/ci.yml); CONTRIBUTING.md explains them.
+version: 1
+repo: jxburros/farm-game-engine-native
+kind: native-desktop # Rust engine + F# authoring + C# Avalonia editor; no web dev server
+
+prerequisites:
+  - name: .NET SDK
+    version: "10.0 (global.json)"
+    check: dotnet --version
+  - name: Rust
+    version: "1.94.1 (rust-toolchain.toml; rustup installs it)"
+    check: cargo --version
+  - name: Node
+    version: "22"
+    check: node --version
+    note: only for the WebAssembly and Fable smoke tests and markdownlint; there is no npm dependency tree
+  - name: Linux packages
+    os: linux
+    install: sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 xvfb
+    note: xvfb is optional; without it the player's window test is skipped
+  - name: Python 3
+    check: python3 --version
+    note: text-style check and coverage minimums
+
+env:
+  # Never re-record goldens in a QA run; tools/golden/ci-guard.sh fails when one is set.
+  forbidden: ["FARM_RECORD_*", "*_BLESS"]
+
+levels:
+  install:
+    commands:
+      - dotnet restore
+      - dotnet tool restore
+  build:
+    commands:
+      - dotnet build -c Release --no-restore # also builds crates/farm-ffi and the player template
+      - cargo build --locked --workspace
+  lint:
+    commands:
+      - cargo fmt --all --check
+      - cargo clippy --locked --workspace --all-targets -- -D warnings
+      - dotnet format whitespace FarmingRpgMaker.sln --no-restore --verify-no-changes
+      - dotnet format style FarmingRpgMaker.sln --no-restore --verify-no-changes
+      - python3 tools/ci/text-style.py
+      - npx --yes markdownlint-cli2@0.23.3
+  unit:
+    commands:
+      - tools/golden/ci-guard.sh switches
+      - cargo test --locked --workspace
+      - dotnet test -c Release --no-build
+      - tools/golden/ci-guard.sh fixtures # the tests left fixtures/ unchanged
+  generated:
+    commands:
+      - tools/codegen/check.sh
+      - tools/release/versions.sh
+      - node tools/editor-licenses/generate.mjs --check
+      - tools/player-licenses/generate.sh --check # needs cargo-about 0.9.2; skip without it
+  smoke:
+    commands:
+      - cargo build --locked --release -p farm-player
+      - target/release/farm-player --headless --cart fixtures/golden/cartridges/project-v8.cart --replay fixtures/golden/cartridges/twenty-ticks.json
+      - tools/wasm/build.sh && node tools/wasm/smoke.mjs && node tools/wasm/game-page.mjs
+      - tools/fable/build.sh && node tools/fable/smoke.mjs
+  export-smoke:
+    os: linux
+    after: [build, smoke]
+    commands:
+      - dotnet run --project src/FarmEngine.Cli -c Release --no-build -- export fixtures/projects/project-v8.json --target linux-x64 --out export-smoke
+      - bash -c 'game=$(find export-smoke/linux-x64 -mindepth 1 -maxdepth 1 -type d -print -quit); "$game/$(basename "$game")" --headless --replay fixtures/golden/cartridges/twenty-ticks.json > exported.json'
+      - bash -c 'target/release/farm-player --headless --cart fixtures/golden/cartridges/project-v8.cart --replay fixtures/golden/cartridges/twenty-ticks.json > reference.json && diff exported.json reference.json'
+  performance:
+    os: linux
+    commands:
+      - cargo run --locked --release -p farm-bench -- --budget --factor 3
+  coverage:
+    commands:
+      - cargo llvm-cov --locked --workspace --no-report && cargo llvm-cov report --json --summary-only --output-path llvm-cov.json
+      - python3 tools/coverage/check.py rust llvm-cov.json
+    optional: true # needs cargo-llvm-cov
+  security:
+    commands:
+      - cargo deny --locked check advisories sources # cargo-deny 0.20.2 (.github/workflows/audit.yml)
+      - cargo deny --locked --manifest-path crates/farm-plugin-guest/Cargo.toml check advisories sources
+      - cargo machete
+      - python3 tools/ci/dotnet-vulnerable.py # after dotnet restore
+    optional: true # needs cargo-deny and cargo-machete
+
+skip:
+  - level: browser
+    reason: No web app or dev server. The web demo page is tested in Node (tools/wasm/game-page.mjs, in smoke).
+  - level: lighthouse
+    reason: No hosted page to audit.
+  - level: npm-audit
+    reason: No package.json or npm dependency tree; Node is only used to run test scripts.
+  - level: mobile
+    reason: No Android or iOS app. The web demo's touch controls are covered by tools/wasm/smoke.mjs.
+  - level: ai-provider
+    reason: The app calls no AI provider and needs no API keys.
+  - level: ui-desktop
+    reason: The editor's UI tests run headless inside `dotnet test` (Avalonia.Headless); there is no separate UI level.
+
+risky_areas:
+  - Golden fixtures (fixtures/golden, fixtures/player, fixtures/render): never re-record in QA; a diff is a finding.
+  - Plugin sandbox (crates/farm-plugins, docs/PLUGINS.md): budgets, permissions, hostile packs.
+  - Project, pack and save import (F# migrations, crates/farm-cart): untrusted files.
+  - Export Game (src/FarmEngine.Export, docs/EXPORT.md): templates, archives, PE patching.
+  - Update Center (src/FarmingRpgMaker.Updates): Velopack and GitHub Releases.
+  - F#/Rust schema parity (two project pipelines, docs/LANGUAGES.md).
+
+issues:
+  labels: [qa]
+  dedupe_marker: "<!-- ai_qa_dedupe_key: ... -->"

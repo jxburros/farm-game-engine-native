@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// Writes `None` and `Some(None)` as `null`, a value as itself.
 pub fn serialize<T: Serialize, S: Serializer>(value: &Option<Option<T>>, serializer: S) -> Result<S::Ok, S::Error> {
     match value {
         // Absent keys are skipped by `skip_serializing_if`; if a caller forgets it, write null.

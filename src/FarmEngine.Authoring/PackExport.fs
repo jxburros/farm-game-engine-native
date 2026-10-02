@@ -62,8 +62,11 @@ module PackExport =
     let packId (name: string) : string = Defaults.slugId name Seq.empty "my-pack"
 
     /// The pack for the selection: (content key, chosen ids) pairs; entries keep project order.
-    /// Validated with `PackRules.validateContentPack`, so the file installs anywhere the editor
-    /// runs. Nothing selected → an error.
+    /// The art the chosen entries use (`AssetUsage.referencedBy`: visual bindings, crop art and
+    /// the images their animation frames draw from) goes into the pack's `assets`, so the
+    /// entries keep their look where the pack is installed. Validated with
+    /// `PackRules.validateContentPack`, so the file installs anywhere the editor runs. Nothing
+    /// selected → an error.
     let build (project: GameProject) (name: string) (selection: (string * string list) list) : Result<ContentPack, string list> =
         let chosen = Dictionary<string, HashSet<string>>()
         for key, ids in selection do
@@ -79,6 +82,9 @@ module PackExport =
                   | _ -> () ]
         if content.IsEmpty then Error [ "Select at least one entry to export." ]
         else
+            let assets =
+                AssetUsage.referencedBy project (content |> List.map snd)
+                |> List.distinctBy (fun asset -> asset.Id)
             let displayName = if String.IsNullOrWhiteSpace name then "My Pack" else name.Trim()
             JObject
                 [ "manifest",
@@ -90,7 +96,8 @@ module PackExport =
                         "engineCompatibility", JString(">=" + PackRules.EngineVersion)
                         "permissions", JObject [ "hooks", JArray []; "contentInject", JBool true; "uiPanels", JBool false ] ]
                   "content", JObject content
-                  "plugins", JArray [] ]
+                  "plugins", JArray []
+                  if not assets.IsEmpty then PackRules.AssetsKey, JArray(assets |> List.map SchemaJson.encodeCustomAsset) ]
             |> PackRules.validateContentPack
 
     /// A pack as the indented JSON file the Mods view installs (and the web reads).

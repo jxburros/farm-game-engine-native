@@ -3,9 +3,20 @@ namespace FarmEngine.Schemas
 open FarmEngine.Authoring
 
 // Generated once from the C# records of FarmEngine.Schemas (a port of packages/engine-schemas), then
-// kept by hand. JSON: SchemaJson.fs. Numbers are `float` (JS numbers) until the native-numerics
-// cutover; `option` is an optional or nullable field; `Extra` keeps the keys the schema does not
-// declare (zod `.passthrough()`), in order.
+// kept by hand. JSON: SchemaJson.fs. Numbers are `float` in authoring units (tiles, points,
+// minutes; docs/NUMERICS.md): project JSON keeps them, and the Rust engine converts them to
+// fixed-unit integers when it loads a cartridge. `option` is an optional or nullable field;
+// `Extra` keeps the keys the schema does not declare (zod `.passthrough()`), in order.
+//
+// Forward compatibility: a record without `Extra` (zod's default `.strip()`) drops keys it does
+// not declare when it loads, so a key a newer build writes at the same schema version (a new
+// `settings.*` field, say) is gone after the next save here. That is zod parity, on purpose. A
+// field older builds must carry through needs a schema version bump with a migration, or `Extra`
+// on its record.
+//
+// The Rust engine has its own serde types for the same JSON (crates/farm-sim/src/schema). The
+// parity tests keep the two in step: ParityTests.fs records an F# encoding of every field of every
+// record (fixtures/parity), which crates/farm-sim/tests/fsharp_parity.rs reads back through serde.
 
 type ActionDef =
     {
@@ -220,13 +231,15 @@ and CropDefinition =
         MutationChance: float option
         YieldMin: float
         YieldMax: float
+        /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+        HarvestItemId: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `CropDefinition` with every field at its schema default.
     static member Default : CropDefinition =
-        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; Extra = [] }
+        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; HarvestItemId = None; Extra = [] }
 
 /// TS `CropDefinitionSchema.multiTile` (inline object).
 and CropMultiTile =
@@ -287,6 +300,8 @@ and CustomCropDefinition =
         MutationChance: float option
         YieldMin: float
         YieldMax: float
+        /// The item a harvest gives. Absent: the item named `crop-{id}` (the editor's convention).
+        HarvestItemId: string option
         CustomAsset: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
@@ -294,7 +309,7 @@ and CustomCropDefinition =
 
     /// A `CustomCropDefinition` with every field at its schema default.
     static member Default : CustomCropDefinition =
-        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; CustomAsset = None; Extra = [] }
+        { Id = ""; Name = ""; Visual = None; SeedCost = 0.0; BaseHarvestValue = 0.0; GrowthTime = 0.0; GrowthDays = None; Stages = 0.0; Seasons = []; RegrowthTime = None; RegrowthDays = None; CanRegrow = false; MultiTile = None; MutationChance = None; YieldMin = 0.0; YieldMax = 0.0; HarvestItemId = None; CustomAsset = None; Extra = [] }
 
 and Dialogue =
     {
@@ -318,7 +333,13 @@ and DialogueOption =
         GiveItemQuantity: float option
         TakeMoney: float option
         GiveMoney: float option
+        /// Choosing this option sets this flag (true).
         EventFlag: string option
+        /// Only once: the option is hidden after it has been chosen (it remembers through its
+        /// `EventFlag`, or a flag of its own when it has none).
+        Once: bool option
+        /// The option is hidden while this flag is set.
+        HiddenIfFlag: string option
         RequiresItem: string option
         RequiresFlag: string option
         /// Choosing this option closes the dialogue and opens the given shop (M2).
@@ -335,7 +356,7 @@ and DialogueOption =
 
     /// A `DialogueOption` with every field at its schema default.
     static member Default : DialogueOption =
-        { Text = ""; NextDialogueId = None; GiveItem = None; GiveItemQuantity = None; TakeMoney = None; GiveMoney = None; EventFlag = None; RequiresItem = None; RequiresFlag = None; OpenShopId = None; OfferQuestId = None; RequiresFriendship = None; ActionId = None; Extra = [] }
+        { Text = ""; NextDialogueId = None; GiveItem = None; GiveItemQuantity = None; TakeMoney = None; GiveMoney = None; EventFlag = None; Once = None; HiddenIfFlag = None; RequiresItem = None; RequiresFlag = None; OpenShopId = None; OfferQuestId = None; RequiresFriendship = None; ActionId = None; Extra = [] }
 
 /// A single event/action outcome. Not a discriminated union: one flat object whose `type` selects which optional fields apply.
 and EventOutcome =
@@ -584,7 +605,9 @@ and GameProject =
         Dialogues: Dialogue list
         Quests: Quest list
         Player: Player
-        EventFlags: (string * bool) list
+        /// Flags a new game starts with: `boolean | number | string` (plugins store numbers and
+        /// strings, and Keep changes writes them back as they are).
+        EventFlags: (string * Json) list
         StartSceneId: string
         /// One of `EditorModes`.
         Mode: string
@@ -602,6 +625,10 @@ and GameProject =
         GamePanels: (GamePanel list) option
         CurrentSeason: string
         CurrentDay: float
+        /// 1-based day within `CurrentSeason` (mirrors GameState.clock.dayOfSeason). Absent when
+        /// `CurrentDay` already lands on it in a calendar that starts on day 1 of the first
+        /// season. int, positive.
+        CurrentDayOfSeason: float option
         /// Minute-of-day of the game clock (v4+).
         CurrentTimeMinutes: float
         /// int.
@@ -633,13 +660,16 @@ and GameProject =
         MineDeepestFloor: float option
         /// Items whose owning pack is missing/disabled (mirrors GameState.quarantinedItems).
         QuarantinedItems: (InventorySlot list) option
+        /// The rest of a kept playtest's state (Rust `KeptState`: tick, open dialogue, shop or
+        /// minigame, today's shop purchases, NPC walks, mine floor). Only the engine reads it.
+        KeptState: Json option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `GameProject` with every field at its schema default.
     static member Default : GameProject =
-        { SchemaVersion = 0.0; Id = ""; Name = ""; Version = ""; Scenes = []; Npcs = []; Items = []; Events = []; Dialogues = []; Quests = []; Player = Player.Default; EventFlags = []; StartSceneId = ""; Mode = ""; SelectedTileType = ""; SelectedTileVisual = None; SelectedNpcId = None; SelectedItemId = None; CurrentTime = 0.0; CustomAssets = []; CustomCrops = None; PlayerCustomImage = None; PlayerVisual = None; Graphics = None; GamePanels = None; CurrentSeason = ""; CurrentDay = 0.0; CurrentTimeMinutes = 0.0; CurrentYear = 0.0; GameStartTime = 0.0; Shops = []; NodeTypes = []; Settings = ProjectSettings.Default; Recipes = []; MachineTypes = []; Weather = WeatherConfig.Default; AnimalSpecies = []; Animals = []; FishTables = []; Mine = MineConfig.Default; Actions = []; Minigames = []; ContentPacks = []; Export = None; RngState = None; CurrentWeatherId = None; SocialState = None; MineDeepestFloor = None; QuarantinedItems = None; Extra = [] }
+        { SchemaVersion = 0.0; Id = ""; Name = ""; Version = ""; Scenes = []; Npcs = []; Items = []; Events = []; Dialogues = []; Quests = []; Player = Player.Default; EventFlags = []; StartSceneId = ""; Mode = ""; SelectedTileType = ""; SelectedTileVisual = None; SelectedNpcId = None; SelectedItemId = None; CurrentTime = 0.0; CustomAssets = []; CustomCrops = None; PlayerCustomImage = None; PlayerVisual = None; Graphics = None; GamePanels = None; CurrentSeason = ""; CurrentDay = 0.0; CurrentDayOfSeason = None; CurrentTimeMinutes = 0.0; CurrentYear = 0.0; GameStartTime = 0.0; Shops = []; NodeTypes = []; Settings = ProjectSettings.Default; Recipes = []; MachineTypes = []; Weather = WeatherConfig.Default; AnimalSpecies = []; Animals = []; FishTables = []; Mine = MineConfig.Default; Actions = []; Minigames = []; ContentPacks = []; Export = None; RngState = None; CurrentWeatherId = None; SocialState = None; MineDeepestFloor = None; QuarantinedItems = None; KeptState = None; Extra = [] }
 
 and GiftTastes =
     {
@@ -681,11 +711,14 @@ and InventorySlot =
     {
         Item: Item
         Quantity: float
+        /// The crop quality of the units in this slot (one of `CropQualities` other than normal);
+        /// absent for normal quality.
+        Quality: string option
     }
 
     /// A `InventorySlot` with every field at its schema default.
     static member Default : InventorySlot =
-        { Item = Item.Default; Quantity = 0.0 }
+        { Item = Item.Default; Quantity = 0.0; Quality = None }
 
 and Item =
     {
@@ -1046,17 +1079,21 @@ and PackPermissions =
     {
         /// Hook names the pack's plugins may subscribe to (user-approved at install).
         Hooks: string list
-        /// May contribute content definitions (the normal case).
+        /// May contribute content definitions, a player start and string tables (the normal case).
+        /// When off, none of the pack's content loads; its plugins still run.
         ContentInject: bool
-        /// Reserved: declarative UI panels (not yet implemented).
+        /// Reserved: declarative UI panels. Packs cannot add game panels yet, so this grants nothing.
         UiPanels: bool
+        /// Mutation capabilities the pack's plugins may use (`message`, `giveItem`, `setFlag:any`,
+        /// `*`, … — see docs/PLUGINS.md). None: the defaults, and onEffect/onCommand answers are dropped.
+        Mutations: (string list) option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `PackPermissions` with every field at its schema default.
     static member Default : PackPermissions =
-        { Hooks = []; ContentInject = true; UiPanels = false; Extra = [] }
+        { Hooks = []; ContentInject = true; UiPanels = false; Mutations = None; Extra = [] }
 
 /// Optional player-start block so a base pack can express the whole starter game.
 and PackPlayerStart =
@@ -1229,13 +1266,15 @@ and QuestRewards =
         Money: float option
         Items: (QuestRewardItem list) option
         Experience: float option
+        /// The skill `Experience` goes to (farming, mining, foraging, fishing, social, …). Absent: farming.
+        Skill: string option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `QuestRewards` with every field at its schema default.
     static member Default : QuestRewards =
-        { Money = None; Items = None; Experience = None; Extra = [] }
+        { Money = None; Items = None; Experience = None; Skill = None; Extra = [] }
 
 and RecipeDefinition =
     {
@@ -1324,13 +1363,16 @@ and Scene =
         Transitions: SceneTransition list
         Npcs: string list
         Events: string list
+        /// Indoor scenes (greenhouses, interiors, mine floors) keep the weather out: rain does not
+        /// water their soil and storms do not damage their crops. Absent means outdoor.
+        Indoor: bool option
         /// Undeclared keys, in order (zod `.passthrough()`).
         Extra: (string * Json) list
     }
 
     /// A `Scene` with every field at its schema default.
     static member Default : Scene =
-        { Id = ""; Name = ""; Width = 0.0; Height = 0.0; Tiles = []; Transitions = []; Npcs = []; Events = []; Extra = [] }
+        { Id = ""; Name = ""; Width = 0.0; Height = 0.0; Tiles = []; Transitions = []; Npcs = []; Events = []; Indoor = None; Extra = [] }
 
 and SceneTransition =
     {
@@ -1503,13 +1545,16 @@ and TimeConfig =
         DayStartMinute: float
         /// Minute-of-day the player collapses if still awake (26:00 = 2am). int.
         DayEndMinute: float
-        /// In-game minutes that pass per real-time second. positive.
+        /// In-game minutes that pass per real-time second. positive, at most 1440.
         MinutesPerRealSecond: float
+        /// Whether the clock stops while a dialogue, shop, minigame or menu is open. Absent
+        /// means on; v8 ran the clock on.
+        PauseInModals: bool option
     }
 
     /// A `TimeConfig` with every field at its schema default.
     static member Default : TimeConfig =
-        { DayStartMinute = 360.0; DayEndMinute = 1560.0; MinutesPerRealSecond = 1.0 }
+        { DayStartMinute = 360.0; DayEndMinute = 1560.0; MinutesPerRealSecond = 1.0; PauseInModals = None }
 
 and VisualRef =
     {

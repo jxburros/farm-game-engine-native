@@ -18,7 +18,13 @@ type CartGameInfo =
 type CartAsset = { Id: string; Mime: string; Data: byte[] }
 
 /// `Plugin` in schemas/cart.fbs.
-type CartPlugin = { Id: string; PackId: string; Source: string; GrantedHooks: string list }
+type CartPlugin =
+    { Id: string
+      PackId: string
+      Source: string
+      GrantedHooks: string list
+      /// The pack manifest's `permissions.mutations`; None when it declares none (the defaults).
+      GrantedMutations: string list option }
 
 /// A cartridge read back: the `Cartridge` table of schemas/cart.fbs with its JSON sections as text.
 type CartContents =
@@ -61,7 +67,9 @@ module CartridgeReader =
     let private bytesAt (b: byte[]) (at: int) : int * int =
         let start = deref b at
         let length = i32 b start
-        if length < 0 || start + 4 + length > b.Length then raise (Malformed(sprintf "vector at %d runs past the buffer" start))
+        // `length > b.Length - start - 4`, not `start + 4 + length > b.Length`: the sum
+        // overflows for a length near Int32.MaxValue.
+        if length < 0 || start < 0 || length > b.Length - start - 4 then raise (Malformed(sprintf "vector at %d runs past the buffer" start))
         start + 4, length
 
     let private stringAt (b: byte[]) (at: int) =
@@ -141,7 +149,8 @@ module CartridgeReader =
                   { Id = requiredString b plugin 0 "plugin.id"
                     PackId = requiredString b plugin 1 "plugin.pack_id"
                     Source = requiredString b plugin 2 "plugin.source"
-                    GrantedHooks = strings b plugin 3 } ] }
+                    GrantedHooks = strings b plugin 3
+                    GrantedMutations = field b plugin 4 |> Option.map (fun _ -> strings b plugin 4) } ] }
 
     /// Read a cartridge: its tables, or why it could not be read.
     let read (bytes: byte[]) : Result<CartContents, string> =
@@ -151,3 +160,5 @@ module CartridgeReader =
                 Ok(readUnchecked bytes)
             with
             | Malformed message -> Error("Malformed cartridge: " + message)
+            // Anything else a hostile buffer provokes is malformed too.
+            | error -> Error("Malformed cartridge: " + error.Message)

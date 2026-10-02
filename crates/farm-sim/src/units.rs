@@ -355,6 +355,7 @@ pub fn serialize_opt<U: Unit, S: Serializer>(value: &Option<U::Int>, serializer:
     }
 }
 
+/// `Option<Int>` through a unit (the reader of [`serialize_opt`]).
 pub fn deserialize_opt<'de, U: Unit, D: Deserializer<'de>>(deserializer: D) -> Result<Option<U::Int>, D::Error> {
     Option::<De<U>>::deserialize(deserializer).map(|value| value.map(|De(inner)| inner))
 }
@@ -370,6 +371,8 @@ pub fn serialize_nullable<U: Unit, S: Serializer>(
     }
 }
 
+/// The reader of [`serialize_nullable`], called only for a present key: `null` reads as
+/// `Some(None)`.
 pub fn deserialize_nullable<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<U::Int>>, D::Error> {
@@ -381,6 +384,7 @@ pub fn serialize_vec<U: Unit, S: Serializer>(value: &[U::Int], serializer: S) ->
     serializer.collect_seq(value.iter().map(|inner| Ser::<U>(*inner)))
 }
 
+/// The reader of [`serialize_vec`].
 pub fn deserialize_vec<'de, U: Unit, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<U::Int>, D::Error> {
     Vec::<De<U>>::deserialize(deserializer).map(|values| values.into_iter().map(|De(inner)| inner).collect())
 }
@@ -393,6 +397,7 @@ pub fn serialize_map<U: Unit, S: Serializer>(
     serializer.collect_map(value.iter().map(|(key, inner)| (key, Ser::<U>(*inner))))
 }
 
+/// The reader of [`serialize_map`].
 pub fn deserialize_map<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<indexmap::IndexMap<String, U::Int>, D::Error> {
@@ -404,6 +409,7 @@ pub fn deserialize_map<'de, U: Unit, D: Deserializer<'de>>(
 /// A map of maps keyed by string (shop id → item id → count).
 pub type NestedMap<T> = indexmap::IndexMap<String, indexmap::IndexMap<String, T>>;
 
+/// `NestedMap<Int>` through a unit.
 pub fn serialize_nested_map<U: Unit, S: Serializer>(
     value: &NestedMap<U::Int>,
     serializer: S,
@@ -417,6 +423,7 @@ pub fn serialize_nested_map<U: Unit, S: Serializer>(
     serializer.collect_map(value.iter().map(|(key, inner)| (key, Inner::<U>(inner))))
 }
 
+/// The reader of [`serialize_nested_map`].
 pub fn deserialize_nested_map<'de, U: Unit, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<NestedMap<U::Int>, D::Error> {
@@ -441,10 +448,12 @@ macro_rules! unit_module {
 
             type Int = <$unit as Unit>::Int;
 
+            /// Writes the value as its authoring number (serde `with`).
             pub fn serialize<S: Serializer>(value: &Int, serializer: S) -> Result<S::Ok, S::Error> {
                 super::serialize_unit::<$unit, S>(*value, serializer)
             }
 
+            /// Reads an authoring number into the unit (serde `with`).
             pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Int, D::Error> {
                 super::deserialize_unit::<$unit, D>(deserializer)
             }
@@ -454,10 +463,12 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(value: &Option<Int>, serializer: S) -> Result<S::Ok, S::Error> {
                     super::super::serialize_opt::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Int>, D::Error> {
                     super::super::deserialize_opt::<$unit, D>(deserializer)
                 }
@@ -468,6 +479,7 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(
                     value: &Option<Option<Int>>,
                     serializer: S,
@@ -475,6 +487,7 @@ macro_rules! unit_module {
                     super::super::serialize_nullable::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(
                     deserializer: D,
                 ) -> Result<Option<Option<Int>>, D::Error> {
@@ -487,10 +500,12 @@ macro_rules! unit_module {
                 use super::Int;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(value: &[Int], serializer: S) -> Result<S::Ok, S::Error> {
                     super::super::serialize_vec::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Int>, D::Error> {
                     super::super::deserialize_vec::<$unit, D>(deserializer)
                 }
@@ -502,6 +517,7 @@ macro_rules! unit_module {
                 use indexmap::IndexMap;
                 use serde::{Deserializer, Serializer};
 
+                /// Writes the value as its authoring number (serde `with`).
                 pub fn serialize<S: Serializer>(
                     value: &IndexMap<String, IndexMap<String, Int>>,
                     serializer: S,
@@ -509,6 +525,7 @@ macro_rules! unit_module {
                     super::super::serialize_nested_map::<$unit, S>(value, serializer)
                 }
 
+                /// Reads an authoring number into the unit (serde `with`).
                 pub fn deserialize<'de, D: Deserializer<'de>>(
                     deserializer: D,
                 ) -> Result<IndexMap<String, IndexMap<String, Int>>, D::Error> {
@@ -602,10 +619,12 @@ pub mod screen {
         }
     }
 
+    /// Writes the value as its authoring number (serde `with`).
     pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
         write(*value, serializer)
     }
 
+    /// Reads an authoring number into the unit (serde `with`).
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
         f64::deserialize(deserializer)
     }
@@ -622,6 +641,7 @@ pub mod screen {
             }
         }
 
+        /// Writes the value as its authoring number (serde `with`).
         pub fn serialize<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
             if !serializer.is_human_readable() {
                 return serializer.serialize_unit();
@@ -632,6 +652,7 @@ pub mod screen {
             }
         }
 
+        /// Reads an authoring number into the unit (serde `with`).
         pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
             Option::<f64>::deserialize(deserializer)
         }
@@ -644,6 +665,7 @@ pub mod screen {
 pub mod exact {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    /// Writes the value as its authoring number (serde `with`).
     pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() && super::is_integer(*value) && value.abs() < 9_007_199_254_740_992.0 {
             serializer.serialize_i64(*value as i64)
@@ -652,6 +674,7 @@ pub mod exact {
         }
     }
 
+    /// Reads an authoring number into the unit (serde `with`).
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
         f64::deserialize(deserializer)
     }
@@ -659,13 +682,19 @@ pub mod exact {
 
 // ─── Integer helpers for game logic ─────────────────────────────────────────────────────────
 
-/// `numerator / denominator` rounded half away from zero (`denominator > 0`).
+/// `numerator / denominator` rounded half away from zero (`denominator > 0`). Computed in 128
+/// bits: content and plugin amounts reach the ends of the `i64` range, where adding the half
+/// would overflow.
 pub const fn div_round(numerator: i64, denominator: i64) -> i64 {
+    let (numerator, denominator) = (numerator as i128, denominator as i128);
     let half = denominator / 2;
-    if numerator >= 0 {
-        (numerator + half) / denominator
+    let quotient = if numerator >= 0 { (numerator + half) / denominator } else { (numerator - half) / denominator };
+    if quotient > i64::MAX as i128 {
+        i64::MAX
+    } else if quotient < i64::MIN as i128 {
+        i64::MIN
     } else {
-        (numerator - half) / denominator
+        quotient as i64
     }
 }
 
@@ -757,6 +786,39 @@ pub fn json_int(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| {
         value.as_f64().filter(|x| x.is_finite()).map(|x| x.round().clamp(i64::MIN as f64, i64::MAX as f64) as i64)
     })
+}
+
+/// The largest integer a double holds exactly (JS `Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// The integer a double equals, when it is whole and within ±(2⁵³−1) (`-0.0` is 0).
+pub fn whole_float(x: f64) -> Option<i64> {
+    // Exact: |x| ≤ 2⁵³ − 1. NaN and infinities have no zero fraction.
+    (x.fract() == 0.0 && x.abs() <= MAX_SAFE_INTEGER).then_some(x as i64)
+}
+
+/// A JSON number in its canonical form: a [whole double](whole_float) becomes the integer it
+/// equals (`1.0` → `1`). Saves are written as stable JSON, where `1.0` reads back as `1`;
+/// holding pass-through values (flags, minigame context) in this form keeps a save/load round
+/// trip equal (#142).
+pub fn canonical_number(number: serde_json::Number) -> serde_json::Number {
+    if number.is_i64() || number.is_u64() {
+        return number;
+    }
+    match number.as_f64().and_then(whole_float) {
+        Some(whole) => serde_json::Number::from(whole),
+        None => number,
+    }
+}
+
+/// [`canonical_number`] for every number inside `value`.
+pub fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Number(number) => Value::Number(canonical_number(number)),
+        Value::Array(items) => Value::Array(items.into_iter().map(canonical_json).collect()),
+        Value::Object(map) => Value::Object(map.into_iter().map(|(key, value)| (key, canonical_json(value))).collect()),
+        other => other,
+    }
 }
 
 /// The authoring JSON number of a grid value.

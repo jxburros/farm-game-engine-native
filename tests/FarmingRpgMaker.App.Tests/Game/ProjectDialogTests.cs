@@ -71,6 +71,56 @@ public sealed class ProjectDialogTests
     }
 
     [AvaloniaFact]
+    public void OpenProjectDialog_ADeleteThatFails_IsShownInTheList()
+    {
+        using var host = new GameTestHost();
+        var other = host.Workspace.CreateProject(ProjectTemplates.Blank, "Busy Farm");
+        host.Workspace.Store.Save(other);
+        // Another editor window has it open.
+        var (_, held) = ProjectLock.TryAcquire(host.Workspace.Store, other.Id);
+        using var otherWindow = held!;
+
+        host.ViewModel.OpenProjectCommand.Execute(null);
+        var dialog = OpenedDialog(host, "OpenProjectWindow");
+        var list = FindByName<ListBox>(dialog, "ProjectList");
+        list.SelectedItem = list.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, other.Id));
+        Pump();
+        Click(dialog, FindByName<Button>(dialog, "DeleteProjectButton"));
+        Click(dialog, FindByName<Button>(dialog, "DeleteProjectButton"));
+
+        Assert.True(host.Workspace.Store.Exists(other.Id));
+        Assert.Null(host.Surface.ErrorView);
+        Assert.Contains("Could not delete the project", FindByName<TextBlock>(dialog, "ProjectListHint").Text, StringComparison.Ordinal);
+        Assert.Equal(other.Id, ((ListBoxItem)list.SelectedItem!).Tag);
+        dialog.Close();
+    }
+
+    [AvaloniaFact]
+    public void RenamingTheOpenProject_DuringAPlaytestThatKeepsChanges_KeepsTheNewName()
+    {
+        using var host = new GameTestHost();
+        var id = host.Workspace.Current!.Id;
+        host.EnterPlay();
+        host.Play.KeepChanges = true;
+
+        host.ViewModel.OpenProjectCommand.Execute(null);
+        var dialog = OpenedDialog(host, "OpenProjectWindow");
+        var list = FindByName<ListBox>(dialog, "ProjectList");
+        list.SelectedItem = list.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, id));
+        Pump();
+        FindByName<TextBox>(dialog, "RenameProjectName").Text = "Renamed While Playing";
+        Click(dialog, FindByName<Button>(dialog, "RenameProjectButton"));
+        dialog.Close();
+
+        PumpUntil(() => host.ViewModel.Mode == FarmingRpgMaker.App.Hosting.EditorMode.Edit && host.Workspace.Current?.Name == "Renamed While Playing", "renamed after the kept playtest");
+        host.Workspace.FlushPendingSave();
+        Assert.Null(host.Workspace.SaveError);
+        Assert.Equal("Renamed While Playing", host.Workspace.Store.Load(id).Project!.Name);
+        Assert.Equal("Renamed While Playing", host.Workspace.Store.List().Single(p => p.Id == id).Name);
+        Assert.Equal("Renamed While Playing", host.ViewModel.ProjectName);
+    }
+
+    [AvaloniaFact]
     public void OpenProjectDialog_RenamesAndDuplicatesProjects()
     {
         using var host = new GameTestHost();

@@ -15,6 +15,9 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
 {
     private readonly ExportGameViewModel _viewModel;
     private readonly StackPanel _report = new() { Name = "ExportReportPanel", Spacing = 8 };
+    private readonly Button _close;
+    /// <summary>The creator closed the window during an export: close once it has stopped.</summary>
+    private bool _closeWhenDone;
 
     public ExportGameWindow(ExportGameViewModel viewModel)
         : base("Export Game", 640, 640)
@@ -30,6 +33,7 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
         var archives = Check("ExportArchivesCheck", "Create archives (.zip for Windows and the web, .tar.gz for Linux)", nameof(ExportGameViewModel.CreateArchives));
 
         var folder = new TextBox { Name = "ExportFolderBox", Watermark = "Output folder" };
+        Avalonia.Automation.AutomationProperties.SetName(folder, "Output folder");
         folder.Bind(TextBox.TextProperty, new Binding(nameof(ExportGameViewModel.OutputFolder)) { Mode = BindingMode.TwoWay });
         var browse = Ui.Button(Ui.IconLabel("IconFolder", "Browse…"), () => { }, "subtle");
         browse.Name = "ExportBrowseButton";
@@ -52,6 +56,7 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
         var close = Ui.Button("Close", Close, "subtle");
         close.Name = "ExportCloseButton";
         close.IsCancel = true;
+        _close = close;
 
         var header = Ui.VStack(
             2,
@@ -82,6 +87,15 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
 
         viewModel.PropertyChanged += OnViewModelChanged;
         Closed += (_, _) => viewModel.PropertyChanged -= OnViewModelChanged;
+        // Closing during an export cancels it and closes once it has stopped, so its result is
+        // never lost and a second export can't start into the same folder meanwhile.
+        Closing += (_, e) =>
+        {
+            if (!_viewModel.IsExporting) return;
+            e.Cancel = true;
+            _closeWhenDone = true;
+            _viewModel.CancelExport();
+        };
         RenderReport();
     }
 
@@ -96,7 +110,13 @@ internal sealed class ExportGameWindow : ProjectDialogWindow
     {
         if (e.PropertyName is nameof(ExportGameViewModel.Report) or nameof(ExportGameViewModel.IsExporting) or nameof(ExportGameViewModel.StatusText))
         {
+            _close.Content = _viewModel.IsExporting ? "Cancel" : "Close";
             RenderReport();
+            if (_closeWhenDone && !_viewModel.IsExporting)
+            {
+                _closeWhenDone = false;
+                Close();
+            }
         }
     }
 

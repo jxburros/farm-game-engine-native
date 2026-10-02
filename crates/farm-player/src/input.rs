@@ -186,6 +186,8 @@ pub struct InputRouter {
     pointer: Option<(f32, f32)>,
     pointer_down: bool,
     device: InputDevice,
+    /// The host shows on-screen touch controls: pointers are fingers.
+    touch_controls: bool,
     accept_held: u32,
     time: f64,
 }
@@ -230,6 +232,23 @@ impl InputRouter {
         self.device
     }
 
+    /// Whether the host shows on-screen touch controls. While it does, pointers count as
+    /// [`InputDevice::Touch`] (no key hints); showing them switches to touch at once.
+    pub fn set_touch_controls(&mut self, shown: bool) {
+        if shown && !self.touch_controls {
+            self.device = InputDevice::Touch;
+        }
+        self.touch_controls = shown;
+    }
+
+    fn pointer_device(&self) -> InputDevice {
+        if self.touch_controls {
+            InputDevice::Touch
+        } else {
+            InputDevice::Mouse
+        }
+    }
+
     fn press(&mut self, canonical: &str, out: &mut FrameInput) {
         let count = self.held.entry(canonical.to_owned()).or_insert(0);
         *count += 1;
@@ -266,7 +285,8 @@ impl InputRouter {
     }
 
     /// Routes one frame of events. `capture` means the settings screen waits for a key to bind:
-    /// keys then only arrive as raw presses (no navigation, nothing for the game).
+    /// keys then only arrive as raw presses (no navigation, nothing for the game), and the only
+    /// navigation is Back from gamepad B / Start or the on-screen Menu button, which cancels.
     pub fn frame(&mut self, events: &[InputEvent], dt: f64, bindings: &Bindings, capture: bool) -> FrameInput {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.time += dt;
@@ -339,11 +359,11 @@ impl InputRouter {
                 InputEvent::Text { .. } => {}
                 InputEvent::PointerMove { x, y } => {
                     self.pointer = Some((*x, *y));
-                    self.device = InputDevice::Mouse;
+                    self.device = self.pointer_device();
                 }
                 InputEvent::PointerDown { x, y, button } => {
                     self.pointer = Some((*x, *y));
-                    self.device = InputDevice::Mouse;
+                    self.device = self.pointer_device();
                     if *button == PointerButton::Primary {
                         self.pointer_down = true;
                         out.ui.pointer_pressed = true;
@@ -375,8 +395,8 @@ impl InputRouter {
                     self.axes.insert(*axis, value);
                 }
                 InputEvent::Action { action, pressed } => {
-                    // Touch controls sit on a pointer screen: hints follow the pointer.
-                    self.device = InputDevice::Mouse;
+                    // On-screen controls are touch controls: no key hints.
+                    self.device = InputDevice::Touch;
                     self.action(*action, *pressed, capture, &mut out);
                 }
                 InputEvent::FocusLost => {
@@ -386,7 +406,7 @@ impl InputRouter {
             }
         }
         if !capture {
-            self.update_stick(bindings, &mut out);
+            self.update_stick(&mut out);
             self.repeat_navigation(&mut out);
             let scroll = self.axes.get(&GamepadAxis::RightY).copied().unwrap_or(0.0);
             if scroll.abs() > STICK_RELEASE {
@@ -411,13 +431,19 @@ impl InputRouter {
         if pressed == self.buttons.contains(&button) {
             return;
         }
+        if capture && pressed {
+            // Waiting for a key: B and Start still cancel, so a gamepad can always get out. The
+            // press is not recorded, so its release is ignored too; releases of buttons pressed
+            // before the capture go on below, so nothing stays held.
+            if matches!(button, GamepadButton::East | GamepadButton::Start) {
+                out.ui.nav.push(NavAction::Back);
+            }
+            return;
+        }
         if pressed {
             self.buttons.insert(button);
         } else {
             self.buttons.remove(&button);
-        }
-        if capture {
-            return;
         }
         let direction = match button {
             GamepadButton::DpadUp => Some(Direction::Up),
@@ -472,13 +498,18 @@ impl InputRouter {
         if pressed == self.actions.contains(&action) {
             return;
         }
+        if capture && pressed {
+            // Waiting for a key: the on-screen Menu button cancels, like gamepad B (the press is
+            // not recorded, as for gamepad buttons).
+            if action == BindAction::Menu {
+                out.ui.nav.push(NavAction::Back);
+            }
+            return;
+        }
         if pressed {
             self.actions.insert(action);
         } else {
             self.actions.remove(&action);
-        }
-        if capture {
-            return;
         }
         let direction = Direction::of_action(action);
         let canonical = action.canonical_key();
@@ -502,7 +533,9 @@ impl InputRouter {
         }
     }
 
-    fn update_stick(&mut self, bindings: &Bindings, out: &mut FrameInput) {
+    /// The left stick moves (the canonical move keys) and navigates. Its directions are fixed:
+    /// gamepad bindings cover buttons only.
+    fn update_stick(&mut self, out: &mut FrameInput) {
         let x = self.axes.get(&GamepadAxis::LeftX).copied().unwrap_or(0.0);
         let y = self.axes.get(&GamepadAxis::LeftY).copied().unwrap_or(0.0);
         for (direction, value) in
@@ -523,7 +556,6 @@ impl InputRouter {
                 }
             }
         }
-        let _ = bindings;
     }
 
     fn repeat_navigation(&mut self, out: &mut FrameInput) {
@@ -609,6 +641,36 @@ mod tests {
     }
 
     #[test]
+    fn capture_mode_lets_a_gamepad_cancel_and_release() {
+        let mut router = InputRouter::new();
+        let bindings = Bindings::default();
+        let button = |button, pressed| InputEvent::GamepadButton { button, pressed };
+        // A starts the capture (pressed before it), and is let go while it waits.
+        let frame = router.frame(&[button(GamepadButton::South, true)], 0.016, &bindings, false);
+        assert!(frame.accept_pressed);
+        let frame = router.frame(&[button(GamepadButton::South, false)], 0.016, &bindings, true);
+        assert!(frame.accept_released && !frame.ui.accept_held, "nothing stays held across the capture");
+        // While waiting, only B and Start (and the on-screen Menu button) navigate: Back.
+        for (pad, nav) in [
+            (GamepadButton::DpadDown, vec![]),
+            (GamepadButton::South, vec![]),
+            (GamepadButton::East, vec![NavAction::Back]),
+            (GamepadButton::Start, vec![NavAction::Back]),
+        ] {
+            let frame = router.frame(&[button(pad, true)], 0.016, &bindings, true);
+            assert_eq!(frame.ui.nav, nav, "{pad:?}");
+            assert!(frame.game.is_empty() && !frame.accept_pressed, "{pad:?}");
+            // The swallowed press has no release either, during or after the capture.
+            let frame = router.frame(&[button(pad, false)], 0.016, &bindings, false);
+            assert!(frame.game.is_empty() && frame.ui.nav.is_empty() && !frame.accept_released, "{pad:?}");
+        }
+        let frame =
+            router.frame(&[InputEvent::Action { action: BindAction::Menu, pressed: true }], 0.016, &bindings, true);
+        assert_eq!(frame.ui.nav, [NavAction::Back]);
+        assert!(frame.game.is_empty());
+    }
+
+    #[test]
     fn gamepad_moves_navigates_and_repeats() {
         let mut router = InputRouter::new();
         let bindings = Bindings::default();
@@ -656,7 +718,7 @@ mod tests {
         assert_eq!(frame.game, vec![GameKey::Down("w".into()), GameKey::Down("e".into())]);
         assert_eq!(frame.ui.nav, [NavAction::Up, NavAction::Accept]);
         assert!(frame.accept_pressed && frame.ui.accept_held);
-        assert_eq!(frame.ui.device, InputDevice::Mouse);
+        assert_eq!(frame.ui.device, InputDevice::Touch, "touch controls name no keys");
         // A second press of a held control changes nothing; held moves repeat in menus.
         let frame = router.frame(&[action(BindAction::MoveUp, true)], 0.5, &bindings, false);
         assert!(frame.game.is_empty());
@@ -679,5 +741,23 @@ mod tests {
         assert_eq!(frame.game.len(), 2);
         let frame = router.frame(&[action(BindAction::Sleep, false)], 0.016, &bindings, false);
         assert!(frame.game.is_empty());
+    }
+
+    #[test]
+    fn pointers_are_fingers_while_touch_controls_show() {
+        let mut router = InputRouter::new();
+        let bindings = Bindings::default();
+        let tap = InputEvent::PointerDown { x: 4.0, y: 4.0, button: PointerButton::Primary };
+        assert_eq!(router.frame(std::slice::from_ref(&tap), 0.016, &bindings, false).ui.device, InputDevice::Mouse);
+        // Showing the controls switches at once, before any touch.
+        router.set_touch_controls(true);
+        assert_eq!(router.frame(&[], 0.016, &bindings, false).ui.device, InputDevice::Touch);
+        assert_eq!(router.frame(std::slice::from_ref(&tap), 0.016, &bindings, false).ui.device, InputDevice::Touch);
+        // A keyboard still takes over (a tablet with a keyboard), and hiding the controls
+        // gives pointers back to the mouse.
+        let key = InputEvent::KeyDown { key: "w".into(), repeat: false };
+        assert_eq!(router.frame(&[key], 0.016, &bindings, false).ui.device, InputDevice::Keyboard);
+        router.set_touch_controls(false);
+        assert_eq!(router.frame(&[tap], 0.016, &bindings, false).ui.device, InputDevice::Mouse);
     }
 }

@@ -10,8 +10,12 @@ code. The editor shows this guide under **Help → Creator Guide** (F1).
 **File → New Project** (Ctrl+N) asks for a name and a template:
 
 - **Starter Farm**: the full farming loop, with crops, a shop, quests and crafting.
-- **Cozy Garden**: the same farm without energy or collapse, and with slow days.
-- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to remix.
+- **Cozy Garden**: a cottage garden with a pond, beds already growing (one
+  ready to pick), a merchant's stall and two hens; no energy or collapse,
+  and slow days.
+- **Quest RPG**: a story quest chain, gated dialogue and an elder NPC to
+  remix; the farm's south gate leads to a village square with a fountain,
+  where the elder and the lantern keeper wait.
 - **Blank**: an empty scene and the default item catalog.
 
 **File → Open Project** (Ctrl+O) lists your projects. They are saved
@@ -32,8 +36,22 @@ Pick a scene in the **Scene** list above the map; zoom with **−**, **+** and
 **Fit**. Hover a tile to inspect it. The map works from the keyboard too: click
 it or Tab to it, move the gold editing cursor with the **arrow keys**, and
 press **Enter** or **Space** to use the current tool there (Rectangle and
-Select take two presses, one per corner; **Esc** cancels). Screen readers
-announce the tile under the cursor. The side panel holds the tools:
+Select take two presses, one per corner; **Esc** cancels). While the map has
+focus, letter keys pick the tools: `V` Inspect, `B` Brush, `R` Rectangle,
+`G` Fill area, `I` Pick, `M` Select, `E` Erase layer, `X` Block, `U`
+Unblock, `D` Door and `P` Player start. Screen readers announce the tile
+under the cursor. Picking a brush is not an undo step.
+
+Markers on the map show doors (`D`), where doors from other scenes arrive
+(`A`), event triggers (`!`, with their region outlined), the mine entrance
+(`M`) and the player start (`S`); the **Markers** box above the map hides
+them. With **Inspect**, click a marker to open it: the door form, the event in
+Content, the door an arrival comes from, or the mine settings. Wherever a form
+asks for a tile (a door's arrival, the Workshop's tile, an event's tile, an NPC
+schedule stop or waypoint, the mine entrance), **Pick on map** lets you click
+it instead: the map shows the right scene, and **Esc** cancels.
+
+The side panel holds the tools (drag its edge to make it wider):
 
 - **Tile brush**: the terrain to paint (grass, soil, water, path, wall, door,
   floor, and your own tiles from the Art tab).
@@ -49,8 +67,13 @@ announce the tile under the cursor. The side panel holds the tools:
   placed there.
 - **Scene**: add a scene, rename, resize, duplicate or delete it, **Set as
   start**, **Fill scene** with one tile, **Clear crops/items** and **Reset soil**.
+  **Indoor (no weather)** marks a greenhouse or interior: rain doesn't water its
+  soil and storms don't damage its crops.
   Under the size boxes, the calculator shows the tile count and aspect ratio,
-  and warns when a resize would cut tiles off.
+  and warns when a resize would cut tiles off. Shrinking moves the player
+  start, NPCs (with their schedules and waypoints), animals, door arrivals,
+  event tiles and the mine entrance that stood on the cut tiles inside, and
+  removes doors leaving from them; the note lists each one first.
 - **Transitions**: choose **Door**, click the departure tile, then pick the
   destination scene and tile. **Return door** adds the way back. The list
   below shows every door of the scene; **Duplicate** starts a copy of a door
@@ -59,8 +82,9 @@ announce the tile under the cursor. The side panel holds the tools:
 ### Content
 
 The Content tab edits everything the game is made of. Pick a category, select
-an entry (or **Add** one), change its fields and **Save**. Lists show each
-entry's art, and forms preview the art they point to:
+an entry (or click **New** to start one), change its fields and click **Save
+changes**. Lists show each entry's art, and forms preview the art they point
+to:
 
 - **NPCs** and **Dialogue**: characters, where they stand, their daily
   schedules (a row per stop: the time of day, the scene and the tile), patrol
@@ -83,16 +107,32 @@ entry's art, and forms preview the art they point to:
   recipe's category groups it in the game's crafting menu, and the editor
   shows its profit per craft and per hour of machine time. The built-in node
   types (trees, rocks, weeds, mine rocks and ore) are listed and can be
-  customized like crops.
+  customized like crops. Players can pick an idle machine back up from the
+  crafting menu; doors, door arrivals and the mine entrance stay clear of
+  machines.
 - **Animal species** and **Fish tables**: what animals produce, and which fish
   bite in each scene and season.
 - **Actions** and **Minigames**: an action is a named bundle of effects (give
   an item, set a flag, show a message, start a minigame) that an item's
   **Use** button, a dialogue option, an event or a hotkey can run. A minigame
-  is a short challenge whose score picks the reward.
+  is a short challenge whose score picks the reward. Its **Kind** is one of
+  the games built into the player: **Timing bar**, **Hold to catch**,
+  **Simple battle**, **Rhythm tap**, **Moving target** and **Memory
+  sequence**. Each kind's settings show as fields with their defaults (clear
+  one to play the default). The kinds are part of the engine: a project
+  can't add its own, and a kind the game doesn't have plays as a single
+  "Go!" button that scores 0.5, which Problems warns about, as it does about
+  settings the kind doesn't read or numbers outside their range.
 
 Every nested field also has an **Edit as JSON** box, for pasting or bulk
 changes.
+
+The filter box above the list narrows it by name or id, and **Ctrl+K** (or
+`Ctrl+P`) finds any entry, scene or art in the whole project. Fields you
+haven't saved stay as typed when you switch tabs or undo something elsewhere;
+choosing another entry asks whether to save them first, and they are saved
+before another project opens or the editor closes. A number outside its range
+is reported by name instead of being changed for you.
 
 ### Problems
 
@@ -106,26 +146,42 @@ scene that needs a fix.
 Project settings: name, version and the game-text **locale**; gameplay
 (energy, skills and the XP each skill level needs, player speed, collapse
 penalties); the clock (day start and
-end, game minutes per real second); the calendar's **seasons** (add, rename,
-reorder, change their length) and **festivals**. The **Export** section holds
+end, game minutes per real second, and whether it **pauses** while a dialogue,
+shop, minigame or menu is open, on by default); the calendar's **seasons**
+(add, rename, reorder, change their length) and **festivals**. The day must
+end at least an hour after it starts and by minute 4294; the clock can run at
+most 1440 game minutes per real second. The **Export** section holds
 what the exported game shows: its title, executable name, version, author,
 company, game id (set it once: it keeps players' save folders stable), icon,
 window size, pixel scale, fullscreen and credits.
 
 The locale also picks the language of the game's own interface when the
 player hasn't chosen one: English and Spanish are built in. Players can
-change it in the game's **Settings → Accessibility → Language**.
+change it in the game's **Settings → Accessibility → Language**. The engine's
+own messages follow it too ("Not enough money!", the built-in minigames'
+prompts and buttons, save-load notices); what you write (names, dialogue,
+event messages, a minigame's own **prompt**) shows as you wrote it.
 
 ### Mods
 
 Install **content packs** from their JSON file: the editor shows what a pack
-adds, overrides and needs before **Install reviewed pack**. Installed packs
-can be turned on and off, reordered, removed, or imported into the project as
-ordinary content.
+adds, overrides and needs, which hooks its plugins hear and what they may do,
+before **Install reviewed pack**. Installed packs can be turned on and off,
+reordered, removed, or imported into the project as ordinary content. A pack's
+scenes join the game world the first time a door or a warp leads there; pack
+ids are namespaced (`my-pack:cave`) but scene references inside a pack are not,
+so a pack names its own scenes in full.
+
+A pack's plugins only change your game in the ways its manifest declares
+(`permissions.mutations`): by default they can show messages, play sounds
+and touch the pack's own flags and items, nothing else. Plugin answers apply
+right before the next game tick, and an `onWeatherRoll` answer comes too late
+to change the night's watering and storm damage. [PLUGINS.md](PLUGINS.md)
+has the permissions, timing and limits.
 
 ### Art
 
-**Import image** takes PNG, JPEG, WebP, GIF, BMP and SVG files; the list shows
+**Import images** takes PNG, JPEG, WebP, GIF, BMP and SVG files; the list shows
 a thumbnail of each. Make **animation clips** by slicing a whole sheet, by
 clicking cells of the sheet (each click adds that cell as the next frame), or
 from separate images (**Add image frame** adds another picture as a frame, so
@@ -174,7 +230,10 @@ Playtests are safe: returning to Edit Mode restores the world to the moment
 you started, so your farm isn't trampled by testing. The Play Mode toolbar has:
 
 - **Restart**: start the playtest over from that moment.
-- **Keep changes**: keep what happened in the playtest when you return.
+- **Keep changes**: keep what happened in the playtest when you return: the
+  world, the player, flags, the date, and what was open or under way (a
+  dialogue or shop, today's purchases, walking NPCs, the mine floor), so the
+  next playtest starts right there.
 - **Debug**: add money, restore energy, skip a day or an hour, change the
   season, give seeds or materials, teleport to a scene and set flags.
 
