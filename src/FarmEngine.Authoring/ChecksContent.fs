@@ -391,6 +391,39 @@ module internal ChecksContent =
             let target = Some(NavigationTarget.Minigame minigame.Id)
             if System.String.IsNullOrWhiteSpace minigame.Kind then
                 sink.Error("minigame.emptyKind", path + ".kind", sprintf "Minigame \"%s\" has no kind" minigame.Name, target)
+            else
+                match MinigameKinds.tryFind minigame.Kind with
+                | None ->
+                    sink.Warning(
+                        "minigame.unknownKind",
+                        path + ".kind",
+                        sprintf "Minigame \"%s\" uses kind \"%s\", which the game doesn't have: it plays as a single \"Go!\" button that always scores 0.5. Pick one of the built-in kinds" minigame.Name minigame.Kind,
+                        target)
+                | Some kind ->
+                    for key, value in minigame.Config do
+                        let spath = sprintf "%s.config.%s" path key
+                        match kind.Settings |> List.tryFind (fun setting -> setting.Key = key) with
+                        | None ->
+                            sink.Warning("minigame.unknownSetting", spath, sprintf "Minigame \"%s\" has setting \"%s\", which the %s kind doesn't use" minigame.Name key kind.Id, target)
+                        | Some setting ->
+                            match setting.Kind, value with
+                            | _, JNull -> ()
+                            | MinigameSettingKind.Text, JString _ -> ()
+                            | (MinigameSettingKind.Number | MinigameSettingKind.Integer), JNumber n ->
+                                let below = setting.Min |> Option.exists (fun min -> n < min)
+                                let above = setting.Max |> Option.exists (fun max -> n > max)
+                                if below || above then
+                                    let range =
+                                        match setting.Min, setting.Max with
+                                        | Some min, Some max -> sprintf "%g to %g" min max
+                                        | Some min, None -> sprintf "at least %g" min
+                                        | None, Some max -> sprintf "at most %g" max
+                                        | None, None -> ""
+                                    sink.Warning("minigame.settingRange", spath, sprintf "Minigame \"%s\": %s is %g; the game uses %s" minigame.Name setting.Label n range, target)
+                            | MinigameSettingKind.Text, _ ->
+                                sink.Warning("minigame.settingType", spath, sprintf "Minigame \"%s\": %s should be text; the game ignores it" minigame.Name setting.Label, target)
+                            | _ ->
+                                sink.Warning("minigame.settingType", spath, sprintf "Minigame \"%s\": %s should be a number; the game ignores it" minigame.Name setting.Label, target)
             if minigame.ResultTiers.IsEmpty then
                 sink.Warning("minigame.noTiers", path + ".resultTiers", sprintf "Minigame \"%s\" has no result tiers, so its score changes nothing" minigame.Name, target)
             minigame.ResultTiers

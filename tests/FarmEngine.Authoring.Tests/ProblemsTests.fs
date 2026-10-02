@@ -280,6 +280,36 @@ let ``actions and minigame tiers check the same references as events`` () =
     Assert.Equal(sprintf "minigames[%d].resultTiers[0].outcomes[0].itemId" (tiered.Minigames.Length - 1), (has "minigame.outcomeUnknownItem" tiered).Path)
 
 [<Fact>]
+let ``minigames warn about kinds and settings the game doesn't have`` () =
+    let project = starter ()
+    let fresh = Defaults.newMinigame project
+    let index = project.Minigames.Length
+    let clean = project |> apply (UpsertMinigame fresh)
+    for code in [ "minigame.unknownKind"; "minigame.unknownSetting"; "minigame.settingRange"; "minigame.settingType" ] do
+        lacks code clean
+    let typo = project |> apply (UpsertMinigame { fresh with Kind = "timing-barr" })
+    let problem = has "minigame.unknownKind" typo
+    Assert.Equal(sprintf "minigames[%d].kind" index, problem.Path)
+    Assert.True(problem.IsWarning)
+    let settings =
+        { fresh with
+            Kind = "rhythm-tap"
+            Config = [ "beats", JNumber 99.0; "bpm", JString "fast"; "speed", JNumber 1.0; "prompt", JString "Dance!" ] }
+    let tuned = project |> apply (UpsertMinigame settings)
+    Assert.Equal(sprintf "minigames[%d].config.beats" index, (has "minigame.settingRange" tuned).Path)
+    Assert.Equal(sprintf "minigames[%d].config.bpm" index, (has "minigame.settingType" tuned).Path)
+    Assert.Equal(sprintf "minigames[%d].config.speed" index, (has "minigame.unknownSetting" tuned).Path)
+    // Every built-in kind is offered in the editor, and none is flagged.
+    Assert.Equal<string list>(
+        [ "timing-bar"; "hold-to-catch"; "simple-battle"; "rhythm-tap"; "moving-target"; "memory-sequence" ],
+        MinigameKinds.all |> List.map (fun kind -> kind.Id))
+    for kind in MinigameKinds.all do
+        lacks "minigame.unknownKind" (project |> apply (UpsertMinigame { fresh with Kind = kind.Id; Config = [] }))
+    match References.roleOf "MinigameDef" "Kind" with
+    | Some(FieldRole.OneOf(choices, None)) -> Assert.Equal<(string * string) list>(MinigameKinds.choices, choices)
+    | other -> failwithf "MinigameDef.Kind is %A" other
+
+[<Fact>]
 let ``dialogue options, gift tastes and item crops name things that exist`` () =
     let project = starter ()
     let farmer = npc project "npc-farmer"

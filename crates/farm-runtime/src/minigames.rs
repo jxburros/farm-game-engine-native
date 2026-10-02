@@ -327,11 +327,13 @@ pub fn create_default_minigame_registry() -> MinigameRegistry {
     registry
 }
 
-/// A def's `prompt`, else the catalog default: the text and, for the default, its message.
+/// A def's `prompt`, else the catalog default: the text and, for the default, its message. A
+/// prompt that is the default's English wording (the editor's new minigames carry it) counts as
+/// the default, so it is translated too.
 fn prompt_or(config: &MinigameConfig, default: Message) -> (String, Option<Message>) {
     match string_config(config, "prompt") {
-        Some(prompt) => (prompt.to_owned(), None),
-        None => (default.english(), Some(default)),
+        Some(prompt) if prompt != default.english() => (prompt.to_owned(), None),
+        _ => (default.english(), Some(default)),
     }
 }
 

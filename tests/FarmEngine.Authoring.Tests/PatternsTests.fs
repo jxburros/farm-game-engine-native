@@ -50,6 +50,8 @@ let ``the patterns create what the web creates`` () =
     let minigame = fishing.Minigames |> Seq.find (fun m -> m.Id = "fishing")
     Assert.Equal("hold-to-catch", minigame.Kind)
     Assert.Equal(JNumber 1200.0, field "holdMs" minigame.Config)
+    // Only settings hold-to-catch reads stay (the starter timing bar's speed and prompt go).
+    Assert.Equal<string list>([ "holdMs" ], minigame.Config |> List.map fst)
     let combat = project |> apply (build Combat options project)
     Assert.Equal("simple-battle", (combat.Minigames |> Seq.find (fun m -> m.Id = "willow")).Kind)
     let tree = project |> apply (build Tree options project)

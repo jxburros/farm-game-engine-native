@@ -29,6 +29,7 @@
     <Compile Include="EditContent.fs" />
     <Compile Include="EditProject.fs" />
     <Compile Include="Document.fs" />
+    <Compile Include="MinigameKinds.fs" />
     <Compile Include="Defaults.fs" />
     <Compile Include="SettingsForms.fs" />
     <Compile Include="References.fs" />

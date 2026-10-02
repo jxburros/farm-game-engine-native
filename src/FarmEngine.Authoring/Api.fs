@@ -334,6 +334,24 @@ type ContentForms =
         | Some role -> FormField.OfRole(label, role)
         | None -> null
 
+    /// The typed settings of a built-in minigame kind, as optional fields of its `config` (empty
+    /// for a kind the game doesn't have). Clearing one plays with its default (the placeholder).
+    static member MinigameSettings(kind: string) : IReadOnlyList<FormField> =
+        MinigameKinds.settings kind
+        |> List.map (fun setting ->
+            let fieldKind =
+                match setting.Kind with
+                | MinigameSettingKind.Number -> "number"
+                | MinigameSettingKind.Integer -> "integer"
+                | MinigameSettingKind.Text -> "text"
+            FormField(setting.Key, setting.Label, fieldKind, "", [], true, None, sprintf "default: %s" setting.Default,
+                      0.0, setting.Min, setting.Max, "", "", ""))
+        |> ContentForms.List
+
+    /// What a built-in minigame kind plays like (empty for a kind the game doesn't have).
+    static member MinigameHelp(kind: string) : string =
+        MinigameKinds.tryFind kind |> Option.map (fun k -> k.Help) |> Option.defaultValue ""
+
     /// The ids a picker of `kind` offers, in project order.
     static member Options(kind: string, project: GameProject) : IReadOnlyList<PickerOption> =
         References.options (ContentForms.Kind kind) project |> ContentForms.List

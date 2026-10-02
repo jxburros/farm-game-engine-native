@@ -260,6 +260,7 @@ module References =
           reference "FishTableEntry" "ItemId" ReferenceKind.Item
           optional "FishTable" "JunkItemId" ReferenceKind.Item
           // Extensibility
+          oneOf "MinigameDef" "Kind" MinigameKinds.choices
           plain "MinigameDef" "Config" "settings passed to the minigame kind, keyed by setting name"
           // Settings, weather, mine, interface
           plain "ProjectSettings" "Locale" "a locale code for pack string tables"
