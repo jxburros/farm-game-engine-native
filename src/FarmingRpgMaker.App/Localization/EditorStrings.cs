@@ -7,8 +7,9 @@ public sealed record EditorLanguage(string Code, string NativeName);
 
 /// <summary>
 /// String tables of the editor's own chrome (the web version's <c>src/lib/i18n.ts</c>): mode
-/// names, the Play Mode toolbar, the Help menu, the welcome tour and the shortcuts list. The
-/// game's interface is localized by the Rust player (farm-ui); editor forms stay English.
+/// names, the Play Mode toolbar, the whole menu bar, the welcome tour and the shortcuts list. The
+/// game's interface is localized by the Rust player (farm-ui); editor tabs, forms and Problems
+/// stay English until the full editor pass (ROADMAP "Later").
 /// <para>
 /// <see cref="Get(string)"/> looks a key up in the current <see cref="Language"/>, falls back to
 /// English, then to the key itself. The language is an app setting
@@ -45,6 +46,14 @@ public static class EditorStrings
         ["header.playing"] = "Playing: {0}",
         ["header.editing"] = "Editing: {0}",
         // Menus (mnemonics with "_").
+        ["menu.file"] = "_File",
+        ["menu.newProject"] = "_New Project",
+        ["menu.openProject"] = "_Open Project…",
+        ["menu.importJson"] = "_Import Project JSON…",
+        ["menu.exportJson"] = "_Export Project JSON…",
+        ["menu.exportGame"] = "Export _Game…",
+        ["menu.exit"] = "E_xit",
+        ["menu.game"] = "_Game",
         ["menu.playMode"] = "_Play Mode",
         ["menu.editMode"] = "_Edit Mode",
         ["menu.help"] = "_Help",
@@ -113,6 +122,14 @@ public static class EditorStrings
         ["toolbar.keepOff"] = "Los cambios de la prueba se descartarán al salir",
         ["header.playing"] = "Jugando: {0}",
         ["header.editing"] = "Editando: {0}",
+        ["menu.file"] = "_Archivo",
+        ["menu.newProject"] = "_Nuevo proyecto",
+        ["menu.openProject"] = "_Abrir proyecto…",
+        ["menu.importJson"] = "_Importar JSON del proyecto…",
+        ["menu.exportJson"] = "_Exportar JSON del proyecto…",
+        ["menu.exportGame"] = "Exportar _juego…",
+        ["menu.exit"] = "_Salir",
+        ["menu.game"] = "_Juego",
         ["menu.playMode"] = "Modo _Juego",
         ["menu.editMode"] = "Modo _Editor",
         ["menu.help"] = "Ay_uda",

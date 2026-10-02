@@ -110,6 +110,22 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
     /// <summary>The toggle offers the other mode.</summary>
     public string ModeToggleText => EditorStrings.Get(IsPlayMode ? "mode.edit" : "mode.play");
 
+    public string FileMenuText => EditorStrings.Get("menu.file");
+
+    public string NewProjectMenuText => EditorStrings.Get("menu.newProject");
+
+    public string OpenProjectMenuText => EditorStrings.Get("menu.openProject");
+
+    public string ImportJsonMenuText => EditorStrings.Get("menu.importJson");
+
+    public string ExportJsonMenuText => EditorStrings.Get("menu.exportJson");
+
+    public string ExportGameMenuText => EditorStrings.Get("menu.exportGame");
+
+    public string ExitMenuText => EditorStrings.Get("menu.exit");
+
+    public string GameMenuText => EditorStrings.Get("menu.game");
+
     public string PlayModeMenuText => EditorStrings.Get("menu.playMode");
 
     public string EditModeMenuText => EditorStrings.Get("menu.editMode");
@@ -223,6 +239,14 @@ public sealed class MainWindowViewModel : ObservableObject, IShellHost
         nameof(Language),
         nameof(Subtitle),
         nameof(ModeToggleText),
+        nameof(FileMenuText),
+        nameof(NewProjectMenuText),
+        nameof(OpenProjectMenuText),
+        nameof(ImportJsonMenuText),
+        nameof(ExportJsonMenuText),
+        nameof(ExportGameMenuText),
+        nameof(ExitMenuText),
+        nameof(GameMenuText),
         nameof(PlayModeMenuText),
         nameof(EditModeMenuText),
         nameof(HelpMenuText),
