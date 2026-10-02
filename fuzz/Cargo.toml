@@ -15,6 +15,11 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
+# farm-plugins is listed only to switch on its portable-dispatch feature for the copy farm-fuzz
+# builds (cargo unifies features), so no code here names it.
+[package.metadata.cargo-machete]
+ignored = ["farm-plugins"]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 farm-fuzz = { path = "../crates/farm-fuzz" }
