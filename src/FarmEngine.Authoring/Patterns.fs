@@ -101,7 +101,7 @@ module Patterns =
                 let id = chooseId project pattern.Id options.Name
                 let name = if System.String.IsNullOrWhiteSpace options.Name then pattern.Name else options.Name.Trim()
                 let text = options.Text
-                let tile = (Proj.rows scene).[y].[x]
+                let tile = Proj.tryTile scene x y |> Option.defaultValue Tile.Default
                 let item (itemId: string) (title: string) : Item =
                     { Item.Default with
                         Id = itemId; Name = title; Description = text; Type = ItemTypes.Material; Stackable = true; MaxStack = 99.0; Value = 20.0 }

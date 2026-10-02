@@ -58,6 +58,11 @@ type Edits =
     static member RenameScene(sceneId: string, name: string) : Edit = RenameScene(sceneId, name)
     static member SetSceneIndoor(sceneId: string, indoor: bool) : Edit = SetSceneIndoor(sceneId, indoor)
     static member ResizeScene(sceneId: string, width: int, height: int) : Edit = ResizeScene(sceneId, width, height)
+    /// Largest scene side `ResizeScene` takes.
+    static member MaxSceneSize = EditScenes.MaxSceneSize
+    /// What `ResizeScene` to this size would move inside or remove (empty when nothing).
+    static member ResizeImpact(project: GameProject, sceneId: string, width: int, height: int) : IReadOnlyList<string> =
+        EditScenes.resizeImpact sceneId width height project |> Array.ofList :> IReadOnlyList<string>
     static member DuplicateScene(sceneId: string, newSceneId: string) : Edit = DuplicateScene(sceneId, newSceneId)
     static member SetTransition(sceneId: string, transition: SceneTransition) : Edit = SetTransition(sceneId, transition)
     /// TransitionEditor "Both Ways": the door and its return door as one step.
@@ -154,6 +159,8 @@ type Documents =
     static member Preview(project: GameProject, edit: Edit) : GameProject = Document.run project edit
     static member Apply(document: Document, edit: Edit) : Document = Document.apply edit document
     static member ApplyInStroke(document: Document, strokeId: string, edit: Edit) : Document = Document.applyInStroke strokeId edit document
+    /// An edit to editor state that is not history (the tile brush): no undo entry.
+    static member ApplyWithoutHistory(document: Document, edit: Edit) : Document = Document.applyWithoutHistory edit document
     static member EndStroke(document: Document) : Document = Document.endStroke document
     static member CanUndo(document: Document) : bool = Document.canUndo document
     static member CanRedo(document: Document) : bool = Document.canRedo document
