@@ -161,9 +161,10 @@ public sealed class ExportGameViewModel : ObservableObject
     {
         get
         {
+            // A command that threw says what failed (choosing the folder, or the export itself).
             if (_failure is not null)
             {
-                return "The export failed.";
+                return _failure;
             }
 
             if (_report is not { } report)
