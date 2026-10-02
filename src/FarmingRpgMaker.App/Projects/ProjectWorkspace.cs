@@ -204,6 +204,22 @@ public sealed class ProjectWorkspace
     }
 
     /// <summary>
+    /// An edit to editor state kept in the project that is not content (the tile brush): no
+    /// undo entry, so picking a brush never uses up undo depth or answers Ctrl+Z (#45). Still
+    /// autosaved. False when nothing changed.
+    /// </summary>
+    public bool ApplyWithoutHistory(Edit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_document is null)
+        {
+            return false;
+        }
+
+        return Commit(Documents.ApplyWithoutHistory(_document, edit), ProjectChangeKind.Edited);
+    }
+
+    /// <summary>
     /// A drag-stroke edit (web <c>beginPaintStroke</c>/<c>endPaintStroke</c>): every edit with the
     /// same <paramref name="strokeId"/> lands in ONE undo entry. Use a fresh id per pointer press.
     /// </summary>

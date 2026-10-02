@@ -33,7 +33,7 @@ public sealed partial class EditModeView : UserControl
         ["floor"] = "#b5a48d",
     };
 
-    public const string PortingNotice = "Tip: click the map (or Tab to it), then use the arrow keys and Enter or Space to edit from the keyboard.";
+    public const string PortingNotice = "Tip: click the map (or Tab to it), then use the arrow keys and Enter or Space to edit from the keyboard. Letter keys pick tools (B brush, R rectangle, G fill, E erase…).";
 
     private readonly ProjectWorkspace _workspace;
     private readonly MapCanvas _canvas = new() { Name = "EditCanvas", Cursor = new Cursor(StandardCursorType.Hand) };
@@ -65,6 +65,8 @@ public sealed partial class EditModeView : UserControl
     private string? _infoKey;
     private string? _sceneId;
     private string? _brush;
+    /// <summary>The brush's art (null: none). With <see cref="_brush"/> the editor owns the brush, not the history.</summary>
+    private VisualRef? _brushVisual;
     private string? _strokeId;
     private int _strokeCount;
     private (int X, int Y)? _lastPainted;
@@ -342,7 +344,9 @@ public sealed partial class EditModeView : UserControl
     private void SetBrush(string? value, VisualRef? visual)
     {
         _brush = value;
-        if (value is not null) _workspace.Apply(Edits.SelectBrush(value, visual));
+        _brushVisual = value is null ? null : visual;
+        // The brush is editor state, not content: no undo step (#45).
+        if (value is not null) _workspace.ApplyWithoutHistory(Edits.SelectBrush(value, visual));
         _fillScene.IsEnabled = value is not null;
         if (value is not null)
         {
@@ -536,6 +540,15 @@ public sealed partial class EditModeView : UserControl
 
     private void OnProjectChanged(object? sender, ProjectChangedEventArgs e)
     {
+        // Undo and redo bring back the brush an entry was recorded with; the brush on show
+        // stays the one painting (#45), so its art keeps riding along with its type.
+        if (e.Kind == ProjectChangeKind.Edited && _brush is not null && _workspace.Current is { } current
+            && (current.SelectedTileType != _brush || !Equals(current.SelectedTileVisual.OrNull(), _brushVisual)))
+        {
+            _workspace.ApplyWithoutHistory(Edits.SelectBrush(_brush, _brushVisual));
+            return;
+        }
+
         if (e.Kind == ProjectChangeKind.Opened)
         {
             _sceneId = null;
@@ -852,12 +865,32 @@ public sealed partial class EditModeView : UserControl
             case Key.Escape when _gestureStart is not null:
                 CancelCorner();
                 break;
+            case var key when (e.KeyModifiers & KeyModifiers.Shift) == 0 && ToolKeys.TryGetValue(key, out var tool):
+                Tool = tool;
+                _editorMessage.Text = $"{ToolLabel(tool)} tool.";
+                break;
             default:
                 return;
         }
 
         e.Handled = true;
     }
+
+    /// <summary>Single-key map tools while the map has focus (listed in Help → Keyboard Shortcuts).</summary>
+    private static readonly IReadOnlyDictionary<Key, MapTool> ToolKeys = new Dictionary<Key, MapTool>
+    {
+        [Key.V] = MapTool.Inspect,
+        [Key.B] = MapTool.Brush,
+        [Key.R] = MapTool.Rectangle,
+        [Key.G] = MapTool.Fill,
+        [Key.I] = MapTool.Pick,
+        [Key.M] = MapTool.Select,
+        [Key.E] = MapTool.Erase,
+        [Key.X] = MapTool.Block,
+        [Key.U] = MapTool.Unblock,
+        [Key.D] = MapTool.Door,
+        [Key.P] = MapTool.PlayerStart,
+    };
 
     /// <summary>
     /// The current tool at the cursor, exactly as a click there (one undo step). Rectangle and
