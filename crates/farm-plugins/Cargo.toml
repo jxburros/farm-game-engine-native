@@ -28,7 +28,7 @@ portable-dispatch = ["wasmi/portable-dispatch"]
 [dev-dependencies]
 sha2 = "0.10"
 # Reads the checked-in guest in tests (the version wasmi already uses).
-wasmparser = { version = "0.228", default-features = false, features = ["std"] }
+wasmparser = { version = "0.259", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true
