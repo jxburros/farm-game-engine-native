@@ -5,8 +5,10 @@ to build, test and change the repository: the prerequisites, the checks CI
 runs, and how to regenerate every checked-in file that a tool produces.
 
 The architecture is in [docs/LANGUAGES.md](docs/LANGUAGES.md) (Rust / F# / C#
-split) and [docs/NUMERICS.md](docs/NUMERICS.md) (integer numerics and
-goldens); [ROADMAP.md](ROADMAP.md) has what is planned.
+split), [docs/NUMERICS.md](docs/NUMERICS.md) (integer numerics and
+goldens) and [docs/EDITOR-ARCHITECTURE.md](docs/EDITOR-ARCHITECTURE.md) (the
+editor's views and shared helpers); [ROADMAP.md](ROADMAP.md) has what is
+planned.
 
 ## Prerequisites
 

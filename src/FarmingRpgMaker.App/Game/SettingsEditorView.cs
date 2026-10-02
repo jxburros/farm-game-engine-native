@@ -291,7 +291,7 @@ public sealed class SettingsEditorView : UserControl, IRetirable
         form.Children.Add(input);
     }
 
-    private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
+    private static string Number(double value) => DisplayFormat.Number(value);
 
     /// <summary>The number in <paramref name="input"/>; the error names the field (its screen-reader name, #46).</summary>
     private static double Parse(TextBox input)

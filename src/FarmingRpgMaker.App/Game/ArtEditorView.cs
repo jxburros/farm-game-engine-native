@@ -208,12 +208,14 @@ public sealed class ArtEditorView : UserControl, IRetirable
         base.OnDetachedFromVisualTree(e);
     }
 
-    private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
+    private static string Number(double value) => DisplayFormat.Number(value);
     /// <summary>"32×16", or "?×?" for legacy art imported without its size.</summary>
     private static string SizeText(CustomAsset asset) =>
         asset.Width.OrNullable() is { } width && asset.Height.OrNullable() is { } height ? $"{Number(width)}×{Number(height)}" : "?×?";
-    private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{box.Name} must be a positive whole number.");
-    private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{box.Name} must be zero or more.");
+    private static int Positive(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? value : throw new FormatException($"{FieldName(box)} must be a positive whole number.");
+    private static int Nonnegative(TextBox box) => int.TryParse(box.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : throw new FormatException($"{FieldName(box)} must be zero or more.");
+    /// <summary>A field as the creator knows it (its label, which screen readers announce too), not the control's name.</summary>
+    private static string FieldName(TextBox box) => AutomationProperties.GetName(box) is { Length: > 0 } label ? label : "This field";
     private CustomAsset? SelectedAsset() => _workspace.Current?.CustomAssets.FirstOrDefault(asset => asset.Id == _selectedAssetId);
     private AnimationClip? SelectedClip() => SelectedAsset()?.Animations.OrEmpty().FirstOrDefault(clip => clip.Name == (_clips.SelectedItem as ComboBoxItem)?.Tag as string);
 

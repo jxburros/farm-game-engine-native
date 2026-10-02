@@ -217,7 +217,6 @@ public sealed class GameWorkspaceView : UserControl
         }
 
         _snapshot = _workspace.Current;
-        _workspace.IsPlaytesting = true;
         _play = new PlayModeView(player, _options.AutoRun);
         _play.RestartRequested += OnRestartRequested;
         _play.Faulted += OnPlayFaulted;
@@ -257,7 +256,6 @@ public sealed class GameWorkspaceView : UserControl
         play.Faulted -= OnPlayFaulted;
         play.Close();
         _play = null;
-        _workspace.IsPlaytesting = false;
         Content = _editHost;
 
         if (finalProject is not null)

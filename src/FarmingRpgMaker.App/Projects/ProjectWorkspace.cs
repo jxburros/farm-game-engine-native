@@ -76,9 +76,6 @@ public sealed class ProjectWorkspace
     /// <summary>The open document (project + history); null before the first <see cref="Open"/>.</summary>
     public Document? Document => _document;
 
-    /// <summary>True while a playtest runs: the stored file stays the pre-play snapshot.</summary>
-    public bool IsPlaytesting { get; set; }
-
     public bool CanUndo => _document is { } document && Documents.CanUndo(document);
 
     public bool CanRedo => _document is { } document && Documents.CanRedo(document);

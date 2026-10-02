@@ -176,7 +176,7 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
 
             if (update.SizeBytes is { } size)
             {
-                parts.Add(FormatSize(size));
+                parts.Add(DisplayFormat.DownloadSize(size));
             }
 
             return string.Join("  ·  ", parts);
@@ -283,41 +283,5 @@ public sealed class UpdateCenterViewModel : ObservableObject, IDisposable
         CancelCommand.NotifyCanExecuteChanged();
     }
 
-    private string FormatWhen(DateTimeOffset when)
-    {
-        var local = when.ToLocalTime();
-        var now = _time.GetUtcNow().ToLocalTime();
-        var ago = now - local;
-        if (ago < TimeSpan.FromMinutes(1))
-        {
-            return "just now";
-        }
-
-        if (ago < TimeSpan.FromHours(1))
-        {
-            var minutes = (int)ago.TotalMinutes;
-            return minutes == 1 ? "1 minute ago" : $"{minutes} minutes ago";
-        }
-
-        var time = local.ToString("h:mm tt", CultureInfo.InvariantCulture);
-        if (local.Date == now.Date)
-        {
-            return $"today at {time}";
-        }
-
-        if (local.Date == now.Date.AddDays(-1))
-        {
-            return $"yesterday at {time}";
-        }
-
-        return local.ToString("MMM d, yyyy", CultureInfo.InvariantCulture) + " at " + time;
-    }
-
-    internal static string FormatSize(long bytes) => bytes switch
-    {
-        >= 1_000_000_000 => (bytes / 1_000_000_000d).ToString("0.0", CultureInfo.InvariantCulture) + " GB",
-        >= 1_000_000 => (bytes / 1_000_000d).ToString("0.0", CultureInfo.InvariantCulture) + " MB",
-        >= 1_000 => (bytes / 1_000d).ToString("0", CultureInfo.InvariantCulture) + " KB",
-        _ => bytes.ToString(CultureInfo.InvariantCulture) + " bytes",
-    };
+    private string FormatWhen(DateTimeOffset when) => DisplayFormat.RelativeTime(when, _time.GetUtcNow());
 }

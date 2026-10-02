@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -394,7 +393,7 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
                 title.Children.Add(new Border { Child = Ui.Text("Open now") }.WithClasses("qty-chip"));
             }
 
-            var detail = Ui.Text($"Updated {Relative(project.UpdatedAt)} · {Size(project.SizeBytes)} · {project.Id}", "muted", "small");
+            var detail = Ui.Text($"Updated {DisplayFormat.RelativeTime(project.UpdatedAt, DateTimeOffset.UtcNow)} · {DisplayFormat.FileSize(project.SizeBytes)} · {project.Id}", "muted", "small");
             _list.Items.Add(new ListBoxItem { Tag = project.Id, Content = Ui.VStack(2, title, detail) });
         }
 
@@ -484,34 +483,6 @@ internal sealed class OpenProjectWindow : ProjectDialogWindow
             UpdateButtons();
         }
     }
-
-    private static string Relative(DateTimeOffset time)
-    {
-        var age = DateTimeOffset.UtcNow - time;
-        if (age < TimeSpan.FromMinutes(1))
-        {
-            return "just now";
-        }
-
-        if (age < TimeSpan.FromHours(1))
-        {
-            return $"{(int)age.TotalMinutes} min ago";
-        }
-
-        if (age < TimeSpan.FromDays(1))
-        {
-            return $"{(int)age.TotalHours} h ago";
-        }
-
-        return time.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-    }
-
-    private static string Size(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
-        _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
-    };
 }
 
 /// <summary>
