@@ -19,9 +19,9 @@
     <!-- The F# tests run on xUnit v2 (FsCheck.Xunit); the app tests on v3, which Avalonia.Headless.XUnit 12 needs. -->
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="FSharp.Core" Version="10.0.112" />
+    <PackageVersion Include="FSharp.Core" Version="10.1.402" />
     <PackageVersion Include="FsCheck.Xunit" Version="3.4.0" />
   </ItemGroup>
 </Project>
