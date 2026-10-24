@@ -17,7 +17,7 @@ raster = ["dep:tiny-skia"]
 farm-sim = { path = "../farm-sim" }
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 tiny-skia = { version = "0.12", optional = true }
